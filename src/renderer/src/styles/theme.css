@@ -1,0 +1,129 @@
+/* Design tokens. Light by default; [data-theme='dark'] overrides. Inspired by Acrobat's palette. */
+:root {
+  --font: 'Segoe UI', system-ui, -apple-system, 'SF Pro Text', Ubuntu, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Consolas, 'Liberation Mono', monospace;
+  --fs: 13px;
+  --fs-sm: 12px;
+  --fs-lg: 15px;
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  --bg: #f4f4f4;
+  --bg-elev: #ffffff;
+  --bg-sunken: #e8e8e8;
+  --bg-hover: rgba(0, 0, 0, 0.06);
+  --bg-active: rgba(20, 115, 230, 0.12);
+  --doc-bg: #e3e3e3;
+  --border: #d6d6d6;
+  --border-strong: #b3b3b3;
+  --text: #222222;
+  --text-muted: #6e6e6e;
+  --text-inverse: #ffffff;
+  --accent: #1473e6;
+  --accent-hover: #0d66d0;
+  --accent-text: #0d66d0;
+  --danger: #d7373f;
+  --danger-hover: #c9252d;
+  --success: #268e6c;
+  --warning: #da7b11;
+  --focus: 0 0 0 2px rgba(20, 115, 230, 0.55);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.22);
+  --page-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  --selection: rgba(51, 144, 255, 0.32);
+  --search-hit: rgba(255, 213, 0, 0.45);
+  --search-active: rgba(255, 128, 0, 0.6);
+  --field-highlight: rgba(204, 215, 255, 0.55);
+  --topbar-h: 44px;
+  --doctoolbar-h: 44px;
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --bg: #1f1f1f;
+  --bg-elev: #2b2b2b;
+  --bg-sunken: #181818;
+  --bg-hover: rgba(255, 255, 255, 0.08);
+  --bg-active: rgba(80, 160, 255, 0.2);
+  --doc-bg: #3a3a3a;
+  --border: #3f3f3f;
+  --border-strong: #5a5a5a;
+  --text: #e8e8e8;
+  --text-muted: #a5a5a5;
+  --accent: #378ef0;
+  --accent-hover: #4b9cf5;
+  --accent-text: #6aaeff;
+  --danger: #e34850;
+  --shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.6);
+  --page-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  font-size: var(--fs);
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: default;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+kbd {
+  font-family: var(--font);
+  font-size: 11px;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.45);
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(128, 128, 128, 0.7);
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

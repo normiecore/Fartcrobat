@@ -1,0 +1,85 @@
+import type {
+  DefaultAppStatus,
+  MenuModel,
+  OpenDialogOptions,
+  Preferences,
+  PrintJob,
+  RecentFile,
+  SaveDialogOptions,
+  SystemInfo
+} from './types'
+
+/**
+ * Request/response channels from the renderer to the main process.
+ *
+ * Features that need main-process code add their own channels with declaration merging, using
+ * the `feature:<featureId>:<method>` naming scheme:
+ *
+ *   declare module '@shared/ipc' {
+ *     interface IpcApi { 'feature:ocr:languages': () => string[] }
+ *   }
+ */
+export interface IpcApi {
+  'file:openDialog': (opts: OpenDialogOptions) => string[]
+  'file:saveDialog': (opts: SaveDialogOptions) => string | null
+  'file:read': (path: string) => Uint8Array
+  'file:write': (path: string, data: Uint8Array) => void
+  'file:exists': (path: string) => boolean
+  'file:stat': (path: string) => { size: number; mtimeMs: number } | null
+  'file:tempPath': (name: string) => string
+  'app:launchFiles': () => string[]
+  'app:systemInfo': () => SystemInfo
+  'app:quitConfirmed': () => void
+  'app:relaunch': () => void
+  'prefs:get': () => Preferences
+  'prefs:set': (patch: Partial<Preferences>) => Preferences
+  'store:get': (key: string) => unknown
+  'store:set': (key: string, value: unknown) => void
+  'recent:list': () => RecentFile[]
+  'recent:add': (file: Omit<RecentFile, 'openedAt'>) => RecentFile[]
+  'recent:remove': (path: string) => RecentFile[]
+  'recent:clear': () => void
+  'menu:set': (model: MenuModel) => void
+  'window:setTitle': (title: string) => void
+  'window:setFullScreen': (on: boolean) => void
+  'window:isFullScreen': () => boolean
+  'window:new': () => void
+  'shell:openExternal': (url: string) => void
+  'shell:showItemInFolder': (path: string) => void
+  'shell:openPath': (path: string) => string
+  'defaultApp:status': () => DefaultAppStatus
+  'defaultApp:set': () => DefaultAppStatus
+  'print:images': (job: PrintJob) => { ok: boolean; error?: string }
+  'print:printers': () => { name: string; displayName: string; isDefault: boolean }[]
+  'clipboard:writeText': (text: string) => void
+  'clipboard:readImage': () => Uint8Array | null
+  'clipboard:writeImage': (png: Uint8Array) => void
+}
+
+/** Events pushed from the main process to the renderer. */
+export interface IpcEvents {
+  'app:openFiles': (paths: string[]) => void
+  'menu:command': (commandId: string) => void
+  'app:beforeQuit': () => void
+  'window:fullScreenChanged': (on: boolean) => void
+}
+
+export type IpcChannel = keyof IpcApi
+export type IpcArgs<K extends IpcChannel> = Parameters<IpcApi[K]>
+export type IpcResult<K extends IpcChannel> = Awaited<ReturnType<IpcApi[K]>>
+
+/** Shape of the object the preload script exposes on `window.api`. */
+export interface PreloadApi {
+  invoke<K extends IpcChannel>(channel: K, ...args: IpcArgs<K>): Promise<IpcResult<K>>
+  on<K extends keyof IpcEvents>(event: K, listener: IpcEvents[K]): () => void
+  /** Absolute path for a File object dropped onto the window. */
+  pathForFile(file: File): string
+  platform: string
+}
+
+export const ALLOWED_EVENT_CHANNELS: (keyof IpcEvents)[] = [
+  'app:openFiles',
+  'menu:command',
+  'app:beforeQuit',
+  'window:fullScreenChanged'
+]

@@ -1,0 +1,12 @@
+node_modules/
+out/
+dist/
+release/
+test-results/
+playwright-report/
+*.log
+.DS_Store
+.vite/
+coverage/
+tests/fixtures/generated/
+*.tsbuildinfo

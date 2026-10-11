@@ -1,0 +1,97 @@
+.viewer-scroll {
+  position: relative;
+  flex: 1;
+  overflow: auto;
+  outline: none;
+  overscroll-behavior: contain;
+}
+.viewer-content {
+  position: relative;
+}
+.viewer-page {
+  position: absolute;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  overflow: hidden;
+  contain: layout paint;
+}
+.viewer-page-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+.viewer-page-detail {
+  position: absolute;
+  pointer-events: none;
+}
+.viewer-layer {
+  position: absolute;
+  inset: 0;
+}
+.viewer-search-layer,
+.viewer-link-layer {
+  pointer-events: none;
+}
+.viewer-text-selection {
+  position: absolute;
+  background: var(--selection);
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+[data-theme='dark'] .viewer-text-selection {
+  mix-blend-mode: normal;
+}
+.viewer-search-hit {
+  position: absolute;
+  background: var(--search-hit);
+  mix-blend-mode: multiply;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.viewer-search-hit.is-active {
+  background: var(--search-active);
+  outline: 2px solid rgba(255, 110, 0, 0.9);
+}
+.viewer-link {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+}
+.viewer-link:hover {
+  outline: 1px dashed rgba(20, 115, 230, 0.6);
+}
+.viewer-marquee {
+  position: absolute;
+  border: 1px dashed var(--accent);
+  background: rgba(20, 115, 230, 0.1);
+  pointer-events: none;
+}
+.viewer-selection-toolbar {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-elev);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+.viewer-selection-toolbar button {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+}
+.viewer-selection-toolbar button:hover {
+  background: var(--bg-hover);
+}
+.viewer-scroll.tool-hand {
+  cursor: grab;
+}
