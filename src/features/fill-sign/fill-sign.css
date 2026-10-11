@@ -179,6 +179,9 @@
   flex: 1;
   min-width: 0;
 }
+.fc-fill-sign-toolbar > :not(.fc-fill-sign-hint):not(.fc-fill-sign-spacer) {
+  flex-shrink: 0;
+}
 .fc-fill-sign-signbtn {
   gap: 6px;
 }
@@ -207,9 +210,13 @@
   box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--accent);
 }
 .fc-fill-sign-hint {
+  flex: 0 1 auto;
+  min-width: 0;
   margin-left: 8px;
   font-size: var(--fs-sm);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .fc-fill-sign-spacer {
   flex: 1;
@@ -472,6 +479,14 @@
     8px -8px,
     -8px 0;
   color: #333;
+}
+.fc-fill-sign-drop .ui-btn {
+  background: #fff;
+  color: #222;
+  border-color: #b3b3b3;
+}
+.fc-fill-sign-drop .ui-btn:hover {
+  background: #f0f0f0;
 }
 .fc-fill-sign-drop.is-over {
   border-color: var(--accent);

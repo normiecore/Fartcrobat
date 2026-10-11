@@ -4,7 +4,7 @@ import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { RenderResult } from '@engine/ops/render'
 import type { PDFAnnotation, PDFPage, Session } from '@engine/session'
 import { FLAG_LOCKED, FLAG_PRINT, transformAnnotation } from '@engine/ops/annots'
-import { isNull, readString } from '@engine/util/pdf'
+import { isNull, pageBoxes, readString } from '@engine/util/pdf'
 import {
   clampSize,
   DEFAULT_COLOR,
@@ -289,11 +289,45 @@ function createMark(s: Session, page: PDFPage, rect: Rect, kind: MarkKind, size:
 
 // ---- signatures ------------------------------------------------------------------------------
 
-function createSignature(s: Session, page: PDFPage, rect: Rect, png: Uint8Array, kind: SignatureKind) {
-  if (!png || !png.length) throw new EngineError('The signature image is empty', 'BAD_IMAGE')
-  let image: InstanceType<Session['mupdf']['Image']>
+type MupdfImage = InstanceType<Session['mupdf']['Image']>
+
+/**
+ * Stamp appearances are drawn in unrotated PDF space, so on a page with /Rotate the image would
+ * show sideways. Turning the image the other way first keeps it upright on screen, and it stays
+ * correct whoever later moves or resizes the stamp (MuPDF regenerates the same appearance).
+ */
+function uprightImage(s: Session, image: MupdfImage, pageRotation: number): MupdfImage {
+  const angle = (360 - (((pageRotation % 360) + 360) % 360)) % 360
+  if (!angle) return image
+  const m = s.mupdf
+  const w = image.getWidth()
+  const h = image.getHeight()
+  const swap = angle === 90 || angle === 270
+  const pix = new m.Pixmap(m.ColorSpace.DeviceRGB, [0, 0, swap ? h : w, swap ? w : h], true)
   try {
-    image = new s.mupdf.Image(png)
+    pix.clear()
+    let ctm = m.Matrix.concat([w, 0, 0, h, 0, 0], m.Matrix.rotate(angle))
+    const xs = [ctm[4], ctm[0] + ctm[4], ctm[2] + ctm[4], ctm[0] + ctm[2] + ctm[4]]
+    const ys = [ctm[5], ctm[1] + ctm[5], ctm[3] + ctm[5], ctm[1] + ctm[3] + ctm[5]]
+    ctm = m.Matrix.concat(ctm, m.Matrix.translate(-Math.min(...xs), -Math.min(...ys)))
+    const dev = new m.DrawDevice(m.Matrix.identity, pix)
+    try {
+      dev.fillImage(image, ctm, 1)
+      dev.close()
+    } finally {
+      dev.destroy()
+    }
+    return new m.Image(pix.asPNG())
+  } finally {
+    pix.destroy()
+  }
+}
+
+function createSignature(s: Session, page: PDFPage, pageIndex: number, rect: Rect, png: Uint8Array, kind: SignatureKind) {
+  if (!png || !png.length) throw new EngineError('The signature image is empty', 'BAD_IMAGE')
+  let image: MupdfImage
+  try {
+    image = uprightImage(s, new s.mupdf.Image(png), pageBoxes(s.pdf, pageIndex).rotation)
   } catch (err) {
     throw new EngineError(`The signature image could not be read: ${(err as Error).message}`, 'BAD_IMAGE')
   }
@@ -500,7 +534,7 @@ export default defineOps('fill-sign', {
     (s, pageIndex: number, rect: Rect, png: Uint8Array, kind: SignatureKind = 'signature'): FillSignItem => {
       if (!isSignatureKind(kind)) throw new EngineError(`Unknown signature kind ${kind}`, 'BAD_KIND')
       const page = s.page(pageIndex)
-      const annot = createSignature(s, page, fitInside(s, pageIndex, normalizeRect(rect)), png, kind)
+      const annot = createSignature(s, page, pageIndex, fitInside(s, pageIndex, normalizeRect(rect)), png, kind)
       changed(s, pageIndex)
       return describe(s, { annot, page, pageIndex })
     }
@@ -622,6 +656,7 @@ export default defineOps('fill-sign', {
     (s, ids: number[], _kind?: FillSignKind, hintPage?: number) => {
       for (const id of ids) {
         const f = find(s, id, hintPage)
+        assertUnlocked(f)
         f.page.deleteAnnotation(f.annot)
         s.touch(f.pageIndex)
       }

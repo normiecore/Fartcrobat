@@ -108,7 +108,11 @@ async function flushIfEditing(doc: DocumentModel, item: { id: number }) {
 
 // ---- changing ----------------------------------------------------------------------------------
 
-export async function deleteItem(doc: DocumentModel, item: { id: number; kind: FillSignKind; page: number }) {
+export async function deleteItem(doc: DocumentModel, item: { id: number; kind: FillSignKind; page: number; locked?: boolean }) {
+  if (item.locked) {
+    toast(`This ${kindNoun(item.kind)} is locked and cannot be deleted.`)
+    return
+  }
   try {
     const e = useFillSign.getState().editing
     if (e && e.docId === doc.id && e.id === item.id) useFillSign.setState({ editing: null })
@@ -218,6 +222,7 @@ export function startPlacing(kind: SignatureKind, image: SignatureImage) {
     placing: { kind, image, returnTool: current === PLACE_TOOL ? 'select' : current },
     menu: null
   })
+  if (selectedItem(doc)) doc.clearSelection()
   setTool(PLACE_TOOL)
 }
 

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import type { Point, Rect } from '@shared/geometry'
 import {
   drawResult,
+  registry,
   showContextMenu,
+  type ContextMenuItem,
   useApp,
   useDocState,
   usePageVersion,
@@ -181,6 +183,8 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const [live, setLive] = useState<Live | null>(null)
   const [hover, setHover] = useState<Point | null>(null)
   const gesture = useRef<Gesture | null>(null)
+  /** Id of the item whose drag preview may hide the real rendering (cleared when the gesture ends). */
+  const previewFor = useRef<number | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -211,6 +215,20 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
 
   // ---- creating ----------------------------------------------------------------------------
 
+  const onRootContextMenu = (e: React.MouseEvent) => {
+    if (e.target !== e.currentTarget) return
+    e.preventDefault()
+    const point = geometry.toPage(local(e))
+    const menu: ContextMenuItem[] = []
+    for (const c of registry.pageContextMenu) {
+      const more = c.items({ doc, pageIndex, point })
+      if (!more.length) continue
+      if (menu.length) menu.push({ id: `sep-${c.id}`, label: '', separator: true })
+      menu.push(...more)
+    }
+    showContextMenu(e.clientX, e.clientY, menu)
+  }
+
   const onRootPointerDown = (e: React.PointerEvent) => {
     if (!createKind || e.button !== 0 || e.target !== e.currentTarget) return
     const point = geometry.toPage(local(e))
@@ -223,6 +241,7 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   // ---- items -------------------------------------------------------------------------------
 
   const endPreview = async (id: number) => {
+    if (previewFor.current === id) previewFor.current = null
     unhideItem(doc, pageIndex, id)
     await waitForRepaint(doc)
     setLive((l) => (l && l.id === id ? null : l))
@@ -246,6 +265,7 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     if (!g.moved) {
       if (Math.hypot(p[0] - g.start[0], p[1] - g.start[1]) < DRAG_THRESHOLD || g.item.locked) return
       g.moved = true
+      previewFor.current = g.item.id
     }
     if (g.type === 'move') {
       const a = geometry.toPage(g.start)
@@ -304,6 +324,14 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       void moveItem(doc, item, cx, cy)
       return
     }
+    if (e.key === 'Escape') {
+      // first Esc deselects the item (a second one leaves the tool, as everywhere else)
+      e.preventDefault()
+      e.stopPropagation()
+      doc.clearSelection()
+      doc.view?.getViewportElement()?.focus({ preventScroll: true })
+      return
+    }
     if ((e.key === 'Enter' || e.key === 'F2') && isTextKind(item.kind)) {
       e.preventDefault()
       e.stopPropagation()
@@ -329,6 +357,7 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       ref={rootRef}
       className={`viewer-layer fc-fill-sign-layer ${creating ? `is-creating is-${createKind}` : ''}`}
       onPointerDown={onRootPointerDown}
+      onContextMenu={creating ? onRootContextMenu : undefined}
       onPointerMove={tracksHover ? (e) => setHover(e.target === e.currentTarget ? geometry.toPage(local(e)) : null) : undefined}
       onPointerLeave={tracksHover ? () => setHover(null) : undefined}
     >
@@ -354,6 +383,7 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
               onPointerUp={(e) => void onItemPointerUp(e)}
               onPointerCancel={() => {
                 gesture.current = null
+                previewFor.current = null
                 setLive(null)
                 unhideItem(doc, pageIndex, item.id)
               }}
@@ -380,7 +410,9 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           geometry={geometry}
           item={liveItem}
           rect={live.rect}
-          onReady={() => hideItem(doc, pageIndex, liveItem.id)}
+          onReady={() => {
+            if (previewFor.current === liveItem.id) hideItem(doc, pageIndex, liveItem.id)
+          }}
         />
       )}
       {selected && showAnnots && !editingItem && (

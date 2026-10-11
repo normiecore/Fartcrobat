@@ -141,6 +141,7 @@ export function MiniToolbar({ doc, geometry, item }: { doc: DocumentModel; geome
         className="is-danger"
         title="Delete (Del)"
         aria-label={`Delete ${kindLabel(item.kind).toLowerCase()}`}
+        disabled={item.locked}
         onClick={() => void deleteItem(doc, item)}
       >
         <Trash2 size={17} />

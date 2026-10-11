@@ -27,6 +27,14 @@ def signature_photo():
     im.save(HERE / "signature-photo.jpg", quality=90)
 
 
+def half_png():
+    """Left half solid, right half transparent: shows whether an image is placed upright."""
+    im = Image.new("RGBA", (200, 50), (0, 0, 0, 0))
+    ImageDraw.Draw(im).rectangle([0, 0, 99, 49], fill=(0, 0, 0, 255))
+    im.save(HERE / "half.png")
+
+
 if __name__ == "__main__":
     signature_png()
     signature_photo()
+    half_png()

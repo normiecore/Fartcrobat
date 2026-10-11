@@ -1,5 +1,5 @@
 import { AArrowDown, AArrowUp, ChevronDown, Crosshair, PenLine, X } from 'lucide-react'
-import { Button, IconButton, setTool, useApp, useDocState, type DocumentModel } from '@renderer/sdk'
+import { Button, IconButton, openToolGroup, setTool, useApp, useDocState, type DocumentModel } from '@renderer/sdk'
 import { FILL_SIGN_COLORS, isSignatureKind, stepSize, type FillSignItem, type MarkKind, type TextKind } from './shared'
 import { fsOps, selectedItem, setDefaultColor, setDefaultTextSize, useFillSign } from './state'
 import { activateFillTool, cancelPlacing, changeColor, changeSize, KIND_TOOL, placeSignature, TOOL_KIND } from './actions'
@@ -127,7 +127,12 @@ export function FillSignToolbar({ doc }: { doc: DocumentModel }) {
         </span>
       )}
       <span className="fc-fill-sign-spacer" />
-      <Button size="sm" variant="quiet" onClick={() => setTool('select')}>
+      <Button
+        size="sm"
+        variant="quiet"
+        title="Close Fill & Sign"
+        onClick={() => (useApp.getState().toolGroupId === 'fillsign' ? openToolGroup(null) : setTool('select'))}
+      >
         Close
       </Button>
     </div>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type annotOps from '@engine/ops/annots'
+import type pageOps from '@engine/ops/pages'
 import type renderOps from '@engine/ops/render'
 import type fillSignOps from '@features/fill-sign/engine'
 import {
@@ -303,6 +304,38 @@ describe('fill-sign engine', () => {
     // the text of a reopened item can still be edited and refitted
     const edited = await again.ops<typeof fillSignOps>('fill-sign').setText(items[0].id, 'Jane Q. Doe')
     expect(width(edited.rect)).toBeGreaterThan(width(items[0].rect))
+  })
+
+  it('keeps signatures upright and text readable on rotated pages', async () => {
+    for (const rotation of [90, 180, 270]) {
+      const e = await openFixture('text.pdf')
+      const { fs } = ops(e)
+      await e.ops<typeof pageOps>('pages').rotate([0], rotation)
+      const right1: [number, number, number, number] = [210, 110, 290, 140]
+      const right2: [number, number, number, number] = [330, 140, 510, 220]
+      // the page's own text may show through the transparent half: measure it first
+      const base1 = await inkInside(e, 0, right1)
+      const base2 = await inkInside(e, 0, right2)
+      const sig = await fs.addSignature(0, [100, 100, 300, 150], fixture('fill-sign/half.png'), 'signature')
+      // left half of the image is solid, right half transparent - in page (screen) orientation
+      expect(await inkInside(e, 0, [110, 110, 190, 140])).toBeGreaterThan(0.95)
+      expect(await inkInside(e, 0, right1)).toBeCloseTo(base1, 3)
+      // still upright after being moved and resized
+      await fs.move(sig.id, 20, 30, 'signature')
+      await fs.resize(sig.id, [120, 130, 520, 230], 'signature')
+      expect(await inkInside(e, 0, [130, 140, 310, 220])).toBeGreaterThan(0.95)
+      expect(await inkInside(e, 0, right2)).toBeCloseTo(base2, 3)
+
+      const t = await fs.addText(0, [100, 300], { text: 'Rotated page text', size: 14 })
+      expect(height(t.rect)).toBeCloseTo(14 * LINE_HEIGHT, 2)
+      expect(width(t.rect)).toBeGreaterThan(100)
+      expect(width(t.rect)).toBeLessThan(130)
+      expect(await inkInside(e, 0, t.rect)).toBeGreaterThan(0.03)
+      const check = await fs.addMark(0, [400, 400], 'check', { size: 20 })
+      const [w, h] = markDimensions('check', 20)
+      expect(width(check.rect)).toBeCloseTo(w, 1)
+      expect(height(check.rect)).toBeCloseTo(h, 1)
+    }
   })
 
   it('lays the first baseline out where the inline editor expects it', async () => {

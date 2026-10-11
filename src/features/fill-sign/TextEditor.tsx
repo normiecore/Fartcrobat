@@ -48,6 +48,8 @@ export function TextEditor({ doc, geometry, item }: { doc: DocumentModel; geomet
   valueRef.current = value
   const itemRef = useRef(item)
   itemRef.current = item
+  /** Text known to be in the document (updated when typing is written early, e.g. before A+). */
+  const savedText = useRef(item.text)
   const committed = useRef(false)
   const mounted = useRef(false)
   const pageColors = usePrefs().pageColors
@@ -77,7 +79,8 @@ export function TextEditor({ doc, geometry, item }: { doc: DocumentModel; geomet
         if (editing.isNew && editing.edits === 0 && doc.state.journal.undoLabel === label) await doc.undo()
         else await fsOps(doc).remove([current.id], current.kind, current.page)
         doc.clearSelection()
-      } else if (text !== current.text) {
+      } else if (text !== savedText.current) {
+        savedText.current = text
         await fsOps(doc).setText(current.id, text, current.page)
       }
     } catch (err) {
@@ -115,9 +118,10 @@ export function TextEditor({ doc, geometry, item }: { doc: DocumentModel; geomet
       const detail = (e as CustomEvent<{ id: number; done: (p: Promise<unknown>) => void }>).detail
       if (detail.id !== item.id) return
       const text = valueRef.current.replace(/[ \t\r\n]+$/, '')
-      if (text.trim() && text !== itemRef.current.text) {
+      if (text.trim() && text !== savedText.current) {
         const e2 = useFillSign.getState().editing
         if (e2) useFillSign.setState({ editing: { ...e2, edits: e2.edits + 1 } })
+        savedText.current = text
         detail.done(fsOps(doc).setText(item.id, text, item.page))
       } else detail.done(Promise.resolve())
     }
