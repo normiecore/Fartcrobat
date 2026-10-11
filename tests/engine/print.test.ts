@@ -310,7 +310,7 @@ describe('job orientation', () => {
     const s = { ...defaultSettings('en-US'), copies: 3, grayscale: true, duplex: true, flip: 'short' as const, paper: 'A4' as const }
     const sheets = layoutSheets([0], [LETTER_LANDSCAPE], opts())
     const pages = [{ data: new Uint8Array([1]), mime: 'image/png' as const, widthPt: 792, heightPt: 612 }]
-    const job = buildJob(pages, s, sheets, { printer: 'Office', printerLabel: 'Office' }, 'a.pdf')
+    const job = buildJob(pages, s, sheets, { printer: 'Office', systemDialog: false, printerLabel: 'Office' }, 'a.pdf')
     expect(job).toMatchObject({
       silent: true,
       copies: 3,
@@ -322,10 +322,13 @@ describe('job orientation', () => {
       jobName: 'a.pdf',
       pageSize: 'A4'
     })
-    const sys = buildJob(pages, { ...s, duplex: false }, sheets, { printer: null, printerLabel: 'x' }, 'a.pdf')
+    const sys = buildJob(pages, { ...s, duplex: false }, sheets, { printer: 'Office', systemDialog: true, printerLabel: 'Office' }, 'a.pdf')
     expect(sys.silent).toBe(false)
-    expect(sys.deviceName).toBeUndefined()
+    expect(sys.deviceName).toBe('Office')
     expect(sys.duplex).toBe('simplex')
+    const none = buildJob(pages, s, sheets, { printer: null, systemDialog: false, printerLabel: 'the printer' }, 'a.pdf')
+    expect(none.silent).toBe(false)
+    expect(none.deviceName).toBeUndefined()
   })
 })
 

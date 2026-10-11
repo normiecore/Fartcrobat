@@ -151,6 +151,8 @@ test('print dialog: page range, 2-up, booklet, poster, comments, grayscale, perm
     await expect(dialog(page).getByRole('heading', { name: 'Print' })).toBeVisible()
     await dialog(page).locator('.fc-print-paper select').selectOption('Letter')
     await expect(dialog(page).locator('select.fc-print-printer')).toHaveValue('office-laser')
+    // Enter prints straight away, like Acrobat
+    await expect(dialog(page).getByRole('button', { name: 'Print', exact: true })).toBeFocused()
     await expect(counter(page)).toHaveText('Page 1 of 5')
     await waitForPreview(page)
     await expect(dialog(page).locator('.fc-print-preview-head')).toContainText('Scale: 96%')
@@ -293,10 +295,36 @@ test('print dialog: page range, 2-up, booklet, poster, comments, grayscale, perm
     await waitForPreview(page)
     await page.screenshot({ path: 'test-results/print-dark.png' })
 
+    // keyboard: arrow keys move between Size / Poster / Multiple / Booklet
+    await dialog(page).locator('label.fc-print-mode', { hasText: 'Size' }).locator('input').focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(dialog(page).locator('label.fc-print-mode.is-active')).toHaveText('Poster')
+    await page.keyboard.press('ArrowLeft')
+    await expect(dialog(page).locator('label.fc-print-mode.is-active')).toHaveText('Size')
+
+    // More options: even pages only
+    await expect(dialog(page).getByRole('radio', { name: 'Current page (1)' })).toBeVisible()
+    await dialog(page).getByRole('button', { name: 'More options' }).click()
+    await dialog(page).getByLabel('Odd or even pages:').selectOption('even')
+    await expect(counter(page)).toHaveText('Page 1 of 2')
+    await dialog(page).getByRole('checkbox', { name: 'Reverse pages' }).check()
+    await expect(counter(page)).toHaveText('Page 1 of 2')
+
     // Escape closes without printing
     await page.keyboard.press('Escape')
     await expect(dialog(page)).toHaveCount(0)
     expect((await capturedJobs(app)).length).toBe(2)
+
+    // Right-click a page > Print This Page…
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(2))
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
+    await page.locator('.viewer-page[data-page-index="2"]').click({ button: 'right', position: { x: 250, y: 320 } })
+    await page.getByRole('menuitem', { name: 'Print This Page…' }).click()
+    await expect(dialog(page)).toBeVisible()
+    await expect(dialog(page).getByRole('radio', { name: 'Current page (3)' })).toBeChecked()
+    await expect(counter(page)).toHaveText('Page 1 of 1')
+    await page.keyboard.press('Escape')
+    await expect(dialog(page)).toHaveCount(0)
   } finally {
     await app.close()
   }
@@ -319,6 +347,7 @@ test('print: Properties uses the system dialog, cancel stops a large job, restri
     await expect.poll(async () => (await capturedJobs(app)).length, { timeout: 30000 }).toBe(1)
     const [job] = await capturedJobs(app)
     expect(job.silent).toBe(false)
+    expect(job.deviceName).toBe('office-laser') // preselected in the system dialog
     expect(job.landscape).toBe(false)
     expect(job.pages.map((p) => [p.widthPt, p.heightPt, p.pxW, p.pxH])).toEqual([
       [612, 792, 1275, 1650],

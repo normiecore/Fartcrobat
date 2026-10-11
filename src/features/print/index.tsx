@@ -70,8 +70,14 @@ async function explainNoPrinting(doc: DocumentModel) {
 /** True from opening the dialog until the job has been handed to the printer. */
 let busy = false
 
-/** File > Print (Ctrl+P). */
-export async function openPrintDialog(doc: DocumentModel | null) {
+/**
+ * File > Print (Ctrl+P). `preset` pre-fills per-job choices and `currentPage` overrides the page
+ * "Current page" prints (the page that was right-clicked).
+ */
+export async function openPrintDialog(
+  doc: DocumentModel | null,
+  opts: { preset?: Partial<PrintSettings>; currentPage?: number } = {}
+) {
   if (!doc) return
   if (busy) {
     toast('Fartcrobat is still preparing the previous print job.')
@@ -83,8 +89,10 @@ export async function openPrintDialog(doc: DocumentModel | null) {
   }
   busy = true
   try {
-    const initial = await loadSettings()
-    const result = await openDialog<PrintDialogResult>((close) => <PrintDialog doc={doc} initial={initial} onClose={close} />)
+    const initial = { ...(await loadSettings()), ...opts.preset }
+    const result = await openDialog<PrintDialogResult>((close) => (
+      <PrintDialog doc={doc} initial={initial} currentPage={opts.currentPage} onClose={close} />
+    ))
     if (!result) return
     if (result.action === 'summarize') {
       busy = false
@@ -136,5 +144,19 @@ export default defineFeature({
       run: ({ doc }) => openPrintDialog(doc)
     }
   ],
-  docToolbar: [{ id: 'print', order: 5, component: PrintToolbarButton }]
+  docToolbar: [{ id: 'print', order: 5, component: PrintToolbarButton }],
+  pageContextMenu: [
+    {
+      id: 'print',
+      order: 900,
+      items: ({ doc, pageIndex }) => [
+        { id: 'print.dialog', label: 'Print…', icon: Printer, shortcut: displayShortcut('Mod+P'), run: () => void openPrintDialog(doc) },
+        {
+          id: 'print.page',
+          label: 'Print This Page…',
+          run: () => void openPrintDialog(doc, { preset: { pages: 'current' }, currentPage: pageIndex })
+        }
+      ]
+    }
+  ]
 })

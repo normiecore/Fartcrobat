@@ -99,10 +99,13 @@ let dialogCounter = 0
 export function PrintDialog({
   doc,
   initial,
+  currentPage: currentPageProp,
   onClose
 }: {
   doc: DocumentModel
   initial: PrintSettings
+  /** Page printed by "Current page" (defaults to the page shown in the viewer). */
+  currentPage?: number
   onClose: (result?: PrintDialogResult) => void
 }) {
   const [s, setS] = useState<PrintSettings>(() => ({
@@ -113,7 +116,7 @@ export function PrintDialog({
   const [uid] = useState(() => `fc-print-${++dialogCounter}`)
   const info = useDocState(doc, (st) => st.info)
   const title = useDocState(doc, (st) => st.title)
-  const [currentPage] = useState(() => doc.state.currentPage)
+  const [currentPage] = useState(() => currentPageProp ?? doc.state.currentPage)
   const prefs = usePrefs()
   const units: Units = prefs.measurementUnits
   const [printers, setPrinters] = useState<PrinterInfo[] | null>(null)
@@ -168,9 +171,6 @@ export function PrintDialog({
     }
   }, [doc, info])
 
-  useEffect(() => {
-    printRef.current?.focus()
-  }, [])
 
   // Page Up / Page Down page through the preview from anywhere in the dialog, like Acrobat.
   const sheetCount = useRef(0)
@@ -212,12 +212,21 @@ export function PrintDialog({
 
   const noPrinters = printers !== null && printers.length === 0
   const canPrint = !selection.error && sheets.length > 0 && printers !== null
+
+  // Like Acrobat, Enter prints right away: focus the Print button once it is enabled (printers
+  // load asynchronously), unless the user already moved on to another control.
+  const focusedPrint = useRef(false)
+  useEffect(() => {
+    if (focusedPrint.current || !canPrint) return
+    focusedPrint.current = true
+    const active = document.activeElement
+    if (!active || active === document.body || active.id === `${uid}-printer`) printRef.current?.focus()
+  }, [canPrint, uid])
   const formsWithoutFields = s.content === 'forms' && summary !== null && summary.fields === 0
 
   const target = (useSystemDialog: boolean): PrintTarget => {
     const p = printers?.find((x) => x.name === s.printer)
-    if (useSystemDialog || !p) return { printer: null, printerLabel: p?.displayName ?? 'the printer' }
-    return { printer: p.name, printerLabel: p.displayName }
+    return { printer: p?.name ?? null, systemDialog: useSystemDialog || !p, printerLabel: p?.displayName ?? 'the printer' }
   }
 
   /** Booklets need double-sided printing; switch it on for them and back off when leaving. */
@@ -239,7 +248,7 @@ export function PrintDialog({
   const submit = (useSystemDialog = false) => {
     if (!canPrint || submitted.current) return
     submitted.current = true
-    onClose({ action: 'print', settings: s, sheets, target: useSystemDialog || noPrinters ? target(true) : target(false) })
+    onClose({ action: 'print', settings: s, sheets, target: target(useSystemDialog) })
   }
 
   const contentHint = (() => {
@@ -311,7 +320,7 @@ export function PrintDialog({
               id={`${uid}-printer`}
               className="ui-input ui-select fc-print-printer"
               value={printers === null ? '__loading' : noPrinters ? '' : s.printer}
-              disabled={printers === null || noPrinters}
+              disabled={noPrinters}
               onChange={(e) => update({ printer: e.target.value })}
             >
               {printers === null && <option value="__loading">Looking for printers…</option>}
