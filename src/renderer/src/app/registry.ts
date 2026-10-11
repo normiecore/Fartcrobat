@@ -82,6 +82,11 @@ export interface ToolGroupDefinition {
   panel?: ComponentType<{ doc: DocumentModel | null }>
   /** Tool activated when the group opens. */
   defaultTool?: string
+  /**
+   * Replaces the page viewer while the group is open (e.g. the Organize Pages thumbnail grid or a
+   * Compare Files report). The left panel still shows `panel`.
+   */
+  documentView?: ComponentType<{ doc: DocumentModel }>
   /** Action for groups without a panel (e.g. open a dialog). */
   run?: (ctx: CommandContext) => void | Promise<void>
   /** Defaults to true. */

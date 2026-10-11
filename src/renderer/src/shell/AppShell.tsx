@@ -42,6 +42,8 @@ export function AppShell() {
   const readMode = useApp((s) => s.readMode)
   const findBarOpen = useApp((s) => s.findBarOpen)
   const leftOpen = useApp((s) => s.leftPaneOpen)
+  const groupId = useApp((s) => s.toolGroupId)
+  const DocumentView = registry.toolGroups.find((g) => g.id === groupId)?.documentView
 
   useEffect(() => {
     const onDragOver = (e: DragEvent) => {
@@ -75,9 +77,15 @@ export function AppShell() {
             <div className={`shell-docarea ${leftOpen ? '' : 'is-left-collapsed'}`}>
               {!readMode && <DocToolbar doc={doc} />}
               <div className="shell-viewer-wrap">
-                {!readMode && <QuickToolbar />}
-                {findBarOpen && <FindBar key={doc.id} doc={doc} />}
-                <Viewer key={doc.id} doc={doc} />
+                {!readMode && !DocumentView && <QuickToolbar />}
+                {DocumentView ? (
+                  <DocumentView key={doc.id} doc={doc} />
+                ) : (
+                  <>
+                    {findBarOpen && <FindBar key={doc.id} doc={doc} />}
+                    <Viewer key={doc.id} doc={doc} />
+                  </>
+                )}
                 {readMode && <ReadModeBar doc={doc} />}
               </div>
             </div>

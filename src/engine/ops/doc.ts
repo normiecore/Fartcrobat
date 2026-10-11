@@ -249,23 +249,31 @@ function openInto(s: Session, data: Uint8Array, fileName: string, password?: str
   if (src.needsPassword()) {
     if (!password || !src.authenticatePassword(password)) {
       s.pending = src
+      s.pendingBytes = data
       s.fileName = fileName
       return { ok: false, needsPassword: true, wrongPassword: !!password }
     }
   }
-  return finishOpen(s, src, fileName)
+  return finishOpen(s, src, fileName, data)
 }
 
-function finishOpen(s: Session, src: InstanceType<Session['mupdf']['Document']>, fileName: string): OpenResult {
+function finishOpen(
+  s: Session,
+  src: InstanceType<Session['mupdf']['Document']>,
+  fileName: string,
+  bytes: Uint8Array | null
+): OpenResult {
   s.pending = null
   const pdf = src.asPDF()
   if (pdf) {
     s.setDocument(pdf, { fileName, sourceFormat: 'PDF', converted: false })
+    s.sourceBytes = bytes
   } else {
     const ext = extensionOf(fileName)
     const converted = convertToPdf(s, src)
     src.destroy()
     s.setDocument(converted, { fileName, sourceFormat: OPENABLE_FORMATS[ext] ?? ext.toUpperCase(), converted: true })
+    s.sourceBytes = null
   }
   return { ok: true, info: buildDocInfo(s) }
 }
@@ -293,7 +301,9 @@ export default defineOps('doc', {
     const src = s.pending
     if (!src) throw new EngineError('No document is waiting for a password', 'NO_PENDING')
     if (!src.authenticatePassword(password)) return { ok: false, needsPassword: true, wrongPassword: true }
-    return finishOpen(s, src, s.fileName)
+    const bytes = s.pendingBytes
+    s.pendingBytes = null
+    return finishOpen(s, src, s.fileName, bytes)
   },
 
   /** Replaces the open document with new bytes (after signing or optimising). Clears undo. */

@@ -25,7 +25,10 @@ export class Session {
   doc: PDFDocument | null = null
   /** A document waiting for a password. */
   pending: MuPDF.Document | null = null
+  pendingBytes: Uint8Array | null = null
   fileName = ''
+  /** The exact bytes the document was opened (or last reloaded) from. Needed to validate signatures. */
+  sourceBytes: Uint8Array | null = null
   sourceFormat = 'PDF'
   converted = false
   /** Extra documents opened by operations (e.g. "insert pages from file"), keyed by caller id. */

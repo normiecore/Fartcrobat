@@ -77,6 +77,7 @@ Registry concepts (all in `src/renderer/src/app/registry.ts`):
 | `toolGroups` | Entries in the left **All tools** pane (and Home tiles with `homeTile`). Opening one shows its `panel` in the left pane (use `ToolPanelFrame` so the back arrow works) and activates `defaultTool`; groups without a panel run `run()` |
 | `tools` | Pointer tools. While active, `layer` is mounted on every visible page above everything else and receives pointer events; `toolbar` appears in the contextual bar under the document toolbar. Set `allowDefaultInteractions` to keep text selection/links/annotation selection working underneath |
 | `pageLayers` | Always-mounted per-page layers (annotations, form fields...). `order` sets stacking: text selection 10, search 20, links 30. Use `pointer-events: none` on the layer and `auto` only on interactive children so you don't block other layers. `when({toolId, doc})` limits when they mount |
+| `toolGroups[].documentView` | Replaces the page viewer while the group is open (Organize Pages grid, Compare report) |
 | `rightPanels` | Icons in the right rail; the panel opens to the left of it |
 | `quickTools` | The floating vertical toolbar at the left of the document (tool ids or command ids with icons) |
 | `textSelectionActions` | Buttons on the mini toolbar above selected text and in its context menu |
@@ -104,7 +105,8 @@ Acrobat's shortcuts and menu labels wherever Acrobat has them.
   `textModel.ts` (`rangeQuads`, `rangeRects`, `searchPage`, `caretAt`, `wordAt`).
 - `doc.setSelection({ kind: 'annotations', page, ids })` / `{ kind: 'custom', type, page, data }`.
 - `setHiddenAnnotations(doc, page, ids)` leaves annotations out of page rendering while you draw
-  a live preview (dragging).
+  a live preview (dragging). `doc.set({ showAnnotations: false })` hides all comments
+  (View > Show/Hide > Comments).
 
 App-level helpers from `@renderer/sdk`: `openDialog(close => <Dialog .../>)`, `ask`, `confirm`,
 `prompt`, `toast`, `showError`, `withProgress(title, report => ...)`, `showContextMenu`,
@@ -135,7 +137,8 @@ export default defineOps('stamps', {
 })
 ```
 
-- `s.pdf` is the MuPDF `PDFDocument`; `s.page(i)` a cached `PDFPage`; `s.mupdf` the module.
+- `s.pdf` is the MuPDF `PDFDocument`; `s.page(i)` a cached `PDFPage`; `s.mupdf` the module;
+  `s.sourceBytes` the exact bytes the file was opened from (null for converted files).
 - Never keep `PDFPage`/`PDFAnnotation` objects across calls; ask the session again.
 - Mutations must be synchronous (MuPDF's journal cannot span awaits). Do async work (fetching,
   parsing) in a query op or in the UI, then call a mutation with the result.

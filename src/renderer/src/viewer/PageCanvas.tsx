@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { usePageVersion, type DocumentModel } from '../document/DocumentModel'
+import { useDocState, usePageVersion, type DocumentModel } from '../document/DocumentModel'
 import { useApp } from '../app/store'
 import type { PageGeometry } from './geometry'
 import { drawResult, renderQueueFor } from './renderQueue'
@@ -29,6 +29,7 @@ export function PageCanvas({
   const detailRef = useRef<HTMLCanvasElement>(null)
   const version = usePageVersion(doc, pageIndex)
   const colorMode = useApp((s) => s.prefs.pageColors)
+  const annots = useDocState(doc, (s) => s.showAnnotations)
   const dpr = window.devicePixelRatio || 1
   const desired = geometry.scale * dpr
   const area = geometry.width * geometry.height
@@ -39,11 +40,11 @@ export function PageCanvas({
   // Base layer: whole page.
   useEffect(() => {
     const q = renderQueueFor(doc)
-    const key = `p${pageIndex}:v${version}:s${baseScale.toFixed(4)}:r${geometry.rotation}:${colorMode}:h${hiddenKey}`
+    const key = `p${pageIndex}:v${version}:s${baseScale.toFixed(4)}:r${geometry.rotation}:${colorMode}:h${hiddenKey}:a${annots}`
     const req = q.request(
       key,
       pageIndex,
-      { scale: baseScale, rotate: geometry.rotation, colorMode, hide: hidden },
+      { scale: baseScale, rotate: geometry.rotation, colorMode, hide: hidden, annots },
       priority
     )
     let alive = true
@@ -56,7 +57,7 @@ export function PageCanvas({
     }
     // priority intentionally excluded: re-prioritising should not restart renders
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, pageIndex, version, baseScale, geometry.rotation, colorMode, hiddenKey])
+  }, [doc, pageIndex, version, baseScale, geometry.rotation, colorMode, hiddenKey, annots])
 
   // Detail tile: sharp rendering of the visible region at high zoom.
   const vr = visibleRect
@@ -76,7 +77,7 @@ export function PageCanvas({
       bottom: Math.min(geometry.cssHeight, vr.top + vr.height + margin)
     }
     const q = renderQueueFor(doc)
-    const key = `d${pageIndex}:v${version}:s${desired.toFixed(4)}:r${geometry.rotation}:${colorMode}:${tileKey}:h${hiddenKey}`
+    const key = `d${pageIndex}:v${version}:s${desired.toFixed(4)}:r${geometry.rotation}:${colorMode}:${tileKey}:h${hiddenKey}:a${annots}`
     let alive = true
     const timer = window.setTimeout(() => {
       const req = q.request(
@@ -87,6 +88,7 @@ export function PageCanvas({
           rotate: geometry.rotation,
           colorMode,
           hide: hidden,
+          annots,
           clip: [clip.left * dpr, clip.top * dpr, clip.right * dpr, clip.bottom * dpr]
         },
         priority - 0.5
@@ -110,7 +112,7 @@ export function PageCanvas({
       cancel()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, pageIndex, version, desired, needsDetail, tileKey, geometry.rotation, colorMode, hiddenKey])
+  }, [doc, pageIndex, version, desired, needsDetail, tileKey, geometry.rotation, colorMode, hiddenKey, annots])
 
   return (
     <>

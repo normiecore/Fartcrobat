@@ -48,6 +48,8 @@ export interface DocState {
   selection: Selection
   search: SearchState
   busy: string | null
+  /** View > Show/Hide > Comments. Annotations are left out of rendering when false. */
+  showAnnotations: boolean
 }
 
 /** Imperative view control, provided by the mounted Viewer. */
@@ -118,7 +120,8 @@ export class DocumentModel {
       currentPage: 0,
       selection: { kind: 'none' },
       search: emptySearch(),
-      busy: null
+      busy: null,
+      showAnnotations: true
     }))
     this.engine.onChanges((cs) => void this.applyChanges(cs))
   }
