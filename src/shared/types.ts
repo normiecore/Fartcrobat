@@ -209,6 +209,8 @@ export interface PrintJob {
   deviceName?: string
   duplex?: 'simplex' | 'shortEdge' | 'longEdge'
   jobName?: string
+  /** Paper size to print on (Electron names), or width/height in microns. Printer default when omitted. */
+  pageSize?: 'A0' | 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'Legal' | 'Letter' | 'Tabloid' | { width: number; height: number }
 }
 
 export interface SystemInfo {
