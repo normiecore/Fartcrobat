@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type annotOps from '@engine/ops/annots'
-import printOps from '@features/print/engine'
+import printOps, { MAX_PRINT_PIXELS } from '@features/print/engine'
 import {
   bookletSpreads,
   cellPosition,
@@ -478,7 +478,7 @@ describe('print rendering (engine)', () => {
   it('lowers the resolution of huge renders instead of failing', async () => {
     const e = await openFixture('text.pdf')
     const r = await e.ops<PrintOps>('print').renderPage(0, { scale: 20, content: 'document' })
-    expect(r.width * r.height).toBeLessThanOrEqual(36_000_000 * 1.01)
+    expect(r.width * r.height).toBeLessThanOrEqual(MAX_PRINT_PIXELS * 1.01)
     expect(r.scale).toBeLessThan(20)
     expect(r.width).toBeCloseTo(612 * r.scale, -1)
   })

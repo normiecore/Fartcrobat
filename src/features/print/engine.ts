@@ -5,7 +5,7 @@ import { isNull, readString } from '@engine/util/pdf'
 import type { PrintContent } from './settings'
 
 /** Largest page image the print renderer produces; bigger requests are rendered at a lower resolution. */
-export const MAX_PRINT_PIXELS = 36_000_000
+export const MAX_PRINT_PIXELS = 24_000_000
 
 export interface PrintRenderOptions {
   /** Device pixels per point. */
