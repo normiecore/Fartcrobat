@@ -9,7 +9,6 @@ import type { Point, Quad, Rect } from '@shared/geometry'
 import {
   caretAt,
   getLoadedText,
-  isOverText,
   loadText,
   rangeQuads,
   toast,
@@ -122,7 +121,7 @@ export function TextMarkupLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     const d = useTextDrag.getState().drag
     if (!d || d.docId !== doc.id) {
       const t = getLoadedText(doc, pageIndex)
-      el.style.cursor = t && hasText(t) ? (isOverText(t, geometry.eventToPage(e, el)) ? 'text' : 'default') : tool.markup === 'Highlight' ? 'crosshair' : 'not-allowed'
+      el.style.cursor = !t || hasText(t) ? 'text' : tool.markup === 'Highlight' ? 'crosshair' : 'not-allowed'
       return
     }
     const moved = d.moved || Math.hypot(e.clientX - d.startClient[0], e.clientY - d.startClient[1]) >= 3

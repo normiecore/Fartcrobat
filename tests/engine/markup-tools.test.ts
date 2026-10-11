@@ -198,6 +198,36 @@ describe('markup-tools engine', () => {
     expect((await annots.get(ink.id)).ink).toHaveLength(2)
   })
 
+  it('embeds a file in a file attachment comment', async () => {
+    const { e, annots, markup } = await setup()
+    const data = new TextEncoder().encode('quarterly numbers')
+    const [att] = await markup.create(
+      [
+        {
+          page: 0,
+          spec: { type: 'FileAttachment', rect: [500, 100, 520, 120], icon: 'Paperclip', color: '#2196f3', contents: 'numbers.txt' },
+          attachment: { name: 'numbers.txt', data, mime: 'text/plain' }
+        }
+      ],
+      'Add File Attachment'
+    )
+    expect(att.type).toBe('FileAttachment')
+    expect(att.fileName).toBe('numbers.txt')
+    expect(att.icon).toBe('Paperclip')
+    expect(e.lastChanges?.journal.undoLabel).toBe('Add File Attachment')
+    const again = await roundTrip(e)
+    const list = await again.ops<typeof annotOps>('annots').list(0)
+    const file = await again.ops<typeof annotOps>('annots').attachment(list[0].id)
+    expect(new TextDecoder().decode(file!.data)).toBe('quarterly numbers')
+    // undo keeps working after embedding a file
+    await markup.create([{ page: 0, spec: { type: 'Square', rect: [10, 10, 50, 50], color: '#000000' } }], 'Add Rectangle')
+    expect(e.lastChanges?.journal.undoLabel).toBe('Add Rectangle')
+    await e.doc.undo()
+    await e.doc.undo()
+    expect(await annots.list(0)).toHaveLength(0)
+    await expect(markup.create([{ page: 0, spec: { type: 'FileAttachment', rect: [0, 0, 20, 20], file: { name: 'x', data } } }], 'x')).rejects.toThrow(/attachment/)
+  })
+
   it('rejects bad requests with clear errors', async () => {
     const { markup } = await setup()
     await expect(markup.create([], 'x')).rejects.toThrow(/Nothing to create/)

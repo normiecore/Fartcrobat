@@ -49,6 +49,13 @@ export const NOTE_ICONS: { value: string; label: string }[] = [
   { value: 'Paragraph', label: 'Paragraph' }
 ]
 
+export const ATTACH_ICONS: { value: string; label: string }[] = [
+  { value: 'PushPin', label: 'Push pin' },
+  { value: 'Paperclip', label: 'Paperclip' },
+  { value: 'Graph', label: 'Graph' },
+  { value: 'Tag', label: 'Tag' }
+]
+
 const FONTS: { value: FontKey; label: string }[] = [
   { value: 'Helv', label: 'Helvetica' },
   { value: 'TiRo', label: 'Times' },
@@ -260,6 +267,16 @@ export function MarkupToolbar({ doc }: { doc: DocumentModel }) {
       {has('icon') && (
         <Labeled label="Icon">
           <Select aria-label="Note icon" value={style.icon} onChange={(v) => set({ icon: v })} options={NOTE_ICONS} />
+        </Labeled>
+      )}
+      {has('attachIcon') && (
+        <Labeled label="Icon">
+          <Select
+            aria-label="Attachment icon"
+            value={ATTACH_ICONS.some((i) => i.value === style.icon) ? style.icon : 'PushPin'}
+            onChange={(v) => set({ icon: v })}
+            options={ATTACH_ICONS}
+          />
         </Labeled>
       )}
       {has('eraserSize') && (

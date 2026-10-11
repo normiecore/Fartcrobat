@@ -23,7 +23,7 @@ export interface ToolStyle {
   fontSize: number
   fontColor: string
   font: FontKey
-  /** Sticky note icon. */
+  /** Sticky note icon (or file attachment icon for Attach file). */
   icon: string
   /** Eraser diameter in points. */
   eraserSize: number
@@ -56,6 +56,7 @@ export const BUILTIN: Record<string, Partial<ToolStyle>> = {
   typewriter: { fontColor: '#000000', fontSize: 12 },
   textbox: { fontColor: '#000000', fill: null, width: 1, fontSize: 12 },
   callout: { fontColor: '#000000', fill: '#FFFFFF', width: 1, fontSize: 12, endEnd: 'OpenArrow' },
+  attachFile: { color: '#2196F3', icon: 'PushPin' },
   pencil: { color: '#2196F3', width: 2 },
   eraser: { eraserSize: 10 },
   rectangle: { color: '#F44336', width: 2 },
@@ -177,6 +178,7 @@ export function styleSpec(tool: MarkupTool, st: ToolStyle): AnnotSpec {
     case 'replaceText':
       return { color: st.color, opacity }
     case 'note':
+    case 'attach':
       return { color: st.color, opacity, icon: st.icon }
     case 'typewriter':
       return { color: null, borderWidth: 0, fontName: st.font, fontSize: st.fontSize, textColor: st.fontColor, opacity, intent: 'FreeTextTypeWriter' }

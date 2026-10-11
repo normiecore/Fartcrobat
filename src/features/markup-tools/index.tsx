@@ -19,7 +19,7 @@ import { ClickLayer, placeNote } from './layers/ClickLayer'
 import { EraserLayer } from './layers/EraserLayer'
 import { PencilLayer, endPencilSession } from './layers/PencilLayer'
 import { PolyLayer, cancelPolyDraft } from './layers/PolyLayer'
-import { ShapeLayer } from './layers/ShapeLayer'
+import { ShapeLayer, cancelCalloutTip } from './layers/ShapeLayer'
 import { TextMarkupLayer, useTextDrag } from './layers/TextMarkupLayer'
 import { CommentPanel } from './Panel'
 import { loadToolStyles, syncCommentDefaults } from './style'
@@ -35,6 +35,7 @@ const LAYERS: Record<ToolKind, ComponentType<PageLayerProps>> = {
   typewriter: ClickLayer,
   textbox: ShapeLayer,
   callout: ShapeLayer,
+  attach: ClickLayer,
   rect: ShapeLayer,
   line: ShapeLayer,
   areaHighlight: ShapeLayer,
@@ -69,6 +70,7 @@ const tools: ToolDefinition[] = TOOLS.map((t) => ({
   },
   onDeactivate: () => {
     cancelPolyDraft()
+    cancelCalloutTip()
     endPencilSession()
     useTextDrag.setState({ drag: null })
   }

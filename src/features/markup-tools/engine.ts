@@ -7,7 +7,8 @@ import type { Point, Quad, Rect } from '@shared/geometry'
 import { transformRect } from '@shared/geometry'
 import { defineOps, EngineError, mutation } from '@engine/define'
 import annotOps, { annotInfo, applySpec, type AnnotInfo, type AnnotSpec, type LineEnding } from '@engine/ops/annots'
-import type { PDFAnnotation, Session } from '@engine/session'
+import type { PDFAnnotation, PDFObject, Session } from '@engine/session'
+import { pdfDate } from '@engine/util/pdf'
 
 const coreCreate = annotOps.ops.create
 const coreDelete = annotOps.ops.delete
@@ -22,6 +23,8 @@ export interface CreateItem {
    * rounded text-highlight shape.
    */
   rectAppearance?: boolean
+  /** File to embed in a FileAttachment annotation (use this rather than spec.file, see embedFile). */
+  attachment?: { name: string; data: Uint8Array; mime: string }
 }
 
 function info(s: Session, annot: PDFAnnotation, page: number): AnnotInfo {
@@ -70,10 +73,44 @@ function setRectHighlightAppearance(s: Session, page: number, annot: PDFAnnotati
   annot.setAppearance(null, null, s.mupdf.Matrix.identity, bbox, res, ops.join('\n'))
 }
 
+/**
+ * Embeds a file as a /Filespec with an /EmbeddedFile stream. Built by hand because MuPDF's
+ * addEmbeddedFile() leaves a journal operation open, which silently breaks undo for the rest of the
+ * session.
+ */
+function embedFile(s: Session, file: { name: string; data: Uint8Array; mime: string }): PDFObject {
+  const pdf = s.pdf
+  const now = pdfDate(new Date())
+  const params = pdf.newDictionary()
+  params.put('Size', pdf.newInteger(file.data.length))
+  params.put('CreationDate', pdf.newString(now))
+  params.put('ModDate', pdf.newString(now))
+  const ef = pdf.newDictionary()
+  ef.put('Type', pdf.newName('EmbeddedFile'))
+  if (file.mime) ef.put('Subtype', pdf.newName(file.mime))
+  ef.put('Params', params)
+  const stream = pdf.addStream(file.data, ef)
+  const efd = pdf.newDictionary()
+  efd.put('F', stream)
+  efd.put('UF', stream)
+  const spec = pdf.newDictionary()
+  spec.put('Type', pdf.newName('Filespec'))
+  spec.put('F', pdf.newString(file.name))
+  spec.put('UF', pdf.newString(file.name))
+  spec.put('EF', efd)
+  return pdf.addObject(spec)
+}
+
 function createOne(s: Session, item: CreateItem): AnnotInfo {
+  if (item.spec.file) throw new EngineError('Pass files as an attachment, not spec.file', 'BAD_SPEC')
   const created = coreCreate(s, item.page, item.spec)
-  if (!item.calloutStyle && !item.rectAppearance) return created
+  if (!item.calloutStyle && !item.rectAppearance && !item.attachment) return created
   const { annot } = s.requireAnnotation(created.id, item.page)
+  if (item.attachment) {
+    if (annot.getType() !== 'FileAttachment') throw new EngineError('Only file attachments can carry a file', 'BAD_SPEC')
+    annot.setFileSpec(embedFile(s, item.attachment))
+    annot.update()
+  }
   if (item.calloutStyle) {
     annot.setCalloutStyle(item.calloutStyle)
     annot.update()

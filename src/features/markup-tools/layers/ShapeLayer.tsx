@@ -3,6 +3,7 @@
  * highlight area, and the two-step callout (click the arrow tip, then click or drag the text box).
  */
 import { useRef, useState } from 'react'
+import { create } from 'zustand'
 import type { Point, Rect } from '@shared/geometry'
 import type { DocumentModel, PageLayerProps } from '@renderer/sdk'
 import { createWith, finishCreate, textForNewComment } from '../actions'
@@ -80,22 +81,34 @@ async function createCallout(doc: DocumentModel, tool: MarkupTool, page: number,
   if (created) finishCreate(doc, tool, page, [created[0].id], { edit: created[0].id })
 }
 
-/** Callout tip waiting for its text box, shared so only one page shows it. */
-let pendingTip: { docId: string; page: number; tip: Point } | null = null
+/** Instruction shown next to a callout tip; flips to the left near the right edge of the page. */
+function TipHint({ at, pageWidth }: { at: Point; pageWidth: number }) {
+  const flip = at[0] > pageWidth - 340
+  return (
+    <div className="fc-markup-tools-tip" style={flip ? { right: pageWidth - at[0] + 10, top: at[1] + 10 } : { left: at[0] + 10, top: at[1] + 10 }}>
+      Now click or drag where the text box goes (Esc cancels)
+    </div>
+  )
+}
+
+/** Callout arrow tip waiting for its text box (one at a time, across pages). */
+export const useCalloutTip = create<{ tip: { docId: string; page: number; point: Point } | null }>(() => ({ tip: null }))
+
+export function cancelCalloutTip() {
+  useCalloutTip.setState({ tip: null })
+}
 
 export function ShapeLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const ref = useRef<HTMLDivElement>(null)
   const { tool, style } = useActiveToolAndStyle()
   const [drag, setDrag] = useState<Drag | null>(null)
-  const [tip, setTipState] = useState<Point | null>(() => (pendingTip && pendingTip.docId === doc.id && pendingTip.page === pageIndex ? pendingTip.tip : null))
+  const pending = useCalloutTip((s) => s.tip)
+  const tip = pending && pending.docId === doc.id && pending.page === pageIndex ? pending.point : null
   const [hover, setHover] = useState<Point | null>(null)
   const phase1 = useRef(false)
   const size = { width: geometry.width, height: geometry.height }
 
-  const setTip = (p: Point | null) => {
-    pendingTip = p ? { docId: doc.id, page: pageIndex, tip: p } : null
-    setTipState(p)
-  }
+  const setTip = (p: Point | null) => useCalloutTip.setState({ tip: p ? { docId: doc.id, page: pageIndex, point: p } : null })
 
   useKeys(!!tip || !!drag, (e) => {
     if (e.key === 'Escape') {
@@ -115,7 +128,7 @@ export function ShapeLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     const p = pagePoint(e, el, geometry)
     el.setPointerCapture(e.pointerId)
     if (isCallout && !tip) {
-      if (pendingTip && pendingTip.docId === doc.id && pendingTip.page !== pageIndex) pendingTip = null
+      // (a tip waiting on another page is replaced by this one)
       setTip(p)
       phase1.current = true
     } else phase1.current = false
@@ -191,11 +204,7 @@ export function ShapeLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       onPointerCancel={() => setDrag(null)}
     >
       {preview && <PreviewSvg geometry={geometry}>{preview}</PreviewSvg>}
-      {isCallout && tip && !drag && (
-        <div className="fc-markup-tools-tip" style={{ left: geometry.toCss(tip)[0] + 10, top: geometry.toCss(tip)[1] + 10 }}>
-          Now click or drag where the text box goes (Esc cancels)
-        </div>
-      )}
+      {isCallout && tip && !drag && <TipHint at={geometry.toCss(tip)} pageWidth={geometry.cssWidth} />}
     </div>
   )
 }

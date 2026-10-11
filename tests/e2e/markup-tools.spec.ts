@@ -76,6 +76,30 @@ async function undoRedo(page: Page, type: string, count: number) {
   await expect.poll(async () => (await ofType(page, type)).length).toBe(count)
 }
 
+/**
+ * Records 'fartcrobat:edit-annotation' events (sent so the comments feature opens its popup or inline
+ * editor) and stops them, so an editor opened by the comments feature cannot take keyboard focus in
+ * the middle of these tests.
+ */
+async function captureEditEvents(page: Page) {
+  await page.evaluate(() => {
+    const w = window as any
+    w.__editEvents = []
+    window.addEventListener(
+      'fartcrobat:edit-annotation',
+      (e) => {
+        w.__editEvents.push((e as CustomEvent).detail)
+        e.stopImmediatePropagation()
+      },
+      true
+    )
+  })
+}
+
+async function editEvents(page: Page): Promise<{ docId: string; id: number; page: number }[]> {
+  return page.evaluate(() => (window as any).__editEvents)
+}
+
 /** Activates a tool and waits until the options bar is shown and the page layout has settled. */
 async function activate(page: Page, id: string) {
   await runCommand(page, id)
@@ -90,6 +114,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
+    await captureEditEvents(page)
     await page.waitForTimeout(400)
 
     // ---- 1. Highlight from the quick toolbar: drag across "quick brown fox"
@@ -225,6 +250,8 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     await expect.poll(async () => (await ofType(page, 'Text')).length).toBe(1)
     const note = (await ofType(page, 'Text'))[0]
     if (!hasComments) expect(note.contents).toBe('Please check this paragraph.')
+    // with the comments feature installed, its popup note is asked to open for the new note
+    else await expect.poll(async () => (await editEvents(page)).map((ev) => ev.id)).toContain(note.id)
     expect(note.rect[0]).toBeCloseTo(492, -1)
     await page.waitForTimeout(400)
     await shot(page, '12-note')
@@ -270,6 +297,7 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
+    await captureEditEvents(page)
     await runCommand(page, 'view.fitPage')
     await page.waitForTimeout(400)
     await page.locator('.viewer-scroll').click({ position: { x: 5, y: 5 } })
@@ -409,6 +437,7 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
+    await captureEditEvents(page)
     await runCommand(page, 'view.fitPage')
     await page.waitForTimeout(300)
     const hasComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
@@ -450,6 +479,7 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     await expect.poll(async () => (await ofType(page, 'FreeText')).length).toBe(1)
     const ft = (await ofType(page, 'FreeText'))[0] as any
     expect(ft.intent).toBe('FreeTextTypeWriter')
+    if (hasComments) await expect.poll(async () => (await editEvents(page)).map((ev) => ev.id)).toContain(ft.id)
     expect(ft.borderWidth).toBe(0)
     expect(ft.rect[0]).toBeLessThan(300)
     expect(ft.rect[1]).toBeLessThan(120)
@@ -503,6 +533,23 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     }
     await expect.poll(async () => (await ofType(page, 'Highlight')).length).toBe(1)
     if (!hasComments) expect((await ofType(page, 'Highlight'))[0].contents).toBe('Greeting')
+
+    // ---- Attach file: click, choose a file (native dialog stubbed), the file is embedded
+    await app.evaluate(({ dialog }, file) => {
+      ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [file] })
+    }, fixturePath('scan.png'))
+    await activate(page, 'comment.attachFile')
+    const at = await toScreen(page, 0, 540, 300)
+    await page.mouse.click(at.x, at.y)
+    await expect.poll(async () => (await ofType(page, 'FileAttachment')).length).toBe(1)
+    const att = (await ofType(page, 'FileAttachment'))[0] as any
+    expect(att.fileName).toBe('scan.png')
+    expect(att.icon).toBe('PushPin')
+    const size = await page.evaluate(async (id) => (await (window as any).__fartcrobat.getActiveDoc().ops('annots').attachment(id))?.data.length, att.id)
+    expect(size).toBeGreaterThan(1000)
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Add File Attachment')
+    await undoRedo(page, 'FileAttachment', 1)
+
     await page.waitForTimeout(400)
     await shot(page, '22-more-tools')
 
@@ -524,6 +571,52 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     expect(area.quads[0][7]).toBeCloseTo(150, 0)
     await page.waitForTimeout(500)
     await shot(page, '24-scanned-area')
+  } finally {
+    await app.close()
+  }
+})
+
+test('with the comments feature installed, new comments open its editor instead of a dialog', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await captureEditEvents(page)
+    // stand-in for the comments feature when it is not part of this build
+    await page.evaluate(() => {
+      const reg = (window as any).__fartcrobat.registry
+      if (!reg.features.some((f: any) => f.id === 'comments')) reg.register({ id: 'comments' })
+    })
+    const docId = await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().id)
+
+    await activate(page, 'comment.note')
+    const n = await toScreen(page, 0, 520, 140)
+    await page.mouse.click(n.x, n.y)
+    await expect.poll(async () => (await ofType(page, 'Text')).length).toBe(1)
+    const note = (await ofType(page, 'Text'))[0]
+    await expect.poll(() => editEvents(page)).toEqual([{ docId, id: note.id, page: 0 }])
+    expect(note.contents).toBe('')
+    await expect(page.locator('.ui-dialog')).toHaveCount(0)
+
+    await activate(page, 'comment.textbox')
+    const t0 = await toScreen(page, 0, 300, 520)
+    await drag(page, t0, { x: t0.x + 180, y: t0.y + 50 })
+    await expect.poll(async () => (await ofType(page, 'FreeText')).length).toBe(1)
+    const box = (await ofType(page, 'FreeText'))[0]
+    await expect.poll(async () => (await editEvents(page)).length).toBe(2)
+    expect((await editEvents(page))[1].id).toBe(box.id)
+    // the text box keeps the size that was drawn
+    expect(box.rect[2] - box.rect[0]).toBeGreaterThan(100)
+
+    await activate(page, 'comment.replaceText')
+    const q = await textQuads(page, 0, 'lazy dog')
+    const y = (q.first[1] + q.first[5]) / 2
+    await drag(page, await toScreen(page, 0, q.first[0] + 0.3, y), await toScreen(page, 0, q.last[2] - 0.3, y))
+    await expect.poll(async () => (await ofType(page, 'Caret')).length).toBe(1)
+    const caret = (await ofType(page, 'Caret'))[0]
+    await expect.poll(async () => (await editEvents(page)).length).toBe(3)
+    expect((await editEvents(page))[2].id).toBe(caret.id)
+    await expect(page.locator('.ui-dialog')).toHaveCount(0)
   } finally {
     await app.close()
   }

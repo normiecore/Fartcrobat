@@ -6,9 +6,8 @@ const tool = (id: string) => TOOL_BY_ID.get(id)!
 
 describe('markup-tools tool definitions', () => {
   it('registers every tool id from the cross-feature contract', () => {
-    const ids = TOOLS.map((t) => t.id).sort()
-    expect(ids).toEqual(
-      [
+    const ids = TOOLS.map((t) => t.id)
+    const contract = [
         'comment.note',
         'comment.highlight',
         'comment.underline',
@@ -29,8 +28,11 @@ describe('markup-tools tool definitions', () => {
         'comment.polyline',
         'comment.cloud',
         'comment.areaHighlight'
-      ].sort()
-    )
+      ]
+    for (const id of contract) expect(ids).toContain(id)
+    // plus Acrobat's "Attach file" comment tool
+    expect(ids).toContain('comment.attachFile')
+    expect(new Set(ids).size).toBe(TOOLS.length)
     expect(new Set(TOOLS.map((t) => t.key)).size).toBe(TOOLS.length)
   })
 
@@ -48,6 +50,7 @@ describe('markup-tools styles', () => {
   it('maps tool settings to annotation properties', () => {
     expect(styleSpec(tool('comment.highlight'), builtinStyle('highlight'))).toEqual({ color: '#FFEB3B', opacity: 1 })
     expect(styleSpec(tool('comment.note'), builtinStyle('note'))).toMatchObject({ icon: 'Comment', color: '#FFEB3B' })
+    expect(styleSpec(tool('comment.attachFile'), builtinStyle('attachFile'))).toMatchObject({ icon: 'PushPin' })
 
     const tw = styleSpec(tool('comment.typewriter'), { ...builtinStyle('typewriter'), fontSize: 16, fontColor: '#0000FF', font: 'Cour' })
     expect(tw).toMatchObject({ intent: 'FreeTextTypeWriter', borderWidth: 0, color: null, fontSize: 16, textColor: '#0000FF', fontName: 'Cour' })

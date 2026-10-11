@@ -8,6 +8,7 @@ import {
   LineSquiggle,
   MessageSquareText,
   MoveUpRight,
+  Paperclip,
   Pencil,
   Pentagon,
   Replace,
@@ -31,6 +32,7 @@ export type ToolKind =
   | 'typewriter'
   | 'textbox'
   | 'callout'
+  | 'attach'
   | 'pencil'
   | 'eraser'
   | 'rect'
@@ -51,6 +53,7 @@ export type StyleProp =
   | 'fontColor'
   | 'font'
   | 'icon'
+  | 'attachIcon'
   | 'eraserSize'
 
 export type Section = 'markup' | 'comment' | 'drawing'
@@ -244,6 +247,20 @@ export const TOOLS: MarkupTool[] = [
     hint: 'Click what the arrow should point at, then click or drag where the text box goes.',
     keywords: ['callout', 'leader', 'pointer', 'text box'],
     edits: true
+  },
+  {
+    id: 'comment.attachFile',
+    key: 'attachFile',
+    kind: 'attach',
+    label: 'Attach file',
+    menuLabel: 'Attach File',
+    undoLabel: 'Add File Attachment',
+    icon: Paperclip,
+    section: 'comment',
+    annotType: 'FileAttachment',
+    props: ['color', 'attachIcon'],
+    hint: 'Click where the attachment icon should go, then choose the file to attach.',
+    keywords: ['attach', 'attachment', 'file', 'embed', 'paperclip']
   },
   // ---- Drawing
   {

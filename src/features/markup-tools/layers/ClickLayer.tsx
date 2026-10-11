@@ -3,9 +3,9 @@
  * what will be placed follows the pointer.
  */
 import { useRef, useState } from 'react'
-import { StickyNote } from 'lucide-react'
+import { Paperclip, StickyNote } from 'lucide-react'
 import type { Point, Rect } from '@shared/geometry'
-import { getLoadedText, loadText, type DocumentModel, type PageLayerProps } from '@renderer/sdk'
+import { basename, getLoadedText, invoke, loadText, readFile, showError, withProgress, type DocumentModel, type PageLayerProps } from '@renderer/sdk'
 import { caretRectAt, commentsInstalled, createWith, finishCreate, insertionPoint, textForNewComment } from '../actions'
 import { fitRect } from '../geometry'
 import { getToolStyle, styleSpec, type ToolStyle } from '../style'
@@ -76,6 +76,60 @@ export async function placeCaret(doc: DocumentModel, tool: MarkupTool, page: num
   if (created) finishCreate(doc, tool, page, [created[0].id], { edit: created[0].id })
 }
 
+const MIME: Record<string, string> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  html: 'text/html',
+  xml: 'application/xml',
+  json: 'application/json',
+  zip: 'application/zip',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+}
+
+export function mimeFor(name: string): string {
+  return MIME[(/\.([^.]+)$/.exec(name)?.[1] ?? '').toLowerCase()] ?? 'application/octet-stream'
+}
+
+/** Attach file: choose a file and embed it in a FileAttachment comment at the clicked point. */
+export async function placeAttachment(doc: DocumentModel, tool: MarkupTool, page: number, p: Point, size: { width: number; height: number }) {
+  let paths: string[]
+  try {
+    paths = await invoke('file:openDialog', { title: 'Attach File', multiple: false })
+  } catch (err) {
+    showError(err, 'Could not open the file chooser')
+    return
+  }
+  const path = paths[0]
+  if (!path) return
+  const name = basename(path)
+  let data: Uint8Array
+  try {
+    data = await withProgress(`Attaching ${name}…`, () => readFile(path))
+  } catch (err) {
+    showError(err, `Could not read ${name}`)
+    return
+  }
+  const rect = fitRect([p[0] - 8, p[1] - 8, p[0] + 12, p[1] + 12], size.width, size.height)
+  const created = await createWith(doc, tool, [
+    {
+      page,
+      spec: { type: 'FileAttachment', rect, contents: name, ...styleSpec(tool, getToolStyle(tool.key)) },
+      attachment: { name, data, mime: mimeFor(name) }
+    }
+  ])
+  if (created) finishCreate(doc, tool, page, [created[0].id])
+}
+
 export function ClickLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const ref = useRef<HTMLDivElement>(null)
   const { tool, style } = useActiveToolAndStyle()
@@ -94,17 +148,19 @@ export function ClickLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     if (tool.kind === 'note') void placeNote(doc, tool, pageIndex, p, size).finally(done)
     else if (tool.kind === 'typewriter') void placeTypewriter(doc, tool, pageIndex, p, size).finally(done)
     else if (tool.kind === 'insertText') void placeCaret(doc, tool, pageIndex, p).finally(done)
+    else if (tool.kind === 'attach') void placeAttachment(doc, tool, pageIndex, p, size).finally(done)
     else done()
   }
 
   let ghost: React.ReactNode = null
   if (hover) {
-    if (tool.kind === 'note') {
+    if (tool.kind === 'note' || tool.kind === 'attach') {
       const c = geometry.toCss([hover[0] - 8, hover[1] - 8])
       const s = geometry.len(16)
+      const Icon = tool.kind === 'note' ? StickyNote : Paperclip
       ghost = (
         <div className="fc-markup-tools-ghost-note" style={{ left: c[0], top: c[1], width: s, height: s, background: style.color }}>
-          <StickyNote size={Math.max(10, s * 0.8)} />
+          <Icon size={Math.max(10, s * 0.8)} />
         </div>
       )
     } else if (tool.kind === 'typewriter') {
