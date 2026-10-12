@@ -8,7 +8,7 @@ import type textOps from '@engine/ops/text'
 import type { ChangeSet, DocInfo, JournalState, PageLayoutMode, SaveOptions, ZoomMode } from '@shared/types'
 import { EngineClient, type CallOptions } from '../engine/EngineClient'
 import type { PageText, SearchHit, SearchOptions, TextRange } from './textModel'
-import { searchPage } from './textModel'
+import { rangeRects, searchPage } from './textModel'
 
 export type Selection =
   | { kind: 'none' }
@@ -81,6 +81,11 @@ const emptySearch = (): SearchState => ({
   done: false,
   pagesSearched: 0
 })
+
+/** Hits of both lists in document order (the inputs keep their object identity). */
+function mergeHits(a: SearchHit[], b: SearchHit[]): SearchHit[] {
+  return [...a, ...b].sort((x, y) => x.page - y.page || x.start - y.start)
+}
 
 /**
  * One open document (one tab). Owns its engine worker, reactive state, caches and the view
@@ -175,6 +180,14 @@ export class DocumentModel {
       }
     }
     const info = this.state.info
+    // Keep the previous text of changed pages to tell whether character offsets moved.
+    const previousText = new Map<number, Promise<PageText>>()
+    if (!cs.all && !cs.structure) {
+      for (const p of cs.pages) {
+        const e = this.textCache.get(p)
+        if (e) previousText.set(p, e.promise)
+      }
+    }
     if (cs.all) this.textCache.clear()
     for (const p of cs.pages) this.textCache.delete(p)
     this.set((s) => {
@@ -197,8 +210,66 @@ export class DocumentModel {
       // Search hits point at character offsets that may no longer exist.
       if (this.state.search.hits.length) this.set({ search: { ...this.state.search, hits: [], active: -1, done: false } })
       if (this.state.selection.kind !== 'none') this.set({ selection: { kind: 'none' } })
+    } else if (cs.pages.length) {
+      void this.revalidateTextOffsets(cs.pages, previousText)
     }
     for (const l of this.changeListeners) l(cs)
+  }
+
+  /**
+   * After page-only changes (s.touch(page)), search hits and text selections on those pages are
+   * character offsets into the old text. When the text really changed (Edit Text, redaction...),
+   * re-run the search on those pages and drop the selection there; a change that leaves the text
+   * alone (a new comment, a form value) keeps both.
+   */
+  private async revalidateTextOffsets(pages: number[], previousText: Map<number, Promise<PageText>>) {
+    for (const p of pages) {
+      const before = this.state
+      const searching = !!before.search.query.trim()
+      const sel = before.selection
+      const selected = sel.kind === 'text' && sel.ranges.some((r) => r.page === p)
+      if (!searching && !selected) continue
+      const token = this.searchToken
+      let prev: PageText | null = null
+      try {
+        prev = (await previousText.get(p)) ?? null
+      } catch {}
+      // The current text (again if the page changed once more while it loaded).
+      let next: PageText | null = null
+      let version: number
+      do {
+        version = this.pageVersion(p)
+        try {
+          next = await this.pageText(p)
+        } catch {
+          next = null
+        }
+      } while (!this.closed && version !== this.pageVersion(p))
+      if (this.closed) return
+      if (next && prev && next.text === prev.text) continue
+      const cur = this.state.selection
+      if (cur === sel && cur.kind === 'text') {
+        const ranges = cur.ranges.filter((r) => r.page !== p)
+        this.set({ selection: ranges.length ? { kind: 'text', ranges } : { kind: 'none' } })
+      }
+      if (searching && token === this.searchToken) {
+        const s = this.state.search
+        const found = next ? searchPage(next, s.query, s.options) : []
+        const old = s.hits[s.active]
+        const hits = mergeHits(
+          s.hits.filter((h) => h.page !== p),
+          found
+        )
+        let active = -1
+        if (old && old.page !== p) active = hits.indexOf(old)
+        else if (old) {
+          const onPage = hits.filter((h) => h.page === p)
+          const same = onPage.find((h) => h.start >= old.start) ?? onPage.at(-1)
+          active = same ? hits.indexOf(same) : hits.length ? this.firstHitFrom(hits, p) : -1
+        }
+        this.set({ search: { ...s, hits, active } })
+      }
+    }
   }
 
   /** Called after every engine change (after the state was updated). */
@@ -255,37 +326,36 @@ export class DocumentModel {
   async search(query: string, options: SearchOptions = {}, opts: { startPage?: number } = {}) {
     const token = ++this.searchToken
     const n = this.pageCount
-    this.set({ search: { ...emptySearch(), query, options, running: !!query } })
-    if (!query.trim()) return
+    const running = !!query.trim()
+    this.set({ search: { ...emptySearch(), query, options, running } })
+    if (!running) return
     const start = opts.startPage ?? this.state.currentPage
-    const hits: SearchHit[] = []
+    const stale = () => token !== this.searchToken || this.closed
     for (let k = 0; k < n; k++) {
-      if (token !== this.searchToken || this.closed) return
+      if (stale()) return
       const page = (start + k) % n
-      let t: PageText
+      let found: SearchHit[] = []
       try {
-        t = await this.pageText(page)
-      } catch {
-        continue
-      }
-      const found = searchPage(t, query, options)
-      if (found.length) {
-        hits.push(...found)
-        hits.sort((a, b) => a.page - b.page || a.start - b.start)
-      }
-      const active = this.state.search.active
+        found = searchPage(await this.pageText(page), query, options)
+      } catch {}
+      // A newer search (or closing the document) may have started while the text loaded.
+      if (stale()) return
+      const s = this.state.search
+      // The pages are searched from the start page round to it, but hits are kept in document
+      // order, so the active hit is tracked by identity rather than by index.
+      const current = s.hits[s.active]
+      const hits = found.length
+        ? mergeHits(
+            s.hits.filter((h) => h.page !== page),
+            found
+          )
+        : s.hits
+      const reveal = !current && hits.length > 0
+      const active = current ? hits.indexOf(current) : reveal ? this.firstHitFrom(hits, start) : -1
       this.set({
-        search: {
-          query,
-          options,
-          hits: [...hits],
-          active: active < 0 && hits.length ? this.firstHitFrom(hits, start) : active,
-          running: k < n - 1,
-          done: k === n - 1,
-          pagesSearched: k + 1
-        }
+        search: { ...s, hits, active, running: k < n - 1, done: k === n - 1, pagesSearched: k + 1 }
       })
-      if (active < 0 && hits.length) this.revealHit(this.state.search.active)
+      if (reveal) void this.revealHit(active)
       // yield to keep the UI responsive
       if (k % 4 === 3) await new Promise((r) => setTimeout(r, 0))
     }
@@ -306,7 +376,9 @@ export class DocumentModel {
     if (!hit) return
     this.set({ search: { ...this.state.search, active: index } })
     const t = await this.pageText(hit.page)
-    const { rangeRects } = await import('./textModel')
+    // Find Next, a newer search or an edit may have moved on while the text loaded.
+    const s = this.state.search
+    if (this.closed || s.hits[s.active] !== hit) return
     const rects = rangeRects(t, hit.start, hit.end)
     if (rects.length) this.view?.scrollToRect(hit.page, rects[0], { center: true })
     else this.view?.goToPage(hit.page)
