@@ -361,3 +361,87 @@ test('image watermark, add-or-replace prompt and a header on a rotated page', as
     await app.close()
   }
 })
+
+test('saved settings, trim boxes and dark mode', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+
+    // ---- Save the header settings under a name, then load them again ----
+    await startCommand(page, 'marks.headerFooter.add')
+    let hf = dialog(page, 'Add Header & Footer')
+    await expect(hf).toBeVisible()
+    await hf.locator('textarea[data-slot="headerLeft"]').fill('Case 42 – page <<1>>')
+    await hf.getByLabel('Font size (pt)').fill('12')
+    await hf.getByRole('button', { name: 'Save settings…' }).click()
+    const name = dialog(page, 'Save settings')
+    await expect(name).toBeVisible()
+    await page.keyboard.type('Legal')
+    await page.keyboard.press('Enter')
+    await expect(name).toBeHidden()
+    await expect(hf.getByLabel('Saved settings')).toHaveValue('Legal')
+    await hf.getByRole('button', { name: 'Cancel' }).click()
+    await expect(hf).toBeHidden()
+    expect((await markGroups(page)).length).toBe(0)
+
+    await startCommand(page, 'marks.headerFooter.add')
+    hf = dialog(page, 'Add Header & Footer')
+    await expect(hf.locator('textarea[data-slot="headerLeft"]')).toHaveValue('')
+    await hf.getByLabel('Saved settings').selectOption('Legal')
+    await expect(hf.locator('textarea[data-slot="headerLeft"]')).toHaveValue('Case 42 – page <<1>>')
+    await expect(hf.getByLabel('Font size (pt)')).toHaveValue('12')
+    await waitForPreview(page)
+    await hf.getByRole('button', { name: 'OK' }).click()
+    await expect(hf).toBeHidden()
+    await expect.poll(() => pageText(page, 3)).toContain('Case 42 – page 4')
+
+    // ---- Set Page Boxes: a trim box on every page (dark theme) ----
+    await page.evaluate(() => {
+      const { useApp } = (window as any).__fartcrobat
+      useApp.setState({ prefs: { ...useApp.getState().prefs, theme: 'dark' } })
+    })
+    await page.keyboard.press('Control+Shift+T')
+    let boxes = dialog(page, 'Set Page Boxes')
+    await expect(boxes).toBeVisible()
+    await boxes.getByLabel('Page box').selectOption('TrimBox')
+    for (const side of ['Top', 'Bottom', 'Left', 'Right']) {
+      await boxes.getByLabel(`${side} margin (in)`).fill('0.5')
+    }
+    await boxes.getByText('Show all boxes').click()
+    await expect(boxes.locator('.fc-page-marks-preview-size')).toContainText('7.5 × 10 in')
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: 'test-results/page-marks-trim-dark.png' })
+    await boxes.getByRole('button', { name: 'OK' }).click()
+    await expect(boxes).toBeHidden()
+    const trim = await page.evaluate(async () => {
+      const v = await (window as any).__fartcrobat.getActiveDoc().ops('page-marks').boxes(4, 0.2)
+      v.bitmap?.close()
+      return v.trim
+    })
+    expect(trim.map((v: number) => Math.round(v))).toEqual([36, 36, 576, 756])
+    // the visible page is unchanged
+    expect((await pageSize(page, 4)).width).toBeCloseTo(612, 0)
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Set Page Boxes')
+
+    // ---- ... and remove it again ----
+    await page.keyboard.press('Control+Shift+T')
+    boxes = dialog(page, 'Set Page Boxes')
+    await boxes.getByLabel('Page box').selectOption('TrimBox')
+    await expect(boxes.getByLabel('Top margin (in)')).toHaveValue('0.5')
+    await boxes.getByRole('button', { name: 'Remove trim box' }).click()
+    await expect(boxes).toBeHidden()
+    await expect
+      .poll(() =>
+        page.evaluate(async () => {
+          const v = await (window as any).__fartcrobat.getActiveDoc().ops('page-marks').boxes(0, 0.2)
+          v.bitmap?.close()
+          return v.trim
+        })
+      )
+      .toBeNull()
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Remove Page Boxes')
+  } finally {
+    await app.close()
+  }
+})

@@ -35,6 +35,7 @@ const BOX_LABELS: Record<PageBox, string> = {
   ArtBox: 'Art box'
 }
 
+/** Box outlines, drawn over the (always white) page. */
 const BOX_COLORS: Record<'crop' | 'trim' | 'bleed' | 'art', string> = {
   crop: '#111111',
   trim: '#d7373f',
@@ -428,7 +429,8 @@ export function PageBoxesDialog({
             <div className="fc-page-marks-legend">
               {(['crop', 'trim', 'bleed', 'art'] as const).map((k) => (
                 <span key={k}>
-                  <i style={{ borderColor: BOX_COLORS[k] }} />
+                  {/* the legend sits on the dialog, so black follows the theme */}
+                  <i style={{ borderColor: k === 'crop' ? 'var(--text)' : BOX_COLORS[k] }} />
                   {k[0].toUpperCase() + k.slice(1)}
                 </span>
               ))}
