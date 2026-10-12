@@ -507,6 +507,22 @@ export function AnnotationLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     return a.rect
   }
 
+  // Segment of a selected line, following an ongoing drag.
+  const liveLine = (a: AnnotInfo): [Point, Point] | null => {
+    if (a.type !== 'Line' || !a.line) return null
+    if (drag?.active && drag.ids.includes(a.id)) {
+      if (drag.kind === 'endpoint' && drag.line) return drag.line
+      if (drag.kind === 'move') {
+        const [dx, dy] = drag.delta
+        return [
+          [a.line[0][0] + dx, a.line[0][1] + dy],
+          [a.line[1][0] + dx, a.line[1][1] + dy]
+        ]
+      }
+    }
+    return a.line
+  }
+
   const single = selected.length === 1 ? selected[0] : null
   const mode = single && !single.locked ? resizeMode(single) : 'none'
   const hovered = hoverId !== null && !selectedIds.includes(hoverId) ? visible.find((a) => a.id === hoverId) : undefined
@@ -518,7 +534,10 @@ export function AnnotationLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           <HitShape key={a.id} a={a} geometry={geometry} handlers={handlersFor(a) as unknown as React.SVGProps<SVGElement>} />
         ))}
       </svg>
-      {hovered && !drag?.active && (
+      {hovered && !drag?.active && hovered.type === 'Line' && hovered.line && (
+        <LineMark line={hovered.line} geometry={geometry} className="fc-comments-linehover" />
+      )}
+      {hovered && !drag?.active && !(hovered.type === 'Line' && hovered.line) && (
         <div className="fc-comments-hover" style={inflate(geometry.rectToCss(hovered.rect), 2)} />
       )}
       {drag?.active &&
@@ -544,6 +563,9 @@ export function AnnotationLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         </svg>
       )}
       {selected.map((a) => {
+        // Lines are selected along the segment (a box would grab clicks far away from them).
+        const seg = liveLine(a)
+        if (seg) return <LineMark key={a.id} line={seg} geometry={geometry} className={`fc-comments-linesel ${a.locked ? 'is-locked' : ''}`} />
         const box = inflate(geometry.rectToCss(liveRect(a)), 3)
         const movable = canMove(a)
         return (
@@ -552,9 +574,7 @@ export function AnnotationLayer({ doc, pageIndex, geometry }: PageLayerProps) {
             className={`fc-comments-selbox ${a.locked ? 'is-locked' : ''} ${editing === a.id ? 'is-editing' : ''}`}
             style={{ ...box, cursor: movable ? 'move' : 'default' }}
             data-annot-id={a.id}
-            onPointerDown={(e) => onPointerDown(e, a)}
-            onDoubleClick={(e) => onDoubleClick(e, a)}
-            onContextMenu={(e) => onContextMenu(e, a)}
+            {...handlersFor(a)}
           />
         )
       })}
@@ -595,6 +615,18 @@ export function AnnotationLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           )
         })}
     </div>
+  )
+}
+
+/** Highlight along a line segment (selection or hover of Line comments). */
+function LineMark({ line, geometry, className }: { line: [Point, Point]; geometry: PageGeometry; className: string }) {
+  const p = geometry.toCss(line[0])
+  const q = geometry.toCss(line[1])
+  return (
+    <svg className={`fc-comments-linemark ${className}`} width={geometry.cssWidth} height={geometry.cssHeight} aria-hidden>
+      <line className="fc-comments-linemark-halo" x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} />
+      <line className="fc-comments-linemark-core" x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} />
+    </svg>
   )
 }
 

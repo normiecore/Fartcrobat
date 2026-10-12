@@ -10,7 +10,9 @@ import type docOps from '@engine/ops/doc'
 import {
   buildDefaultAppearance,
   buildThreads,
+  defaultsKind,
   flagsToNames,
+  importMessage,
   namesToFlags,
   parseDefaultAppearance,
   textUnderQuads,
@@ -169,6 +171,10 @@ describe('comments engine', () => {
     const { comments, annots } = ops(dst)
     const res = await comments.importRecords(parsed)
     expect(res.imported).toBe(recs.length)
+    // 8 comments, 1 reply and 1 status change
+    expect(res.comments).toBe(8)
+    expect(res.replies).toBe(1)
+    expect(importMessage(res, 'review.xfdf')).toBe('Imported 8 comments and 1 reply from review.xfdf.')
     expect(dst.lastChanges?.journal.undoLabel).toBe('Import Comments')
     const all = await annots.listAll()
     const orig = await ops(src).annots.listAll()
@@ -199,6 +205,8 @@ describe('comments engine', () => {
     const again = await comments.importRecords(parsed)
     expect(again.imported).toBe(0)
     expect(again.duplicates).toBe(recs.length)
+    expect(again.duplicateComments).toBe(8)
+    expect(importMessage(again, 'review.xfdf')).toBe('No new comments in review.xfdf. 8 comments were already in the document.')
     expect((await annots.listAll()).length).toBe(orig.length)
     // and the import is one undo step
     await dst.doc.undo()
@@ -253,6 +261,49 @@ describe('comments engine', () => {
     )
   })
 
+  it('imports every common XFDF comment element', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<xfdf xmlns="http://ns.adobe.com/xfdf/" xml:space="preserve"><annots>
+<highlight page="1" color="#FFFF00" name="h1" title="Eve" coords="72,700,200,700,72,688,200,688" rect="72,688,200,700"><contents>hl</contents></highlight>
+<underline page="1" color="#00FF00" name="u1" coords="72,680,150,680,72,668,150,668" rect="72,668,150,680"/>
+<strikeout page="1" color="#FF0000" name="s1" coords="72,660,150,660,72,648,150,648"/>
+<squiggly page="1" color="#0000FF" name="q1" coords="72,640,150,640,72,628,150,628" rect="72,628,150,640"/>
+<circle page="0" color="#FF00FF" interior-color="#00FFFF" width="2" name="c1" rect="300,300,400,360"/>
+<line page="0" color="#000000" width="3" name="l1" rect="50,50,250,150" start="60,60" end="240,140" head="OpenArrow" tail="ClosedArrow"/>
+<polyline page="0" color="#123456" name="p1" rect="10,400,200,500"><vertices>20,410;100,490;190,420</vertices></polyline>
+<ink page="0" color="#654321" width="2" name="i1" rect="400,400,500,500"><inklist><gesture>410,410;450,480;490,420</gesture><gesture>420,420;480,430</gesture></inklist></ink>
+<stamp page="0" icon="Approved" name="st1" rect="100,600,250,650" title="Eve" subject="Approved"/>
+</annots></xfdf>`
+    const recs = parseXfdf(new DOMParser().parseFromString(xml, 'application/xml').documentElement as unknown as XmlNode)
+    expect(recs.map((r) => r.type)).toEqual(['Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Circle', 'Line', 'PolyLine', 'Ink', 'Stamp'])
+    // a rect is derived from the coords when the file has none
+    expect(recs[2].rect).toEqual([72, 648, 150, 660])
+    const e = await openFixture('text.pdf')
+    const res = await ops(e).comments.importRecords(recs)
+    expect(res.imported).toBe(9)
+    expect(res.skipped).toBe(0)
+    const all = await ops(e).annots.listAll()
+    const by = (t: string) => all.find((a) => a.type === t)!
+    expect(by('Highlight').page).toBe(1)
+    expect(by('Highlight').quads.length).toBe(1)
+    // (MuPDF pads the rect of text markup around its quads a little)
+    expect(Math.abs(by('Highlight').rect[1] - (792 - 700))).toBeLessThan(2)
+    expect(by('Highlight').quads[0][1]).toBeCloseTo(792 - 700, 0)
+    expect(by('Underline').color).toBe('#00ff00')
+    expect(by('StrikeOut').quads.length).toBe(1)
+    expect(by('Squiggly').color).toBe('#0000ff')
+    expect(by('Circle').interiorColor).toBe('#00ffff')
+    expect(by('Circle').borderWidth).toBe(2)
+    expect(by('Line').line![0][0]).toBeCloseTo(60, 0)
+    expect(by('Line').line![0][1]).toBeCloseTo(792 - 60, 0)
+    expect(by('Line').lineEndings).toEqual({ start: 'OpenArrow', end: 'ClosedArrow' })
+    expect(by('PolyLine').vertices.length).toBe(3)
+    expect(by('Ink').ink.length).toBe(2)
+    expect(by('Ink').ink[0][1][1]).toBeCloseTo(792 - 480, 0)
+    expect(by('Stamp').icon).toBe('Approved')
+    expect(by('Stamp').author).toBe('Eve')
+  })
+
   it('round-trips comments through FDF', async () => {
     const src = await openFixture('text.pdf')
     await populate(src)
@@ -263,6 +314,8 @@ describe('comments engine', () => {
     const res = await ops(dst).comments.importFdf(bytes)
     const orig = await ops(src).annots.listAll()
     expect(res.imported).toBe(orig.length)
+    expect(res.comments).toBe(8)
+    expect(res.replies).toBe(1)
     const all = await ops(dst).annots.listAll()
     expect(all.length).toBe(orig.length)
     const sq = all.find((a) => a.type === 'Square')!
@@ -340,6 +393,22 @@ describe('comments engine', () => {
     expect(p.bounds[0]).toBeLessThanOrEqual(100)
     expect(p.width).toBeGreaterThanOrEqual(198)
     expect(p.pixels?.length).toBe(p.width * p.height * 4)
+    const px = p.pixels!
+    const at = (x: number, y: number) => Array.from(px.slice((y * p.width + x) * 4, (y * p.width + x) * 4 + 4))
+    // the inside of an unfilled rectangle is transparent (not black)
+    expect(at(Math.floor(p.width / 2), Math.floor(p.height / 2))[3]).toBe(0)
+    // the border is opaque red
+    const edge = at(2, Math.floor(p.height / 2))
+    expect(edge[3]).toBe(255)
+    expect(edge[0]).toBeGreaterThan(200)
+    expect(edge[1]).toBeLessThan(60)
+    // translucent comments keep their colour (straight, not premultiplied alpha)
+    const ghost = await ops(e).annots.create(0, { type: 'Square', rect: [300, 300, 340, 340], color: '#0000ff', interiorColor: '#0000ff', opacity: 0.5 })
+    const g = await ops(e).comments.preview(ghost.id, 1)
+    const mid = ((Math.floor(g.height / 2) * g.width + Math.floor(g.width / 2)) * 4) | 0
+    expect(g.pixels![mid + 3]).toBeGreaterThan(100)
+    expect(g.pixels![mid + 3]).toBeLessThan(160)
+    expect(g.pixels![mid + 2]).toBeGreaterThan(240)
   })
 })
 
@@ -358,6 +427,29 @@ describe('comment helpers', () => {
     expect(typeLabel({ type: 'Polygon', cloudy: true })).toBe('Cloud')
     expect(typeLabel({ type: 'FreeText', intent: 'FreeTextCallout' })).toBe('Callout')
     expect(typeLabel({ type: 'StrikeOut' })).toBe('Strikethrough')
+  })
+
+  it('keeps separate defaults for the comment kinds Acrobat has separate tools for', () => {
+    expect(defaultsKind({ type: 'Square' })).toBe('Square')
+    expect(defaultsKind({ type: 'Line', lineEndings: { start: 'None', end: 'None' } })).toBe('Line')
+    expect(defaultsKind({ type: 'Line', lineEndings: { start: 'Circle', end: 'ClosedArrow' } })).toBe('Arrow')
+    expect(defaultsKind({ type: 'Line', intent: 'LineDimension' })).toBe('Distance')
+    expect(defaultsKind({ type: 'Polygon', cloudy: true })).toBe('Cloud')
+    expect(defaultsKind({ type: 'Polygon', intent: 'PolygonDimension' })).toBe('Area')
+    expect(defaultsKind({ type: 'PolyLine', intent: 'PolyLineDimension' })).toBe('Perimeter')
+    expect(defaultsKind({ type: 'FreeText', intent: 'FreeTextCallout' })).toBe('Callout')
+    expect(defaultsKind({ type: 'FreeText', intent: 'FreeTextTypeWriter' })).toBe('Typewriter')
+    expect(defaultsKind({ type: 'FreeText' })).toBe('FreeText')
+  })
+
+  it('describes imports in plain words', () => {
+    const base = { imported: 0, duplicates: 0, skipped: 0, comments: 0, replies: 0, duplicateComments: 0 }
+    expect(importMessage({ ...base, imported: 1, comments: 1 }, 'a.xfdf')).toBe('Imported 1 comment from a.xfdf.')
+    expect(importMessage({ ...base, imported: 3, replies: 2 }, 'a.fdf')).toBe('Imported 2 replies to existing comments from a.fdf.')
+    expect(importMessage({ ...base, imported: 1 }, 'a.fdf')).toBe('Imported 1 status change from a.fdf.')
+    expect(importMessage({ ...base, imported: 2, comments: 2, skipped: 1, duplicates: 1, duplicateComments: 1 }, '2 files')).toBe(
+      'Imported 2 comments from 2 files. 1 comment was already in the document. 1 could not be placed (missing pages or unsupported types).'
+    )
   })
 
   it('converts flags and default appearances', () => {

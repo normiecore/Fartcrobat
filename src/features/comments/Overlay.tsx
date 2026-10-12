@@ -56,6 +56,8 @@ function useLayoutTick(vp: HTMLElement): number {
     const ro = new ResizeObserver(bump)
     ro.observe(content)
     ro.observe(vp)
+    // the properties bar stays inside the visible area while scrolling
+    vp.addEventListener('scroll', bump, { passive: true })
     const mo = new MutationObserver((muts) => {
       if (muts.some((m) => (m.type === 'childList' && m.target === content) || (m.target as Element).classList?.contains('viewer-page'))) bump()
     })
@@ -63,6 +65,7 @@ function useLayoutTick(vp: HTMLElement): number {
     return () => {
       ro.disconnect()
       mo.disconnect()
+      vp.removeEventListener('scroll', bump)
       cancelAnimationFrame(raf)
     }
   }, [vp])
@@ -70,8 +73,22 @@ function useLayoutTick(vp: HTMLElement): number {
 }
 
 const FONT_FAMILY: Record<string, string> = {
-  TiRo: '"Times New Roman", Times, serif',
-  Cour: '"Courier New", Courier, monospace'
+  Helv: 'Helvetica, Arial, "Liberation Sans", sans-serif',
+  TiRo: '"Times New Roman", Times, "Liberation Serif", serif',
+  Cour: '"Courier New", Courier, "Liberation Mono", monospace'
+}
+
+/** Where a CSS line box puts the baseline (em below its top) with line-height 1.2 and Arial-like metrics. */
+const CSS_BASELINE = 0.9465
+
+/**
+ * Text layout of MuPDF's text box appearance (pdf_write_free_text_appearance), so the editor wraps
+ * and places lines exactly where they will be drawn: text inset by 1.5 x the border width, first
+ * baseline 0.8 em below that, lines 1.2 em apart.
+ */
+export function freeTextLayout(size: number, border: number) {
+  const inset = 1.5 * Math.max(0, border)
+  return { inset, firstBaseline: inset + 0.8 * size, lineHeight: 1.2 * size }
 }
 
 function InlineEditor({
@@ -92,7 +109,18 @@ function InlineEditor({
   const ref = useRef<HTMLTextAreaElement>(null)
   const done = useRef(false)
   const box = rotatedBox(geometry, a.rect)
-  const pad = (Math.max(0, a.borderWidth) / 2 + 2) * geometry.scale
+  const sc = geometry.scale
+  const size = a.fontSize ?? 12
+  const layout = freeTextLayout(size, a.borderWidth)
+  const padX = layout.inset * sc
+  // Line boxes start a little above the rect when the text sits close to the top edge.
+  let padTop = (layout.firstBaseline - CSS_BASELINE * size) * sc
+  let dy = 0
+  if (padTop < 0) {
+    dy = padTop
+    padTop = 0
+  }
+  const baseHeight = (box.height as number) - dy
 
   useEffect(() => {
     setHiddenAnnotations(doc, a.page, [a.id])
@@ -110,10 +138,9 @@ function InlineEditor({
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const base = (box.height as number) || 0
-    el.style.height = `${base}px`
-    setExtra(Math.max(0, el.scrollHeight - base))
-  }, [text, box.height])
+    el.style.height = `${baseHeight}px`
+    setExtra(Math.max(0, el.scrollHeight - baseHeight))
+  }, [text, baseHeight])
 
   const finish = async (save: boolean) => {
     if (done.current) return
@@ -128,7 +155,7 @@ function InlineEditor({
       const spec: { contents?: string; rect?: [number, number, number, number] } = {}
       if (text !== a.contents) spec.contents = text
       // grow the box downwards (in page orientation) so all the text fits
-      const needed = (ref.current?.scrollHeight ?? 0) / geometry.scale
+      const needed = ((ref.current?.scrollHeight ?? 0) + dy) / sc
       const h = a.rect[3] - a.rect[1]
       if (needed > h + 1 && geometry.rotation === 0) spec.rect = [a.rect[0], a.rect[1], a.rect[2], Math.min(geometry.height, a.rect[1] + needed)]
       if (Object.keys(spec).length) await annotsOf(doc).update(a.id, spec, a.page)
@@ -137,7 +164,10 @@ function InlineEditor({
     }
   }
 
-  const height = (box.height as number) + extra
+  // The box keeps its top edge (page orientation) and grows downwards while typing.
+  const height = baseHeight + extra
+  const center = { x: (box.left as number) + (box.width as number) / 2, y: (box.top as number) + (box.height as number) / 2 }
+  const shift = (extra + dy) / 2
   return (
     <textarea
       ref={ref}
@@ -146,15 +176,17 @@ function InlineEditor({
       value={text}
       spellCheck
       style={{
-        ...box,
-        left: origin.x + (box.left as number),
-        top: origin.y + (box.top as number) + (geometry.rotation === 0 ? 0 : -extra / 2),
+        left: origin.x + center.x - (box.width as number) / 2,
+        top: origin.y + center.y - height / 2,
+        width: box.width,
         height,
-        fontSize: (a.fontSize ?? 12) * geometry.scale,
+        transform: `rotate(${geometry.rotation}deg) translateY(${shift}px)`,
+        fontSize: size * sc,
+        lineHeight: 1.2,
         color: a.textColor ?? '#000',
-        fontFamily: FONT_FAMILY[a.fontName ?? ''] ?? 'Helvetica, Arial, sans-serif',
+        fontFamily: FONT_FAMILY[a.fontName ?? ''] ?? FONT_FAMILY.Helv,
         textAlign: (['left', 'center', 'right'] as const)[a.quadding] ?? 'left',
-        padding: pad,
+        padding: `${padTop}px ${padX}px ${padX}px`,
         background: a.color && a.color !== 'transparent' ? a.color : 'rgba(255, 255, 255, 0.92)'
       }}
       onChange={(e) => setText(e.target.value)}
@@ -214,14 +246,22 @@ function OverlayContent({ doc, vp }: { doc: DocumentModel; vp: HTMLElement }) {
     const o = t ? originOf(t.root.page) : null
     if (t && o && selection.ids.every((id) => groupIds.includes(id)) && editing?.id !== t.root.id) {
       const css = o.g.rectToCss(t.root.rect)
-      const above = css.top > 52
+      // above the comment, else below it, else pinned to the edge of the visible area
+      const visTop = vp.scrollTop + 8
+      const visBottom = vp.scrollTop + vp.clientHeight - 8
+      const above = o.y + css.top - 46
+      const below = o.y + css.top + css.height + 10
+      const inView = o.y + css.top < visBottom && below > visTop
+      const top = !inView || above >= visTop ? above : below + 38 <= visBottom ? below : visTop
       inspector = (
         <Inspector
           key={t.root.id}
           doc={doc}
           annot={t.root}
-          left={o.x + Math.max(0, Math.min(css.left, o.g.cssWidth - 120))}
-          top={above ? o.y + css.top - 46 : o.y + css.top + css.height + 10}
+          left={o.x + css.left}
+          top={top}
+          minLeft={vp.scrollLeft + 8}
+          maxRight={vp.scrollLeft + vp.clientWidth - 8}
         />
       )
     }
@@ -250,11 +290,19 @@ function OverlayContent({ doc, vp }: { doc: DocumentModel; vp: HTMLElement }) {
           left = o.x + c[0]
           top = o.y + c[1]
         } else {
+          // First placement: next to the comment, inside the visible part of the document.
+          const visLeft = vp.scrollLeft + 8
+          const visRight = vp.scrollLeft + vp.clientWidth - 8
+          const visTop = vp.scrollTop + 8
+          const visBottom = vp.scrollTop + vp.clientHeight - 8
           left = o.x + css.left + css.width + 14
+          if (left + p.width > visRight) {
+            // not enough room on the right: open on the left of the comment, else as far right as fits
+            const onLeft = o.x + css.left - p.width - 14
+            left = onLeft >= visLeft ? onLeft : Math.max(visLeft, visRight - p.width)
+          }
           top = o.y + Math.max(0, css.top - 4)
-          // not enough room on the right: open on the left of the comment
-          const room = Math.max(vp.scrollWidth, vp.clientWidth)
-          if (left + p.width > room - 8) left = Math.max(o.x + 8, o.x + css.left - p.width - 14)
+          top = Math.max(visTop, Math.min(top, visBottom - 220))
         }
         return (
           <PopupNote

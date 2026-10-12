@@ -6,7 +6,7 @@ import { useEffect, useMemo } from 'react'
 import { create } from 'zustand'
 import type { Point } from '@shared/geometry'
 import type { AnnotInfo } from '@engine/ops/annots'
-import { invoke, showError, useDocState, type DocumentModel } from '@renderer/sdk'
+import { invoke, showError, useDocState, type DocState, type DocumentModel } from '@renderer/sdk'
 import { buildThreads, type Thread } from './shared'
 
 export type CommentThread = Thread<AnnotInfo>
@@ -184,22 +184,35 @@ export async function setCommentPrefs(patch: Partial<CommentPrefs>) {
 }
 
 /**
- * Default properties per comment type, shared with the comment tools (markup-tools):
- * store key `comments:defaults:<PDF subtype>` (e.g. "comments:defaults:Square"), value a partial
+ * Default properties per kind of comment, shared with the comment tools (markup-tools):
+ * store key `comments:defaults:<kind>` where kind is the PDF subtype ("Square", "Line", "Ink",
+ * "FreeText", "Highlight", "Text"...) or one of the variants "Arrow", "Cloud", "Callout",
+ * "Typewriter", "Distance", "Perimeter", "Area" (see defaultsKind). The value is a partial
  * AnnotSpec with any of color, interiorColor, opacity, borderWidth, borderStyle, dashes, cloudy,
  * lineEndings, fontSize, textColor, quadding, icon.
  */
-export const defaultsKey = (type: string) => `comments:defaults:${type}`
+export const defaultsKey = (kind: string) => `comments:defaults:${kind}`
 
 // ---- comment data cache ---------------------------------------------------------------------------
 
-const useCommentData = create<{ byDoc: Record<string, { version: number; list: AnnotInfo[] }> }>(() => ({ byDoc: {} }))
-const inflight = new Map<string, number>()
+/**
+ * Changes whenever comments may have changed: document-level changes (every annots mutation
+ * reports one), undo/redo, and page re-renders (features that edit a page without reporting a
+ * document change).
+ */
+export function commentsVersion(s: DocState): string {
+  let pages = 0
+  for (const v of Object.values(s.pageVersions)) pages += v
+  return `${s.docVersion}:${s.globalVersion}:${pages}`
+}
+
+const useCommentData = create<{ byDoc: Record<string, { version: string; list: AnnotInfo[] }> }>(() => ({ byDoc: {} }))
+const inflight = new Map<string, string>()
 const EMPTY: AnnotInfo[] = []
 
 /** Fetches every comment of the document unless the cache is current. */
 export async function refreshComments(doc: DocumentModel): Promise<void> {
-  const version = doc.state.docVersion
+  const version = commentsVersion(doc.state)
   const cur = useCommentData.getState().byDoc[doc.id]
   if ((cur && cur.version === version) || inflight.get(doc.id) === version || doc.isClosed) return
   inflight.set(doc.id, version)
@@ -212,12 +225,12 @@ export async function refreshComments(doc: DocumentModel): Promise<void> {
   } finally {
     if (inflight.get(doc.id) === version) inflight.delete(doc.id)
   }
-  if (!doc.isClosed && doc.state.docVersion !== version) await refreshComments(doc)
+  if (!doc.isClosed && commentsVersion(doc.state) !== version) await refreshComments(doc)
 }
 
 /** Every comment of the document (refreshed when the document changes). */
 export function useCommentList(doc: DocumentModel): { list: AnnotInfo[]; fresh: boolean } {
-  const version = useDocState(doc, (s) => s.docVersion)
+  const version = useDocState(doc, commentsVersion)
   const entry = useCommentData((s) => s.byDoc[doc.id])
   useEffect(() => {
     void refreshComments(doc)

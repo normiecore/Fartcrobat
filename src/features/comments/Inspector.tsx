@@ -3,7 +3,7 @@
  * width and style, arrow ends, text size and colour, note icon, lock, and "More…" for the full
  * Properties dialog. Every change is one undoable step.
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Lock, LockOpen, MessageSquare, Settings2, TextAlignCenter, TextAlignEnd, TextAlignStart } from 'lucide-react'
 import type { AnnotInfo, AnnotSpec, LineEnding } from '@engine/ops/annots'
 import { ColorButton, IconButton, type DocumentModel } from '@renderer/sdk'
@@ -83,13 +83,37 @@ const ENDING_SHORT: Record<string, string> = {
   Slash: '/ slash'
 }
 
-export function Inspector({ doc, annot: a, left, top }: { doc: DocumentModel; annot: AnnotInfo; left: number; top: number }) {
+export function Inspector({
+  doc,
+  annot: a,
+  left,
+  top,
+  minLeft,
+  maxRight
+}: {
+  doc: DocumentModel
+  annot: AnnotInfo
+  left: number
+  top: number
+  /** Horizontal room (overlay coordinates): the bar is kept inside it. */
+  minLeft: number
+  maxRight: number
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  // keep the whole bar inside the visible part of the document (its width depends on the type)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const w = el.offsetWidth
+    el.style.left = `${Math.max(minLeft, Math.min(left, maxRight - w))}px`
+  })
   const caps = capabilities(a)
   const set = (spec: AnnotSpec) => void updateComment(doc, a, spec)
   const style = lineStyleOf(a)
   const endings = LINE_ENDINGS.map((e) => ({ value: e.value, label: ENDING_SHORT[e.value] ?? e.label }))
   return (
     <div
+      ref={ref}
       className="fc-comments-inspector"
       role="toolbar"
       aria-label="Comment properties"

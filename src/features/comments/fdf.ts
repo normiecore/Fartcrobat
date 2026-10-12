@@ -213,10 +213,28 @@ export function buildFdf(s: Session, fileName: string): { bytes: Uint8Array; cou
 }
 
 export interface ImportSummary {
+  /** Annotations created (comments, replies and status changes). */
   imported: number
+  /** Annotations that were already in the document. */
   duplicates: number
+  /** Annotations that could not be placed (missing page, unsupported type, bad geometry). */
   skipped: number
   ids: number[]
+  /** Of `imported`: top-level comments and text replies (status changes are neither). */
+  comments: number
+  replies: number
+  /** Of `duplicates`: top-level comments. */
+  duplicateComments: number
+}
+
+export function emptyImportSummary(): ImportSummary {
+  return { imported: 0, duplicates: 0, skipped: 0, ids: [], comments: 0, replies: 0, duplicateComments: 0 }
+}
+
+/** Counts one created annotation as a comment, a reply or neither (status change). */
+export function countImported(summary: ImportSummary, isReply: boolean, type: string, hasState: boolean) {
+  if (!isReply) summary.comments++
+  else if (type === 'Text' && !hasState) summary.replies++
 }
 
 /**
@@ -279,7 +297,7 @@ export function importFdfInto(s: Session, bytes: Uint8Array): ImportSummary {
     const map = s.pdf.newGraftMap()
     const created = new Map<number, PDFObject>()
     const pending: { src: PDFObject; dest: PDFObject; page: number }[] = []
-    const summary: ImportSummary = { imported: 0, duplicates: 0, skipped: 0, ids: [] }
+    const summary = emptyImportSummary()
     const pageCount = s.pageCount()
     for (let i = 0; i < annots.length; i++) {
       const ref = annots.get(i)
@@ -306,6 +324,7 @@ export function importFdfInto(s: Session, bytes: Uint8Array): ImportSummary {
       )
       if (dup) {
         summary.duplicates++
+        if (isNull(src.get('IRT'))) summary.duplicateComments++
         if (ref.isIndirect()) created.set(ref.asIndirect(), dup)
         continue
       }
@@ -352,6 +371,7 @@ export function importFdfInto(s: Session, bytes: Uint8Array): ImportSummary {
         } catch {}
         summary.imported++
         summary.ids.push(obj.asIndirect())
+        countImported(summary, !isNull(obj.get('IRT')), a.getType(), !isNull(obj.get('State')))
       }
       s.touch(p)
     }

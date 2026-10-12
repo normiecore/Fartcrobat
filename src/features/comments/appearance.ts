@@ -2,6 +2,7 @@
 import type { AnnotInfo, AnnotSpec } from '@engine/ops/annots'
 import { invoke, showError } from '@renderer/sdk'
 import { capabilities } from './model'
+import { defaultsKind } from './shared'
 import { defaultsKey } from './state'
 
 export type LineStyle = 'solid' | 'dashed' | 'cloudy'
@@ -52,13 +53,18 @@ export function appearanceDefaults(a: AnnotInfo): Partial<AnnotSpec> {
   return out
 }
 
-/** Stores the comment's appearance as the default for new comments of the same type. */
-export async function saveAsDefault(a: AnnotInfo, extra: Partial<AnnotSpec> = {}) {
+/**
+ * Stores the comment's appearance as the default for new comments of the same kind
+ * (store key `comments:defaults:<kind>`, see defaultsKind). Returns false when saving failed.
+ */
+export async function saveAsDefault(a: AnnotInfo, extra: Partial<AnnotSpec> = {}): Promise<boolean> {
   try {
-    const key = defaultsKey(a.type)
+    const key = defaultsKey(defaultsKind(a))
     const prev = ((await invoke('store:get', key)) as Partial<AnnotSpec> | undefined) ?? {}
     await invoke('store:set', key, { ...prev, ...appearanceDefaults(a), ...extra })
+    return true
   } catch (err) {
     showError(err, 'Could not save the default properties')
+    return false
   }
 }

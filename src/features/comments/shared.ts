@@ -113,6 +113,66 @@ export function typeLabel(a: LabelInfo): string {
   }
 }
 
+// ---- default properties ------------------------------------------------------------------
+
+/**
+ * The kind of comment whose default look a comment sets, used in the store key
+ * `comments:defaults:<kind>`. It is the PDF subtype ("Square", "Line", "FreeText", "Ink",
+ * "Highlight"...), except for the variants Acrobat keeps separate defaults for: "Arrow" (a Line
+ * with an arrow head), "Cloud" (a cloudy Polygon), "Callout" and "Typewriter" (FreeText intents),
+ * and the measurements "Distance", "Perimeter" and "Area".
+ */
+export function defaultsKind(a: LabelInfo): string {
+  const intent = a.intent ?? ''
+  switch (a.type) {
+    case 'Line':
+      if (/Dimension/i.test(intent)) return 'Distance'
+      if (a.lineEndings && (ARROWS.has(a.lineEndings.start) || ARROWS.has(a.lineEndings.end))) return 'Arrow'
+      return 'Line'
+    case 'Polygon':
+      if (/Dimension/i.test(intent)) return 'Area'
+      if (a.cloudy || /Cloud/i.test(intent)) return 'Cloud'
+      return 'Polygon'
+    case 'PolyLine':
+      return /Dimension/i.test(intent) ? 'Perimeter' : 'PolyLine'
+    case 'FreeText':
+      if (/TypeWriter/i.test(intent)) return 'Typewriter'
+      if (/Callout/i.test(intent)) return 'Callout'
+      return 'FreeText'
+    default:
+      return a.type
+  }
+}
+
+/** Every kind that can have saved defaults (for "Reset"). */
+export const DEFAULT_KINDS = [
+  'Text',
+  'FreeText',
+  'Callout',
+  'Typewriter',
+  'Line',
+  'Arrow',
+  'Square',
+  'Circle',
+  'Polygon',
+  'Cloud',
+  'PolyLine',
+  'Ink',
+  'Highlight',
+  'Underline',
+  'StrikeOut',
+  'Squiggly',
+  'Caret',
+  'Stamp',
+  'FileAttachment',
+  'Distance',
+  'Perimeter',
+  'Area'
+]
+
+/** Text box kinds that share the "Default font size for text boxes" preference. */
+export const TEXT_BOX_KINDS = ['FreeText', 'Callout', 'Typewriter']
+
 // ---- annotation flags --------------------------------------------------------------------
 
 /** XFDF flag names in bit order (bit 1 = invisible). */
@@ -417,4 +477,34 @@ export function threadLabel(t: Thread<ThreadAnnot & LabelInfo>): string {
   if (t.root.type === 'StrikeOut' && t.group.some((g) => g.type === 'Caret')) return 'Replace Text'
   if (t.root.type === 'Caret' && t.group.some((g) => g.type === 'StrikeOut')) return 'Replace Text'
   return typeLabel(t.root)
+}
+
+// ---- messages ----------------------------------------------------------------------------------
+
+export function plural(n: number, one: string, many = one + 's'): string {
+  return `${n} ${n === 1 ? one : many}`
+}
+
+/** What an import did, in plain words ("Imported 2 comments and 1 reply from review.xfdf."). */
+export function importMessage(
+  t: { imported: number; duplicates: number; skipped: number; comments: number; replies: number; duplicateComments: number },
+  from: string
+): string {
+  const parts: string[] = []
+  if (t.comments) {
+    parts.push(`Imported ${plural(t.comments, 'comment')}${t.replies ? ` and ${plural(t.replies, 'reply', 'replies')}` : ''} from ${from}.`)
+  } else if (t.replies) {
+    parts.push(`Imported ${plural(t.replies, 'reply', 'replies')} to existing comments from ${from}.`)
+  } else if (t.imported) {
+    parts.push(`Imported ${plural(t.imported, 'status change')} from ${from}.`)
+  } else {
+    parts.push(`No new comments in ${from}.`)
+  }
+  if (t.duplicateComments) {
+    parts.push(`${plural(t.duplicateComments, 'comment')} ${t.duplicateComments === 1 ? 'was' : 'were'} already in the document.`)
+  } else if (t.duplicates && !t.imported) {
+    parts.push('Everything in it is already in the document.')
+  }
+  if (t.skipped) parts.push(`${t.skipped} could not be placed (missing pages or unsupported types).`)
+  return parts.join(' ')
 }

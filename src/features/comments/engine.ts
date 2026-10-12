@@ -3,8 +3,9 @@
  * deleting every comment at once, XFDF/FDF interchange, the comment summary and drag previews.
  */
 import type { Rect } from '@shared/geometry'
+import { multiplyMatrix, scaleMatrix, translateMatrix } from '@shared/geometry'
 import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
-import renderOps from '@engine/ops/render'
+import type { RenderResult } from '@engine/ops/render'
 import type { Session } from '@engine/session'
 import { buildFdf, importFdfInto, type ImportSummary } from './fdf'
 import { exportRecords, importRecordsInto } from './records'
@@ -34,16 +35,68 @@ function countComments(s: Session): number {
   return n
 }
 
+/** Largest preview bitmap (device pixels) so huge stamps don't stall the drag. */
+const MAX_PREVIEW_PIXELS = 16_000_000
+
+/**
+ * Converts MuPDF's premultiplied RGBA into the straight alpha that ImageData expects, so
+ * anti-aliased edges and translucent comments don't come out darker than on the page.
+ */
+export function unpremultiply(px: Uint8ClampedArray): Uint8ClampedArray {
+  for (let i = 0; i < px.length; i += 4) {
+    const a = px[i + 3]
+    if (a === 0 || a === 255) continue
+    const k = 255 / a
+    px[i] = Math.min(255, Math.round(px[i] * k))
+    px[i + 1] = Math.min(255, Math.round(px[i + 1] * k))
+    px[i + 2] = Math.min(255, Math.round(px[i + 2] * k))
+  }
+  return px
+}
+
+/** Renders one annotation on a transparent background (drag previews). */
+export function renderAnnotationPreview(s: Session, id: number, scale: number): { result: RenderResult; bounds: Rect } {
+  const { annot } = s.requireAnnotation(id)
+  const m = s.mupdf
+  const bounds = annot.getBounds() as Rect
+  const w = Math.max(1e-3, bounds[2] - bounds[0])
+  const h = Math.max(1e-3, bounds[3] - bounds[1])
+  const k = Math.min(scale, Math.sqrt(MAX_PREVIEW_PIXELS / (w * h)))
+  const ctm = multiplyMatrix(translateMatrix(-bounds[0], -bounds[1]), scaleMatrix(k))
+  const region: Rect = [0, 0, Math.max(1, Math.ceil(w * k)), Math.max(1, Math.ceil(h * k))]
+  const pix = new m.Pixmap(m.ColorSpace.DeviceRGB, region, true)
+  try {
+    // clear() without a value leaves alpha at 0; clear(0) would paint opaque black
+    pix.clear()
+    const dev = new m.DrawDevice(ctm, pix)
+    try {
+      annot.run(dev, m.Matrix.identity)
+      dev.close()
+    } finally {
+      dev.destroy()
+    }
+    const pixels = unpremultiply(new Uint8ClampedArray(pix.getPixels()))
+    return { result: { width: region[2], height: region[3], x: 0, y: 0, pixels }, bounds }
+  } finally {
+    pix.destroy()
+  }
+}
+
 export default defineOps('comments', {
   /**
-   * Bitmap of one annotation plus its bounds in page space (live preview while dragging).
-   * `scale` is device pixels per point.
+   * Bitmap of one annotation (transparent background) plus its bounds in page space, for the
+   * live preview while dragging. `scale` is device pixels per point.
    */
   async preview(s, id: number, scale: number) {
-    const { annot } = s.requireAnnotation(id)
-    const bounds = annot.getBounds() as Rect
-    const res = await renderOps.ops.annotation(s, id, scale)
-    return withTransfer({ ...res.value, bounds }, res.transferables)
+    const { result, bounds } = renderAnnotationPreview(s, id, scale)
+    const pixels = result.pixels!
+    if (typeof createImageBitmap === 'function' && typeof ImageData === 'function') {
+      const bitmap = await createImageBitmap(new ImageData(pixels as Uint8ClampedArray<ArrayBuffer>, result.width, result.height), {
+        premultiplyAlpha: 'premultiply'
+      })
+      return withTransfer({ width: result.width, height: result.height, x: 0, y: 0, bitmap, bounds } as RenderResult & { bounds: Rect }, [bitmap])
+    }
+    return withTransfer({ ...result, bounds } as RenderResult & { bounds: Rect }, [pixels.buffer as ArrayBuffer])
   },
 
   /** Moves annotations to the top (drawn last) or the bottom of their page's stacking order. */

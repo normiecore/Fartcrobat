@@ -3,14 +3,55 @@
  * review status. Draggable by its header, resizable from the corner.
  */
 import { useEffect, useRef, useState } from 'react'
-import { Ellipsis, Send, Trash, X } from 'lucide-react'
+import { Check, ChevronDown, Ellipsis, Flag, Send, SquareCheck, Trash, X } from 'lucide-react'
 import type { AnnotInfo } from '@engine/ops/annots'
-import { DropdownMenu, IconButton, type DocumentModel } from '@renderer/sdk'
-import { addReply, commentMenu, deleteComments, updateComment } from './actions'
+import { DropdownMenu, IconButton, type ContextMenuItem, type DocumentModel } from '@renderer/sdk'
+import { addReply, commentMenu, deleteComments, setMarked, setStatus, updateComment } from './actions'
 import { commentColor, commentDate, fullDate, relativeDate, typeIcon, useMarkedText } from './model'
-import { threadLabel } from './shared'
+import { REVIEW_STATES, threadLabel } from './shared'
 import { closePopup, raisePopup, updatePopup, type CommentThread, type PopupEntry } from './state'
-import { AutoTextarea, StatusBadge, TypeBadge } from './widgets'
+import { AutoTextarea, TypeBadge } from './widgets'
+
+/** Status button of a pop-up note: shows the review status and sets it (Acrobat's Set Status). */
+export function StatusMenu({ doc, thread }: { doc: DocumentModel; thread: CommentThread }) {
+  const a = thread.root
+  const current = thread.status ?? 'None'
+  const items = (): ContextMenuItem[] => [
+    ...REVIEW_STATES.map((st) => ({
+      id: `status-${st}`,
+      label: st,
+      icon: st === current ? Check : undefined,
+      run: () => void setStatus(doc, a, st)
+    })),
+    { id: 'sep', label: '', separator: true },
+    {
+      id: 'mark',
+      label: thread.marked ? 'Remove Checkmark' : 'Mark with Checkmark',
+      icon: SquareCheck,
+      run: () => void setMarked(doc, a, !thread.marked)
+    }
+  ]
+  return (
+    <DropdownMenu
+      align="right"
+      items={items}
+      trigger={(p) => (
+        <button
+          type="button"
+          className={`fc-comments-statusbtn ${thread.status ? `is-${thread.status.toLowerCase()}` : ''}`}
+          aria-label={thread.status ? `Status: ${thread.status}. Set status` : 'Set status'}
+          aria-haspopup="menu"
+          title={thread.status ? `${thread.status}${thread.statusBy ? ` — set by ${thread.statusBy}` : ''}. Click to change.` : 'Set status'}
+          {...p}
+        >
+          {thread.marked && <SquareCheck size={13} />}
+          {thread.status ? <span>{thread.status}</span> : <Flag size={13} />}
+          <ChevronDown size={12} />
+        </button>
+      )}
+    />
+  )
+}
 
 export function ReplyItem({ doc, reply }: { doc: DocumentModel; reply: AnnotInfo }) {
   const date = commentDate(reply)
@@ -106,6 +147,12 @@ export function PopupNote({
   const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null)
   const [size, setSize] = useState<{ w: number; h: number | null }>({ w: entry.width, h: entry.height })
   const quote = useMarkedText(doc, a)
+
+  // Remember where the note first opened (in page space), so it stays next to the comment while
+  // the document scrolls and zooms instead of following the visible area around.
+  useEffect(() => {
+    if (!entry.pos) updatePopup(doc.id, a.id, { pos: toPagePos(left, top) })
+  }, [doc.id, a.id, entry.pos, left, top, toPagePos])
   const color = commentColor(a)
   const date = commentDate(a)
   const Icon = typeIcon(a)
@@ -187,7 +234,7 @@ export function PopupNote({
             {date ? ` · ${relativeDate(date)}` : ''}
           </span>
         </div>
-        <StatusBadge status={thread.status} by={thread.statusBy} />
+        <StatusMenu doc={doc} thread={thread} />
         <DropdownMenu
           align="right"
           items={() => commentMenu(doc, a, list).filter((i) => i.id !== 'open')}

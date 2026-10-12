@@ -13,6 +13,7 @@ import {
   SendToBack,
   Settings2,
   SquareCheck,
+  Star,
   Trash,
   Type
 } from 'lucide-react'
@@ -38,11 +39,12 @@ import {
   type ContextMenuItem,
   type DocumentModel
 } from '@renderer/sdk'
+import { saveAsDefault } from './appearance'
 import type { ImportSummary } from './engine'
 import { FlattenDialog, SummarizeDialog, type SummarizeChoice } from './dialogs'
-import { canMove, groupIds, isPageComment, markedText } from './model'
+import { canMove, groupIds, isPageComment, markedText, typeLabel } from './model'
 import { openProperties } from './PropertiesDialog'
-import { buildThreads, REVIEW_STATES } from './shared'
+import { buildThreads, importMessage, plural, REVIEW_STATES } from './shared'
 import {
   annotsOf,
   cachedComments,
@@ -198,8 +200,21 @@ export function commentMenu(doc: DocumentModel, a: AnnotInfo, list: AnnotInfo[])
       run: () => void deleteComments(doc, root.page, ids)
     },
     { id: 'sep3', label: '', separator: true },
+    {
+      id: 'defaults',
+      label: 'Make Current Properties Default',
+      icon: Star,
+      run: () => void makeDefault(root)
+    },
     { id: 'props', label: 'Properties…', icon: Settings2, shortcut: displayShortcut('Mod+E'), run: () => openProperties(doc, root) }
   ]
+}
+
+/** Uses a comment's look (colour, line width, font...) for new comments of the same type. */
+export async function makeDefault(a: AnnotInfo) {
+  if (await saveAsDefault(a)) {
+    toast(`New ${typeLabel(a).toLowerCase()} comments will look like this one.`, { kind: 'success', timeout: 2500 })
+  }
 }
 
 // ---- File operations ---------------------------------------------------------------------------
@@ -234,7 +249,7 @@ export async function exportComments(doc: DocumentModel) {
         count = records.filter((r) => !r.inReplyTo).length
       }
       await writeFile(target, bytes)
-      toast(`Exported ${count} ${count === 1 ? 'comment' : 'comments'} to ${basename(target)}`, { kind: 'success' })
+      toast(`Exported ${plural(count, 'comment')} to ${basename(target)}`, { kind: 'success' })
     })
   } catch (err) {
     showError(err, 'Could not export the comments')
@@ -251,7 +266,7 @@ export async function importComments(doc: DocumentModel, paths?: string[]) {
       filters: [{ name: 'Comment files (XFDF, FDF)', extensions: ['xfdf', 'fdf', 'xml'] }, XFDF_FILTER, FDF_FILTER, { name: 'All files', extensions: ['*'] }]
     }))
   if (!files.length) return
-  const total: ImportSummary = { imported: 0, duplicates: 0, skipped: 0, ids: [] }
+  const total: ImportSummary = { imported: 0, duplicates: 0, skipped: 0, ids: [], comments: 0, replies: 0, duplicateComments: 0 }
   for (const path of files) {
     try {
       const bytes = await readFile(path)
@@ -266,6 +281,9 @@ export async function importComments(doc: DocumentModel, paths?: string[]) {
       total.imported += res.imported
       total.duplicates += res.duplicates
       total.skipped += res.skipped
+      total.comments += res.comments
+      total.replies += res.replies
+      total.duplicateComments += res.duplicateComments
       total.ids.push(...res.ids)
     } catch (err) {
       showError(err, `Could not import ${basename(path)}`)
@@ -273,14 +291,7 @@ export async function importComments(doc: DocumentModel, paths?: string[]) {
   }
   if (!total.imported && !total.duplicates) return
   const from = files.length === 1 ? basename(files[0]) : `${files.length} files`
-  const parts = [
-    total.imported
-      ? `Imported ${total.imported} ${total.imported === 1 ? 'comment' : 'comments'} from ${from}.`
-      : `No new comments in ${from}.`
-  ]
-  if (total.duplicates) parts.push(`${total.duplicates} ${total.duplicates === 1 ? 'was' : 'were'} already in the document.`)
-  if (total.skipped) parts.push(`${total.skipped} could not be placed (missing pages or unsupported types).`)
-  toast(parts.join(' '), { kind: total.imported ? 'success' : 'info', timeout: 6000 })
+  toast(importMessage(total, from), { kind: total.imported ? 'success' : 'info', timeout: 6000 })
   if (total.imported) {
     if (!doc.state.showAnnotations) doc.set({ showAnnotations: true })
     openRightPanel('comments')
@@ -333,7 +344,7 @@ export async function deleteAllComments(doc: DocumentModel) {
   }
   const ok = await confirm({
     title: 'Delete All Comments',
-    message: `Delete all ${n} ${n === 1 ? 'comment' : 'comments'} in “${doc.state.title}”, including replies? You can undo this with Edit > Undo.`,
+    message: `Delete ${n === 1 ? 'the only comment' : `all ${n} comments`} in “${doc.state.title}”, including replies? You can undo this with Edit > Undo.`,
     confirmLabel: 'Delete All',
     danger: true
   })
@@ -342,7 +353,7 @@ export async function deleteAllComments(doc: DocumentModel) {
     await commentsOf(doc).deleteAll()
     doc.clearSelection()
     useCommentsUi.setState((s) => ({ popups: s.popups.filter((p) => p.docId !== doc.id), editing: null }))
-    toast(`Deleted ${n} ${n === 1 ? 'comment' : 'comments'}`, { action: { label: 'Undo', run: () => void doc.undo() } })
+    toast(`Deleted ${plural(n, 'comment')}`, { action: { label: 'Undo', run: () => void doc.undo() } })
   } catch (err) {
     showError(err, 'Could not delete the comments')
   }
@@ -350,7 +361,8 @@ export async function deleteAllComments(doc: DocumentModel) {
 
 export async function flattenComments(doc: DocumentModel) {
   await refreshComments(doc)
-  const n = cachedComments(doc).length
+  // count what people see as comments (not each reply and status change)
+  const n = buildThreads(cachedComments(doc)).length
   const hasForm = doc.info.hasForm
   if (!n && !hasForm) {
     toast('There are no comments to flatten.')

@@ -54,6 +54,36 @@
 .fc-comments-selbox.is-editing {
   visibility: hidden;
 }
+.fc-comments-linemark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.fc-comments-linemark line {
+  stroke-linecap: round;
+  fill: none;
+}
+.fc-comments-linemark-halo {
+  stroke: rgba(20, 115, 230, 0.18);
+  stroke-width: 9px;
+}
+.fc-comments-linemark-core {
+  stroke: var(--accent);
+  stroke-width: 1.5px;
+}
+.fc-comments-linehover .fc-comments-linemark-halo {
+  stroke: rgba(20, 115, 230, 0.12);
+}
+.fc-comments-linehover .fc-comments-linemark-core {
+  stroke-dasharray: 4 3;
+  stroke-width: 1px;
+}
+.fc-comments-linesel.is-locked .fc-comments-linemark-core {
+  stroke: var(--text-muted);
+  stroke-dasharray: 4 3;
+}
 .fc-comments-handle {
   position: absolute;
   width: 9px;
@@ -276,6 +306,45 @@
   background: color-mix(in srgb, var(--danger) 16%, transparent);
   color: var(--danger);
 }
+.fc-comments-statusbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 5px 0 7px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.fc-comments-statusbtn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.fc-comments-statusbtn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+.fc-comments-statusbtn.is-accepted {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+.fc-comments-statusbtn.is-completed {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-text);
+}
+.fc-comments-statusbtn.is-rejected {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+.fc-comments-statusbtn.is-cancelled {
+  background: var(--bg-sunken);
+}
 .fc-comments-typebadge {
   display: inline-flex;
   align-items: center;
@@ -346,13 +415,15 @@
 }
 .fc-comments-inline-editor {
   position: absolute;
+  box-sizing: border-box;
   margin: 0;
-  border: 1px dashed var(--accent);
+  /* an outline, not a border, so the text wraps exactly like the saved text box */
+  border: none;
   border-radius: 0;
-  outline: none;
+  outline: 1px dashed var(--accent);
   resize: none;
   overflow: hidden;
-  line-height: 1.17;
+  transform-origin: center;
   white-space: pre-wrap;
   word-break: break-word;
   box-shadow: 0 0 0 3px rgba(20, 115, 230, 0.18);
@@ -440,6 +511,9 @@
   background: transparent;
   color: var(--text);
   user-select: text;
+}
+.fc-comments-search input:focus-visible {
+  box-shadow: none;
 }
 .fc-comments-search input::-webkit-search-cancel-button {
   display: none;

@@ -49,6 +49,12 @@ function selectedComment(ctx: CommandContext) {
   return sel.ids.every((id) => ids.includes(id)) ? t.root : null
 }
 
+/** True when the keyboard focus is on the document itself (not a panel, toolbar or text field). */
+function focusOnPage(): boolean {
+  const el = document.activeElement
+  return !el || el === document.body || el.classList.contains('viewer-scroll')
+}
+
 const m = (menu: MenuContribution['menu'], group: string, ids: string[], order: number, submenu?: string): MenuContribution[] =>
   ids.map((command, i) => ({ menu, group, command, order: order + i, submenu }))
 
@@ -83,6 +89,23 @@ export default defineFeature({
       icon: ChevronUp,
       run: (ctx) => navigateComments(doc(ctx), -1),
       keywords: ['go to comment']
+    },
+    {
+      // Tab / Shift+Tab walk the comments while one is selected and the page has the focus
+      id: 'comments.tabNext',
+      label: 'Select Next Comment',
+      shortcut: 'Tab',
+      hidden: true,
+      enabled: (ctx) => ctx.doc?.state.selection.kind === 'annotations' && focusOnPage(),
+      run: (ctx) => navigateComments(doc(ctx), 1)
+    },
+    {
+      id: 'comments.tabPrevious',
+      label: 'Select Previous Comment',
+      shortcut: 'Shift+Tab',
+      hidden: true,
+      enabled: (ctx) => ctx.doc?.state.selection.kind === 'annotations' && focusOnPage(),
+      run: (ctx) => navigateComments(doc(ctx), -1)
     },
     {
       id: 'comments.openPopup',

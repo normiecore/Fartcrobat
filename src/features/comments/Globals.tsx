@@ -3,12 +3,12 @@
  * nudging, the 'fartcrobat:edit-annotation' listener and preference loading.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { getActiveDoc, useActiveDoc, useApp, type DocumentModel } from '@renderer/sdk'
+import { authorName, getActiveDoc, useActiveDoc, useApp, type DocumentModel } from '@renderer/sdk'
 import { activeDocOf, editNewAnnotation, nudgeSelection } from './actions'
 import { commentColor, commentDate, relativeDate, typeIcon, useMarkedText } from './model'
 import { CommentOverlayHost } from './Overlay'
 import { threadLabel } from './shared'
-import { loadCommentPrefs, pruneDocs, useCommentPrefs, useCommentsUi, useThreads, type HoverInfo } from './state'
+import { annotsOf, loadCommentPrefs, pruneDocs, useCommentPrefs, useCommentsUi, useThreads, type HoverInfo } from './state'
 import { StatusBadge, TypeBadge } from './widgets'
 
 function isTyping(t: EventTarget | null): boolean {
@@ -95,6 +95,22 @@ export function CommentsGlobal() {
   useEffect(() => {
     pruneDocs(docs.map((d) => d.id))
   }, [docs])
+
+  // Preferences > Commenting > name: new comments in every open document use the new name.
+  const authorPref = useApp((s) => s.prefs.authorName)
+  const userName = useApp((s) => s.systemInfo?.userName ?? '')
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const name = authorName()
+      for (const d of useApp.getState().docs) {
+        if (d.isClosed) continue
+        annotsOf(d)
+          .setAuthor(name)
+          .catch((err) => !d.isClosed && console.warn('Could not set the comment author', err))
+      }
+    }, 250)
+    return () => window.clearTimeout(t)
+  }, [authorPref, userName, docs])
 
   useEffect(() => {
     const onEdit = (e: Event) => {

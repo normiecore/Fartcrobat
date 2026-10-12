@@ -7,7 +7,7 @@ import { normalizeRect, transformPoint, transformRect } from '@shared/geometry'
 import { annotInfo, applySpec, type AnnotSpec } from '@engine/ops/annots'
 import type { PDFAnnotation, PDFObject, Session } from '@engine/session'
 import { isNull, readName, readRect, readString } from '@engine/util/pdf'
-import { ExistingComments, stampNeedsAppearance, type ImportSummary } from './fdf'
+import { countImported, emptyImportSummary, ExistingComments, stampNeedsAppearance, type ImportSummary } from './fdf'
 import { base64ToBytes, bytesToBase64, cleanDate, parseDefaultAppearance, uniqueName, type CommentRecord } from './shared'
 
 const NON_COMMENT = new Set(['Link', 'Widget', 'Popup'])
@@ -251,7 +251,7 @@ const GEOMETRY: (keyof AnnotSpec)[] = ['rect', 'quads', 'ink', 'vertices', 'line
 
 /** Creates annotations from records (runs inside a mutation). Skips comments already present (same /NM). */
 export function importRecordsInto(s: Session, records: CommentRecord[]): ImportSummary {
-  const summary: ImportSummary = { imported: 0, duplicates: 0, skipped: 0, ids: [] }
+  const summary = emptyImportSummary()
   const existing = new ExistingComments(s)
   const created = new Map<string, PDFObject>()
   const pageCount = s.pageCount()
@@ -266,6 +266,7 @@ export function importRecordsInto(s: Session, records: CommentRecord[]): ImportS
     const dup = existing.find(r.name, r.type, r.page, spec.rect ?? [0, 0, 0, 0], r.author ?? '', r.contents ?? '')
     if (dup) {
       summary.duplicates++
+      if (!r.inReplyTo) summary.duplicateComments++
       if (r.name) created.set(r.name, dup)
       continue
     }
@@ -336,6 +337,7 @@ export function importRecordsInto(s: Session, records: CommentRecord[]): ImportS
     touched.add(r.page)
     summary.imported++
     summary.ids.push(obj.asIndirect())
+    countImported(summary, !isNull(obj.get('IRT')), r.type, !!r.state)
   }
   for (const p of touched) s.touch(p)
   if (touched.size) s.documentChanged()
