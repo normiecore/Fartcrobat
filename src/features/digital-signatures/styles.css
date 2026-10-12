@@ -1,0 +1,707 @@
+/* digital-signatures */
+.fc-digital-signatures-anchor {
+  display: none;
+}
+
+/* ---- status colours ---- */
+.fc-digital-signatures-icon {
+  flex-shrink: 0;
+}
+.fc-digital-signatures-icon.is-valid {
+  color: var(--success);
+}
+.fc-digital-signatures-icon.is-unknown-identity {
+  color: var(--success);
+}
+.fc-digital-signatures-icon.is-warning,
+.fc-digital-signatures-icon.is-unknown {
+  color: var(--warning);
+}
+.fc-digital-signatures-icon.is-invalid {
+  color: var(--danger);
+}
+.fc-digital-signatures-icon.is-unsigned {
+  color: var(--text-muted);
+}
+.fc-digital-signatures-ok {
+  color: var(--success);
+}
+.fc-digital-signatures-bad {
+  color: var(--danger);
+}
+
+/* ---- message bar (full-width row under the document toolbar) ---- */
+.fc-digital-signatures-bar {
+  order: 20;
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  margin: 0 -8px;
+  padding: 4px 8px 4px 14px;
+  border-top: 1px solid var(--border);
+  background: rgba(20, 115, 230, 0.08);
+}
+.fc-digital-signatures-bar.is-valid {
+  background: rgba(38, 142, 108, 0.1);
+}
+.fc-digital-signatures-bar.is-warning,
+.fc-digital-signatures-bar.is-unknown {
+  background: rgba(218, 123, 17, 0.12);
+}
+.fc-digital-signatures-bar.is-invalid {
+  background: rgba(215, 55, 63, 0.11);
+}
+.fc-digital-signatures-bar-text {
+  flex: 1;
+  font-weight: 600;
+  min-width: 0;
+}
+
+/* ---- right panel ---- */
+.fc-digital-signatures-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fc-digital-signatures-panel-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.fc-digital-signatures-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  line-height: 1.4;
+  font-weight: 600;
+}
+.fc-digital-signatures-summary.is-valid,
+.fc-digital-signatures-summary.is-unknown-identity {
+  background: rgba(38, 142, 108, 0.1);
+}
+.fc-digital-signatures-summary.is-warning,
+.fc-digital-signatures-summary.is-unknown {
+  background: rgba(218, 123, 17, 0.12);
+}
+.fc-digital-signatures-summary.is-invalid {
+  background: rgba(215, 55, 63, 0.11);
+}
+.fc-digital-signatures-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fc-digital-signatures-entry {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+}
+.fc-digital-signatures-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+}
+.fc-digital-signatures-entry-toggle {
+  width: 22px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+button.fc-digital-signatures-entry-toggle:hover {
+  background: var(--bg-hover);
+}
+.fc-digital-signatures-entry-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  text-align: left;
+}
+.fc-digital-signatures-entry-main:hover {
+  background: var(--bg-hover);
+}
+.fc-digital-signatures-entry-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fc-digital-signatures-entry-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.fc-digital-signatures-entry-status {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-digital-signatures-entry-body {
+  padding: 0 10px 10px 32px;
+  font-size: var(--fs-sm);
+}
+.fc-digital-signatures-bullets {
+  margin: 6px 0;
+  padding-left: 16px;
+  line-height: 1.45;
+  user-select: text;
+}
+.fc-digital-signatures-bullets li + li {
+  margin-top: 3px;
+}
+.fc-digital-signatures-changes {
+  list-style: none;
+  margin: 6px 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fc-digital-signatures-changes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.35;
+}
+.fc-digital-signatures-changes li svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.fc-digital-signatures-changes .is-allowed svg {
+  color: var(--success);
+}
+.fc-digital-signatures-changes .is-disallowed svg {
+  color: var(--danger);
+}
+.fc-digital-signatures-tag {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: rgba(215, 55, 63, 0.12);
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fc-digital-signatures-dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 8px 0;
+  user-select: text;
+}
+.fc-digital-signatures-dl dt {
+  color: var(--text-muted);
+}
+.fc-digital-signatures-dl dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- shared bits ---- */
+.fc-digital-signatures-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}
+.fc-digital-signatures-center {
+  justify-content: center;
+  margin-top: 12px;
+}
+.fc-digital-signatures-spacer {
+  flex: 1;
+}
+.fc-digital-signatures-small {
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  margin: 4px 0;
+}
+.fc-digital-signatures-note {
+  margin: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: rgba(218, 123, 17, 0.12);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+.fc-digital-signatures-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: rgba(215, 55, 63, 0.1);
+  color: var(--danger);
+  font-weight: 600;
+  user-select: text;
+}
+.fc-digital-signatures-sectiontitle {
+  margin: 14px 0 6px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.fc-digital-signatures-sectiontitle:first-child {
+  margin-top: 0;
+}
+.fc-digital-signatures-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+.fc-digital-signatures-intro {
+  margin: 0 0 14px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.fc-digital-signatures-strength {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-digital-signatures-strength i {
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+}
+.fc-digital-signatures-strength.is-1 i:nth-child(-n + 1) {
+  background: var(--danger);
+}
+.fc-digital-signatures-strength.is-2 i:nth-child(-n + 2) {
+  background: var(--warning);
+}
+.fc-digital-signatures-strength.is-3 i:nth-child(-n + 3) {
+  background: var(--success);
+}
+.fc-digital-signatures-strength i:last-of-type {
+  margin-right: 4px;
+}
+.fc-digital-signatures-importfile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ---- sign dialog ---- */
+.fc-digital-signatures-signgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+}
+@media (max-width: 760px) {
+  .fc-digital-signatures-signgrid {
+    grid-template-columns: 1fr;
+  }
+}
+.fc-digital-signatures-col {
+  min-width: 0;
+}
+.fc-digital-signatures-idlist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 2px;
+}
+.fc-digital-signatures-idcard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+}
+.fc-digital-signatures-idcard:hover {
+  border-color: var(--border-strong);
+}
+.fc-digital-signatures-idcard.is-selected {
+  border-color: var(--accent);
+  background: var(--bg-active);
+}
+.fc-digital-signatures-idcard.is-disabled {
+  opacity: 0.6;
+}
+.fc-digital-signatures-idcard input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.fc-digital-signatures-idicon {
+  color: var(--accent-text);
+  flex-shrink: 0;
+}
+.fc-digital-signatures-idtext {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fc-digital-signatures-idname {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.fc-digital-signatures-idmeta {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-digital-signatures-noid {
+  padding: 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+.fc-digital-signatures-noid p {
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+.fc-digital-signatures-previewwrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  background: var(--doc-bg);
+}
+.fc-digital-signatures-preview {
+  position: relative;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  outline: 1px dashed rgba(20, 115, 230, 0.6);
+  outline-offset: 2px;
+}
+.fc-digital-signatures-preview img {
+  display: block;
+}
+.fc-digital-signatures-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 2px 10px;
+  margin-bottom: 12px;
+}
+.fc-digital-signatures-invisible {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.fc-digital-signatures-invisible p {
+  margin: 0;
+}
+.fc-digital-signatures-footnote {
+  flex: 1;
+  align-self: center;
+  font-size: var(--fs-sm);
+}
+
+/* ---- properties and certificate viewer ---- */
+.fc-digital-signatures-verdict {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
+}
+.fc-digital-signatures-verdict.is-valid,
+.fc-digital-signatures-verdict.is-unknown-identity {
+  background: rgba(38, 142, 108, 0.1);
+}
+.fc-digital-signatures-verdict.is-warning,
+.fc-digital-signatures-verdict.is-unknown {
+  background: rgba(218, 123, 17, 0.12);
+}
+.fc-digital-signatures-verdict.is-invalid {
+  background: rgba(215, 55, 63, 0.11);
+}
+.fc-digital-signatures-verdict-title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+}
+.fc-digital-signatures-kv {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 10px;
+  padding: 3px 0;
+  user-select: text;
+}
+.fc-digital-signatures-k {
+  color: var(--text-muted);
+}
+.fc-digital-signatures-v {
+  overflow-wrap: anywhere;
+}
+.fc-digital-signatures-v code,
+.fc-digital-signatures-fp {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.fc-digital-signatures-signer {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.fc-digital-signatures-signer > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.fc-digital-signatures-signer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+}
+.fc-digital-signatures-certviewer {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 16px;
+  min-height: 300px;
+}
+.fc-digital-signatures-chain {
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  overflow: auto;
+}
+.fc-digital-signatures-chain button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  text-align: left;
+}
+.fc-digital-signatures-chain button:hover {
+  background: var(--bg-hover);
+}
+.fc-digital-signatures-chain button.is-active {
+  background: var(--bg-active);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.fc-digital-signatures-chain span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-digital-signatures-certmain {
+  min-width: 0;
+}
+.fc-digital-signatures-trustline {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  line-height: 1.45;
+}
+.fc-digital-signatures-trustline svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ---- tool and page layers ---- */
+.fc-digital-signatures-boxlayer {
+  cursor: crosshair;
+  touch-action: none;
+}
+.fc-digital-signatures-boxdraft {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--accent);
+  background: rgba(20, 115, 230, 0.1);
+  pointer-events: none;
+  overflow: hidden;
+}
+.fc-digital-signatures-boxdraft span {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fc-digital-signatures-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 8px;
+}
+.fc-digital-signatures-fieldlayer {
+  pointer-events: none;
+}
+.fc-digital-signatures-field {
+  position: absolute;
+  pointer-events: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  cursor: pointer;
+}
+.fc-digital-signatures-field.is-signed:hover,
+.fc-digital-signatures-field.is-signed:focus-visible {
+  border-color: rgba(20, 115, 230, 0.7);
+  background: rgba(20, 115, 230, 0.05);
+}
+.fc-digital-signatures-field.is-unsigned {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(123, 79, 214, 0.8);
+  background: rgba(123, 79, 214, 0.08);
+  color: #5b34b8;
+  font-size: 11px;
+  font-weight: 600;
+}
+.fc-digital-signatures-field.is-unsigned span {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.fc-digital-signatures-field.is-unsigned:hover span,
+.fc-digital-signatures-field.is-unsigned:focus-visible span {
+  opacity: 1;
+}
+
+/* ---- left panel lists ---- */
+.fc-digital-signatures-fieldlist {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fc-digital-signatures-fieldlist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+.fc-digital-signatures-fieldlist li > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ---- preferences ---- */
+.fc-digital-signatures-settings p {
+  margin-top: 0;
+  line-height: 1.5;
+}
+.fc-digital-signatures-tablewrap {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.fc-digital-signatures-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.fc-digital-signatures-table th {
+  position: sticky;
+  top: 0;
+  padding: 6px 10px;
+  background: var(--bg-sunken);
+  text-align: left;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.fc-digital-signatures-table td {
+  padding: 6px 10px;
+  border-top: 1px solid var(--border);
+  vertical-align: top;
+}
+.fc-digital-signatures-table tr {
+  cursor: default;
+}
+.fc-digital-signatures-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+.fc-digital-signatures-table tr.is-selected {
+  background: var(--bg-active);
+}
+.fc-digital-signatures-table tr:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus);
+}
+.fc-digital-signatures-emptyids {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.fc-digital-signatures-h4 {
+  margin: 18px 0 4px;
+}
+.fc-digital-signatures-trustlist {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.fc-digital-signatures-trustlist li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.fc-digital-signatures-trustlist li > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
