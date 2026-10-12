@@ -45,6 +45,22 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
 
   const set = (l: LiveMeasure | null) => useMeasure.setState({ live: l })
 
+  /** Adds the measurement drawn on `page` (this page unless finishing one left on another page). */
+  const commit = async (page: number, k: MeasureKind, pts: Point[]) => {
+    try {
+      // calls are queued by the engine, so quick successive measurements all land
+      await measureOps(doc).addMeasurement(page, {
+        kind: k,
+        points: pts,
+        scale,
+        color: settings.color,
+        showLabel: settings.showLabels
+      })
+    } catch (err) {
+      showError(err, 'Could not add the measurement')
+    }
+  }
+
   const finish = async (points: Point[]) => {
     const pts = cleanPoints(points)
     set(null)
@@ -63,18 +79,13 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       }
       return
     }
-    try {
-      // calls are queued by the engine, so quick successive measurements all land
-      await measureOps(doc).addMeasurement(pageIndex, {
-        kind,
-        points: pts,
-        scale,
-        color: settings.color,
-        showLabel: settings.showLabels
-      })
-    } catch (err) {
-      showError(err, 'Could not add the measurement')
-    }
+    await commit(pageIndex, kind, pts)
+  }
+
+  /** A measurement with points in progress on another page of this document. */
+  const inProgressElsewhere = (): LiveMeasure | null => {
+    const l = useMeasure.getState().live
+    return l && l.docId === doc.id && l.page !== pageIndex && l.points.length > 0 ? l : null
   }
   const finishRef = useRef(finish)
   finishRef.current = finish
@@ -129,6 +140,8 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
+    // Passing over another page must not throw away a measurement being drawn.
+    if (inProgressElsewhere()) return
     const l = current()
     const { p, snapped } = pointFor(e, l.points)
     set({ ...l, cursor: p, snapped })
@@ -138,6 +151,14 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     if (e.button !== 0) return
     e.preventDefault()
     ;(document.activeElement as HTMLElement | null)?.blur?.()
+    // A measurement stays on one page: clicking another page finishes the one in progress (when it
+    // has enough points) and starts a new one here.
+    const other = inProgressElsewhere()
+    if (other) {
+      const done = cleanPoints(other.points)
+      set(null)
+      if (other.kind !== 'distance' && done.length >= MIN_POINTS[other.kind]) void commit(other.page, other.kind, done)
+    }
     const l = current()
     const { p, snapped } = pointFor(e, l.points)
     // Clicking the first point again closes an area.

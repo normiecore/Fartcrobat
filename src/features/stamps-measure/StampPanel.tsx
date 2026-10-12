@@ -17,6 +17,7 @@ import {
 } from '@renderer/sdk'
 import { BUILTIN_STAMPS, CATEGORY_LABELS, customStampDef, type StampCategory, type StampDef } from './stampCatalog'
 import { openCustomStampDialog } from './CustomStampDialog'
+import { EscapeGuard, useEscapeGuard } from './escapeGuard'
 import { useStampPreview } from './stampRender'
 import { deleteCustomStamp, loadStamps, renameCustomStamp, selectStamp, useCurrentStamp, useStamps } from './stampStore'
 import { placeStamp, clickRect } from './stampPlace'
@@ -46,15 +47,18 @@ function StampTile({ def, doc, active, onPick }: { def: StampDef; doc: DocumentM
         <DropdownMenu
           align="right"
           trigger={(t) => (
-            <button
-              type="button"
-              className="fc-stamps-measure-tile-more"
-              aria-label={`More options for ${def.label}`}
-              title="Rename or delete"
-              {...t}
-            >
-              <Ellipsis size={14} />
-            </button>
+            <>
+              <button
+                type="button"
+                className="fc-stamps-measure-tile-more"
+                aria-label={`More options for ${def.label}`}
+                title="Rename or delete"
+                {...t}
+              >
+                <Ellipsis size={14} />
+              </button>
+              {t['aria-expanded'] && <EscapeGuard />}
+            </>
           )}
           items={[
             {
@@ -183,6 +187,8 @@ export function StampToolbar({ doc }: { doc: DocumentModel }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
   const open = !!at
   const close = () => setAt(null)
+  // Esc closes the palette, not the Stamp tool too
+  useEscapeGuard(open)
   useEffect(() => {
     void loadStamps()
   }, [])
@@ -212,15 +218,7 @@ export function StampToolbar({ doc }: { doc: DocumentModel }) {
       </button>
       {at && (
         <FloatingAt x={at.x} y={at.y} onClose={close}>
-          <div
-            className="fc-stamps-measure-palette-popover"
-            role="dialog"
-            aria-label="Stamps"
-            onKeyDown={(e) => {
-              // Esc only closes the palette (not the Stamp tool too)
-              if (e.key === 'Escape') e.stopPropagation()
-            }}
-          >
+          <div className="fc-stamps-measure-palette-popover" role="dialog" aria-label="Stamps">
             <StampPalette doc={doc} compact onPicked={close} />
           </div>
         </FloatingAt>

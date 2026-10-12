@@ -162,9 +162,9 @@ export default defineFeature({
     }
   ],
   menus: [
-    { menu: 'comment', group: 'stamps', command: 'stamps.addStamp', order: 700 },
-    { menu: 'comment', group: 'stamps', command: 'stamps.showPalette', order: 701 },
-    { menu: 'comment', group: 'stamps', command: 'stamps.createCustom', order: 702 },
+    { menu: 'comment', group: 'stamps', command: 'stamps.addStamp', order: 700, submenu: 'Stamps' },
+    { menu: 'comment', group: 'stamps', command: 'stamps.showPalette', order: 701, submenu: 'Stamps' },
+    { menu: 'comment', group: 'stamps', command: 'stamps.createCustom', order: 702, submenu: 'Stamps' },
     { menu: 'tools', group: 'measure', command: 'measure.distanceTool', order: 500, submenu: 'Measure' },
     { menu: 'tools', group: 'measure', command: 'measure.perimeterTool', order: 501, submenu: 'Measure' },
     { menu: 'tools', group: 'measure', command: 'measure.areaTool', order: 502, submenu: 'Measure' },

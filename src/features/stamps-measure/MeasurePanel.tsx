@@ -94,7 +94,7 @@ function MeasurementInfoBox({ doc }: { doc: DocumentModel }) {
     <div className="fc-stamps-measure-info" aria-live="polite">
       {r ? (
         <dl>
-          {r.rows.map((row) => (
+          {[...r.rows, { label: 'Scale', value: scaleToString(scale) }].map((row) => (
             <div key={row.label} className="fc-stamps-measure-info-row">
               <dt>{row.label}</dt>
               <dd>{row.value}</dd>

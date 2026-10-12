@@ -43,11 +43,32 @@ async function at(page: Page, x: number, y: number, index = 0): Promise<{ x: num
   return { x: box.x + x * s, y: box.y + y * s }
 }
 
-async function clickAt(page: Page, x: number, y: number) {
-  const p = await at(page, x, y)
+async function clickAt(page: Page, x: number, y: number, index = 0) {
+  const p = await at(page, x, y, index)
   await page.mouse.move(p.x, p.y)
   await page.mouse.down()
   await page.mouse.up()
+}
+
+/** Screen position of a page-space point on page 0 while the view is rotated 90° clockwise. */
+async function atRotated90(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
+  const box = await page.locator('.viewer-page[data-page-index="0"]').boundingBox()
+  if (!box) throw new Error('page not visible')
+  const { zoom, height } = await page.evaluate(() => {
+    const d = (window as any).__fartcrobat.getActiveDoc()
+    return { zoom: d.state.zoom as number, height: d.state.info.pages[0].height as number }
+  })
+  const s = (zoom * 96) / 72
+  return { x: box.x + (height - y) * s, y: box.y + x * s }
+}
+
+async function setViewRotation(page: Page, rotation: 0 | 90) {
+  await page.evaluate((r) => {
+    const d = (window as any).__fartcrobat.getActiveDoc()
+    d.set({ viewRotation: r })
+    d.view.goToPage(0)
+  }, rotation)
+  await page.waitForTimeout(400)
 }
 
 /** Scrolls so a page-space rectangle of page 0 is in view. */
@@ -124,6 +145,7 @@ test('stamps: palette, click and drag placement, dynamic and custom stamps', asy
     await page.mouse.up()
     await expect.poll(async () => (await annots(page)).filter((x) => x.type === 'Stamp').length).toBe(2)
     const reviewed = (await annots(page)).find((x) => x.extra.stamp === 'dynamic:reviewed')!
+    expect(reviewed.icon).toBe('DReviewed')
     expect(reviewed.subject).toBe('Reviewed')
     expect(reviewed.contents).toMatch(/^Reviewed by .+ at .+/)
     expect(reviewed.rect[0]).toBeCloseTo(100, 0)
@@ -142,6 +164,7 @@ test('stamps: palette, click and drag placement, dynamic and custom stamps', asy
     await expect(dialog.getByRole('img', { name: 'Stamp preview' })).toBeVisible()
     await expect(dialog.getByLabel('Stamp name')).toHaveValue('scan')
     await dialog.getByLabel('Stamp name').fill('Scanned note')
+    await page.waitForTimeout(300) // let the dialog finish fading in
     await page.screenshot({ path: SHOT('custom-dialog') })
     await dialog.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(dialog).toBeHidden()
@@ -179,9 +202,36 @@ test('stamps: palette, click and drag placement, dynamic and custom stamps', asy
     await clickAt(page, 450, 740)
     await expect.poll(async () => (await annots(page)).some((x) => x.extra.stamp === 'signhere:signhere')).toBe(true)
 
+    // Rotated view (View > Rotate View): the stamp lands where you click and reads upright on the page.
+    await setViewRotation(page, 90)
+    await page.keyboard.press('k')
+    await page.getByRole('button', { name: /Choose stamp/ }).click()
+    await page.getByRole('dialog', { name: 'Stamps' }).getByLabel('Search stamps').fill('draft')
+    await page.getByRole('dialog', { name: 'Stamps' }).getByRole('button', { name: 'Draft stamp' }).click()
+    const rp = await atRotated90(page, 300, 200)
+    await page.mouse.move(rp.x, rp.y)
+    await expect(page.locator('.fc-stamps-measure-ghost')).toBeVisible()
+    await page.screenshot({ path: SHOT('rotated-ghost') })
+    await page.mouse.down()
+    await page.mouse.up()
+    await expect.poll(async () => (await annots(page)).some((x) => x.extra.stamp === 'standard:draft')).toBe(true)
+    const draft = (await annots(page)).find((x) => x.extra.stamp === 'standard:draft')!
+    expect((draft.rect[0] + draft.rect[2]) / 2).toBeCloseTo(300, 0)
+    expect((draft.rect[1] + draft.rect[3]) / 2).toBeCloseTo(200, 0)
+    // wider than tall in page space: upright on the page, not turned with the view
+    expect(draft.rect[2] - draft.rect[0]).toBeGreaterThan(draft.rect[3] - draft.rect[1])
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: SHOT('rotated-placed') })
+    await setViewRotation(page, 0)
+
     // Custom stamp from page 2 of a PDF (rendered by a temporary engine), then rename and delete it.
+    // (through Menu > Comment > Stamps, where Acrobat keeps it)
     await stubOpenDialog(app, fixturePath('text.pdf'))
-    await page.getByRole('button', { name: 'Create custom stamp…' }).click()
+    await page.getByRole('button', { name: 'Menu', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Comment', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Stamps', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Show Stamps Palette' })).toBeVisible()
+    await page.getByRole('menuitem', { name: 'Create Custom Stamp…' }).click()
     await expect(dialog).toBeVisible()
     await dialog.getByRole('button', { name: 'Choose image or PDF…' }).click()
     await expect(dialog.getByText('Page 1 of 5')).toBeVisible()
@@ -191,6 +241,7 @@ test('stamps: palette, click and drag placement, dynamic and custom stamps', asy
     await expect(dialog.getByText('Page 2 of 5')).toBeVisible()
     await expect.poll(() => dialog.getByRole('img', { name: 'Stamp preview' }).getAttribute('src')).not.toBe(firstPreview)
     await dialog.getByLabel('Stamp name').fill('Chapter two')
+    await page.waitForTimeout(300) // let the dialog finish fading in
     await page.screenshot({ path: SHOT('custom-pdf') })
     await dialog.getByRole('button', { name: 'Create', exact: true }).click()
     await expect(dialog).toBeHidden()
@@ -218,6 +269,21 @@ test('stamps: palette, click and drag placement, dynamic and custom stamps', asy
     })
     await page.waitForTimeout(400)
     await page.screenshot({ path: SHOT('dark') })
+    await page.keyboard.press('k')
+    await page.getByRole('button', { name: /Choose stamp/ }).click()
+    await expect(page.getByRole('dialog', { name: 'Stamps' })).toBeVisible()
+    await page.screenshot({ path: SHOT('dark-toolbar-palette') })
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'Stamps' })).toBeHidden()
+    expect(await toolId(page)).toBe('stamps.stamp')
+    await stubOpenDialog(app, fixturePath('scan.png'))
+    await page.getByRole('button', { name: 'Create custom stamp…' }).click()
+    await dialog.getByRole('button', { name: 'Choose image or PDF…' }).click()
+    await expect(dialog.getByRole('img', { name: 'Stamp preview' })).toBeVisible()
+    await page.waitForTimeout(300) // let the dialog finish fading in
+    await page.screenshot({ path: SHOT('dark-custom-dialog') })
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toBeHidden()
   } finally {
     await app.close()
   }
@@ -252,6 +318,7 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
     await expect(page.locator('.fc-stamps-measure-readout')).toHaveText('2 ft')
     await expect(page.locator('.fc-stamps-measure-info-row', { hasText: 'Distance' })).toContainText('2 ft')
     await expect(page.locator('.fc-stamps-measure-info-row', { hasText: 'Angle' })).toContainText('0°')
+    await expect(page.locator('.fc-stamps-measure-info-row', { hasText: 'Scale' })).toContainText('1 in = 1 ft')
     await page.screenshot({ path: SHOT('distance-live') })
     await page.mouse.down()
     await page.mouse.up()
@@ -334,8 +401,48 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
     await page.waitForTimeout(400)
     await page.screenshot({ path: SHOT('zoom150') })
 
-    // Calibrate: a 2 in line that is really 10 ft -> 1 in = 5 ft
+    // Rotated view: a line drawn down the page (across the screen) is still 144 pt -> 2 ft
     await setZoom(page, 0.75)
+    await setViewRotation(page, 90)
+    const r1 = await atRotated90(page, 480, 600)
+    const r2 = await atRotated90(page, 480, 744)
+    await page.mouse.click(r1.x, r1.y)
+    await page.mouse.move(r2.x, r2.y, { steps: 4 })
+    await expect(page.locator('.fc-stamps-measure-readout')).toHaveText('2 ft')
+    await page.screenshot({ path: SHOT('rotated-live') })
+    await page.mouse.click(r2.x, r2.y)
+    await expect.poll(async () => (await annots(page)).filter((a) => a.type === 'Line').length).toBe(3)
+    const rotated = (await annots(page)).find((a) => a.type === 'Line' && a.contents === '2 ft' && a.id !== line.id)! as Annot & {
+      line: [[number, number], [number, number]]
+    }
+    expect(rotated).toBeTruthy()
+    const xs = rotated.line.map((p) => p[0])
+    const ys = rotated.line.map((p) => p[1]).sort((a, b) => a - b)
+    expect(xs[0]).toBeCloseTo(480, 0)
+    expect(xs[1]).toBeCloseTo(480, 0)
+    expect(ys[0]).toBeCloseTo(600, 0)
+    expect(ys[1]).toBeCloseTo(744, 0)
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: SHOT('rotated-measured') })
+    await page.keyboard.press('Control+z')
+    await expect.poll(async () => (await annots(page)).filter((a) => a.type === 'Line').length).toBe(2)
+    await setViewRotation(page, 0)
+
+    // Tools > Measure > Set Scale Ratio… opens the same scale settings in a dialog
+    // not awaited: the command resolves when its dialog closes
+    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('measure.setScale'))
+    const scaleDialog = page.locator('.fc-stamps-measure-scale-dialog')
+    await expect(scaleDialog).toBeVisible()
+    await expect(scaleDialog).toContainText('Now: 1 in = 1 ft')
+    await scaleDialog.getByLabel('Common scales').selectOption({ label: '1/4 in = 1 ft' })
+    await expect(scaleDialog).toContainText('Now: 0.25 in = 1 ft')
+    await page.waitForTimeout(300) // let the dialog finish fading in
+    await page.screenshot({ path: SHOT('scale-dialog') })
+    await scaleDialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(scaleDialog).toBeHidden()
+    await expect(page.getByRole('button', { name: 'Scale: 1 in = 1 ft' })).toBeVisible()
+
+    // Calibrate: a 2 in line that is really 10 ft -> 1 in = 5 ft
     await page.getByRole('button', { name: 'Calibrate…' }).click()
     await expect(page.getByRole('button', { name: 'Draw over a known length…' })).toBeVisible()
     expect(await toolId(page)).toBe('measure.distance')
@@ -345,6 +452,8 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
     await expect(calib).toContainText('2 in long on the page')
     await calib.getByLabel('Real length', { exact: true }).fill('10')
     await calib.getByLabel('Real length unit').selectOption('ft')
+    await page.waitForTimeout(300) // let the dialog finish fading in
+    await page.screenshot({ path: SHOT('calibrate-dialog') })
     await calib.getByRole('button', { name: 'Set scale' }).click()
     await expect(calib).toBeHidden()
     await expect(page.getByRole('button', { name: 'Scale: 1 in = 5 ft' })).toBeVisible()
@@ -369,6 +478,27 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
     expect(csv).toContain('1,Area,25,sq ft,25 sq ft,1 in = 5 ft')
     await page.waitForTimeout(300)
     await page.screenshot({ path: SHOT('calibrated') })
+
+    // A measurement stays on one page: passing over the next page keeps its points, and clicking
+    // there finishes it and starts a new one on that page.
+    await page.locator('.shell-tooloptions').getByRole('radio', { name: /Perimeter/ }).click()
+    await reveal(page, [250, 700, 450, 792])
+    const polylines = (await annots(page)).filter((a) => a.type === 'PolyLine').length
+    await clickAt(page, 300, 745)
+    await clickAt(page, 372, 745)
+    const page0Points = page.locator('.viewer-page[data-page-index="0"] .fc-stamps-measure-measure-layer circle')
+    const page1Points = page.locator('.viewer-page[data-page-index="1"] .fc-stamps-measure-measure-layer circle')
+    await expect(page0Points).toHaveCount(2)
+    const over = await at(page, 336, 30, 1)
+    await page.mouse.move(over.x, over.y, { steps: 6 })
+    await expect(page0Points).toHaveCount(2)
+    await clickAt(page, 336, 30, 1)
+    await expect.poll(async () => (await annots(page)).filter((a) => a.type === 'PolyLine').length).toBe(polylines + 1)
+    await expect(page0Points).toHaveCount(0)
+    await expect(page1Points).toHaveCount(1)
+    await page.keyboard.press('Escape')
+    await expect(page1Points).toHaveCount(0)
+    expect((await annots(page, 1)).length).toBe(0)
 
     // Dark theme panel
     await page.evaluate(() => {

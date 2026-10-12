@@ -238,9 +238,15 @@ export async function stampPreviewUrl(def: StampDef, doc: DocumentModel | null, 
   if (def.shape === 'image') {
     url = customById(def.id)?.dataUrl ?? ''
   } else if (def.shape === 'builtin') {
-    if (!doc) throw new Error('Open a document to see this stamp')
-    const png = await doc.ops<StampOps>('stamps-measure').stampPreview(def.name, def.color, 2)
-    url = bytesToDataUrl(png)
+    try {
+      if (!doc || doc.isClosed) throw new Error('No open document to draw the stamp with')
+      const png = await doc.ops<StampOps>('stamps-measure').stampPreview(def.name, def.color, 2)
+      url = bytesToDataUrl(png)
+    } catch (err) {
+      if (doc && !doc.isClosed) console.warn(`MuPDF could not draw the ${def.label} stamp preview`, err)
+      // Same look, drawn with a canvas (not cached: MuPDF's own drawing is preferred next time).
+      return (await drawStamp({ ...def, shape: 'box' }, { author, date: now, pxPerPt: 2 })).dataUrl
+    }
   } else {
     url = (await drawStamp(def, { author, date: now, pxPerPt: 2 })).dataUrl
   }

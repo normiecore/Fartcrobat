@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ColorPicker, FloatingAt } from '@renderer/sdk'
+import { useEscapeGuard } from './escapeGuard'
 
 /**
  * A colour swatch button whose picker floats above everything (the UI kit's ColorButton popover
@@ -7,6 +8,8 @@ import { ColorPicker, FloatingAt } from '@renderer/sdk'
  */
 export function ColorMenuButton({ value, onChange, label }: { value: string; onChange: (c: string) => void; label: string }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  // Esc closes the colours, not the measuring tool too
+  useEscapeGuard(!!at)
   return (
     <>
       <button
@@ -24,14 +27,7 @@ export function ColorMenuButton({ value, onChange, label }: { value: string; onC
       />
       {at && (
         <FloatingAt x={at.x} y={at.y} onClose={() => setAt(null)}>
-          <div
-            className="fc-stamps-measure-color-pop"
-            role="dialog"
-            aria-label={label}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') e.stopPropagation()
-            }}
-          >
+          <div className="fc-stamps-measure-color-pop" role="dialog" aria-label={label}>
             <ColorPicker
               value={value}
               onChange={(c) => {
