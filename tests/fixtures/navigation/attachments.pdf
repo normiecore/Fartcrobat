@@ -1,0 +1,189 @@
+%PDF-1.3
+%‚„œ”
+1 0 obj
+<<
+/PageMode /UseNone
+/Pages 2 0 R
+/Type /Catalog
+/Names 12 0 R
+>>
+endobj
+2 0 obj
+<<
+/Count 2
+/Kids [ 3 0 R 7 0 R ]
+/Type /Pages
+>>
+endobj
+3 0 obj
+<<
+/Contents 4 0 R
+/MediaBox [ 0 0 612 792 ]
+/Parent 2 0 R
+/Resources <<
+/Font 5 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+>>
+endobj
+4 0 obj
+<<
+/Filter [ /ASCII85Decode /FlateDecode ]
+/Length 134
+>>
+stream
+GapQh0E=F,0U\H3T\pNYT^QKk?tc>IP,;W#U1^23ihPEM_?CU^!/VX4lBrg6%A?7Y)_%-n(at'u.VLf-PU%SgjJM()'J#tj<g8gaV(*0)VPbm\C+=mI.>2AcZmp"q!5!Ls_Z~>
+endstream
+endobj
+5 0 obj
+<<
+/F1 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+7 0 obj
+<<
+/Contents 8 0 R
+/MediaBox [ 0 0 612 792 ]
+/Parent 2 0 R
+/Resources <<
+/Font 5 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+/Annots [ 16 0 R ]
+>>
+endobj
+8 0 obj
+<<
+/Filter [ /ASCII85Decode /FlateDecode ]
+/Length 134
+>>
+stream
+GapQh0E=F,0U\H3T\pNYT^QKk?tc>IP,;W#U1^23ihPEM_?CU^!/VX4lBrg6%A?7Y)_%-n(at'u.VLf-PU%SgjJM()'J#tj<g8gaV(*0)VPbm\Be"dH.>2AcZmp"q!5"",_u~>
+endstream
+endobj
+9 0 obj
+<<
+/Author (anonymous)
+/CreationDate (D\07220261012001152\05300\04700\047)
+/Creator (anonymous)
+/Keywords ()
+/ModDate (D\07220261012001152\05300\04700\047)
+/Producer (ReportLab PDF Library \055 \050opensource\051)
+/Subject (unspecified)
+/Title (Attachments fixture)
+/Trapped /False
+>>
+endobj
+10 0 obj
+<<
+/Type /EmbeddedFile
+/Params <<
+/Size 29
+/ModDate (D\07220240305101500\05300\04700\047)
+>>
+/Subtype /text#2Fcsv
+/Length 27
+>>
+stream
+name,amount
+alpha,1
+beta,2
+
+endstream
+endobj
+11 0 obj
+<<
+/Type /Filespec
+/F (data\056csv)
+/EF <<
+/F 10 0 R
+>>
+/Desc (Quarterly figures)
+>>
+endobj
+12 0 obj
+<<
+/EmbeddedFiles 13 0 R
+>>
+endobj
+13 0 obj
+<<
+/Names [ (data\056csv) 11 0 R ]
+>>
+endobj
+14 0 obj
+<<
+/Type /EmbeddedFile
+/Length 30
+>>
+stream
+Remember to check the totals.
+
+endstream
+endobj
+15 0 obj
+<<
+/Type /Filespec
+/F (notes\056txt)
+/UF (notes\056txt)
+/EF <<
+/F 14 0 R
+>>
+>>
+endobj
+16 0 obj
+<<
+/Type /Annot
+/Subtype /FileAttachment
+/Rect [ 72 600 92 624 ]
+/FS 15 0 R
+/Contents (notes\056txt)
+/Name /PushPin
+>>
+endobj
+xref
+0 17
+0000000000 65535 f 
+0000000015 00000 n 
+0000000097 00000 n 
+0000000162 00000 n 
+0000000351 00000 n 
+0000000576 00000 n 
+0000000607 00000 n 
+0000000714 00000 n 
+0000000922 00000 n 
+0000001147 00000 n 
+0000001447 00000 n 
+0000001636 00000 n 
+0000001737 00000 n 
+0000001781 00000 n 
+0000001835 00000 n 
+0000001936 00000 n 
+0000002031 00000 n 
+trailer
+<<
+/Size 17
+/Root 1 0 R
+/Info 9 0 R
+/ID [ <6766732f527341af3ad82062c85ab621> <6766732f527341af3ad82062c85ab621> ]
+>>
+startxref
+2166
+%%EOF
