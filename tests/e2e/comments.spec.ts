@@ -165,6 +165,19 @@ test('select, move, edit, reply, export and import comments', async () => {
     await expect.poll(async () => (await op<any[]>(page, 'annots', 'list', 0)).some((a) => a.id === ids.sq)).toBe(false)
     await expect(page.locator('.fc-comments-selbox')).toHaveCount(0)
 
+    // ---- a comment tool announces a new sticky note: its pop-up opens, ready for typing
+    await page.evaluate(
+      ({ id }) => {
+        const d = (window as any).__fartcrobat.getActiveDoc()
+        window.dispatchEvent(new CustomEvent('fartcrobat:edit-annotation', { detail: { docId: d.id, id, page: 0 } }))
+      },
+      { id: ids.note }
+    )
+    await expect(page.locator('.fc-comments-popup textarea[aria-label="Comment text"]')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await page.locator('.fc-comments-popup button[aria-label="Close pop-up note"]').click()
+    await expect(page.locator('.fc-comments-popup')).toHaveCount(0)
+
     // ---- double-click the sticky note: its pop-up note opens; edit the text there
     const [nx, ny] = await toScreen(page, [410, 130])
     await page.mouse.dblclick(nx, ny)
@@ -482,9 +495,25 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     await expect(page.locator('.fc-comments-hits')).toHaveCount(0)
     await runCommand(page, 'comments.toggleVisibility')
 
+    // a highlight (with a reply) shows the text it marks in the list
+    await page.evaluate(async () => {
+      const d = (window as any).__fartcrobat.getActiveDoc()
+      const t = await d.pageText(0)
+      const i = t.text.indexOf('quick brown fox')
+      const q = t.quads
+      const a = i * 8
+      const b = (i + 'quick brown fox'.length - 1) * 8
+      const quad = [q[a], q[a + 1], q[b + 2], q[b + 3], q[a + 4], q[a + 5], q[b + 6], q[b + 7]]
+      const hl = await d.ops('annots').create(0, { type: 'Highlight', quads: [quad], color: '#ffeb3b', contents: 'Use a better example' })
+      await d.ops('annots').reply(hl.id, 'Agreed, the fox is overused.', 'Carol')
+    })
+
     // dark mode: panel and pop-up
     await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
     await page.locator('button[aria-label="Comments"]').click()
+    await expect(page.locator('.fc-comments-card .fc-comments-quote')).toHaveText('quick brown fox')
+    await page.locator('button[aria-label="Expand all"]').click()
+    await expect(page.locator('.fc-comments-card .fc-comments-reply')).toHaveCount(1)
     const [ftx, fty] = await toScreen(page, [390, 515])
     await page.mouse.click(ftx, fty)
     await runCommand(page, 'comments.openPopup')
@@ -498,7 +527,7 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     await expect.poll(async () => (await op<any[]>(page, 'annots', 'listAll')).length).toBe(0)
     await expect(page.locator('.fc-comments-panel .ui-empty')).toBeVisible()
     await page.keyboard.press('Control+z')
-    await expect.poll(async () => (await op<any[]>(page, 'annots', 'listAll')).length).toBe(3)
+    await expect.poll(async () => (await op<any[]>(page, 'annots', 'listAll')).length).toBe(5)
   } finally {
     await app.close()
   }

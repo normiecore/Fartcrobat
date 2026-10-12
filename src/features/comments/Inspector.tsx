@@ -86,26 +86,31 @@ const ENDING_SHORT: Record<string, string> = {
 export function Inspector({
   doc,
   annot: a,
-  left,
-  top,
-  minLeft,
-  maxRight
+  anchor,
+  bounds
 }: {
   doc: DocumentModel
   annot: AnnotInfo
-  left: number
-  top: number
-  /** Horizontal room (overlay coordinates): the bar is kept inside it. */
-  minLeft: number
-  maxRight: number
+  /** The comment's box in overlay coordinates. */
+  anchor: { left: number; top: number; bottom: number }
+  /** The visible part of the document in overlay coordinates: the bar stays inside it. */
+  bounds: { left: number; top: number; right: number; bottom: number }
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  // keep the whole bar inside the visible part of the document (its width depends on the type)
+  // Above the comment, else below it, else pinned to the top of the visible area while the
+  // comment is in view. The bar wraps onto a second row when the document area is narrow.
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
     const w = el.offsetWidth
-    el.style.left = `${Math.max(minLeft, Math.min(left, maxRight - w))}px`
+    const h = el.offsetHeight
+    const left = Math.max(bounds.left, Math.min(anchor.left, bounds.right - w))
+    const above = anchor.top - h - 10
+    const below = anchor.bottom + 10
+    const inView = anchor.top < bounds.bottom && anchor.bottom > bounds.top
+    const top = !inView || above >= bounds.top ? above : below + h <= bounds.bottom ? below : bounds.top
+    el.style.left = `${left}px`
+    el.style.top = `${top}px`
   })
   const caps = capabilities(a)
   const set = (spec: AnnotSpec) => void updateComment(doc, a, spec)
@@ -117,7 +122,7 @@ export function Inspector({
       className="fc-comments-inspector"
       role="toolbar"
       aria-label="Comment properties"
-      style={{ left, top }}
+      style={{ maxWidth: Math.max(160, bounds.right - bounds.left) }}
       onPointerDown={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >

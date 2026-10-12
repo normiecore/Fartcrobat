@@ -246,22 +246,18 @@ function OverlayContent({ doc, vp }: { doc: DocumentModel; vp: HTMLElement }) {
     const o = t ? originOf(t.root.page) : null
     if (t && o && selection.ids.every((id) => groupIds.includes(id)) && editing?.id !== t.root.id) {
       const css = o.g.rectToCss(t.root.rect)
-      // above the comment, else below it, else pinned to the edge of the visible area
-      const visTop = vp.scrollTop + 8
-      const visBottom = vp.scrollTop + vp.clientHeight - 8
-      const above = o.y + css.top - 46
-      const below = o.y + css.top + css.height + 10
-      const inView = o.y + css.top < visBottom && below > visTop
-      const top = !inView || above >= visTop ? above : below + 38 <= visBottom ? below : visTop
       inspector = (
         <Inspector
           key={t.root.id}
           doc={doc}
           annot={t.root}
-          left={o.x + css.left}
-          top={top}
-          minLeft={vp.scrollLeft + 8}
-          maxRight={vp.scrollLeft + vp.clientWidth - 8}
+          anchor={{ left: o.x + css.left, top: o.y + css.top, bottom: o.y + css.top + css.height }}
+          bounds={{
+            left: vp.scrollLeft + 8,
+            right: vp.scrollLeft + vp.clientWidth - 8,
+            top: vp.scrollTop + 8,
+            bottom: vp.scrollTop + vp.clientHeight - 8
+          }}
         />
       )
     }
