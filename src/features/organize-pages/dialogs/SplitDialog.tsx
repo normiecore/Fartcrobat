@@ -242,6 +242,7 @@ function SplitDialog({ doc, close }: { doc: DocumentModel; close: () => void }) 
             value={s.label}
             onChange={(e) => set({ label: e.target.value })}
             placeholder="Part"
+            className="fc-organize-pages-input"
             disabled={labelUnused}
             title={labelUnused ? 'The files are named after the bookmarks' : undefined}
           />

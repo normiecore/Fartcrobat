@@ -191,6 +191,18 @@ test('combine files into a new document with one bookmark per file', async () =>
     await expect(dialog.locator('.fc-organize-pages-combine-name').nth(1)).toHaveText('scan.png')
     await dialog.getByRole('button', { name: 'Move scan.png down' }).click()
     await expect(dialog.locator('.fc-organize-pages-combine-name').nth(2)).toHaveText('scan.png')
+    // Drag compare-b.pdf above compare-a.pdf by its handle, then back again.
+    const grip = dialog.locator('.fc-organize-pages-combine-row').nth(1).locator('.fc-organize-pages-grip')
+    const g = await grip.boundingBox()
+    const first = await dialog.locator('.fc-organize-pages-combine-row').first().boundingBox()
+    await page.mouse.move(g!.x + g!.width / 2, g!.y + g!.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(g!.x + g!.width / 2, first!.y + 8, { steps: 8 })
+    await expect(dialog.locator('.fc-organize-pages-combine-row.is-drop-before')).toHaveCount(1)
+    await page.mouse.up()
+    await expect(dialog.locator('.fc-organize-pages-combine-name')).toHaveText(['compare-b.pdf', 'compare-a.pdf', 'scan.png'])
+    await dialog.getByRole('button', { name: 'Move compare-a.pdf up' }).click()
+    await expect(dialog.locator('.fc-organize-pages-combine-name')).toHaveText(['compare-a.pdf', 'compare-b.pdf', 'scan.png'])
     await page.waitForTimeout(250)
     await page.screenshot({ path: 'test-results/organize-pages-combine.png' })
     await dialog.getByRole('button', { name: 'Combine', exact: true }).click()
@@ -300,6 +312,21 @@ test('organize dialogs: rotate, page labels, insert from file, replace, split, c
     await expect.poll(async () => (await pageTexts(page))[1]).toContain('audit team')
     expect((await activeDocState(page))?.pageCount).toBe(7)
 
+    // Insert Pages from File (Ctrl+Shift+I) asks for the password of a protected file.
+    await stubOpenDialog(app, [fixturePath('encrypted.pdf')])
+    await page.keyboard.press('Control+Shift+I')
+    dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('“encrypted.pdf” is protected')
+    await dialog.getByLabel('Password').fill('secret')
+    await dialog.getByRole('button', { name: 'OK' }).click()
+    dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Insert Pages')
+    await expect(dialog).toContainText('encrypted.pdf')
+    await dialog.getByRole('button', { name: 'Insert', exact: true }).click()
+    await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(8)
+    await page.keyboard.press('Control+z')
+    await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(7)
+
     // Split into files of 4 pages in a folder.
     const outDir = mkdtempSync(join(tmpdir(), 'fartcrobat-split-'))
     await stubOpenDialog(app, [outDir])
@@ -330,6 +357,19 @@ test('organize pages: keyboard moves, copy by dragging, clipboard and Delete Pag
     await waitForRender(page)
     await page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
     await waitForThumbs(page, 5)
+
+    // Rubber-band selection from empty space, then Ctrl+click to add a page.
+    const scroll = await page.locator('.fc-organize-pages-scroll').boundingBox()
+    const second = await cell(page, 1).boundingBox()
+    await page.mouse.move(scroll!.x + 6, scroll!.y + 6)
+    await page.mouse.down()
+    await page.mouse.move(second!.x + 40, second!.y + 60, { steps: 8 })
+    await expect(page.locator('.fc-organize-pages-marquee')).toBeVisible()
+    await page.mouse.up()
+    await expect(page.locator('.fc-organize-pages-marquee')).toHaveCount(0)
+    await expect(page.locator('.fc-organize-pages-status')).toContainText('2 selected (1-2)')
+    await cell(page, 3).click({ modifiers: ['Control'] })
+    await expect(page.locator('.fc-organize-pages-status')).toContainText('3 selected (1-2, 4)')
 
     // Alt+Right moves the selected page one place to the right.
     await cell(page, 0).click()
@@ -601,6 +641,8 @@ test('extract pages as separate files and split by bookmarks', async () => {
     await dialog.getByLabel('Top-level bookmarks').check()
     await dialog.getByRole('button', { name: 'Change…' }).click()
     await expect(dialog).toContainText('Creates 5 files')
+    // The files are named after the bookmarks, so the name label is not used.
+    await expect(dialog.locator('.fc-organize-pages-input')).toBeDisabled()
     await page.waitForTimeout(250)
     await page.screenshot({ path: 'test-results/organize-pages-split-bookmarks.png' })
     await dialog.getByRole('button', { name: 'Split', exact: true }).click()

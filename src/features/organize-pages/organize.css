@@ -459,6 +459,10 @@
   margin: 2px 0;
   overflow-wrap: anywhere;
 }
+.fc-organize-pages-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .fc-organize-pages-spacer {
   flex: 1;
 }

@@ -171,6 +171,27 @@ describe('organize-pages: page operations', () => {
     expect(await chapters(e)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C5', 'C4'])
   })
 
+  it('copies pages into another document without its bookmarks (drag to another tab)', async () => {
+    const source = await openFixture('text.pdf')
+    const target = await openFixture('mixed-sizes.pdf')
+    const before = await nav(target).outline()
+    const bytes = await org(source).extract([0, 1])
+    const created = await org(target).insertFiles(-1, [{ data: bytes, fileName: 'pages.pdf' }], {
+      bookmarks: false
+    })
+    expect(created).toEqual([3, 4])
+    expect((await chapters(target)).slice(3)).toEqual(['C1', 'C2'])
+    expect(await nav(target).outline()).toEqual(before)
+    // web links come along; the link to a page that was not copied is left out
+    const links = await nav(target).links(3)
+    expect(links.some((l) => l.external && l.uri.includes('example.com'))).toBe(true)
+    expect(links.some((l) => !l.external)).toBe(false)
+    expect(target.lastChanges?.dirty).toBe(true)
+    await target.doc.undo()
+    expect((await target.doc.info()).pageCount).toBe(3)
+    expect((await source.doc.info()).pageCount).toBe(5)
+  })
+
   it('extracts pages with their links and bookmarks', async () => {
     const e = await openFixture('text.pdf')
     const bytes = await org(e).extract([0, 2])
