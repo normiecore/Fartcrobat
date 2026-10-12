@@ -76,7 +76,8 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
     if (!stored && signers.length) usePF.setState((s) => ({ signers: { ...s.signers, [doc.id]: signers } }))
   }, [stored, signers, doc.id])
 
-  const setSigners = (list: Signer[]) => usePF.setState((s) => ({ signers: { ...s.signers, [doc.id]: list } }))
+  const setSigners = (list: Signer[]) =>
+    usePF.setState((s) => ({ signers: { ...s.signers, [doc.id]: list } }))
 
   const addSigner = () => {
     const n = name.trim()
@@ -119,7 +120,11 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
 
   /** Assigns a signature field to a signer (stored as the field's tooltip, like Acrobat's signer roles). */
   const assign = async (id: number, signer: string) => {
-    await updateFields(doc, [id], signer ? { tooltip: `Signature of ${signer}`, required: true } : { tooltip: '' })
+    await updateFields(
+      doc,
+      [id],
+      signer ? { tooltip: `Signature of ${signer}`, required: true } : { tooltip: '' }
+    )
   }
   const unassigned = sigFields.filter((f) => !SIGNER_RE.test(f.tooltip))
 
@@ -128,8 +133,8 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
       <div className="fc-prepare-form-note">
         <Info size={16} aria-hidden />
         <span>
-          Fartcrobat works offline, so it doesn’t send documents through a signing service. Add a signature field for each signer, then save the PDF and email it to
-          them — they can sign it in any PDF app.
+          Fartcrobat works offline, so it doesn’t send documents through a signing service. Add a signature
+          field for each signer, then save the PDF and email it to them — they can sign it in any PDF app.
         </span>
       </div>
 
@@ -156,7 +161,9 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
             Add signer
           </Button>
         </div>
-        {signers.length === 0 && <p className="fc-prepare-form-hint">Add the people who need to sign, in signing order.</p>}
+        {signers.length === 0 && (
+          <p className="fc-prepare-form-hint">Add the people who need to sign, in signing order.</p>
+        )}
         <ol className="fc-prepare-form-signers">
           {signers.map((s, i) => {
             const count = fieldsOf(s).length
@@ -168,7 +175,12 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
                     <b>{s.name}</b>
                     <span className="shell-muted">{s.email || 'no email'}</span>
                   </span>
-                  <button className="ui-icon-btn" aria-label={`Remove ${s.name}`} title="Remove signer" onClick={() => setSigners(signers.filter((x) => x !== s))}>
+                  <button
+                    className="ui-icon-btn"
+                    aria-label={`Remove ${s.name}`}
+                    title="Remove signer"
+                    onClick={() => setSigners(signers.filter((x) => x !== s))}
+                  >
                     <X size={14} />
                   </button>
                 </div>
@@ -191,7 +203,10 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
 
       <Section title="2. Signature fields">
         {sigFields.length === 0 ? (
-          <p className="fc-prepare-form-hint">No signature fields yet. Use “Signature field” next to a signer, then click on the page where they should sign.</p>
+          <p className="fc-prepare-form-hint">
+            No signature fields yet. Use “Signature field” next to a signer, then click on the page where they
+            should sign.
+          </p>
         ) : (
           <ul className="fc-prepare-form-sigfields">
             {sigFields.map((f) => {
@@ -218,7 +233,10 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
                     onChange={(e) => void assign(f.id, e.target.value)}
                   >
                     <option value="">No signer</option>
-                    {[...signers.map((s) => s.name), ...(assigned && !signers.some((s) => s.name === assigned) ? [assigned] : [])].map((n) => (
+                    {[
+                      ...signers.map((s) => s.name),
+                      ...(assigned && !signers.some((s) => s.name === assigned) ? [assigned] : [])
+                    ].map((n) => (
                       <option key={n} value={n}>
                         {n}
                       </option>
@@ -229,16 +247,32 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
             })}
           </ul>
         )}
-        {unassigned.length > 0 && signers.length > 0 && <p className="fc-prepare-form-hint">Choose who signs each field. The signer’s name becomes the field’s tooltip.</p>}
+        {unassigned.length > 0 && signers.length > 0 && (
+          <p className="fc-prepare-form-hint">
+            Choose who signs each field. The signer’s name becomes the field’s tooltip.
+          </p>
+        )}
       </Section>
 
       <Section title="3. Send">
-        <Button variant="primary" icon={Send} onClick={() => void saveAndShare()} disabled={!sigFields.length}>
+        <Button
+          variant="primary"
+          icon={Send}
+          onClick={() => void saveAndShare()}
+          disabled={!sigFields.length}
+        >
           Save and share
         </Button>
-        <p className="fc-prepare-form-hint">Saves the PDF and opens your email app with a message to {signers.some((s) => s.email) ? 'the signers' : 'your signers'}. Attach the saved file to the email.</p>
+        <p className="fc-prepare-form-hint">
+          Saves the PDF and opens your email app with a message to{' '}
+          {signers.some((s) => s.email) ? 'the signers' : 'your signers'}. Attach the saved file to the email.
+        </p>
         {sent && (
-          <div className="fc-prepare-form-sent" role="status" ref={(el) => el?.scrollIntoView({ block: 'nearest' })}>
+          <div
+            className="fc-prepare-form-sent"
+            role="status"
+            ref={(el) => el?.scrollIntoView({ block: 'nearest' })}
+          >
             <div>
               <Mail size={16} aria-hidden /> <b>Your email app should open now.</b>
             </div>
@@ -258,7 +292,11 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
               >
                 Copy path
               </Button>
-              <Button size="sm" icon={Mail} onClick={() => void invoke('shell:openExternal', mailtoLink(title, signers, sent))}>
+              <Button
+                size="sm"
+                icon={Mail}
+                onClick={() => void invoke('shell:openExternal', mailtoLink(title, signers, sent))}
+              >
                 Open email again
               </Button>
             </div>

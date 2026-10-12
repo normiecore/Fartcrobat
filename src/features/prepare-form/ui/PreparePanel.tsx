@@ -1,5 +1,14 @@
 import { useEffect } from 'react'
-import { Calculator, Eye, ListOrdered, MousePointer2, PanelRight, PencilLine, Trash, WandSparkles } from 'lucide-react'
+import {
+  Calculator,
+  Eye,
+  ListOrdered,
+  MousePointer2,
+  PanelRight,
+  PencilLine,
+  Trash,
+  WandSparkles
+} from 'lucide-react'
 import {
   confirm,
   openRightPanel,
@@ -77,7 +86,12 @@ function PreparePanelBody({ doc }: { doc: DocumentModel }) {
         <span className="shell-muted">{editing ? 'Editing fields' : 'Filling in the form'}</span>
       </div>
       <Section title="Add a form field">
-        <ToolRow icon={MousePointer2} label="Select and move fields" active={toolId === 'form.select'} onClick={() => setTool('form.select')} />
+        <ToolRow
+          icon={MousePointer2}
+          label="Select and move fields"
+          active={toolId === 'form.select'}
+          onClick={() => setTool('form.select')}
+        />
         {ADD.map((a) => (
           <ToolRow
             key={a.type}
@@ -93,21 +107,43 @@ function PreparePanelBody({ doc }: { doc: DocumentModel }) {
         ))}
       </Section>
       <Section title="More">
-        <ToolRow icon={WandSparkles} label="Detect form fields automatically" description="Turn blanks and boxes into fields" onClick={() => void detectFieldsFlow(doc)} />
-        <ToolRow icon={PanelRight} label="Fields panel" description={`${fields.length} field${fields.length === 1 ? '' : 's'} in this document`} onClick={() => openRightPanel('fields')} />
+        <ToolRow
+          icon={WandSparkles}
+          label="Detect form fields automatically"
+          description="Turn blanks and boxes into fields"
+          onClick={() => void detectFieldsFlow(doc)}
+        />
+        <ToolRow
+          icon={PanelRight}
+          label="Fields panel"
+          description={`${fields.length} field${fields.length === 1 ? '' : 's'} in this document`}
+          onClick={() => openRightPanel('fields')}
+        />
         <ToolRow
           icon={ListOrdered}
           label={showTabs ? 'Hide tab numbers' : 'Show tab numbers'}
           description="The order the Tab key follows"
           onClick={() => usePF.setState({ showTabNumbers: !showTabs })}
         />
-        <ToolRow icon={Calculator} label="Set field calculation order" onClick={() => void openCalculationOrder(doc)} />
+        <ToolRow
+          icon={Calculator}
+          label="Set field calculation order"
+          onClick={() => void openCalculationOrder(doc)}
+        />
         <ToolRow
           icon={Trash}
           label="Delete all fields"
           disabled={!fields.length}
           onClick={async () => {
-            if (!(await confirm({ title: 'Delete all fields', message: `Delete all ${fields.length} form fields from this document? You can undo this.`, confirmLabel: 'Delete all', danger: true }))) return
+            if (
+              !(await confirm({
+                title: 'Delete all fields',
+                message: `Delete all ${fields.length} form fields from this document? You can undo this.`,
+                confirmLabel: 'Delete all',
+                danger: true
+              }))
+            )
+              return
             try {
               const n = await pf(doc).deleteAll()
               clearFieldSelection(doc)

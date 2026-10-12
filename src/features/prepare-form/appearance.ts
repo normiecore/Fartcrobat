@@ -91,7 +91,14 @@ function shade(hex: string, factor: number): string {
 }
 
 /** Content stream operators for a rectangular border in the given style. */
-export function borderOps(style: BorderStyle, width: number, height: number, bw: number, color: string | null, fill: string | null): string {
+export function borderOps(
+  style: BorderStyle,
+  width: number,
+  height: number,
+  bw: number,
+  color: string | null,
+  fill: string | null
+): string {
   if (!color || bw <= 0) return ''
   const h = bw / 2
   const out: string[] = ['q', `${f(bw)} w`, colorOps(color, true)]
@@ -129,7 +136,14 @@ function ellipse(cx: number, cy: number, rx: number, ry: number): string {
   ].join(' ')
 }
 
-function formStream(s: Session, content: string, width: number, height: number, matrix: number[], fonts: boolean): PDFObject {
+function formStream(
+  s: Session,
+  content: string,
+  width: number,
+  height: number,
+  matrix: number[],
+  fonts: boolean
+): PDFObject {
   const doc = s.pdf
   const dict = doc.newDictionary()
   dict.put('Type', doc.newName('XObject'))
@@ -184,11 +198,21 @@ export function writeToggleAppearance(s: Session, w: PDFObject) {
   const glyph = (): string => {
     const inner = Math.max(1, Math.min(width, height) - 2 * bw - (radio ? 2 : 1))
     let size = da.size > 0 ? da.size : inner * (radio && ch === CHECK_CHARS.circle ? 0.62 : 0.86)
-    if (radio && ch === CHECK_CHARS.circle && da.size <= 0) size = Math.max(1, (Math.min(width, height) - 2 * bw) * 0.62)
+    if (radio && ch === CHECK_CHARS.circle && da.size <= 0)
+      size = Math.max(1, (Math.min(width, height) - 2 * bw) * 0.62)
     const gw = ((ZADB_WIDTH[ch] ?? 800) / 1000) * size
     const x = (width - gw) / 2
     const y = height / 2 - 0.345 * size
-    return ['q', 'BT', colorOps(da.color), `/ZaDb ${f(size)} Tf`, `${f(x)} ${f(y)} Td`, `(${ch.replace(/([()\\])/g, '\\$1')}) Tj`, 'ET', 'Q'].join('\n')
+    return [
+      'q',
+      'BT',
+      colorOps(da.color),
+      `/ZaDb ${f(size)} Tf`,
+      `${f(x)} ${f(y)} Td`,
+      `(${ch.replace(/([()\\])/g, '\\$1')}) Tj`,
+      'ET',
+      'Q'
+    ].join('\n')
   }
 
   const nDict = doc.newDictionary()
@@ -274,11 +298,21 @@ export function refreshAppearance(s: Session, widget: PDFWidget) {
     const v = field.get('V')
     if (!isNull(v) && labels.size) {
       const r = v.resolve()
-      const vals = r.isArray() ? Array.from({ length: r.length }, (_, i) => readString(r.get(i))) : [readString(r)]
+      const vals = r.isArray()
+        ? Array.from({ length: r.length }, (_, i) => readString(r.get(i)))
+        : [readString(r)]
       const shown = vals.map((x) => labels.get(x) ?? x)
       if (shown.some((x, i) => x !== vals[i])) {
         const doc = s.pdf
-        field.put('V', shown.length === 1 ? doc.newString(shown[0]) : newArray(doc, shown.map((x) => doc.newString(x))))
+        field.put(
+          'V',
+          shown.length === 1
+            ? doc.newString(shown[0])
+            : newArray(
+                doc,
+                shown.map((x) => doc.newString(x))
+              )
+        )
         restore.push(() => field.put('V', v))
       }
     }

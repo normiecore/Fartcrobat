@@ -29,7 +29,11 @@ export function useAllFields(doc: DocumentModel): { fields: PFField[]; tabs: Pag
   const globalVersion = useDocState(doc, (s) => s.globalVersion)
   // a number, not the object: the model replaces the pageVersions object after every engine call
   const pagesVersion = useDocState(doc, (s) => Object.values(s.pageVersions).reduce((a, b) => a + b, 0))
-  const [state, setState] = useState<{ fields: PFField[]; tabs: PageTabs[]; loaded: boolean }>({ fields: [], tabs: [], loaded: false })
+  const [state, setState] = useState<{ fields: PFField[]; tabs: PageTabs[]; loaded: boolean }>({
+    fields: [],
+    tabs: [],
+    loaded: false
+  })
   useEffect(() => {
     let alive = true
     const t = window.setTimeout(() => {

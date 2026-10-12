@@ -13,7 +13,8 @@ function unJsString(s: string): string {
   return s.replace(/\\(.)/g, (_m, c: string) => (c === 'n' ? '\n' : c))
 }
 
-const int = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(Number.isFinite(n) ? n : 0)))
+const int = (n: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, Math.round(Number.isFinite(n) ? n : 0)))
 
 /** Format (F) and keystroke (K) scripts for a format spec. Empty strings mean "no script". */
 export function formatScripts(f: FormatSpec): { format: string; keystroke: string } {
@@ -33,8 +34,12 @@ export function formatScripts(f: FormatSpec): { format: string; keystroke: strin
         format: `AFDate_FormatEx(${jsString(f.pattern)});`,
         keystroke: `AFDate_KeystrokeEx(${jsString(f.pattern)});`
       }
-    case 'time':
-      return { format: `AFTime_Format(${int(f.style, 0, 3)});`, keystroke: `AFTime_Keystroke(${int(f.style, 0, 3)});` }
+    case 'time': {
+      // Acrobat's AFTime_* functions are AFDate_* with a time pattern; writing AFDate_FormatEx keeps
+      // the field within the AF* subset every viewer (and Fartcrobat's form filling) supports
+      const pattern = jsString(TIME_PATTERNS[int(f.style, 0, 3)])
+      return { format: `AFDate_FormatEx(${pattern});`, keystroke: `AFDate_KeystrokeEx(${pattern});` }
+    }
     case 'special':
       return {
         format: `AFSpecial_Format(${int(f.style, 0, 3)});`,
@@ -57,7 +62,9 @@ export function parseFormat(format?: string, keystroke?: string): FormatSpec {
   const f = (format ?? '').trim()
   const k = (keystroke ?? '').trim()
   if (!f && !k) return { kind: 'none' }
-  let m = new RegExp(`^AFNumber_Format\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*${STR}\\s*,\\s*(true|false)\\s*\\);?$`).exec(f)
+  let m = new RegExp(
+    `^AFNumber_Format\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*${STR}\\s*,\\s*(true|false)\\s*\\);?$`
+  ).exec(f)
   if (m) {
     return {
       kind: 'number',
@@ -71,7 +78,11 @@ export function parseFormat(format?: string, keystroke?: string): FormatSpec {
   m = /^AFPercent_Format\(\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*\w+)?\s*\);?$/.exec(f)
   if (m) return { kind: 'percent', decimals: +m[1], separator: +m[2] }
   m = new RegExp(`^AFDate_FormatEx\\(\\s*${STR}\\s*\\);?$`).exec(f)
-  if (m) return { kind: 'date', pattern: unJsString(m[1]) }
+  if (m) {
+    const pattern = unJsString(m[1])
+    const time = TIME_PATTERNS.indexOf(pattern)
+    return time >= 0 ? { kind: 'time', style: time } : { kind: 'date', pattern }
+  }
   m = /^AFDate_Format\(\s*(\d+)\s*\);?$/.exec(f)
   if (m) return { kind: 'date', pattern: LEGACY_DATE[+m[1]] ?? 'm/d/yy' }
   m = /^AFTime_Format\(\s*(\d+)\s*\);?$/.exec(f)
@@ -128,7 +139,10 @@ export function validateScript(v: ValidateSpec): string {
 export function parseValidate(script?: string): ValidateSpec {
   const s = (script ?? '').trim()
   if (!s) return { kind: 'none' }
-  const m = /^AFRange_Validate\(\s*(true|false)\s*,\s*([-+\d.eE]+)\s*,\s*(true|false)\s*,\s*([-+\d.eE]+)\s*\);?$/.exec(s)
+  const m =
+    /^AFRange_Validate\(\s*(true|false)\s*,\s*([-+\d.eE]+)\s*,\s*(true|false)\s*,\s*([-+\d.eE]+)\s*\);?$/.exec(
+      s
+    )
   if (m) {
     return {
       kind: 'range',
@@ -162,7 +176,9 @@ export function calculateScript(c: CalculateSpec): string {
 export function parseCalculate(script?: string): CalculateSpec {
   const s = (script ?? '').trim()
   if (!s) return { kind: 'none' }
-  const m = new RegExp(`^AFSimple_Calculate\\(\\s*${STR}\\s*,\\s*new\\s+Array\\s*\\(([^)]*)\\)\\s*\\);?$`).exec(s)
+  const m = new RegExp(
+    `^AFSimple_Calculate\\(\\s*${STR}\\s*,\\s*new\\s+Array\\s*\\(([^)]*)\\)\\s*\\);?$`
+  ).exec(s)
   if (m && OPS.includes(unJsString(m[1]) as CalcOp)) {
     const fields: string[] = []
     const re = new RegExp(STR, 'g')
@@ -238,7 +254,13 @@ export function tokenizeNotation(expr: string): Token[] {
 /** Field names used in a simplified notation expression. */
 export function notationFields(expr: string): string[] {
   try {
-    return [...new Set(tokenizeNotation(expr).filter((t) => t.t === 'name').map((t) => t.v))]
+    return [
+      ...new Set(
+        tokenizeNotation(expr)
+          .filter((t) => t.t === 'name')
+          .map((t) => t.v)
+      )
+    ]
   } catch {
     return []
   }
@@ -274,7 +296,8 @@ export function checkNotation(expr: string, knownFields?: string[]): string | nu
     }
     if (!expectOperand) return `Missing operator before “${tk.v}”`
     if (tk.t === 'num' && !Number.isFinite(parseFloat(tk.v))) return `“${tk.v}” is not a number`
-    if (tk.t === 'name' && knownFields && !knownFields.includes(tk.v)) return `There is no field named “${tk.v}”`
+    if (tk.t === 'name' && knownFields && !knownFields.includes(tk.v))
+      return `There is no field named “${tk.v}”`
     expectOperand = false
   }
   if (expectOperand) return 'The expression ends with an operator'
@@ -301,9 +324,15 @@ function escapeName(name: string): string {
 /** Reverses notationToJs (returns null when the script is not a plain notation script). */
 export function jsToNotation(js: string): string | null {
   const re = /getField\(\s*(?:'((?:[^'\\]|\\.)*)'|"((?:[^"\\]|\\.)*)")\s*\)\.value/g
-  const replaced = js.replace(re, (_m, a?: string, b?: string) => `\uE000${escapeName(unJsString(a ?? b ?? ''))}\uE001`)
+  const replaced = js.replace(
+    re,
+    (_m, a?: string, b?: string) => `\uE000${escapeName(unJsString(a ?? b ?? ''))}\uE001`
+  )
   // what remains outside field references must be numbers, operators, parentheses and spaces
   const outside = replaced.replace(/\uE000[^\uE001]*\uE001/g, ' ')
   if (!/^[\s\d.+\-*/()]*$/.test(outside)) return null
-  return replaced.replace(/\uE000([^\uE001]*)\uE001/g, '$1').replace(/\s+/g, ' ').trim()
+  return replaced
+    .replace(/\uE000([^\uE001]*)\uE001/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim()
 }

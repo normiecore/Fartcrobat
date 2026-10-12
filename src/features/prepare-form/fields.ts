@@ -129,7 +129,10 @@ function readAction(s: Session, w: PDFObject): ButtonAction {
     case 'JavaScript':
       return { kind: 'other', description: 'Run a JavaScript' }
     case 'SubmitForm':
-      return { kind: 'other', description: `Submit form to ${readString(a.get('F', 'F')) || readString(a.get('F'))}` }
+      return {
+        kind: 'other',
+        description: `Submit form to ${readString(a.get('F', 'F')) || readString(a.get('F'))}`
+      }
     default:
       return { kind: 'other', description: type ?? 'Unknown action' }
   }
@@ -376,7 +379,14 @@ function putStrings(s: Session, field: PDFObject, key: string, values: string[])
   const doc = s.pdf
   if (!values.length) field.delete(key)
   else if (values.length === 1) field.put(key, doc.newString(values[0]))
-  else field.put(key, newArray(doc, values.map((v) => doc.newString(v))))
+  else
+    field.put(
+      key,
+      newArray(
+        doc,
+        values.map((v) => doc.newString(v))
+      )
+    )
 }
 
 function actionDict(s: Session, a: ButtonAction): PDFObject | null {
@@ -425,7 +435,7 @@ export function applyProps(s: Session, w: PDFObject, pageIndex: number, props: F
   }
   if (has('visibility')) w.put('F', visibilityFlags(readNumber(w.get('F'), F_PRINT), props.visibility!))
   if (has('orientation')) {
-    const r = ((Math.round(props.orientation! / 90) * 90) % 360 + 360) % 360
+    const r = (((Math.round(props.orientation! / 90) * 90) % 360) + 360) % 360
     const mk = ensureMK(s, w)
     if (r) mk.put('R', r)
     else mk.delete('R')
@@ -521,8 +531,14 @@ export function applyProps(s: Session, w: PDFObject, pageIndex: number, props: F
       // drop a value that no longer exists
       const values = new Set(options.map((o) => o.value || o.label))
       const cur = readStrings(field.get('V')).filter((v) => values.has(v))
-      if (kind === 'list' || !(readNumber(field.getInheritable('Ff'), 0) & FF_EDIT)) putStrings(s, field, 'V', cur)
-      putStrings(s, field, 'DV', readStrings(field.get('DV')).filter((v) => values.has(v)))
+      if (kind === 'list' || !(readNumber(field.getInheritable('Ff'), 0) & FF_EDIT))
+        putStrings(s, field, 'V', cur)
+      putStrings(
+        s,
+        field,
+        'DV',
+        readStrings(field.get('DV')).filter((v) => values.has(v))
+      )
       field.delete('I')
     }
     if (has('defaultSelection')) {
@@ -532,7 +548,14 @@ export function applyProps(s: Session, w: PDFObject, pageIndex: number, props: F
       // /I (selected indices) must match /V for list boxes
       const opts = readOptions(field)
       const idx = sel.map((v) => opts.findIndex((o) => (o.value || o.label) === v)).filter((i) => i >= 0)
-      if (kind === 'list' && idx.length) field.put('I', newArray(doc, idx.sort((a, b) => a - b)))
+      if (kind === 'list' && idx.length)
+        field.put(
+          'I',
+          newArray(
+            doc,
+            idx.sort((a, b) => a - b)
+          )
+        )
       else field.delete('I')
     }
   }
@@ -540,7 +563,8 @@ export function applyProps(s: Session, w: PDFObject, pageIndex: number, props: F
   // Buttons
   if (kind === 'button') {
     if (has('caption')) ensureMK(s, w).put('CA', doc.newString(props.caption!))
-    if (has('highlight')) w.put('H', doc.newName({ none: 'N', invert: 'I', outline: 'O', push: 'P' }[props.highlight!]))
+    if (has('highlight'))
+      w.put('H', doc.newName({ none: 'N', invert: 'I', outline: 'O', push: 'P' }[props.highlight!]))
     if (has('action') && props.action!.kind !== 'other') {
       const a = actionDict(s, props.action!)
       if (a) w.put('A', a)
@@ -562,7 +586,10 @@ export function applyProps(s: Session, w: PDFObject, pageIndex: number, props: F
         try {
           tokenizeNotation(c.expr)
         } catch (err) {
-          throw new EngineError(`The calculation “${c.expr}” is not valid: ${(err as Error).message}`, 'BAD_CALC')
+          throw new EngineError(
+            `The calculation “${c.expr}” is not valid: ${(err as Error).message}`,
+            'BAD_CALC'
+          )
         }
       }
       const script = calculateScript(c)
@@ -580,7 +607,12 @@ export function renameInCalculations(s: Session, from: string, to: string) {
     if (!sc.calculate) continue
     const spec = parseCalculate(sc.calculate)
     if (spec.kind === 'simple' && spec.fields.includes(from)) {
-      setFieldScript(s, field, 'C', calculateScript({ ...spec, fields: spec.fields.map((f) => (f === from ? to : f)) }))
+      setFieldScript(
+        s,
+        field,
+        'C',
+        calculateScript({ ...spec, fields: spec.fields.map((f) => (f === from ? to : f)) })
+      )
     } else if (spec.kind === 'notation') {
       try {
         const tokens = tokenizeNotation(spec.expr)

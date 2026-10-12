@@ -10,7 +10,15 @@ import { usePF } from './state'
  * Acrobat's small name box under a field that was just placed: field name, "Required field" and
  * "All properties". For radio buttons: the button's choice, the group name and "Add another button".
  */
-export function InlineNameBox({ doc, field, geometry }: { doc: DocumentModel; field: PFField; geometry: PageGeometry }) {
+export function InlineNameBox({
+  doc,
+  field,
+  geometry
+}: {
+  doc: DocumentModel
+  field: PFField
+  geometry: PageGeometry
+}) {
   const radio = field.type === 'radio'
   const [name, setName] = useState(field.name)
   const [choice, setChoice] = useState(field.exportValue)
@@ -49,7 +57,12 @@ export function InlineNameBox({ doc, field, geometry }: { doc: DocumentModel; fi
   useEffect(() => {
     const el = boxRef.current
     if (!pos || !el) return
-    const box = geometry.cssToRect({ left: pos.left, top: pos.top, width: el.offsetWidth, height: el.offsetHeight })
+    const box = geometry.cssToRect({
+      left: pos.left,
+      top: pos.top,
+      width: el.offsetWidth,
+      height: el.offsetHeight
+    })
     const f = geometry.rectToCss(field.rect)
     const both = geometry.cssToRect({
       left: Math.min(pos.left, f.left),
@@ -62,7 +75,8 @@ export function InlineNameBox({ doc, field, geometry }: { doc: DocumentModel; fi
   }, [pos === null, field.id])
 
   // only close the box of this field: another field may have been placed while a rename was saving
-  const close = () => usePF.setState((s) => (s.inline?.id === field.id && s.inline.docId === doc.id ? { inline: null } : {}))
+  const close = () =>
+    usePF.setState((s) => (s.inline?.id === field.id && s.inline.docId === doc.id ? { inline: null } : {}))
 
   // latest values, so a click elsewhere (which closes the box) still applies the typed name
   const latest = useRef({ name, choice, field })
@@ -133,10 +147,20 @@ export function InlineNameBox({ doc, field, geometry }: { doc: DocumentModel; fi
       )}
       <label className="fc-prepare-form-inline-row">
         <span>{radio ? 'Group name' : 'Field name'}</span>
-        <input ref={inputRef} className="ui-input" value={name} onChange={(e) => setName(e.target.value)} aria-label={radio ? 'Group name' : 'Field name'} />
+        <input
+          ref={inputRef}
+          className="ui-input"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          aria-label={radio ? 'Group name' : 'Field name'}
+        />
       </label>
       <label className="ui-check">
-        <input type="checkbox" checked={field.required} onChange={(e) => void updateFields(doc, [field.id], { required: e.target.checked })} />
+        <input
+          type="checkbox"
+          checked={field.required}
+          onChange={(e) => void updateFields(doc, [field.id], { required: e.target.checked })}
+        />
         <span>Required field</span>
       </label>
       <div className="fc-prepare-form-inline-links">

@@ -111,7 +111,8 @@ function buildField(s: Session, spec: CreateSpec, taken: Set<string>): Created {
   if (!Number.isInteger(pageIndex) || pageIndex < 0 || pageIndex >= s.pageCount()) {
     throw new EngineError(`Page ${pageIndex + 1} does not exist`, 'BAD_PAGE')
   }
-  if (!TYPE_LABELS[spec.type] || spec.type === ('unknown' as PFType)) throw new EngineError(`Unknown field type ${spec.type}`, 'BAD_SPEC')
+  if (!TYPE_LABELS[spec.type] || spec.type === ('unknown' as PFType))
+    throw new EngineError(`Unknown field type ${spec.type}`, 'BAD_SPEC')
   ensureAcroForm(s)
   const rect = clampToPage(s, pageIndex, spec.rect)
   const pageObj = doc.findPage(pageIndex)
@@ -284,7 +285,17 @@ function tabIndexOf(s: Session, pageIndex: number, id: number): number {
 
 /** Editable properties of a field (for copy/paste and duplicate). */
 function propsOf(f: PFField): FieldProps {
-  const { id: _id, page: _page, type: _type, widgetCount: _wc, tabIndex: _ti, name: _name, value: _value, rect: _rect, ...props } = f
+  const {
+    id: _id,
+    page: _page,
+    type: _type,
+    widgetCount: _wc,
+    tabIndex: _ti,
+    name: _name,
+    value: _value,
+    rect: _rect,
+    ...props
+  } = f
   if (props.action.kind === 'other') delete (props as FieldProps).action
   return props
 }
@@ -294,7 +305,10 @@ function pdfLineShapes(s: Session, pageIndex: number): DetectShape[] {
   const page = s.page(pageIndex)
   const shapes: DetectShape[] = []
   const handle = (path: InstanceType<typeof m.Path>, ctm: number[], stroked: boolean, lineWidth: number) => {
-    const tp = (x: number, y: number): Point => [ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]]
+    const tp = (x: number, y: number): Point => [
+      ctm[0] * x + ctm[2] * y + ctm[4],
+      ctm[1] * x + ctm[3] * y + ctm[5]
+    ]
     const scale = Math.sqrt(Math.abs(ctm[0] * ctm[3] - ctm[1] * ctm[2])) || 1
     const lw = Math.max(0.5, lineWidth * scale)
     const subs: { pts: Point[]; closed: boolean; curved: boolean }[] = []
@@ -327,7 +341,11 @@ function pdfLineShapes(s: Session, pageIndex: number): DetectShape[] {
       const pts = sp.pts
       const xs = [...new Set(pts.map((p) => Math.round(p[0] * 10) / 10))]
       const ys = [...new Set(pts.map((p) => Math.round(p[1] * 10) / 10))]
-      const isRect = (pts.length === 4 || pts.length === 5) && xs.length <= 2 && ys.length <= 2 && xs.length * ys.length === 4
+      const isRect =
+        (pts.length === 4 || pts.length === 5) &&
+        xs.length <= 2 &&
+        ys.length <= 2 &&
+        xs.length * ys.length === 4
       if (isRect) {
         const r: Rect = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
         const h = r[3] - r[1]
@@ -341,7 +359,10 @@ function pdfLineShapes(s: Session, pageIndex: number): DetectShape[] {
         const [a, b] = [pts[i - 1], pts[i]]
         if (Math.abs(a[1] - b[1]) < 1 && Math.abs(a[0] - b[0]) >= 30) {
           const y = (a[1] + b[1]) / 2
-          shapes.push({ kind: 'hline', rect: [Math.min(a[0], b[0]), y - lw / 2, Math.max(a[0], b[0]), y + lw / 2] })
+          shapes.push({
+            kind: 'hline',
+            rect: [Math.min(a[0], b[0]), y - lw / 2, Math.max(a[0], b[0]), y + lw / 2]
+          })
         }
       }
     }
@@ -370,7 +391,10 @@ function textLines(s: Session, pageIndex: number): DetectLine[] {
     for (let i = l.start; i < l.end; i++) {
       const k = i * 8
       const q = t.quads
-      chars.push({ c: t.text[i], rect: quadToRect([q[k], q[k + 1], q[k + 2], q[k + 3], q[k + 4], q[k + 5], q[k + 6], q[k + 7]]) })
+      chars.push({
+        c: t.text[i],
+        rect: quadToRect([q[k], q[k + 1], q[k + 2], q[k + 3], q[k + 4], q[k + 5], q[k + 6], q[k + 7]])
+      })
     }
     return { bbox: l.bbox, chars }
   })
@@ -395,10 +419,16 @@ function renameField(s: Session, id: number, name: string, join: boolean): numbe
     const otherKind = kindOf(widgetsOf(existing)[0] ?? existing)
     const textLike = (k: string) => k === 'text' || k === 'date'
     if (otherKind !== kind && !(textLike(otherKind) && textLike(kind))) {
-      throw new EngineError(`A ${TYPE_LABELS[otherKind].toLowerCase()} named “${name}” already exists. Choose another name.`, 'NAME_EXISTS')
+      throw new EngineError(
+        `A ${TYPE_LABELS[otherKind].toLowerCase()} named “${name}” already exists. Choose another name.`,
+        'NAME_EXISTS'
+      )
     }
     if (kind !== 'radio' && !join) {
-      throw new EngineError(`A field named “${name}” already exists. Fields with the same name always show the same value.`, 'NAME_SHARED')
+      throw new EngineError(
+        `A field named “${name}” already exists. Fields with the same name always show the same value.`,
+        'NAME_SHARED'
+      )
     }
     const used = new Set(widgetsOf(existing).map((w) => onStateName(w)))
     for (const w of widgetsOf(field)) {
@@ -519,16 +549,19 @@ export default defineOps('prepare-form', {
   ),
 
   /** Pastes copied fields onto a page (offset in points, e.g. to avoid covering the originals). */
-  paste: mutation('Paste Fields', (s, pageIndex: number, clips: FieldClip[], offset: [number, number] = [0, 0]): PFField[] => {
-    const specs: CreateSpec[] = clips.map((c) => ({
-      type: c.type,
-      page: pageIndex,
-      rect: [c.rect[0] + offset[0], c.rect[1] + offset[1], c.rect[2] + offset[0], c.rect[3] + offset[1]],
-      name: c.name,
-      props: c.props
-    }))
-    return createFields(s, specs)
-  }),
+  paste: mutation(
+    'Paste Fields',
+    (s, pageIndex: number, clips: FieldClip[], offset: [number, number] = [0, 0]): PFField[] => {
+      const specs: CreateSpec[] = clips.map((c) => ({
+        type: c.type,
+        page: pageIndex,
+        rect: [c.rect[0] + offset[0], c.rect[1] + offset[1], c.rect[2] + offset[0], c.rect[3] + offset[1]],
+        name: c.name,
+        props: c.props
+      }))
+      return createFields(s, specs)
+    }
+  ),
 
   update: mutation(
     (ids: number[]) => (ids.length > 1 ? 'Edit Properties of Fields' : 'Edit Field Properties'),
@@ -545,7 +578,9 @@ export default defineOps('prepare-form', {
       const pages = refreshFields(s, fields)
       s.touch(...pages, ...extraPages)
       s.documentChanged()
-      return located.map(({ obj, pageIndex }) => readField(s, obj, pageIndex, tabIndexOf(s, pageIndex, num(obj))))
+      return located.map(({ obj, pageIndex }) =>
+        readField(s, obj, pageIndex, tabIndexOf(s, pageIndex, num(obj)))
+      )
     }
   ),
 
@@ -574,7 +609,9 @@ export default defineOps('prepare-form', {
         const before = readField(s, obj, pageIndex, 0).rect
         const rect = clampToPage(s, pageIndex, m.rect)
         putRect(s, pageIndex, obj, rect)
-        const sameSize = Math.abs(before[2] - before[0] - (rect[2] - rect[0])) < 0.01 && Math.abs(before[3] - before[1] - (rect[3] - rect[1])) < 0.01
+        const sameSize =
+          Math.abs(before[2] - before[0] - (rect[2] - rect[0])) < 0.01 &&
+          Math.abs(before[3] - before[1] - (rect[3] - rect[1])) < 0.01
         if (!sameSize) resized.push(obj)
         pages.add(pageIndex)
       }
@@ -611,7 +648,8 @@ export default defineOps('prepare-form', {
    * `offset`, makes independent copies on the same page with new names.
    */
   duplicate: mutation(
-    (_ids: number[], opts: { pages?: number[]; offset?: [number, number] }) => (opts.pages ? 'Duplicate Field Across Pages' : 'Duplicate Field'),
+    (_ids: number[], opts: { pages?: number[]; offset?: [number, number] }) =>
+      opts.pages ? 'Duplicate Field Across Pages' : 'Duplicate Field',
     (s, ids: number[], opts: { pages?: number[]; offset?: [number, number] }): PFField[] => {
       const doc = s.pdf
       if (opts.pages) {
@@ -682,7 +720,8 @@ export default defineOps('prepare-form', {
         removeRef(s.pdf.findPage(pageIndex).get('Annots'), obj)
         detachWidget(s, obj)
         if (kind === 'radio' && !sameObj(field, obj) && widgetsOf(field).length) {
-          if (on && readName(field.get('V')) === on && !widgetsOf(field).some((w) => onStateName(w) === on)) field.put('V', s.pdf.newName('Off'))
+          if (on && readName(field.get('V')) === on && !widgetsOf(field).some((w) => onStateName(w) === on))
+            field.put('V', s.pdf.newName('Off'))
           radioFields.push(field)
         }
         pages.add(pageIndex)
@@ -723,8 +762,12 @@ export default defineOps('prepare-form', {
       if (isNull(annots) || !annots.isArray()) throw new EngineError('This page has no fields', 'NO_FIELD')
       const entries: PDFObject[] = []
       for (let i = 0; i < annots.length; i++) entries.push(annots.get(i))
-      const widgetSlots = entries.map((e, i) => ({ e, i })).filter(({ e }) => e.isIndirect() && readName(e.get('Subtype')) === 'Widget')
-      const wanted = ids.map((id) => widgetSlots.find(({ e }) => e.asIndirect() === id)?.e).filter((e): e is PDFObject => !!e)
+      const widgetSlots = entries
+        .map((e, i) => ({ e, i }))
+        .filter(({ e }) => e.isIndirect() && readName(e.get('Subtype')) === 'Widget')
+      const wanted = ids
+        .map((id) => widgetSlots.find(({ e }) => e.asIndirect() === id)?.e)
+        .filter((e): e is PDFObject => !!e)
       const rest = widgetSlots.map(({ e }) => e).filter((e) => !wanted.some((w) => sameObj(w, e)))
       const ordered = [...wanted, ...rest]
       const next = doc.newArray()

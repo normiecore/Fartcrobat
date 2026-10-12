@@ -3,7 +3,12 @@ import type { FormatSpec } from '../model'
 
 export const SEPARATORS = ['1,234.56', '1234.56', '1.234,56', '1234,56', "1'234.56"]
 export const NEGATIVE_STYLES = ['-1,234.01', '-1,234.01 in red', '(1,234.01)', '(1,234.01) in red']
-export const TIME_STYLES = ['HH:MM (13:45)', 'h:MM tt (1:45 PM)', 'HH:MM:ss (13:45:30)', 'h:MM:ss tt (1:45:30 PM)']
+export const TIME_STYLES = [
+  'HH:MM (13:45)',
+  'h:MM tt (1:45 PM)',
+  'HH:MM:ss (13:45:30)',
+  'h:MM:ss tt (1:45:30 PM)'
+]
 export const SPECIAL_STYLES = ['Zip Code', 'Zip Code + 4', 'Phone Number', 'Social Security Number']
 const SPECIAL_EXAMPLES = ['12345', '12345-6789', '(555) 123-4567', '123-45-6789']
 
@@ -16,7 +21,20 @@ export function formatNumber(n: number, decimals: number, separator: number): st
   return frac ? `${grouped}${point}${frac}` : grouped
 }
 
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December'
+]
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
 /** Formats a date with an Acrobat date pattern (d, dd, ddd, dddd, m, mm, mmm, mmmm, yy, yyyy, H, HH, h, hh, M, MM, s, ss, tt). */

@@ -1,6 +1,14 @@
 import { useEffect } from 'react'
 import { getActiveDoc, setTool, useApp } from '@renderer/sdk'
-import { clearFieldSelection, isFormTool, nudgeSelected, placeInView, selectAllFields, selectedIds, TOOL_TYPES } from './actions'
+import {
+  clearFieldSelection,
+  isFormTool,
+  nudgeSelected,
+  placeInView,
+  selectAllFields,
+  selectedIds,
+  TOOL_TYPES
+} from './actions'
 import { openProperties } from './PropertiesDialog'
 import { usePF } from './state'
 
@@ -23,7 +31,8 @@ function isTyping(el: EventTarget | null): boolean {
   if (el.isContentEditable) return true
   const tag = el.tagName
   if (tag === 'TEXTAREA' || tag === 'SELECT') return true
-  if (tag === 'INPUT') return !['checkbox', 'radio', 'button', 'range', 'color'].includes((el as HTMLInputElement).type)
+  if (tag === 'INPUT')
+    return !['checkbox', 'radio', 'button', 'range', 'color'].includes((el as HTMLInputElement).type)
   return false
 }
 
@@ -74,8 +83,17 @@ export function PrepareFormKeys() {
       // Enter with a field tool places a field in the middle of the view (no mouse needed)
       const createType = TOOL_TYPES[app.toolId]
       // ...also right after choosing the tool with the keyboard (focus still on its button)
-      const onActiveTool = !!t?.closest?.('.fc-prepare-form-toolbar [aria-pressed="true"], .fc-prepare-form-left .ui-tool-row.is-active')
-      if (createType && (onDocument || onActiveTool) && e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const onActiveTool = !!t?.closest?.(
+        '.fc-prepare-form-toolbar [aria-pressed="true"], .fc-prepare-form-left .ui-tool-row.is-active'
+      )
+      if (
+        createType &&
+        (onDocument || onActiveTool) &&
+        e.key === 'Enter' &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey
+      ) {
         e.preventDefault()
         e.stopPropagation()
         void placeInView(doc, createType)

@@ -90,7 +90,10 @@ describe('prepare-form: automatic field detection on blank-form.pdf', () => {
 
 describe('prepare-form: detection heuristics', () => {
   const line = (text: string, x: number, y: number, size = 10): DetectLine => {
-    const chars = [...text].map((c, i) => ({ c, rect: [x + i * size * 0.5, y, x + (i + 1) * size * 0.5, y + size] as Rect }))
+    const chars = [...text].map((c, i) => ({
+      c,
+      rect: [x + i * size * 0.5, y, x + (i + 1) * size * 0.5, y + size] as Rect
+    }))
     return { bbox: [x, y, x + text.length * size * 0.5, y + size], chars }
   }
 
@@ -98,7 +101,9 @@ describe('prepare-form: detection heuristics', () => {
     expect(nameFromLabel('Full name (as on passport):')).toBe('Full name')
     expect(nameFromLabel('Email address*: ')).toBe('Email address')
     expect(nameFromLabel('  City ....... ')).toBe('City')
-    expect(nameFromLabel('I confirm that the information I have given is complete and correct')).toBe('I confirm that the information I')
+    expect(nameFromLabel('I confirm that the information I have given is complete and correct')).toBe(
+      'I confirm that the information I'
+    )
     expect(nameFromLabel('___')).toBe('')
   })
 

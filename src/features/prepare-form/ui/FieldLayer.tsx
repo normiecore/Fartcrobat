@@ -56,7 +56,8 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const pageW = geometry.width
   const pageH = geometry.height
 
-  const snap = (v: number) => (prefs.snapToGrid && prefs.gridSize > 0 ? Math.round(v / prefs.gridSize) * prefs.gridSize : v)
+  const snap = (v: number) =>
+    prefs.snapToGrid && prefs.gridSize > 0 ? Math.round(v / prefs.gridSize) * prefs.gridSize : v
   const toPage = (e: { clientX: number; clientY: number }): Point => geometry.eventToPage(e, ref.current!)
 
   // Escape cancels a drag in progress.
@@ -106,12 +107,23 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     }
     if (inline && inline.id !== f.id) usePF.setState({ inline: null })
     ref.current!.setPointerCapture(e.pointerId)
-    setDrag({ kind: 'move', ids, start: toPage(e), dx: 0, dy: 0, moved: false, startClient: [e.clientX, e.clientY] })
+    setDrag({
+      kind: 'move',
+      ids,
+      start: toPage(e),
+      dx: 0,
+      dy: 0,
+      moved: false,
+      startClient: [e.clientX, e.clientY]
+    })
   }
 
   /** The page-space edges moved by a handle drawn on the screen (View > Rotate View turns the page). */
   const pageHandle = (h: Handle): Handle => {
-    const v: Point = [h.includes('e') ? 1 : h.includes('w') ? -1 : 0, h.includes('s') ? 1 : h.includes('n') ? -1 : 0]
+    const v: Point = [
+      h.includes('e') ? 1 : h.includes('w') ? -1 : 0,
+      h.includes('s') ? 1 : h.includes('n') ? -1 : 0
+    ]
     const a = geometry.toPage([0, 0])
     const b = geometry.toPage(v)
     const dx = b[0] - a[0]
@@ -125,7 +137,14 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     e.stopPropagation()
     ref.current!.setPointerCapture(e.pointerId)
     setHiddenAnnotations(doc, pageIndex, [f.id])
-    setDrag({ kind: 'resize', id: f.id, handle: pageHandle(handle), orig: f.rect, rect: f.rect, start: toPage(e) })
+    setDrag({
+      kind: 'resize',
+      id: f.id,
+      handle: pageHandle(handle),
+      orig: f.rect,
+      rect: f.rect,
+      start: toPage(e)
+    })
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -230,7 +249,13 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         return
       }
       // show the result right away, then let the engine catch up
-      setFields(fields.map((f) => (d.ids.includes(f.id) ? { ...f, rect: [f.rect[0] + d.dx, f.rect[1] + d.dy, f.rect[2] + d.dx, f.rect[3] + d.dy] as Rect } : f)))
+      setFields(
+        fields.map((f) =>
+          d.ids.includes(f.id)
+            ? { ...f, rect: [f.rect[0] + d.dx, f.rect[1] + d.dy, f.rect[2] + d.dx, f.rect[3] + d.dy] as Rect }
+            : f
+        )
+      )
       setDrag(null)
       try {
         await pf(doc).move(d.ids, d.dx, d.dy)
@@ -302,25 +327,43 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   }
 
   const single = selected.length === 1
-  const inlineField = inline && inline.docId === doc.id && inline.page === pageIndex ? fields.find((f) => f.id === inline.id) : undefined
+  const inlineField =
+    inline && inline.docId === doc.id && inline.page === pageIndex
+      ? fields.find((f) => f.id === inline.id)
+      : undefined
 
   let preview: React.ReactNode = null
   if (drag?.kind === 'create' && createType) {
-    const r = geometry.rectToCss(normalizeRect([snap(drag.a[0]), snap(drag.a[1]), snap(drag.b[0]), snap(drag.b[1])]))
-    preview = <div className="fc-prepare-form-ghost" style={{ left: r.left, top: r.top, width: r.width, height: r.height }} />
+    const r = geometry.rectToCss(
+      normalizeRect([snap(drag.a[0]), snap(drag.a[1]), snap(drag.b[0]), snap(drag.b[1])])
+    )
+    preview = (
+      <div
+        className="fc-prepare-form-ghost"
+        style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
+      />
+    )
   } else if (createType && hover && !drag) {
     const [w, h] = DEFAULT_SIZE[createType]
     const x = Math.max(0, Math.min(pageW - w, snap(hover[0])))
     const y = Math.max(0, Math.min(pageH - h, snap(hover[1])))
     const r = geometry.rectToCss([x, y, x + w, y + h])
     preview = (
-      <div className="fc-prepare-form-ghost is-hover" style={{ left: r.left, top: r.top, width: r.width, height: r.height }}>
+      <div
+        className="fc-prepare-form-ghost is-hover"
+        style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
+      >
         {r.width > 50 && <span>{TYPE_LABELS[createType]}</span>}
       </div>
     )
   } else if (drag?.kind === 'band') {
     const r = geometry.rectToCss(normalizeRect([drag.a[0], drag.a[1], drag.b[0], drag.b[1]]))
-    preview = <div className="fc-prepare-form-band" style={{ left: r.left, top: r.top, width: r.width, height: r.height }} />
+    preview = (
+      <div
+        className="fc-prepare-form-band"
+        style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
+      />
+    )
   }
 
   return (
@@ -365,7 +408,19 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           >
             <span
               className="fc-prepare-form-inner"
-              style={rot ? { left: '50%', top: '50%', right: 'auto', bottom: 'auto', width: innerW, height: innerH, transform: `translate(-50%, -50%) rotate(${rot}deg)` } : undefined}
+              style={
+                rot
+                  ? {
+                      left: '50%',
+                      top: '50%',
+                      right: 'auto',
+                      bottom: 'auto',
+                      width: innerW,
+                      height: innerH,
+                      transform: `translate(-50%, -50%) rotate(${rot}deg)`
+                    }
+                  : undefined
+              }
             >
               <span className="fc-prepare-form-name">
                 {f.name}
@@ -377,13 +432,20 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
               single &&
               !drag &&
               HANDLES.map((h) => (
-                <span key={h} className={`fc-prepare-form-handle h-${h}`} onPointerDown={(e) => onHandleDown(e, f, h)} aria-hidden />
+                <span
+                  key={h}
+                  className={`fc-prepare-form-handle h-${h}`}
+                  onPointerDown={(e) => onHandleDown(e, f, h)}
+                  aria-hidden
+                />
               ))}
           </div>
         )
       })}
       {preview}
-      {inlineField && !drag && <InlineNameBox key={inlineField.id} doc={doc} field={inlineField} geometry={geometry} />}
+      {inlineField && !drag && (
+        <InlineNameBox key={inlineField.id} doc={doc} field={inlineField} geometry={geometry} />
+      )}
     </div>
   )
 }

@@ -11,7 +11,15 @@ import {
   type Selection
 } from '@renderer/sdk'
 import type pfOps from '../engine'
-import { DEFAULT_SIZE, SELECTION_TYPE, TYPE_LABELS, type FieldProps, type PFField, type PFType, type TabOrder } from '../model'
+import {
+  DEFAULT_SIZE,
+  SELECTION_TYPE,
+  TYPE_LABELS,
+  type FieldProps,
+  type PFField,
+  type PFType,
+  type TabOrder
+} from '../model'
 import { usePF } from './state'
 
 export const pf = (doc: DocumentModel) => doc.ops<typeof pfOps>('prepare-form')
@@ -27,7 +35,9 @@ export const TOOL_TYPES: Record<string, PFType> = {
   'form.date': 'date'
 }
 
-export const TYPE_TOOLS: Record<PFType, string> = Object.fromEntries(Object.entries(TOOL_TYPES).map(([k, v]) => [v, k])) as Record<PFType, string>
+export const TYPE_TOOLS: Record<PFType, string> = Object.fromEntries(
+  Object.entries(TOOL_TYPES).map(([k, v]) => [v, k])
+) as Record<PFType, string>
 
 export const isFormTool = (id: string) => id.startsWith('form.')
 
@@ -73,7 +83,12 @@ export function enterFormEditing(tool = 'form.select') {
 
 // ---- creating -----------------------------------------------------------------------------
 
-export async function createField(doc: DocumentModel, type: PFType, page: number, rect: Rect): Promise<PFField | null> {
+export async function createField(
+  doc: DocumentModel,
+  type: PFType,
+  page: number,
+  rect: Rect
+): Promise<PFField | null> {
   const st = usePF.getState()
   let name: string | undefined
   const props: FieldProps = {}
@@ -89,7 +104,11 @@ export async function createField(doc: DocumentModel, type: PFType, page: number
   try {
     const f = await pf(doc).create({ type, page, rect, name, props })
     selectFields(doc, page, [f.id])
-    usePF.setState({ inline: signer ? null : { docId: doc.id, id: f.id, page }, radioGroup: null, pendingSigner: null })
+    usePF.setState({
+      inline: signer ? null : { docId: doc.id, id: f.id, page },
+      radioGroup: null,
+      pendingSigner: null
+    })
     if (!useApp.getState().prefs.keepToolSelected) setTool('form.select')
     if (!doc.state.info.hasForm) void refreshInfo(doc)
     return f
@@ -188,7 +207,11 @@ export async function duplicateSelected(doc: DocumentModel) {
   if (!sel?.ids.length) return
   try {
     const created = await pf(doc).duplicate(sel.ids, { offset: [12, 12] })
-    selectFields(doc, sel.page, created.map((f) => f.id))
+    selectFields(
+      doc,
+      sel.page,
+      created.map((f) => f.id)
+    )
   } catch (err) {
     showError(err, 'Could not duplicate the field')
   }
@@ -197,7 +220,12 @@ export async function duplicateSelected(doc: DocumentModel) {
 export async function duplicateAcrossPages(doc: DocumentModel, ids: number[], pages: number[]) {
   try {
     const created = await pf(doc).duplicate(ids, { pages })
-    toast(created.length === 1 ? 'Added 1 copy. Copies share the same name and value.' : `Added ${created.length} copies. Copies share the same name and value.`, { kind: 'success' })
+    toast(
+      created.length === 1
+        ? 'Added 1 copy. Copies share the same name and value.'
+        : `Added ${created.length} copies. Copies share the same name and value.`,
+      { kind: 'success' }
+    )
   } catch (err) {
     showError(err, 'Could not duplicate the field')
   }
@@ -223,9 +251,16 @@ export async function pasteFields(doc: DocumentModel, page?: number) {
   const d = target === clipboardPage ? 12 : 0
   try {
     const created = await pf(doc).paste(target, clips, [d, d])
-    selectFields(doc, target, created.map((f) => f.id))
+    selectFields(
+      doc,
+      target,
+      created.map((f) => f.id)
+    )
     usePF.setState({
-      clipboard: clips.map((c) => ({ ...c, rect: [c.rect[0] + d, c.rect[1] + d, c.rect[2] + d, c.rect[3] + d] as Rect })),
+      clipboard: clips.map((c) => ({
+        ...c,
+        rect: [c.rect[0] + d, c.rect[1] + d, c.rect[2] + d, c.rect[3] + d] as Rect
+      })),
       clipboardPage: target
     })
     if (!doc.state.info.hasForm) void refreshInfo(doc)
@@ -248,7 +283,11 @@ export async function selectAllFields(doc: DocumentModel, page?: number) {
   const p = page ?? doc.state.currentPage
   try {
     const fields = await pf(doc).listPage(p)
-    selectFields(doc, p, fields.map((f) => f.id))
+    selectFields(
+      doc,
+      p,
+      fields.map((f) => f.id)
+    )
     if (!fields.length) toast('There are no fields on this page.')
   } catch (err) {
     showError(err)
@@ -274,10 +313,16 @@ export type ArrangeMode =
   | 'match-both'
 
 /** New rectangles for an arrange command; `anchor` is the field the others follow. */
-export function arrangeRects(fields: PFField[], anchor: PFField, mode: ArrangeMode, pageSize: [number, number]): { id: number; rect: Rect }[] {
+export function arrangeRects(
+  fields: PFField[],
+  anchor: PFField,
+  mode: ArrangeMode,
+  pageSize: [number, number]
+): { id: number; rect: Rect }[] {
   const a = anchor.rect
   const out: { id: number; rect: Rect }[] = []
-  const move = (f: PFField, dx: number, dy: number) => out.push({ id: f.id, rect: [f.rect[0] + dx, f.rect[1] + dy, f.rect[2] + dx, f.rect[3] + dy] })
+  const move = (f: PFField, dx: number, dy: number) =>
+    out.push({ id: f.id, rect: [f.rect[0] + dx, f.rect[1] + dy, f.rect[2] + dx, f.rect[3] + dy] })
   const w = (r: Rect) => r[2] - r[0]
   const h = (r: Rect) => r[3] - r[1]
   if (mode === 'distribute-x' || mode === 'distribute-y') {
@@ -333,7 +378,12 @@ export function arrangeRects(fields: PFField[], anchor: PFField, mode: ArrangeMo
         break
       }
       case 'page-center-both': {
-        const g = [Math.min(...fields.map((x) => x.rect[0])), Math.min(...fields.map((x) => x.rect[1])), Math.max(...fields.map((x) => x.rect[2])), Math.max(...fields.map((x) => x.rect[3]))]
+        const g = [
+          Math.min(...fields.map((x) => x.rect[0])),
+          Math.min(...fields.map((x) => x.rect[1])),
+          Math.max(...fields.map((x) => x.rect[2])),
+          Math.max(...fields.map((x) => x.rect[3]))
+        ]
         move(f, pageSize[0] / 2 - (g[0] + g[2]) / 2, pageSize[1] / 2 - (g[1] + g[3]) / 2)
         break
       }

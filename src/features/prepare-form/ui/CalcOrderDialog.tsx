@@ -17,7 +17,15 @@ export async function openCalculationOrder(doc: DocumentModel) {
   }
 }
 
-function CalcOrderDialog({ doc, initial, close }: { doc: DocumentModel; initial: { id: number; name: string }[]; close: () => void }) {
+function CalcOrderDialog({
+  doc,
+  initial,
+  close
+}: {
+  doc: DocumentModel
+  initial: { id: number; name: string }[]
+  close: () => void
+}) {
   const [items, setItems] = useState(initial)
   const [sel, setSel] = useState(0)
   const move = (d: number) => {
@@ -52,7 +60,9 @@ function CalcOrderDialog({ doc, initial, close }: { doc: DocumentModel; initial:
         </>
       }
     >
-      <p className="ui-dialog-message">Fields are calculated from top to bottom. Put a field below the fields its calculation uses.</p>
+      <p className="ui-dialog-message">
+        Fields are calculated from top to bottom. Put a field below the fields its calculation uses.
+      </p>
       <div className="fc-prepare-form-calc">
         <div
           className="fc-prepare-form-items"
@@ -72,7 +82,13 @@ function CalcOrderDialog({ doc, initial, close }: { doc: DocumentModel; initial:
           }}
         >
           {items.map((it, i) => (
-            <div key={it.id} role="option" aria-selected={i === sel} className={`fc-prepare-form-item ${i === sel ? 'is-selected' : ''}`} onClick={() => setSel(i)}>
+            <div
+              key={it.id}
+              role="option"
+              aria-selected={i === sel}
+              className={`fc-prepare-form-item ${i === sel ? 'is-selected' : ''}`}
+              onClick={() => setSel(i)}
+            >
               <span className="fc-prepare-form-item-num">{i + 1}</span>
               <span className="fc-prepare-form-item-label">{it.name}</span>
             </div>

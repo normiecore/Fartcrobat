@@ -40,7 +40,12 @@ import { detectFieldsFlow } from './detectFlow'
 
 const SEP = (id: string): ContextMenuItem => ({ id, label: '', separator: true })
 
-export function fieldMenu(doc: DocumentModel, page: number, ids: number[], anchorId: number): ContextMenuItem[] {
+export function fieldMenu(
+  doc: DocumentModel,
+  page: number,
+  ids: number[],
+  anchorId: number
+): ContextMenuItem[] {
   const multi = ids.length > 1
   const clip = usePF.getState().clipboard
   const showTabs = usePF.getState().showTabNumbers
@@ -49,10 +54,30 @@ export function fieldMenu(doc: DocumentModel, page: number, ids: number[], ancho
     { id: 'props', label: 'Properties…', icon: Settings2, run: () => openProperties(doc, ids) },
     ...(multi
       ? []
-      : [{ id: 'rename', label: 'Edit Field Name', icon: PencilLine, run: () => usePF.setState({ inline: { docId: doc.id, id: anchorId, page } }) }]),
+      : [
+          {
+            id: 'rename',
+            label: 'Edit Field Name',
+            icon: PencilLine,
+            run: () => usePF.setState({ inline: { docId: doc.id, id: anchorId, page } })
+          }
+        ]),
     SEP('s1'),
-    { id: 'copy', label: 'Copy', icon: Copy, shortcut: displayShortcut('Mod+C'), run: () => void copySelected(doc) },
-    { id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: displayShortcut('Mod+V'), disabled: !clip?.length, run: () => void pasteFields(doc, page) },
+    {
+      id: 'copy',
+      label: 'Copy',
+      icon: Copy,
+      shortcut: displayShortcut('Mod+C'),
+      run: () => void copySelected(doc)
+    },
+    {
+      id: 'paste',
+      label: 'Paste',
+      icon: ClipboardPaste,
+      shortcut: displayShortcut('Mod+V'),
+      disabled: !clip?.length,
+      run: () => void pasteFields(doc, page)
+    },
     { id: 'duplicate', label: 'Duplicate', icon: CopyPlus, run: () => void duplicateSelected(doc) },
     {
       id: 'duplicate-pages',
@@ -61,7 +86,14 @@ export function fieldMenu(doc: DocumentModel, page: number, ids: number[], ancho
       disabled: doc.pageCount < 2,
       run: () => openDuplicateDialog(doc, ids, page)
     },
-    { id: 'delete', label: 'Delete', icon: Trash, danger: true, shortcut: 'Del', run: () => void deleteSelected(doc) },
+    {
+      id: 'delete',
+      label: 'Delete',
+      icon: Trash,
+      danger: true,
+      shortcut: 'Del',
+      run: () => void deleteSelected(doc)
+    },
     SEP('s2'),
     {
       id: 'align',
@@ -76,8 +108,20 @@ export function fieldMenu(doc: DocumentModel, page: number, ids: number[], ancho
         { id: 'cx', label: 'Align Centers in a Column', icon: AlignCenterVertical, run: arrange('center-x') },
         { id: 'cy', label: 'Align Centers in a Row', icon: AlignCenterHorizontal, run: arrange('center-y') },
         SEP('a1'),
-        { id: 'dx', label: 'Distribute Horizontally', icon: AlignHorizontalDistributeCenter, disabled: ids.length < 3, run: arrange('distribute-x') },
-        { id: 'dy', label: 'Distribute Vertically', icon: AlignVerticalDistributeCenter, disabled: ids.length < 3, run: arrange('distribute-y') }
+        {
+          id: 'dx',
+          label: 'Distribute Horizontally',
+          icon: AlignHorizontalDistributeCenter,
+          disabled: ids.length < 3,
+          run: arrange('distribute-x')
+        },
+        {
+          id: 'dy',
+          label: 'Distribute Vertically',
+          icon: AlignVerticalDistributeCenter,
+          disabled: ids.length < 3,
+          run: arrange('distribute-y')
+        }
       ]
     },
     {
@@ -101,7 +145,12 @@ export function fieldMenu(doc: DocumentModel, page: number, ids: number[], ancho
     },
     SEP('s3'),
     tabOrderMenu(doc, page, showTabs),
-    { id: 'select-all', label: 'Select All Fields on Page', icon: SquareDashedMousePointer, run: () => void selectAllFields(doc, page) }
+    {
+      id: 'select-all',
+      label: 'Select All Fields on Page',
+      icon: SquareDashedMousePointer,
+      run: () => void selectAllFields(doc, page)
+    }
   ]
 }
 
@@ -138,7 +187,14 @@ export function pageMenu(doc: DocumentModel, page: number, point: Point): Contex
   const clip = usePF.getState().clipboard
   const showTabs = usePF.getState().showTabNumbers
   return [
-    { id: 'paste', label: 'Paste', icon: ClipboardPaste, shortcut: displayShortcut('Mod+V'), disabled: !clip?.length, run: () => void pasteFields(doc, page) },
+    {
+      id: 'paste',
+      label: 'Paste',
+      icon: ClipboardPaste,
+      shortcut: displayShortcut('Mod+V'),
+      disabled: !clip?.length,
+      run: () => void pasteFields(doc, page)
+    },
     {
       id: 'add',
       label: 'Add Field Here',
@@ -152,9 +208,19 @@ export function pageMenu(doc: DocumentModel, page: number, point: Point): Contex
         }
       }))
     },
-    { id: 'select-all', label: 'Select All Fields on Page', icon: SquareDashedMousePointer, run: () => void selectAllFields(doc, page) },
+    {
+      id: 'select-all',
+      label: 'Select All Fields on Page',
+      icon: SquareDashedMousePointer,
+      run: () => void selectAllFields(doc, page)
+    },
     SEP('s1'),
-    { id: 'detect', label: 'Detect Form Fields on This Page', icon: WandSparkles, run: () => void detectFieldsFlow(doc, [page]) },
+    {
+      id: 'detect',
+      label: 'Detect Form Fields on This Page',
+      icon: WandSparkles,
+      run: () => void detectFieldsFlow(doc, [page])
+    },
     tabOrderMenu(doc, page, showTabs)
   ]
 }

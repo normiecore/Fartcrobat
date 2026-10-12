@@ -17,12 +17,25 @@ import { formatDate, formatExample, formatNumber } from '@features/prepare-form/
 
 describe('prepare-form: Acrobat format scripts', () => {
   const cases: [FormatSpec, string, string][] = [
-    [{ kind: 'number', decimals: 2, separator: 0, negative: 2, currency: '€', currencyPrepend: false }, 'AFNumber_Format(2, 0, 2, 0, "€", false);', 'AFNumber_Keystroke(2, 0, 2, 0, "€", false);'],
+    [
+      { kind: 'number', decimals: 2, separator: 0, negative: 2, currency: '€', currencyPrepend: false },
+      'AFNumber_Format(2, 0, 2, 0, "€", false);',
+      'AFNumber_Keystroke(2, 0, 2, 0, "€", false);'
+    ],
     [{ kind: 'percent', decimals: 0, separator: 1 }, 'AFPercent_Format(0, 1);', 'AFPercent_Keystroke(0, 1);'],
-    [{ kind: 'date', pattern: 'yyyy-mm-dd' }, 'AFDate_FormatEx("yyyy-mm-dd");', 'AFDate_KeystrokeEx("yyyy-mm-dd");'],
-    [{ kind: 'time', style: 3 }, 'AFTime_Format(3);', 'AFTime_Keystroke(3);'],
+    [
+      { kind: 'date', pattern: 'yyyy-mm-dd' },
+      'AFDate_FormatEx("yyyy-mm-dd");',
+      'AFDate_KeystrokeEx("yyyy-mm-dd");'
+    ],
+    [{ kind: 'time', style: 3 }, 'AFDate_FormatEx("h:MM:ss tt");', 'AFDate_KeystrokeEx("h:MM:ss tt");'],
+    [{ kind: 'time', style: 0 }, 'AFDate_FormatEx("HH:MM");', 'AFDate_KeystrokeEx("HH:MM");'],
     [{ kind: 'special', style: 0 }, 'AFSpecial_Format(0);', 'AFSpecial_Keystroke(0);'],
-    [{ kind: 'mask', mask: 'AA-9999' }, 'AFSpecial_KeystrokeEx("AA-9999");', 'AFSpecial_KeystrokeEx("AA-9999");']
+    [
+      { kind: 'mask', mask: 'AA-9999' },
+      'AFSpecial_KeystrokeEx("AA-9999");',
+      'AFSpecial_KeystrokeEx("AA-9999");'
+    ]
   ]
   it.each(cases)('writes and reads back %j', (spec, format, keystroke) => {
     const sc = formatScripts(spec)
@@ -33,12 +46,31 @@ describe('prepare-form: Acrobat format scripts', () => {
   it('handles none, custom and legacy scripts', () => {
     expect(formatScripts({ kind: 'none' })).toEqual({ format: '', keystroke: '' })
     expect(parseFormat('', '')).toEqual({ kind: 'none' })
-    expect(parseFormat('event.value = "x";', '')).toEqual({ kind: 'custom', format: 'event.value = "x";', keystroke: '' })
-    expect(parseFormat('AFDate_Format(2);', 'AFDate_Keystroke(2);')).toEqual({ kind: 'date', pattern: 'mm/dd/yy' })
+    expect(parseFormat('event.value = "x";', '')).toEqual({
+      kind: 'custom',
+      format: 'event.value = "x";',
+      keystroke: ''
+    })
+    expect(parseFormat('AFDate_Format(2);', 'AFDate_Keystroke(2);')).toEqual({
+      kind: 'date',
+      pattern: 'mm/dd/yy'
+    })
     expect(parseFormat('AFTime_FormatEx("h:MM tt");', '')).toEqual({ kind: 'time', style: 1 })
-    expect(parseFormat('AFPercent_Format(2, 0, false);', '')).toEqual({ kind: 'percent', decimals: 2, separator: 0 })
+    expect(parseFormat('AFTime_Format(2);', 'AFTime_Keystroke(2);')).toEqual({ kind: 'time', style: 2 })
+    expect(parseFormat('AFPercent_Format(2, 0, false);', '')).toEqual({
+      kind: 'percent',
+      decimals: 2,
+      separator: 0
+    })
     // quotes in currency symbols survive
-    const spec: FormatSpec = { kind: 'number', decimals: 0, separator: 0, negative: 0, currency: 'a"b\\', currencyPrepend: true }
+    const spec: FormatSpec = {
+      kind: 'number',
+      decimals: 0,
+      separator: 0,
+      negative: 0,
+      currency: 'a"b\\',
+      currencyPrepend: true
+    }
     const sc = formatScripts(spec)
     expect(parseFormat(sc.format, sc.keystroke)).toEqual(spec)
   })
@@ -55,7 +87,10 @@ describe('prepare-form: Acrobat format scripts', () => {
     }
     expect(validateScript({ kind: 'range', min: null, max: null })).toBe('')
     expect(validateScript({ kind: 'none' })).toBe('')
-    expect(parseValidate('if (event.value < 0) event.rc = false;')).toEqual({ kind: 'custom', script: 'if (event.value < 0) event.rc = false;' })
+    expect(parseValidate('if (event.value < 0) event.rc = false;')).toEqual({
+      kind: 'custom',
+      script: 'if (event.value < 0) event.rc = false;'
+    })
   })
 })
 
@@ -66,13 +101,19 @@ describe('prepare-form: calculations', () => {
     expect(js).toBe('AFSimple_Calculate("PRD", new Array ("qty", "unit \\"price\\""));')
     expect(parseCalculate(js)).toEqual(spec)
     for (const op of ['SUM', 'AVG', 'MIN', 'MAX'] as const) {
-      expect(parseCalculate(calculateScript({ kind: 'simple', op, fields: ['a'] }))).toEqual({ kind: 'simple', op, fields: ['a'] })
+      expect(parseCalculate(calculateScript({ kind: 'simple', op, fields: ['a'] }))).toEqual({
+        kind: 'simple',
+        op,
+        fields: ['a']
+      })
     }
     expect(calculateScript({ kind: 'simple', op: 'SUM', fields: [] })).toBe('')
   })
 
   it('converts simplified field notation to event.value scripts and back', () => {
-    expect(notationToJs('price * qty + shipping')).toBe("getField('price').value * getField('qty').value + getField('shipping').value")
+    expect(notationToJs('price * qty + shipping')).toBe(
+      "getField('price').value * getField('qty').value + getField('shipping').value"
+    )
     expect(notationToJs('(a + b) / 2')).toBe("(getField('a').value + getField('b').value) / 2")
     expect(notationToJs('Unit\\ price * Qty')).toBe("getField('Unit price').value * getField('Qty').value")
     expect(notationToJs("O'Brien.total - 1")).toBe("getField('O\\'Brien.total').value - 1")
@@ -81,7 +122,10 @@ describe('prepare-form: calculations', () => {
     expect(js).toBe("event.value = getField('Unit price').value * (getField('Qty').value - 1);")
     expect(parseCalculate(js)).toEqual(spec)
     expect(jsToNotation('getField("a").value + Math.sqrt(2)')).toBeNull()
-    expect(parseCalculate('event.value = Math.max(1, 2);')).toEqual({ kind: 'custom', script: 'event.value = Math.max(1, 2);' })
+    expect(parseCalculate('event.value = Math.max(1, 2);')).toEqual({
+      kind: 'custom',
+      script: 'event.value = Math.max(1, 2);'
+    })
   })
 
   it('tokenizes names, numbers and operators', () => {
@@ -128,8 +172,26 @@ describe('prepare-form: format examples', () => {
   })
 
   it('shows examples in the Format tab', () => {
-    expect(formatExample({ kind: 'number', decimals: 2, separator: 0, negative: 2, currency: '$', currencyPrepend: true })).toBe('($1,234.56)')
-    expect(formatExample({ kind: 'number', decimals: 0, separator: 2, negative: 0, currency: ' €', currencyPrepend: false })).toBe('1.235 €')
+    expect(
+      formatExample({
+        kind: 'number',
+        decimals: 2,
+        separator: 0,
+        negative: 2,
+        currency: '$',
+        currencyPrepend: true
+      })
+    ).toBe('($1,234.56)')
+    expect(
+      formatExample({
+        kind: 'number',
+        decimals: 0,
+        separator: 2,
+        negative: 0,
+        currency: ' €',
+        currencyPrepend: false
+      })
+    ).toBe('1.235 €')
     expect(formatExample({ kind: 'special', style: 2 })).toBe('(555) 123-4567')
     expect(formatExample({ kind: 'mask', mask: 'AA-9999' })).toBe('aa-1111')
     expect(formatExample({ kind: 'none' })).toBe('')

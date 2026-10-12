@@ -75,7 +75,9 @@ export function openProperties(doc: DocumentModel, ids: number[], tab?: Tab) {
       const fields = await Promise.all(ids.map((id) => pf(doc).get(id)))
       const names = await pf(doc).fieldNames()
       if (!fields.length) return
-      await openDialog((close) => <PropertiesDialog doc={doc} fields={fields} names={names} initialTab={tab} close={close} />)
+      await openDialog((close) => (
+        <PropertiesDialog doc={doc} fields={fields} names={names} initialTab={tab} close={close} />
+      ))
     } catch (err) {
       showError(err, 'Could not open the field properties')
     }
@@ -108,7 +110,9 @@ function PropertiesDialog({
 
   const otherNames = useMemo(() => names.filter((n) => n !== fields[0].name), [names, fields])
   const calcError =
-    draft.calculate.kind === 'notation' && changed.has('calculate') ? checkNotation(draft.calculate.expr, otherNames) : null
+    draft.calculate.kind === 'notation' && changed.has('calculate')
+      ? checkNotation(draft.calculate.expr, otherNames)
+      : null
   const nameError = changed.has('name') && !draft.name.trim() ? 'Enter a field name' : null
 
   const save = async (join = false) => {
@@ -118,7 +122,10 @@ function PropertiesDialog({
       if (key === 'name') continue
       ;(props as Record<string, unknown>)[key] = draft[key as keyof Draft]
     }
-    const rename = !multi && changed.has('name') && draft.name.trim() !== fields[0].name ? { name: draft.name.trim(), join } : undefined
+    const rename =
+      !multi && changed.has('name') && draft.name.trim() !== fields[0].name
+        ? { name: draft.name.trim(), join }
+        : undefined
     if (!Object.keys(props).length && !rename) {
       close()
       return
@@ -167,7 +174,13 @@ function PropertiesDialog({
     >
       <div className="fc-prepare-form-tabs" role="tablist">
         {tabs.map((t) => (
-          <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'is-active' : ''} onClick={() => setTab(t)}>
+          <button
+            key={t}
+            role="tab"
+            aria-selected={tab === t}
+            className={tab === t ? 'is-active' : ''}
+            onClick={() => setTab(t)}
+          >
             {TAB_LABELS[t]}
           </button>
         ))}
@@ -191,13 +204,31 @@ function Row({ children }: { children: ReactNode }) {
 
 // ---- General ---------------------------------------------------------------------------------
 
-function GeneralTab({ draft, set, multi, nameError }: { draft: Draft; set: SetFn; multi: boolean; nameError: string | null }) {
+function GeneralTab({
+  draft,
+  set,
+  multi,
+  nameError
+}: {
+  draft: Draft
+  set: SetFn
+  multi: boolean
+  nameError: string | null
+}) {
   return (
     <div className="fc-prepare-form-grid">
       {!multi && (
         <>
-          <Field label={draft.type === 'radio' ? 'Name (radio group)' : 'Name'} hint={nameError ?? 'Use a period for groups, e.g. “address.city”.'}>
-            <TextInput data-autofocus value={draft.name} onChange={(e) => set('name', e.target.value)} aria-invalid={!!nameError} />
+          <Field
+            label={draft.type === 'radio' ? 'Name (radio group)' : 'Name'}
+            hint={nameError ?? 'Use a period for groups, e.g. “address.city”.'}
+          >
+            <TextInput
+              data-autofocus
+              value={draft.name}
+              onChange={(e) => set('name', e.target.value)}
+              aria-invalid={!!nameError}
+            />
           </Field>
           <Field label="Tooltip" hint="Shown when someone points at the field. Screen readers read it too.">
             <TextInput value={draft.tooltip} onChange={(e) => set('tooltip', e.target.value)} />
@@ -227,7 +258,12 @@ function GeneralTab({ draft, set, multi, nameError }: { draft: Draft; set: SetFn
       </Row>
       <div className="fc-prepare-form-checks">
         <Checkbox checked={draft.readOnly} onChange={(v) => set('readOnly', v)} label="Read only" />
-        <Checkbox checked={draft.required} onChange={(v) => set('required', v)} label="Required" disabled={draft.type === 'button'} />
+        <Checkbox
+          checked={draft.required}
+          onChange={(v) => set('required', v)}
+          label="Required"
+          disabled={draft.type === 'button'}
+        />
       </div>
     </div>
   )
@@ -246,10 +282,20 @@ function AppearanceTab({ draft, set }: { draft: Draft; set: SetFn }) {
       <h4 className="fc-prepare-form-h">Borders and colors</h4>
       <Row>
         <Field label="Border color" inline>
-          <ColorButton value={draft.borderColor} allowNone onChange={(v) => set('borderColor', v)} title="Border color" />
+          <ColorButton
+            value={draft.borderColor}
+            allowNone
+            onChange={(v) => set('borderColor', v)}
+            title="Border color"
+          />
         </Field>
         <Field label="Fill color" inline>
-          <ColorButton value={draft.fillColor} allowNone onChange={(v) => set('fillColor', v)} title="Fill color" />
+          <ColorButton
+            value={draft.fillColor}
+            allowNone
+            onChange={(v) => set('fillColor', v)}
+            title="Fill color"
+          />
         </Field>
       </Row>
       <Row>
@@ -278,32 +324,44 @@ function AppearanceTab({ draft, set }: { draft: Draft; set: SetFn }) {
           />
         </Field>
       </Row>
-      {!draft.borderColor && <p className="fc-prepare-form-hint">Choose a border color to show the border.</p>}
-      <h4 className="fc-prepare-form-h">Text</h4>
-      <Row>
-        {textual && (
-          <Field label="Font">
-            <Select<string>
-              value={draft.fontName}
-              onChange={(v) => set('fontName', v)}
-              options={[
-                ...FONTS.map((f) => ({ value: f.id, label: f.label })),
-                ...(FONTS.some((f) => f.id === draft.fontName) ? [] : [{ value: draft.fontName, label: draft.fontName }])
-              ]}
-            />
-          </Field>
-        )}
-        <Field label="Font size">
-          <Select<string>
-            value={String(draft.fontSize)}
-            onChange={(v) => set('fontSize', parseFloat(v))}
-            options={sizes.map((s) => ({ value: String(s), label: s === 0 ? 'Auto' : String(s) }))}
-          />
-        </Field>
-        <Field label={toggle ? 'Check color' : 'Text color'} inline>
-          <ColorButton value={draft.textColor} onChange={(v) => set('textColor', v ?? '#000000')} title="Text color" />
-        </Field>
-      </Row>
+      {!draft.borderColor && (
+        <p className="fc-prepare-form-hint">Choose a border color to show the border.</p>
+      )}
+      {draft.type !== 'signature' && (
+        <>
+          <h4 className="fc-prepare-form-h">{toggle ? 'Check mark' : 'Text'}</h4>
+          <Row>
+            {textual && (
+              <Field label="Font">
+                <Select<string>
+                  value={draft.fontName}
+                  onChange={(v) => set('fontName', v)}
+                  options={[
+                    ...FONTS.map((f) => ({ value: f.id, label: f.label })),
+                    ...(FONTS.some((f) => f.id === draft.fontName)
+                      ? []
+                      : [{ value: draft.fontName, label: draft.fontName }])
+                  ]}
+                />
+              </Field>
+            )}
+            <Field label="Font size">
+              <Select<string>
+                value={String(draft.fontSize)}
+                onChange={(v) => set('fontSize', parseFloat(v))}
+                options={sizes.map((s) => ({ value: String(s), label: s === 0 ? 'Auto' : String(s) }))}
+              />
+            </Field>
+            <Field label={toggle ? 'Check color' : 'Text color'} inline>
+              <ColorButton
+                value={draft.textColor}
+                onChange={(v) => set('textColor', v ?? '#000000')}
+                title={toggle ? 'Check color' : 'Text color'}
+              />
+            </Field>
+          </Row>
+        </>
+      )}
     </div>
   )
 }
@@ -330,9 +388,20 @@ function OptionsTab({ draft, set }: { draft: Draft; set: SetFn }) {
         <div className="fc-prepare-form-grid">
           <Row>
             <Field label={draft.type === 'radio' ? 'Button style' : 'Check box style'}>
-              <Select<CheckStyle> value={draft.checkStyle} onChange={(v) => set('checkStyle', v)} options={CHECK_STYLES} />
+              <Select<CheckStyle>
+                value={draft.checkStyle}
+                onChange={(v) => set('checkStyle', v)}
+                options={CHECK_STYLES}
+              />
             </Field>
-            <Field label={draft.type === 'radio' ? 'Radio button choice' : 'Export value'} hint={draft.type === 'radio' ? 'The value the group gets when this button is selected.' : 'The value saved when the box is checked.'}>
+            <Field
+              label={draft.type === 'radio' ? 'Radio button choice' : 'Export value'}
+              hint={
+                draft.type === 'radio'
+                  ? 'The value the group gets when this button is selected.'
+                  : 'The value saved when the box is checked.'
+              }
+            >
               <TextInput value={draft.exportValue} onChange={(e) => set('exportValue', e.target.value)} />
             </Field>
           </Row>
@@ -340,10 +409,16 @@ function OptionsTab({ draft, set }: { draft: Draft; set: SetFn }) {
             <Checkbox
               checked={draft.checkedByDefault}
               onChange={(v) => set('checkedByDefault', v)}
-              label={draft.type === 'radio' ? 'Button is checked by default' : 'Check box is checked by default'}
+              label={
+                draft.type === 'radio' ? 'Button is checked by default' : 'Check box is checked by default'
+              }
             />
             {draft.type === 'radio' && (
-              <Checkbox checked={draft.radiosInUnison} onChange={(v) => set('radiosInUnison', v)} label="Buttons with the same name and choice are selected in unison" />
+              <Checkbox
+                checked={draft.radiosInUnison}
+                onChange={(v) => set('radiosInUnison', v)}
+                label="Buttons with the same name and choice are selected in unison"
+              />
             )}
           </div>
         </div>
@@ -355,7 +430,11 @@ function OptionsTab({ draft, set }: { draft: Draft; set: SetFn }) {
       return (
         <div className="fc-prepare-form-grid">
           <Field label="Label">
-            <TextInput data-autofocus value={draft.caption} onChange={(e) => set('caption', e.target.value)} />
+            <TextInput
+              data-autofocus
+              value={draft.caption}
+              onChange={(e) => set('caption', e.target.value)}
+            />
           </Field>
           <Field label="Behavior when clicked">
             <Select<string>
@@ -394,17 +473,40 @@ function TextOptions({ draft, set }: { draft: Draft; set: SetFn }) {
         </Field>
         <Field label="Default value">
           {draft.multiline ? (
-            <TextArea rows={2} value={draft.defaultValue} onChange={(e) => set('defaultValue', e.target.value)} />
+            <TextArea
+              rows={2}
+              value={draft.defaultValue}
+              onChange={(e) => set('defaultValue', e.target.value)}
+            />
           ) : (
             <TextInput value={draft.defaultValue} onChange={(e) => set('defaultValue', e.target.value)} />
           )}
         </Field>
       </Row>
       <div className="fc-prepare-form-checks">
-        <Checkbox checked={draft.multiline} disabled={draft.comb} onChange={(v) => set('multiline', v)} label="Multi-line" />
-        <Checkbox checked={!draft.doNotScroll} disabled={draft.comb} onChange={(v) => set('doNotScroll', !v)} label="Scroll long text" />
-        <Checkbox checked={!draft.doNotSpellCheck} onChange={(v) => set('doNotSpellCheck', !v)} label="Check spelling" />
-        <Checkbox checked={draft.password} disabled={draft.comb || draft.multiline} onChange={(v) => set('password', v)} label="Password (hide what is typed)" />
+        <Checkbox
+          checked={draft.multiline}
+          disabled={draft.comb}
+          onChange={(v) => set('multiline', v)}
+          label="Multi-line"
+        />
+        <Checkbox
+          checked={!draft.doNotScroll}
+          disabled={draft.comb}
+          onChange={(v) => set('doNotScroll', !v)}
+          label="Scroll long text"
+        />
+        <Checkbox
+          checked={!draft.doNotSpellCheck}
+          onChange={(v) => set('doNotSpellCheck', !v)}
+          label="Check spelling"
+        />
+        <Checkbox
+          checked={draft.password}
+          disabled={draft.comb || draft.multiline}
+          onChange={(v) => set('password', v)}
+          label="Password (hide what is typed)"
+        />
         <div className="fc-prepare-form-inline-field">
           <Checkbox
             checked={limit && !draft.comb}
@@ -412,7 +514,14 @@ function TextOptions({ draft, set }: { draft: Draft; set: SetFn }) {
             onChange={(v) => set('maxLen', v ? Math.max(1, draft.maxLen || 10) : 0)}
             label="Limit of"
           />
-          <NumberInput value={draft.maxLen || 10} min={1} max={9999} disabled={!limit || draft.comb} aria-label="Character limit" onChange={(v) => set('maxLen', Math.max(1, Math.round(v)))} />
+          <NumberInput
+            value={draft.maxLen || 10}
+            min={1}
+            max={9999}
+            disabled={!limit || draft.comb}
+            aria-label="Character limit"
+            onChange={(v) => set('maxLen', Math.max(1, Math.round(v)))}
+          />
           <span>characters</span>
         </div>
         <div className="fc-prepare-form-inline-field">
@@ -428,7 +537,14 @@ function TextOptions({ draft, set }: { draft: Draft; set: SetFn }) {
             }}
             label="Comb of"
           />
-          <NumberInput value={draft.maxLen || 10} min={1} max={500} disabled={!draft.comb} aria-label="Comb characters" onChange={(v) => set('maxLen', Math.max(1, Math.round(v)))} />
+          <NumberInput
+            value={draft.maxLen || 10}
+            min={1}
+            max={500}
+            disabled={!draft.comb}
+            aria-label="Comb characters"
+            onChange={(v) => set('maxLen', Math.max(1, Math.round(v)))}
+          />
           <span>characters (one per box, e.g. account numbers)</span>
         </div>
       </div>
@@ -463,13 +579,24 @@ function ChoiceOptions({ draft, set }: { draft: Draft; set: SetFn }) {
   }
   const remove = (i: number) => {
     const o = options[i]
-    set('options', options.filter((_, k) => k !== i))
-    set('defaultSelection', draft.defaultSelection.filter((v) => v !== o.value))
+    set(
+      'options',
+      options.filter((_, k) => k !== i)
+    )
+    set(
+      'defaultSelection',
+      draft.defaultSelection.filter((v) => v !== o.value)
+    )
     setSelected(-1)
   }
   const toggleDefault = (value: string) => {
     if (multiDefault) {
-      set('defaultSelection', draft.defaultSelection.includes(value) ? draft.defaultSelection.filter((v) => v !== value) : [...draft.defaultSelection, value])
+      set(
+        'defaultSelection',
+        draft.defaultSelection.includes(value)
+          ? draft.defaultSelection.filter((v) => v !== value)
+          : [...draft.defaultSelection, value]
+      )
     } else set('defaultSelection', draft.defaultSelection[0] === value ? [] : [value])
   }
   return (
@@ -509,7 +636,9 @@ function ChoiceOptions({ draft, set }: { draft: Draft; set: SetFn }) {
         </Button>
       </Row>
       <div className="fc-prepare-form-items" role="listbox" aria-label="Item list">
-        {options.length === 0 && <div className="fc-prepare-form-hint">No items yet. Type an item and press Enter.</div>}
+        {options.length === 0 && (
+          <div className="fc-prepare-form-hint">No items yet. Type an item and press Enter.</div>
+        )}
         {options.map((o, i) => (
           <div
             key={`${o.value}-${i}`}
@@ -537,13 +666,30 @@ function ChoiceOptions({ draft, set }: { draft: Draft; set: SetFn }) {
             <span className="fc-prepare-form-item-label">{o.label}</span>
             {o.value !== o.label && <span className="fc-prepare-form-item-value">{o.value}</span>}
             <span className="fc-prepare-form-item-actions">
-              <button className="ui-icon-btn" aria-label={`Move ${o.label} up`} title="Up" disabled={i === 0} onClick={() => move(i, -1)}>
+              <button
+                className="ui-icon-btn"
+                aria-label={`Move ${o.label} up`}
+                title="Up"
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+              >
                 <ArrowUp size={14} />
               </button>
-              <button className="ui-icon-btn" aria-label={`Move ${o.label} down`} title="Down" disabled={i === options.length - 1} onClick={() => move(i, 1)}>
+              <button
+                className="ui-icon-btn"
+                aria-label={`Move ${o.label} down`}
+                title="Down"
+                disabled={i === options.length - 1}
+                onClick={() => move(i, 1)}
+              >
                 <ArrowDown size={14} />
               </button>
-              <button className="ui-icon-btn" aria-label={`Delete ${o.label}`} title="Delete" onClick={() => remove(i)}>
+              <button
+                className="ui-icon-btn"
+                aria-label={`Delete ${o.label}`}
+                title="Delete"
+                onClick={() => remove(i)}
+              >
                 <X size={14} />
               </button>
             </span>
@@ -553,12 +699,32 @@ function ChoiceOptions({ draft, set }: { draft: Draft; set: SetFn }) {
       <p className="fc-prepare-form-hint">The ticked item is selected when the form opens or is cleared.</p>
       <div className="fc-prepare-form-checks">
         <Checkbox checked={draft.sort} onChange={(v) => set('sort', v)} label="Sort items" />
-        {draft.type === 'combo' && <Checkbox checked={draft.editable} onChange={(v) => set('editable', v)} label="Allow user to enter custom text" />}
-        {draft.type === 'combo' && draft.editable && (
-          <Checkbox checked={!draft.doNotSpellCheck} onChange={(v) => set('doNotSpellCheck', !v)} label="Check spelling" />
+        {draft.type === 'combo' && (
+          <Checkbox
+            checked={draft.editable}
+            onChange={(v) => set('editable', v)}
+            label="Allow user to enter custom text"
+          />
         )}
-        {draft.type === 'list' && <Checkbox checked={draft.multiSelect} onChange={(v) => set('multiSelect', v)} label="Multiple selection" />}
-        <Checkbox checked={draft.commitOnSelChange} onChange={(v) => set('commitOnSelChange', v)} label="Commit selected value immediately" />
+        {draft.type === 'combo' && draft.editable && (
+          <Checkbox
+            checked={!draft.doNotSpellCheck}
+            onChange={(v) => set('doNotSpellCheck', !v)}
+            label="Check spelling"
+          />
+        )}
+        {draft.type === 'list' && (
+          <Checkbox
+            checked={draft.multiSelect}
+            onChange={(v) => set('multiSelect', v)}
+            label="Multiple selection"
+          />
+        )}
+        <Checkbox
+          checked={draft.commitOnSelChange}
+          onChange={(v) => set('commitOnSelChange', v)}
+          label="Commit selected value immediately"
+        />
       </div>
     </div>
   )
@@ -576,7 +742,11 @@ function ActionsTab({ draft, set, pageCount }: { draft: Draft; set: SetFn; pageC
           value={kind}
           onChange={(v) => {
             const next: ButtonAction =
-              v === 'url' ? { kind: 'url', url: '' } : v === 'page' ? { kind: 'page', page: 0 } : ({ kind: v } as ButtonAction)
+              v === 'url'
+                ? { kind: 'url', url: '' }
+                : v === 'page'
+                  ? { kind: 'page', page: 0 }
+                  : ({ kind: v } as ButtonAction)
             set('action', next)
           }}
           options={[
@@ -591,17 +761,30 @@ function ActionsTab({ draft, set, pageCount }: { draft: Draft; set: SetFn; pageC
       </Field>
       {a.kind === 'url' && (
         <Field label="Web address">
-          <TextInput data-autofocus value={a.url} placeholder="https://example.com" onChange={(e) => set('action', { kind: 'url', url: e.target.value })} />
+          <TextInput
+            data-autofocus
+            value={a.url}
+            placeholder="https://example.com"
+            onChange={(e) => set('action', { kind: 'url', url: e.target.value })}
+          />
         </Field>
       )}
       {a.kind === 'page' && (
         <Field label={`Page (1–${pageCount})`}>
-          <NumberInput value={a.page + 1} min={1} max={pageCount} onChange={(v) => set('action', { kind: 'page', page: Math.max(0, Math.min(pageCount - 1, Math.round(v) - 1)) })} />
+          <NumberInput
+            value={a.page + 1}
+            min={1}
+            max={pageCount}
+            onChange={(v) =>
+              set('action', { kind: 'page', page: Math.max(0, Math.min(pageCount - 1, Math.round(v) - 1)) })
+            }
+          />
         </Field>
       )}
       {a.kind === 'other' && (
         <p className="fc-prepare-form-hint">
-          This button runs an action Fartcrobat cannot edit ({a.description}). It is kept unless you choose another action.
+          This button runs an action Fartcrobat cannot edit ({a.description}). It is kept unless you choose
+          another action.
         </p>
       )}
     </div>
@@ -668,15 +851,31 @@ function FormatTab({ draft, set }: { draft: Draft; set: SetFn }) {
         <>
           <Row>
             <Field label="Decimal places">
-              <Select<string> value={String(f.decimals)} onChange={(v) => set('format', { ...f, decimals: parseInt(v, 10) })} options={[0, 1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: String(n) }))} />
+              <Select<string>
+                value={String(f.decimals)}
+                onChange={(v) => set('format', { ...f, decimals: parseInt(v, 10) })}
+                options={[0, 1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: String(n) }))}
+              />
             </Field>
             <Field label="Separator style">
-              <Select<string> value={String(f.separator)} onChange={(v) => set('format', { ...f, separator: parseInt(v, 10) })} options={SEPARATORS.map((l, i) => ({ value: String(i), label: l }))} />
+              <Select<string>
+                value={String(f.separator)}
+                onChange={(v) => set('format', { ...f, separator: parseInt(v, 10) })}
+                options={SEPARATORS.map((l, i) => ({ value: String(i), label: l }))}
+              />
             </Field>
           </Row>
           <Row>
             <Field label="Currency symbol">
-              <Select<string> value={f.currency} onChange={(v) => set('format', { ...f, currency: v })} options={CURRENCIES.some((c) => c.value === f.currency) ? CURRENCIES : [...CURRENCIES, { value: f.currency, label: f.currency }]} />
+              <Select<string>
+                value={f.currency}
+                onChange={(v) => set('format', { ...f, currency: v })}
+                options={
+                  CURRENCIES.some((c) => c.value === f.currency)
+                    ? CURRENCIES
+                    : [...CURRENCIES, { value: f.currency, label: f.currency }]
+                }
+              />
             </Field>
             <Field label="Symbol location">
               <Select<string>
@@ -691,17 +890,29 @@ function FormatTab({ draft, set }: { draft: Draft; set: SetFn }) {
             </Field>
           </Row>
           <Field label="Negative numbers">
-            <Select<string> value={String(f.negative)} onChange={(v) => set('format', { ...f, negative: parseInt(v, 10) })} options={NEGATIVE_STYLES.map((l, i) => ({ value: String(i), label: l }))} />
+            <Select<string>
+              value={String(f.negative)}
+              onChange={(v) => set('format', { ...f, negative: parseInt(v, 10) })}
+              options={NEGATIVE_STYLES.map((l, i) => ({ value: String(i), label: l }))}
+            />
           </Field>
         </>
       )}
       {f.kind === 'percent' && (
         <Row>
           <Field label="Decimal places">
-            <Select<string> value={String(f.decimals)} onChange={(v) => set('format', { ...f, decimals: parseInt(v, 10) })} options={[0, 1, 2, 3, 4].map((n) => ({ value: String(n), label: String(n) }))} />
+            <Select<string>
+              value={String(f.decimals)}
+              onChange={(v) => set('format', { ...f, decimals: parseInt(v, 10) })}
+              options={[0, 1, 2, 3, 4].map((n) => ({ value: String(n), label: String(n) }))}
+            />
           </Field>
           <Field label="Separator style">
-            <Select<string> value={String(f.separator)} onChange={(v) => set('format', { ...f, separator: parseInt(v, 10) })} options={SEPARATORS.map((l, i) => ({ value: String(i), label: l }))} />
+            <Select<string>
+              value={String(f.separator)}
+              onChange={(v) => set('format', { ...f, separator: parseInt(v, 10) })}
+              options={SEPARATORS.map((l, i) => ({ value: String(i), label: l }))}
+            />
           </Field>
         </Row>
       )}
@@ -711,17 +922,30 @@ function FormatTab({ draft, set }: { draft: Draft; set: SetFn }) {
             <Select<string>
               value={DATE_PATTERNS.includes(f.pattern) ? f.pattern : '__custom'}
               onChange={(v) => set('format', { kind: 'date', pattern: v === '__custom' ? f.pattern : v })}
-              options={[...DATE_PATTERNS.map((p) => ({ value: p, label: p })), { value: '__custom', label: 'Custom…' }]}
+              options={[
+                ...DATE_PATTERNS.map((p) => ({ value: p, label: p })),
+                { value: '__custom', label: 'Custom…' }
+              ]}
             />
           </Field>
-          <Field label="Custom format" hint="d = day, m = month, y = year, H/h = hour, M = minute, tt = am/pm">
-            <TextInput value={f.pattern} onChange={(e) => set('format', { kind: 'date', pattern: e.target.value })} />
+          <Field
+            label="Custom format"
+            hint="d = day, m = month, y = year, H/h = hour, M = minute, tt = am/pm"
+          >
+            <TextInput
+              value={f.pattern}
+              onChange={(e) => set('format', { kind: 'date', pattern: e.target.value })}
+            />
           </Field>
         </Row>
       )}
       {f.kind === 'time' && (
         <Field label="Time format">
-          <Select<string> value={String(f.style)} onChange={(v) => set('format', { kind: 'time', style: parseInt(v, 10) })} options={TIME_STYLES.map((l, i) => ({ value: String(i), label: l }))} />
+          <Select<string>
+            value={String(f.style)}
+            onChange={(v) => set('format', { kind: 'time', style: parseInt(v, 10) })}
+            options={TIME_STYLES.map((l, i) => ({ value: String(i), label: l }))}
+          />
         </Field>
       )}
       {(f.kind === 'special' || f.kind === 'mask') && (
@@ -729,13 +953,31 @@ function FormatTab({ draft, set }: { draft: Draft; set: SetFn }) {
           <Field label="Special format">
             <Select<string>
               value={f.kind === 'mask' ? 'mask' : String(f.style)}
-              onChange={(v) => set('format', v === 'mask' ? { kind: 'mask', mask: f.kind === 'mask' ? f.mask : '' } : { kind: 'special', style: parseInt(v, 10) })}
-              options={[...SPECIAL_STYLES.map((l, i) => ({ value: String(i), label: l })), { value: 'mask', label: 'Arbitrary mask' }]}
+              onChange={(v) =>
+                set(
+                  'format',
+                  v === 'mask'
+                    ? { kind: 'mask', mask: f.kind === 'mask' ? f.mask : '' }
+                    : { kind: 'special', style: parseInt(v, 10) }
+                )
+              }
+              options={[
+                ...SPECIAL_STYLES.map((l, i) => ({ value: String(i), label: l })),
+                { value: 'mask', label: 'Arbitrary mask' }
+              ]}
             />
           </Field>
           {f.kind === 'mask' && (
-            <Field label="Mask" hint="9 = a digit, A = a letter, O = a letter or digit, X = any character. Other characters are typed for the user.">
-              <TextInput data-autofocus value={f.mask} placeholder="e.g. AA-9999" onChange={(e) => set('format', { kind: 'mask', mask: e.target.value })} />
+            <Field
+              label="Mask"
+              hint="9 = a digit, A = a letter, O = a letter or digit, X = any character. Other characters are typed for the user."
+            >
+              <TextInput
+                data-autofocus
+                value={f.mask}
+                placeholder="e.g. AA-9999"
+                onChange={(e) => set('format', { kind: 'mask', mask: e.target.value })}
+              />
             </Field>
           )}
         </>
@@ -743,10 +985,20 @@ function FormatTab({ draft, set }: { draft: Draft; set: SetFn }) {
       {f.kind === 'custom' && (
         <>
           <Field label="Custom format script">
-            <TextArea className="fc-prepare-form-code" rows={3} value={f.format} onChange={(e) => set('format', { ...f, format: e.target.value })} />
+            <TextArea
+              className="fc-prepare-form-code"
+              rows={3}
+              value={f.format}
+              onChange={(e) => set('format', { ...f, format: e.target.value })}
+            />
           </Field>
           <Field label="Custom keystroke script">
-            <TextArea className="fc-prepare-form-code" rows={3} value={f.keystroke} onChange={(e) => set('format', { ...f, keystroke: e.target.value })} />
+            <TextArea
+              className="fc-prepare-form-code"
+              rows={3}
+              value={f.keystroke}
+              onChange={(e) => set('format', { ...f, keystroke: e.target.value })}
+            />
           </Field>
         </>
       )}
@@ -765,24 +1017,54 @@ function FormatTab({ draft, set }: { draft: Draft; set: SetFn }) {
 function ValidateTab({ draft, set }: { draft: Draft; set: SetFn }) {
   const v = draft.validate
   const range = v.kind === 'range' ? v : { kind: 'range' as const, min: null, max: null }
-  const num = (s: string): number | null => (s.trim() === '' || Number.isNaN(parseFloat(s)) ? null : parseFloat(s))
+  const num = (s: string): number | null =>
+    s.trim() === '' || Number.isNaN(parseFloat(s)) ? null : parseFloat(s)
   return (
     <div className="fc-prepare-form-grid">
-      <Radio name="pf-validate" checked={v.kind === 'none'} onChange={() => set('validate', { kind: 'none' })} label="Field value is not validated" />
-      <Radio name="pf-validate" checked={v.kind === 'range'} onChange={() => set('validate', range)} label="Field value is in range" />
+      <Radio
+        name="pf-validate"
+        checked={v.kind === 'none'}
+        onChange={() => set('validate', { kind: 'none' })}
+        label="Field value is not validated"
+      />
+      <Radio
+        name="pf-validate"
+        checked={v.kind === 'range'}
+        onChange={() => set('validate', range)}
+        label="Field value is in range"
+      />
       {v.kind === 'range' && (
         <Row>
           <Field label="From (leave empty for no minimum)">
-            <TextInput inputMode="decimal" defaultValue={v.min ?? ''} onChange={(e) => set('validate', { ...v, min: num(e.target.value) } as ValidateSpec)} />
+            <TextInput
+              inputMode="decimal"
+              defaultValue={v.min ?? ''}
+              onChange={(e) => set('validate', { ...v, min: num(e.target.value) } as ValidateSpec)}
+            />
           </Field>
           <Field label="To (leave empty for no maximum)">
-            <TextInput inputMode="decimal" defaultValue={v.max ?? ''} onChange={(e) => set('validate', { ...v, max: num(e.target.value) } as ValidateSpec)} />
+            <TextInput
+              inputMode="decimal"
+              defaultValue={v.max ?? ''}
+              onChange={(e) => set('validate', { ...v, max: num(e.target.value) } as ValidateSpec)}
+            />
           </Field>
         </Row>
       )}
-      <Radio name="pf-validate" checked={v.kind === 'custom'} onChange={() => set('validate', { kind: 'custom', script: v.kind === 'custom' ? v.script : '' })} label="Run custom validation script" />
+      <Radio
+        name="pf-validate"
+        checked={v.kind === 'custom'}
+        onChange={() => set('validate', { kind: 'custom', script: v.kind === 'custom' ? v.script : '' })}
+        label="Run custom validation script"
+      />
       {v.kind === 'custom' && (
-        <TextArea className="fc-prepare-form-code" rows={4} value={v.script} onChange={(e) => set('validate', { kind: 'custom', script: e.target.value })} aria-label="Validation script" />
+        <TextArea
+          className="fc-prepare-form-code"
+          rows={4}
+          value={v.script}
+          onChange={(e) => set('validate', { kind: 'custom', script: e.target.value })}
+          aria-label="Validation script"
+        />
       )}
     </div>
   )
@@ -798,22 +1080,54 @@ const OPS: { value: CalcOp; label: string }[] = [
   { value: 'MAX', label: 'maximum' }
 ]
 
-function CalculateTab({ draft, set, names, error }: { draft: Draft; set: SetFn; names: string[]; error: string | null }) {
+function CalculateTab({
+  draft,
+  set,
+  names,
+  error
+}: {
+  draft: Draft
+  set: SetFn
+  names: string[]
+  error: string | null
+}) {
   const c = draft.calculate
-  const simple = c.kind === 'simple' ? c : { kind: 'simple' as const, op: 'SUM' as CalcOp, fields: [] as string[] }
+  const simple =
+    c.kind === 'simple' ? c : { kind: 'simple' as const, op: 'SUM' as CalcOp, fields: [] as string[] }
   const [filter, setFilter] = useState('')
   const setCalc = (next: CalculateSpec) => set('calculate', next)
   return (
     <div className="fc-prepare-form-grid">
-      <Radio name="pf-calc" checked={c.kind === 'none'} onChange={() => setCalc({ kind: 'none' })} label="Value is not calculated" />
+      <Radio
+        name="pf-calc"
+        checked={c.kind === 'none'}
+        onChange={() => setCalc({ kind: 'none' })}
+        label="Value is not calculated"
+      />
       <div className="fc-prepare-form-inline-field">
-        <Radio name="pf-calc" checked={c.kind === 'simple'} onChange={() => setCalc(simple)} label="Value is the" />
-        <Select<CalcOp> value={simple.op} disabled={c.kind !== 'simple'} onChange={(op) => setCalc({ ...simple, op })} options={OPS} aria-label="Calculation" />
+        <Radio
+          name="pf-calc"
+          checked={c.kind === 'simple'}
+          onChange={() => setCalc(simple)}
+          label="Value is the"
+        />
+        <Select<CalcOp>
+          value={simple.op}
+          disabled={c.kind !== 'simple'}
+          onChange={(op) => setCalc({ ...simple, op })}
+          options={OPS}
+          aria-label="Calculation"
+        />
         <span>of the following fields:</span>
       </div>
       {c.kind === 'simple' && (
         <div className="fc-prepare-form-pick">
-          <TextInput value={filter} placeholder="Filter fields…" onChange={(e) => setFilter(e.target.value)} aria-label="Filter fields" />
+          <TextInput
+            value={filter}
+            placeholder="Filter fields…"
+            onChange={(e) => setFilter(e.target.value)}
+            aria-label="Filter fields"
+          />
           <div className="fc-prepare-form-pick-list">
             {names.length === 0 && <div className="fc-prepare-form-hint">There are no other fields yet.</div>}
             {names
@@ -822,12 +1136,21 @@ function CalculateTab({ draft, set, names, error }: { draft: Draft; set: SetFn; 
                 <Checkbox
                   key={n}
                   checked={simple.fields.includes(n)}
-                  onChange={(on) => setCalc({ ...simple, fields: on ? [...simple.fields, n] : simple.fields.filter((x) => x !== n) })}
+                  onChange={(on) =>
+                    setCalc({
+                      ...simple,
+                      fields: on ? [...simple.fields, n] : simple.fields.filter((x) => x !== n)
+                    })
+                  }
                   label={n}
                 />
               ))}
           </div>
-          <div className="fc-prepare-form-hint">{simple.fields.length ? `Picked: ${simple.fields.join(', ')}` : 'Pick the fields to calculate from.'}</div>
+          <div className="fc-prepare-form-hint">
+            {simple.fields.length
+              ? `Picked: ${simple.fields.join(', ')}`
+              : 'Pick the fields to calculate from.'}
+          </div>
         </div>
       )}
       <Radio
@@ -837,7 +1160,13 @@ function CalculateTab({ draft, set, names, error }: { draft: Draft; set: SetFn; 
         label="Simplified field notation"
       />
       {c.kind === 'notation' && (
-        <Field label="" hint={error ?? 'Use field names with + − * / and parentheses, e.g. “Price * Quantity + Shipping”. Put a backslash before spaces in names: “Unit\\ price”.'}>
+        <Field
+          label=""
+          hint={
+            error ??
+            'Use field names with + − * / and parentheses, e.g. “Price * Quantity + Shipping”. Put a backslash before spaces in names: “Unit\\ price”.'
+          }
+        >
           <TextArea
             className={`fc-prepare-form-code ${error ? 'is-invalid' : ''}`}
             rows={3}
@@ -848,11 +1177,25 @@ function CalculateTab({ draft, set, names, error }: { draft: Draft; set: SetFn; 
           />
         </Field>
       )}
-      <Radio name="pf-calc" checked={c.kind === 'custom'} onChange={() => setCalc({ kind: 'custom', script: c.kind === 'custom' ? c.script : '' })} label="Custom calculation script" />
+      <Radio
+        name="pf-calc"
+        checked={c.kind === 'custom'}
+        onChange={() => setCalc({ kind: 'custom', script: c.kind === 'custom' ? c.script : '' })}
+        label="Custom calculation script"
+      />
       {c.kind === 'custom' && (
-        <TextArea className="fc-prepare-form-code" rows={4} value={c.script} onChange={(e) => setCalc({ kind: 'custom', script: e.target.value })} aria-label="Calculation script" />
+        <TextArea
+          className="fc-prepare-form-code"
+          rows={4}
+          value={c.script}
+          onChange={(e) => setCalc({ kind: 'custom', script: e.target.value })}
+          aria-label="Calculation script"
+        />
       )}
-      <p className="fc-prepare-form-hint">Calculated fields update whenever a field they use changes. Change the order in “Set Field Calculation Order”.</p>
+      <p className="fc-prepare-form-hint">
+        Calculated fields update whenever a field they use changes. Change the order in “Set Field Calculation
+        Order”.
+      </p>
     </div>
   )
 }
@@ -863,12 +1206,24 @@ export function openDuplicateDialog(doc: DocumentModel, ids: number[], page: num
   void openDialog((close) => <DuplicateDialog doc={doc} ids={ids} page={page} close={close} />)
 }
 
-function DuplicateDialog({ doc, ids, page, close }: { doc: DocumentModel; ids: number[]; page: number; close: () => void }) {
+function DuplicateDialog({
+  doc,
+  ids,
+  page,
+  close
+}: {
+  doc: DocumentModel
+  ids: number[]
+  page: number
+  close: () => void
+}) {
   const n = doc.pageCount
   const [all, setAll] = useState(true)
   const [from, setFrom] = useState(1)
   const [to, setTo] = useState(n)
-  const pages = all ? Array.from({ length: n }, (_, i) => i) : Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from - 1 + i)
+  const pages = all
+    ? Array.from({ length: n }, (_, i) => i)
+    : Array.from({ length: Math.max(0, to - from + 1) }, (_, i) => from - 1 + i)
   const targets = pages.filter((p) => p !== page && p >= 0 && p < n)
   return (
     <Dialog
@@ -892,18 +1247,37 @@ function DuplicateDialog({ doc, ids, page, close }: { doc: DocumentModel; ids: n
       }
     >
       <p className="ui-dialog-message">
-        Put a copy of {ids.length > 1 ? 'these fields' : 'this field'} at the same place on other pages. Copies keep the same name, so they always show the same value
-        (handy for a name or date on every page).
+        Put a copy of {ids.length > 1 ? 'these fields' : 'this field'} at the same place on other pages.
+        Copies keep the same name, so they always show the same value (handy for a name or date on every
+        page).
       </p>
       <div className="fc-prepare-form-grid">
         <Radio name="pf-dup" checked={all} onChange={() => setAll(true)} label={`All pages (${n})`} />
         <div className="fc-prepare-form-inline-field">
           <Radio name="pf-dup" checked={!all} onChange={() => setAll(false)} label="From page" />
-          <NumberInput value={from} min={1} max={n} disabled={all} aria-label="From page" onChange={(v) => setFrom(Math.max(1, Math.min(n, Math.round(v))))} />
+          <NumberInput
+            value={from}
+            min={1}
+            max={n}
+            disabled={all}
+            aria-label="From page"
+            onChange={(v) => setFrom(Math.max(1, Math.min(n, Math.round(v))))}
+          />
           <span>to</span>
-          <NumberInput value={to} min={1} max={n} disabled={all} aria-label="To page" onChange={(v) => setTo(Math.max(1, Math.min(n, Math.round(v))))} />
+          <NumberInput
+            value={to}
+            min={1}
+            max={n}
+            disabled={all}
+            aria-label="To page"
+            onChange={(v) => setTo(Math.max(1, Math.min(n, Math.round(v))))}
+          />
         </div>
-        <p className="fc-prepare-form-hint">{targets.length ? `${targets.length} cop${targets.length === 1 ? 'y' : 'ies'} will be added (the current page is skipped).` : 'Choose at least one other page.'}</p>
+        <p className="fc-prepare-form-hint">
+          {targets.length
+            ? `${targets.length} cop${targets.length === 1 ? 'y' : 'ies'} will be added (the current page is skipped).`
+            : 'Choose at least one other page.'}
+        </p>
       </div>
     </Dialog>
   )

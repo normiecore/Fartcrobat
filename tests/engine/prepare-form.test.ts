@@ -41,7 +41,8 @@ function pageWidgets(e: OpenedEngine, page: number): number[] {
   return pageAnnots(e, page).filter((id) => str(raw(e, id).get('Subtype')) === 'Widget')
 }
 
-const str = (o: PDFObject) => (o.isNull() ? '' : o.isString() ? o.asString() : o.isName() ? o.asName() : String(o))
+const str = (o: PDFObject) =>
+  o.isNull() ? '' : o.isString() ? o.asString() : o.isName() ? o.asName() : String(o)
 
 async function core(e: OpenedEngine, name: string): Promise<FieldInfo[]> {
   return (await ops(e).forms.listAll()).filter((f) => f.name === name)
@@ -96,10 +97,21 @@ describe('prepare-form: creating fields', () => {
         editable: true
       }
     })
-    const btn = await pf.create({ type: 'button', page: 0, rect: [300, 220, 380, 244], props: { caption: 'Clear', action: { kind: 'reset' } } })
+    const btn = await pf.create({
+      type: 'button',
+      page: 0,
+      rect: [300, 220, 380, 244],
+      props: { caption: 'Clear', action: { kind: 'reset' } }
+    })
     const sig = await pf.create({ type: 'signature', page: 1, rect: [72, 600, 252, 640] })
     const date = await pf.create({ type: 'date', page: 1, rect: [300, 600, 400, 622] })
-    expect([list.name, combo.name, btn.name, sig.name, date.name]).toEqual(['List Box1', 'Dropdown1', 'Button1', 'Signature1', 'Date1'])
+    expect([list.name, combo.name, btn.name, sig.name, date.name]).toEqual([
+      'List Box1',
+      'Dropdown1',
+      'Button1',
+      'Signature1',
+      'Date1'
+    ])
     expect(date.type).toBe('date')
     expect(date.format).toEqual({ kind: 'date', pattern: 'mm/dd/yyyy' })
 
@@ -109,7 +121,11 @@ describe('prepare-form: creating fields', () => {
     expect(t('Check Box1')[0].type).toBe('checkbox')
     expect(t('Check Box1')[0].onState).toBe('Yes')
     expect(t('Group1').map((f) => f.type)).toEqual(['radio', 'radio'])
-    expect(t('Group1').map((f) => f.onState).sort()).toEqual(['Choice1', 'Choice2'])
+    expect(
+      t('Group1')
+        .map((f) => f.onState)
+        .sort()
+    ).toEqual(['Choice1', 'Choice2'])
     expect(t('List Box1')[0].type).toBe('list')
     expect(t('List Box1')[0].options).toEqual([
       { label: 'Red', value: 'r' },
@@ -134,7 +150,12 @@ describe('prepare-form: creating fields', () => {
   it('builds standard AcroForm, widget and field dictionaries', async () => {
     const e = await openFixture('text.pdf')
     const { pf } = ops(e)
-    const text = await pf.create({ type: 'text', page: 0, rect: [72, 100, 222, 122], props: { tooltip: 'Your name', maxLen: 12, alignment: 1 } })
+    const text = await pf.create({
+      type: 'text',
+      page: 0,
+      rect: [72, 100, 222, 122],
+      props: { tooltip: 'Your name', maxLen: 12, alignment: 1 }
+    })
     const cb = await pf.create({ type: 'checkbox', page: 0, rect: [72, 140, 86, 154] })
     const r1 = await pf.create({ type: 'radio', page: 0, rect: [72, 170, 86, 184], name: 'size' })
     const r2 = await pf.create({ type: 'radio', page: 0, rect: [100, 170, 114, 184], name: 'size' })
@@ -208,7 +229,12 @@ describe('prepare-form: creating fields', () => {
     const styles = { check: '4', circle: 'l', cross: '8', diamond: 'u', square: 'n', star: 'H' } as const
     let y = 100
     for (const [style, ch] of Object.entries(styles)) {
-      const f = await pf.create({ type: 'checkbox', page: 0, rect: [72, y, 90, y + 18], props: { checkStyle: style as keyof typeof styles } })
+      const f = await pf.create({
+        type: 'checkbox',
+        page: 0,
+        rect: [72, y, 90, y + 18],
+        props: { checkStyle: style as keyof typeof styles }
+      })
       y += 30
       expect(f.checkStyle).toBe(style)
       const w = raw(e, f.id)
@@ -240,8 +266,19 @@ describe('prepare-form: creating fields', () => {
   it('fills created fields and survives save and reopen', async () => {
     const e = await openFixture('text.pdf')
     const { pf, forms } = ops(e)
-    const t = await pf.create({ type: 'text', page: 0, rect: [72, 100, 222, 122], name: 'customer', props: { required: true, tooltip: 'Customer name', maxLen: 20 } })
-    const cb = await pf.create({ type: 'checkbox', page: 0, rect: [72, 140, 86, 154], props: { checkStyle: 'cross', exportValue: 'Agreed' } })
+    const t = await pf.create({
+      type: 'text',
+      page: 0,
+      rect: [72, 100, 222, 122],
+      name: 'customer',
+      props: { required: true, tooltip: 'Customer name', maxLen: 20 }
+    })
+    const cb = await pf.create({
+      type: 'checkbox',
+      page: 0,
+      rect: [72, 140, 86, 154],
+      props: { checkStyle: 'cross', exportValue: 'Agreed' }
+    })
     const r1 = await pf.create({ type: 'radio', page: 0, rect: [72, 170, 86, 184], name: 'size' })
     await pf.create({ type: 'radio', page: 0, rect: [100, 170, 114, 184], name: 'size' })
     await pf.update([r1.id], { exportValue: 'small' })
@@ -403,7 +440,13 @@ describe('prepare-form: properties', () => {
     const e = await openFixture('text.pdf')
     const { pf, forms } = ops(e)
     const f = await pf.create({ type: 'text', page: 0, rect: [72, 100, 272, 124] })
-    await pf.update([f.id], { multiline: true, doNotScroll: true, doNotSpellCheck: true, alignment: 2, defaultValue: 'n/a' })
+    await pf.update([f.id], {
+      multiline: true,
+      doNotScroll: true,
+      doNotSpellCheck: true,
+      alignment: 2,
+      defaultValue: 'n/a'
+    })
     let w = raw(e, f.id)
     expect(w.get('Ff').asNumber()).toBe((1 << 12) | (1 << 23) | (1 << 22))
     expect(str(w.get('DV'))).toBe('n/a')
@@ -430,14 +473,26 @@ describe('prepare-form: properties', () => {
     expect(c.password).toBe(true)
     expect(c.comb).toBe(false)
     const p = await pf.get(f.id)
-    expect(p).toMatchObject({ password: true, comb: false, maxLen: 0, doNotScroll: true, doNotSpellCheck: true, multiline: false })
+    expect(p).toMatchObject({
+      password: true,
+      comb: false,
+      maxLen: 0,
+      doNotScroll: true,
+      doNotSpellCheck: true,
+      multiline: false
+    })
   })
 
   it('applies check box options', async () => {
     const e = await openFixture('text.pdf')
     const { pf, forms } = ops(e)
     const f = await pf.create({ type: 'checkbox', page: 0, rect: [72, 100, 86, 114] })
-    await pf.update([f.id], { exportValue: 'Accepted', checkedByDefault: true, checkStyle: 'star', textColor: '#ff0000' })
+    await pf.update([f.id], {
+      exportValue: 'Accepted',
+      checkedByDefault: true,
+      checkStyle: 'star',
+      textColor: '#ff0000'
+    })
     const w = raw(e, f.id)
     expect(str(w.get('DV'))).toBe('Accepted')
     expect(str(w.get('V'))).toBe('Accepted')
@@ -564,19 +619,33 @@ describe('prepare-form: scripts', () => {
     const total = await pf.create({ type: 'text', page: 0, rect: [72, 160, 172, 182], name: 'total' })
     const avg = await pf.create({ type: 'text', page: 0, rect: [72, 190, 172, 212], name: 'avg' })
     await pf.update([price.id], {
-      format: { kind: 'number', decimals: 2, separator: 0, negative: 0, currency: '$', currencyPrepend: true },
+      format: {
+        kind: 'number',
+        decimals: 2,
+        separator: 0,
+        negative: 0,
+        currency: '$',
+        currencyPrepend: true
+      },
       validate: { kind: 'range', min: 0, max: 1000 }
     })
-    await pf.update([qty.id], { format: { kind: 'number', decimals: 0, separator: 0, negative: 0, currency: '', currencyPrepend: true } })
+    await pf.update([qty.id], {
+      format: { kind: 'number', decimals: 0, separator: 0, negative: 0, currency: '', currencyPrepend: true }
+    })
     await pf.update([total.id], { calculate: { kind: 'notation', expr: 'price * qty' }, readOnly: true })
-    await pf.update([avg.id], { calculate: { kind: 'simple', op: 'AVG', fields: ['price', 'qty'] }, format: { kind: 'percent', decimals: 1, separator: 1 } })
+    await pf.update([avg.id], {
+      calculate: { kind: 'simple', op: 'AVG', fields: ['price', 'qty'] },
+      format: { kind: 'percent', decimals: 1, separator: 1 }
+    })
 
     const all = await forms.listAll()
     const by = (n: string) => all.find((f) => f.name === n)!
     expect(by('price').scripts.format).toBe('AFNumber_Format(2, 0, 0, 0, "$", true);')
     expect(by('price').scripts.keystroke).toBe('AFNumber_Keystroke(2, 0, 0, 0, "$", true);')
     expect(by('price').scripts.validate).toBe('AFRange_Validate(true, 0, true, 1000);')
-    expect(by('total').scripts.calculate).toBe("event.value = getField('price').value * getField('qty').value;")
+    expect(by('total').scripts.calculate).toBe(
+      "event.value = getField('price').value * getField('qty').value;"
+    )
     expect(by('avg').scripts.calculate).toBe('AFSimple_Calculate("AVG", new Array ("price", "qty"));')
     expect(by('avg').scripts.format).toBe('AFPercent_Format(1, 1);')
     // the JavaScript sits in the field's /AA as JavaScript actions
@@ -599,8 +668,14 @@ describe('prepare-form: scripts', () => {
     // renaming a field updates the calculations that use it
     await pf.rename(price.id, 'unit price')
     expect((await pf.get(total.id)).calculate).toEqual({ kind: 'notation', expr: 'unit\\ price * qty' })
-    expect((await pf.get(avg.id)).calculate).toEqual({ kind: 'simple', op: 'AVG', fields: ['unit price', 'qty'] })
-    expect((await core(e, 'total'))[0].scripts.calculate).toBe("event.value = getField('unit price').value * getField('qty').value;")
+    expect((await pf.get(avg.id)).calculate).toEqual({
+      kind: 'simple',
+      op: 'AVG',
+      fields: ['unit price', 'qty']
+    })
+    expect((await core(e, 'total'))[0].scripts.calculate).toBe(
+      "event.value = getField('unit price').value * getField('qty').value;"
+    )
 
     // removing a calculation takes the field out of /CO; deleting a field too
     await pf.update([avg.id], { calculate: { kind: 'none' } })
@@ -610,26 +685,41 @@ describe('prepare-form: scripts', () => {
 
     const again = await roundTrip(e)
     const p2 = await again.ops<typeof pfOps>('prepare-form').listPage(0)
-    expect(p2.find((f) => f.name === 'unit price')!.format).toEqual({ kind: 'number', decimals: 2, separator: 0, negative: 0, currency: '$', currencyPrepend: true })
+    expect(p2.find((f) => f.name === 'unit price')!.format).toEqual({
+      kind: 'number',
+      decimals: 2,
+      separator: 0,
+      negative: 0,
+      currency: '$',
+      currencyPrepend: true
+    })
   })
 
   it('rejects an invalid simplified notation', async () => {
     const e = await openFixture('text.pdf')
     const { pf } = ops(e)
     const f = await pf.create({ type: 'text', page: 0, rect: [72, 100, 172, 122] })
-    await expect(pf.update([f.id], { calculate: { kind: 'notation', expr: '(a + b' } })).rejects.toThrow(/not valid/)
+    await expect(pf.update([f.id], { calculate: { kind: 'notation', expr: '(a + b' } })).rejects.toThrow(
+      /not valid/
+    )
     expect((await pf.get(f.id)).calculate).toEqual({ kind: 'none' })
   })
 
   it('formats dates, times and special formats', async () => {
     const e = await openFixture('text.pdf')
     const { pf } = ops(e)
-    const d = await pf.create({ type: 'date', page: 0, rect: [72, 100, 172, 122], props: { format: { kind: 'date', pattern: 'dd.mm.yyyy' } } })
+    const d = await pf.create({
+      type: 'date',
+      page: 0,
+      rect: [72, 100, 172, 122],
+      props: { format: { kind: 'date', pattern: 'dd.mm.yyyy' } }
+    })
     expect((await pf.get(d.id)).format).toEqual({ kind: 'date', pattern: 'dd.mm.yyyy' })
     expect((await pf.get(d.id)).type).toBe('date')
     await pf.update([d.id], { format: { kind: 'time', style: 1 } })
     expect((await pf.get(d.id)).type).toBe('text')
-    expect((await core(e, 'Date1'))[0].scripts.format).toBe('AFTime_Format(1);')
+    expect((await core(e, 'Date1'))[0].scripts.format).toBe('AFDate_FormatEx("h:MM tt");')
+    expect((await pf.get(d.id)).format).toEqual({ kind: 'time', style: 1 })
     await pf.update([d.id], { format: { kind: 'special', style: 2 } })
     expect((await core(e, 'Date1'))[0].scripts.keystroke).toBe('AFSpecial_Keystroke(2);')
     await pf.update([d.id], { format: { kind: 'none' } })
@@ -674,7 +764,11 @@ describe('prepare-form: names', () => {
     expect((await pf.fieldNames()).sort()).toEqual(['city', 'email', 'zip'])
 
     const again = await roundTrip(e)
-    expect((await again.ops<typeof formOps>('forms').listAll()).map((f) => f.name)).toEqual(['email', 'city', 'zip'])
+    expect((await again.ops<typeof formOps>('forms').listAll()).map((f) => f.name)).toEqual([
+      'email',
+      'city',
+      'zip'
+    ])
   })
 
   it('lets two fields share a name (and value) when asked', async () => {
@@ -707,7 +801,7 @@ describe('prepare-form: names', () => {
     expect(moved.exportValue).toBe('Choice3')
     expect((await pf.get(a.id)).widgetCount).toBe(3)
     // the empty group is gone
-    expect((await pf.fieldNames())).toEqual(['color'])
+    expect(await pf.fieldNames()).toEqual(['color'])
   })
 })
 
@@ -738,7 +832,12 @@ describe('prepare-form: moving, duplicating and deleting', () => {
   it('duplicates fields on the same page with new names', async () => {
     const e = await openFixture('text.pdf')
     const { pf, forms } = ops(e)
-    const a = await pf.create({ type: 'text', page: 0, rect: [72, 100, 222, 122], props: { required: true, tooltip: 'x' } })
+    const a = await pf.create({
+      type: 'text',
+      page: 0,
+      rect: [72, 100, 222, 122],
+      props: { required: true, tooltip: 'x' }
+    })
     const r = await pf.create({ type: 'radio', page: 0, rect: [72, 140, 86, 154], name: 'pick' })
     const copies = await pf.duplicate([a.id, r.id], { offset: [0, 50] })
     expect(e.lastChanges?.journal.undoLabel).toBe('Duplicate Field')
@@ -753,7 +852,13 @@ describe('prepare-form: moving, duplicating and deleting', () => {
   it('duplicates fields across pages as one shared field', async () => {
     const e = await openFixture('text.pdf')
     const { pf, forms } = ops(e)
-    const a = await pf.create({ type: 'text', page: 0, rect: [72, 700, 222, 722], name: 'initials', props: { borderColor: '#000000' } })
+    const a = await pf.create({
+      type: 'text',
+      page: 0,
+      rect: [72, 700, 222, 722],
+      name: 'initials',
+      props: { borderColor: '#000000' }
+    })
     const cb = await pf.create({ type: 'checkbox', page: 0, rect: [300, 700, 314, 714], name: 'ok' })
     const copies = await pf.duplicate([a.id, cb.id], { pages: [0, 1, 2, 3, 4] })
     expect(e.lastChanges?.journal.undoLabel).toBe('Duplicate Field Across Pages')
@@ -826,7 +931,13 @@ describe('prepare-form: moving, duplicating and deleting', () => {
   it('copies fields and pastes them on another page', async () => {
     const e = await openFixture('text.pdf')
     const { pf, forms } = ops(e)
-    const a = await pf.create({ type: 'combo', page: 0, rect: [72, 100, 222, 122], name: 'country', props: { options: [{ label: 'Japan', value: 'JP' }] } })
+    const a = await pf.create({
+      type: 'combo',
+      page: 0,
+      rect: [72, 100, 222, 122],
+      name: 'country',
+      props: { options: [{ label: 'Japan', value: 'JP' }] }
+    })
     const clips = await pf.copy([a.id])
     expect(clips[0].type).toBe('combo')
     const pasted = await pf.paste(2, clips)
@@ -860,7 +971,9 @@ describe('prepare-form: moving, duplicating and deleting', () => {
     await pf.rename(country.id, 'land')
     expect((await core(e, 'land')).length).toBe(1)
     const again = await roundTrip(e)
-    expect((await again.ops<typeof formOps>('forms').listAll()).filter((f) => f.name === 'plan').length).toBe(3)
+    expect((await again.ops<typeof formOps>('forms').listAll()).filter((f) => f.name === 'plan').length).toBe(
+      3
+    )
   })
 })
 
@@ -894,7 +1007,12 @@ describe('prepare-form: tab order', () => {
     expect(str(e.session.pdf.findPage(0).get('Tabs'))).toBe('S')
 
     const again = await roundTrip(e)
-    expect((await again.ops<typeof pfOps>('prepare-form').listPage(0)).map((f) => f.name)).toEqual(['b2', 'a1', 'a2', 'b1'])
+    expect((await again.ops<typeof pfOps>('prepare-form').listPage(0)).map((f) => f.name)).toEqual([
+      'b2',
+      'a1',
+      'a2',
+      'b1'
+    ])
   })
 
   it('keeps other annotations in place when reordering widgets', async () => {
@@ -913,8 +1031,18 @@ describe('prepare-form: rendering', () => {
   it('draws the created fields on the page', async () => {
     const e = await openFixture('text.pdf')
     const { pf, forms } = ops(e)
-    const cb = await pf.create({ type: 'checkbox', page: 0, rect: [400, 700, 440, 740], props: { checkStyle: 'square', textColor: '#ff0000' } })
-    await pf.create({ type: 'text', page: 0, rect: [72, 700, 272, 724], props: { borderColor: '#0000ff', fillColor: '#ffff00', defaultValue: 'Hello' } })
+    const cb = await pf.create({
+      type: 'checkbox',
+      page: 0,
+      rect: [400, 700, 440, 740],
+      props: { checkStyle: 'square', textColor: '#ff0000' }
+    })
+    await pf.create({
+      type: 'text',
+      page: 0,
+      rect: [72, 700, 272, 724],
+      props: { borderColor: '#0000ff', fillColor: '#ffff00', defaultValue: 'Hello' }
+    })
     const render = e.ops<typeof renderOps>('render')
     const pixel = async (x: number, y: number) => {
       const r = await render.page(0, { scale: 1, clip: [x, y, x + 1, y + 1] })

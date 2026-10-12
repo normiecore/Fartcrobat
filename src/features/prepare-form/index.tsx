@@ -1,4 +1,16 @@
-import { Calculator, CopyPlus, Eye, FilePenLine, ListOrdered, MousePointer2, Send, Settings2, TextCursorInput, Trash, WandSparkles } from 'lucide-react'
+import {
+  Calculator,
+  CopyPlus,
+  Eye,
+  FilePenLine,
+  ListOrdered,
+  MousePointer2,
+  Send,
+  Settings2,
+  TextCursorInput,
+  Trash,
+  WandSparkles
+} from 'lucide-react'
 import {
   defineFeature,
   openToolGroup,
@@ -36,7 +48,8 @@ import './prepare-form.css'
 const TYPES: PFType[] = ['text', 'checkbox', 'radio', 'list', 'combo', 'button', 'signature', 'date']
 
 const editingForm = () => isFormTool(useApp.getState().toolId)
-const hasFieldSelection = (doc: Parameters<NonNullable<CommandDefinition['enabled']>>[0]['doc']) => editingForm() && selectedIds(doc).length > 0
+const hasFieldSelection = (doc: Parameters<NonNullable<CommandDefinition['enabled']>>[0]['doc']) =>
+  editingForm() && selectedIds(doc).length > 0
 
 const tools: ToolDefinition[] = [
   {
@@ -46,16 +59,14 @@ const tools: ToolDefinition[] = [
     layer: FieldLayer,
     toolbar: FormToolbar
   },
-  ...TYPES.map(
-    (t): ToolDefinition => ({
-      id: TYPE_TOOLS[t],
-      label: `Add ${TYPE_LABELS[t].toLowerCase()}`,
-      icon: TYPE_ICONS[t],
-      cursor: 'crosshair',
-      layer: FieldLayer,
-      toolbar: FormToolbar
-    })
-  )
+  ...TYPES.map((t): ToolDefinition => ({
+    id: TYPE_TOOLS[t],
+    label: `Add ${TYPE_LABELS[t].toLowerCase()}`,
+    icon: TYPE_ICONS[t],
+    cursor: 'crosshair',
+    layer: FieldLayer,
+    toolbar: FormToolbar
+  }))
 ]
 
 const commands: CommandDefinition[] = [
@@ -83,15 +94,13 @@ const commands: CommandDefinition[] = [
     },
     keywords: ['auto detect', 'automatic', 'fields']
   },
-  ...TYPES.map(
-    (t): CommandDefinition => ({
-      id: `form.add.${t}`,
-      label: `Add ${TYPE_LABELS[t]}`,
-      icon: TYPE_ICONS[t],
-      run: () => enterFormEditing(TYPE_TOOLS[t]),
-      keywords: ['form field', 'prepare form']
-    })
-  ),
+  ...TYPES.map((t): CommandDefinition => ({
+    id: `form.add.${t}`,
+    label: `Add ${TYPE_LABELS[t]}`,
+    icon: TYPE_ICONS[t],
+    run: () => enterFormEditing(TYPE_TOOLS[t]),
+    keywords: ['form field', 'prepare form']
+  })),
   {
     id: 'form.properties',
     label: 'Field Properties…',
@@ -183,7 +192,13 @@ const menus: MenuContribution[] = [
   { menu: 'forms', group: 'prepare', command: 'form.prepare', order: 0 },
   { menu: 'forms', group: 'prepare', command: 'form.detect', order: 1 },
   { menu: 'forms', group: 'prepare', command: 'form.preview', order: 2 },
-  ...TYPES.map((t, i): MenuContribution => ({ menu: 'forms', group: 'add', command: `form.add.${t}`, order: 100 + i, submenu: 'Add Field' })),
+  ...TYPES.map((t, i): MenuContribution => ({
+    menu: 'forms',
+    group: 'add',
+    command: `form.add.${t}`,
+    order: 100 + i,
+    submenu: 'Add Field'
+  })),
   { menu: 'forms', group: 'edit', command: 'form.properties', order: 200 },
   { menu: 'forms', group: 'edit', command: 'form.duplicate', order: 201 },
   { menu: 'forms', group: 'edit', command: 'form.delete', order: 202 },
@@ -204,7 +219,8 @@ export default defineFeature({
       label: 'Prepare a form',
       icon: FilePenLine,
       color: '#d4317d',
-      description: 'Turn a document into a fillable form: add text fields, check boxes, signature fields and more',
+      description:
+        'Turn a document into a fillable form: add text fields, check boxes, signature fields and more',
       order: 80,
       category: 'sign',
       panel: PreparePanel,

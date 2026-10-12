@@ -1,4 +1,13 @@
-import { ask, setTool, showError, toast, withProgress, type DocumentModel } from '@renderer/sdk'
+import {
+  ask,
+  registry,
+  runCommand,
+  setTool,
+  showError,
+  toast,
+  withProgress,
+  type DocumentModel
+} from '@renderer/sdk'
 import type pfOps from '../engine'
 import type { DetectedField } from '../model'
 import { refreshInfo, selectFields } from './actions'
@@ -25,24 +34,45 @@ export async function detectFieldsFlow(doc: DocumentModel, pages?: number[]): Pr
       doc.ops<typeof pfOps>('prepare-form', { onProgress: (f, m) => report(f, m) }).detect(pages)
     )
     if (!found.length) {
-      toast('No form fields were found. Add fields with the tools in the toolbar.', { timeout: 5000 })
+      // a scan has no text to find labels in: offer text recognition when it is installed
+      let scanned = false
+      try {
+        const list = pages ?? Array.from({ length: Math.min(doc.pageCount, 3) }, (_, i) => i)
+        scanned = (await Promise.all(list.map((p) => doc.pageText(p)))).every((t) => !t.text.trim())
+      } catch {}
+      if (scanned && registry.commands.has('ocr.recognize')) {
+        toast(
+          'This looks like a scan, so there is no text to find fields by. Recognize the text first, then detect fields again.',
+          {
+            timeout: 8000,
+            action: { label: 'Recognize text', run: () => void runCommand('ocr.recognize') }
+          }
+        )
+      } else {
+        toast('No form fields were found. Add fields with the tools in the toolbar.', { timeout: 5000 })
+      }
       return 0
     }
-    const created = await doc
-      .ops<typeof pfOps>('prepare-form')
-      .createMany(
-        found.map((f) => ({ type: f.type, page: f.page, rect: f.rect, name: f.name })),
-        'Detect Form Fields'
-      )
+    const created = await doc.ops<typeof pfOps>('prepare-form').createMany(
+      found.map((f) => ({ type: f.type, page: f.page, rect: f.rect, name: f.name })),
+      'Detect Form Fields'
+    )
     void refreshInfo(doc)
     setTool('form.select')
     const first = created[0]
     if (first) {
       const onFirstPage = created.filter((f) => f.page === first.page)
-      selectFields(doc, first.page, onFirstPage.map((f) => f.id))
+      selectFields(
+        doc,
+        first.page,
+        onFirstPage.map((f) => f.id)
+      )
       doc.view?.goToPage(first.page)
     }
-    toast(`Added ${summary(found)}. Check their names and positions — undo removes them all.`, { kind: 'success', timeout: 6000 })
+    toast(`Added ${summary(found)}. Check their names and positions — undo removes them all.`, {
+      kind: 'success',
+      timeout: 6000
+    })
     return created.length
   } catch (err) {
     showError(err, 'Could not detect form fields')

@@ -88,12 +88,17 @@ function charsText(chars: DetectChar[]): string {
 }
 
 function unionRect(rects: Rect[]): Rect {
-  return rects.reduce((a, r) => [Math.min(a[0], r[0]), Math.min(a[1], r[1]), Math.max(a[2], r[2]), Math.max(a[3], r[3])], [Infinity, Infinity, -Infinity, -Infinity] as Rect)
+  return rects.reduce(
+    (a, r) => [Math.min(a[0], r[0]), Math.min(a[1], r[1]), Math.max(a[2], r[2]), Math.max(a[3], r[3])],
+    [Infinity, Infinity, -Infinity, -Infinity] as Rect
+  )
 }
 
 /** Text between two x positions on a line (label search). */
 function textBetween(line: DetectLine, x0: number, x1: number): string {
-  return charsText(line.chars.filter((c) => (c.rect[0] + c.rect[2]) / 2 >= x0 && (c.rect[0] + c.rect[2]) / 2 <= x1))
+  return charsText(
+    line.chars.filter((c) => (c.rect[0] + c.rect[2]) / 2 >= x0 && (c.rect[0] + c.rect[2]) / 2 <= x1)
+  )
 }
 
 /** Last "phrase" of a text: what follows the previous blank, colon run or wide gap. */
@@ -155,7 +160,11 @@ export function detectFields(input: DetectInput): DetectedField[] {
         continue
       }
       let j = i
-      while (j < cs.length && (cs[j].c === '_' || (cs[j].c === ' ' && j + 1 < cs.length && cs[j + 1].c === '_'))) j++
+      while (
+        j < cs.length &&
+        (cs[j].c === '_' || (cs[j].c === ' ' && j + 1 < cs.length && cs[j + 1].c === '_'))
+      )
+        j++
       const run = cs.slice(i, j).filter((c) => c.c === '_')
       if (run.length >= 3) {
         const r = unionRect(run.map((c) => c.rect))
@@ -196,7 +205,10 @@ export function detectFields(input: DetectInput): DetectedField[] {
       }
       if (!rect) continue
       // square it around its centre
-      const size = Math.max(8, Math.min(rect[2] - rect[0], rect[3] - rect[1]) * (source === 'glyph' ? 0.8 : 0.75))
+      const size = Math.max(
+        8,
+        Math.min(rect[2] - rect[0], rect[3] - rect[1]) * (source === 'glyph' ? 0.8 : 0.75)
+      )
       const cx = (rect[0] + rect[2]) / 2
       const cy = (rect[1] + rect[3]) / 2
       // the label runs until the next box on the line
@@ -222,16 +234,29 @@ export function detectFields(input: DetectInput): DetectedField[] {
       if (w < 30) continue
       const y = (r[1] + r[3]) / 2
       // an underline of text (text sitting right on the rule) is not a blank
-      const onTop = lines.some((l) => Math.abs(l.bbox[3] - y) < 4 && l.bbox[0] < r[2] - w * 0.2 && l.bbox[2] > r[0] + w * 0.2 && !/^_+$/.test(charsText(l.chars).trim()))
+      const onTop = lines.some(
+        (l) =>
+          Math.abs(l.bbox[3] - y) < 4 &&
+          l.bbox[0] < r[2] - w * 0.2 &&
+          l.bbox[2] > r[0] + w * 0.2 &&
+          !/^_+$/.test(charsText(l.chars).trim())
+      )
       if (onTop) continue
       // label on the left, on the same baseline
       const leftLine = lines
-        .filter((l) => vOverlap(l.bbox, [r[0], y - 14, r[2], y + 1]) > 2 && l.bbox[0] < r[0] && r[0] - l.bbox[0] < 400)
+        .filter(
+          (l) =>
+            vOverlap(l.bbox, [r[0], y - 14, r[2], y + 1]) > 2 && l.bbox[0] < r[0] && r[0] - l.bbox[0] < 400
+        )
         .sort((a, b) => b.bbox[2] - a.bbox[2])[0]
       let label = ''
       if (leftLine) {
         const phrase = lastPhrase(leftLine.chars.filter((c) => c.rect[2] <= r[0] + 2))
-        if (nameFromLabel(phrase) && r[0] - leftLine.chars.filter((c) => c.rect[2] <= r[0] + 2).slice(-1)[0]!.rect[2] < 120) label = phrase
+        if (
+          nameFromLabel(phrase) &&
+          r[0] - leftLine.chars.filter((c) => c.rect[2] <= r[0] + 2).slice(-1)[0]!.rect[2] < 120
+        )
+          label = phrase
       }
       if (!label) label = labelFor(null, r[0], r[2], y, -Infinity)
       // a rule without any label is probably decoration (separators, table borders)
@@ -240,12 +265,20 @@ export function detectFields(input: DetectInput): DetectedField[] {
       const lh = leftLine ? leftLine.bbox[3] - leftLine.bbox[1] : 12
       const type = typeForLabel(label)
       const fh = fieldHeight(lh, type)
-      push({ page: input.page, type, rect: [r[0], y - fh, r[2], y - 0.5], name: nameFromLabel(label), source: 'line' })
+      push({
+        page: input.page,
+        type,
+        rect: [r[0], y - fh, r[2], y - 0.5],
+        name: nameFromLabel(label),
+        source: 'line'
+      })
       continue
     }
     if (sh.kind !== 'rect') continue
     // ignore boxes that contain text (frames around paragraphs, table cells with content)
-    const hasText = textRects.some((t) => overlapRatio(t, r) > 0.5 && area(t) < area(r) * 1.5 && overlap(t, r) > area(t) * 0.5)
+    const hasText = textRects.some(
+      (t) => overlapRatio(t, r) > 0.5 && area(t) < area(r) * 1.5 && overlap(t, r) > area(t) * 0.5
+    )
     if (hasText) continue
     const square = w >= 6 && w <= 24 && h >= 6 && h <= 24 && Math.abs(w - h) <= Math.max(w, h) * 0.25
     if (square) {
@@ -259,7 +292,12 @@ export function detectFields(input: DetectInput): DetectedField[] {
     if (w >= 40 && h >= 12 && h <= 120 && w <= input.width * 0.95) {
       // label on the left or right above
       const leftLine = lines
-        .filter((l) => vOverlap(l.bbox, r) > Math.min(h, l.bbox[3] - l.bbox[1]) * 0.5 && l.bbox[2] <= r[0] + 2 && r[0] - l.bbox[2] < 120)
+        .filter(
+          (l) =>
+            vOverlap(l.bbox, r) > Math.min(h, l.bbox[3] - l.bbox[1]) * 0.5 &&
+            l.bbox[2] <= r[0] + 2 &&
+            r[0] - l.bbox[2] < 120
+        )
         .sort((a, b) => b.bbox[2] - a.bbox[2])[0]
       const above = lines
         .filter((l) => l.bbox[3] <= r[1] + 2 && r[1] - l.bbox[3] < 14 && l.bbox[0] < r[2] && l.bbox[2] > r[0])

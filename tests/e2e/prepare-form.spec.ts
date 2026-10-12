@@ -179,7 +179,9 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     await page.screenshot({ path: `${SHOTS}/prepare-form-properties-options.png` })
     await props.getByRole('button', { name: 'OK' }).click()
     await expect(props).toBeHidden()
-    await expect.poll(async () => (await byName(page, 'Dropdown1'))?.options.map((o) => o.label)).toEqual(['Red', 'Green', 'Blue'])
+    await expect
+      .poll(async () => (await byName(page, 'Dropdown1'))?.options.map((o) => o.label))
+      .toEqual(['Red', 'Green', 'Blue'])
     expect((await byName(page, 'Dropdown1'))!.value).toBe('Green')
 
     // 4. a signature field
@@ -200,11 +202,15 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     await page.mouse.move(bb.x + bb.width / 2 + 10 * s, bb.y + bb.height / 2 + 5 * s, { steps: 3 })
     await page.mouse.move(bb.x + bb.width / 2 + 20 * s, bb.y + bb.height / 2 + 10 * s, { steps: 3 })
     await page.mouse.up()
-    await expect.poll(async () => near((await byName(page, 'customer'))!.rect, [92, 570, 292, 594])).toBe(true)
+    await expect
+      .poll(async () => near((await byName(page, 'customer'))!.rect, [92, 570, 292, 594]))
+      .toBe(true)
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('Shift+ArrowDown')
-    await expect.poll(async () => near((await byName(page, 'customer'))!.rect, [94, 580, 294, 604], 0.6)).toBe(true)
+    await expect
+      .poll(async () => near((await byName(page, 'customer'))!.rect, [94, 580, 294, 604], 0.6))
+      .toBe(true)
 
     // resize the check box with its bottom-right handle
     await page.locator('.fc-prepare-form-box[data-field-name="Check Box1"]').click()
@@ -215,10 +221,12 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     await page.mouse.move(hb.x + hb.width / 2 + 3 * s, hb.y + hb.height / 2 + 3 * s, { steps: 3 })
     await page.mouse.move(hb.x + hb.width / 2 + 6 * s, hb.y + hb.height / 2 + 6 * s, { steps: 3 })
     await page.mouse.up()
-    await expect.poll(async () => {
-      const r = (await byName(page, 'Check Box1'))!.rect
-      return Math.round(r[2] - r[0])
-    }).toBe(20)
+    await expect
+      .poll(async () => {
+        const r = (await byName(page, 'Check Box1'))!.rect
+        return Math.round(r[2] - r[0])
+      })
+      .toBe(20)
 
     // delete the signature field with the Delete key, then undo
     await page.locator('.fc-prepare-form-box[data-field-name="Signature1"]').click()
@@ -244,7 +252,9 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
 
     // Preview: back to normal filling; fill the text field
     await page.getByRole('button', { name: 'Preview', exact: true }).first().click()
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('select')
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId))
+      .toBe('select')
     await expect(page.locator('.fc-prepare-form-box')).toHaveCount(0)
     const cust = (await byName(page, 'customer'))!
     await clickOnPage(page, 0, [(cust.rect[0] + cust.rect[2]) / 2, (cust.rect[1] + cust.rect[3]) / 2])
@@ -257,7 +267,10 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
       await page.keyboard.type('Ada Lovelace')
       await page.keyboard.press('Enter')
     } else {
-      await page.evaluate(async (id) => (window as any).__fartcrobat.getActiveDoc().ops('forms').setValue(id, 'Ada Lovelace'), cust.id)
+      await page.evaluate(
+        async (id) => (window as any).__fartcrobat.getActiveDoc().ops('forms').setValue(id, 'Ada Lovelace'),
+        cust.id
+      )
     }
     await expect.poll(async () => (await byName(page, 'customer'))?.value).toBe('Ada Lovelace')
 
@@ -283,7 +296,11 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     const again = await listAll(page)
     expect(again.map((f) => f.name).sort()).toEqual(['Check Box1', 'Dropdown1', 'Signature1', 'customer'])
     expect(again.find((f) => f.name === 'customer')!.value).toBe('Ada Lovelace')
-    expect(again.find((f) => f.name === 'Dropdown1')!.options.map((o) => o.label)).toEqual(['Red', 'Green', 'Blue'])
+    expect(again.find((f) => f.name === 'Dropdown1')!.options.map((o) => o.label)).toEqual([
+      'Red',
+      'Green',
+      'Blue'
+    ])
     await page.screenshot({ path: `${SHOTS}/prepare-form-reopened.png` })
   } finally {
     await app.close()
@@ -302,7 +319,17 @@ test('auto-detect finds the blanks of a printed form', async () => {
     await expect.poll(async () => (await listAll(page)).length, { timeout: 20000 }).toBeGreaterThanOrEqual(12)
     const fields = await listAll(page)
     const names = fields.map((f) => f.name)
-    for (const n of ['Full name', 'Email', 'Phone', 'Street address', 'City', 'Postcode', 'Comments', 'Signature']) expect(names).toContain(n)
+    for (const n of [
+      'Full name',
+      'Email',
+      'Phone',
+      'Street address',
+      'City',
+      'Postcode',
+      'Comments',
+      'Signature'
+    ])
+      expect(names).toContain(n)
     expect(fields.find((f) => f.name === 'Signature')!.type).toBe('signature')
     expect(fields.filter((f) => f.type === 'checkbox').length).toBeGreaterThanOrEqual(4)
     await expect(page.locator('.toast', { hasText: 'Added' })).toBeVisible()
@@ -324,7 +351,10 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
     await runCommand(page, 'form.prepare')
-    await page.locator('.ui-dialog', { hasText: 'Detect form fields automatically?' }).getByRole('button', { name: 'Not now' }).click()
+    await page
+      .locator('.ui-dialog', { hasText: 'Detect form fields automatically?' })
+      .getByRole('button', { name: 'Not now' })
+      .click()
     await scrollTo(page, 0, 520)
 
     // three text fields: two placed with a click (default size 150 x 22), one drawn
@@ -342,7 +372,9 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await dragOnPage(page, 0, [300, 640], [420, 664])
     await name.fill('total')
     await name.press('Enter')
-    await expect.poll(async () => (await listAll(page)).map((f) => f.name).sort()).toEqual(['price', 'qty', 'total'])
+    await expect
+      .poll(async () => (await listAll(page)).map((f) => f.name).sort())
+      .toEqual(['price', 'qty', 'total'])
     // page coordinates are right at this zoom
     expect(near((await byName(page, 'price'))!.rect, [80, 560, 230, 582])).toBe(true)
     expect(near((await byName(page, 'qty'))!.rect, [95, 600, 245, 622])).toBe(true)
@@ -364,16 +396,24 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await expect(page.getByRole('menuitem', { name: 'Align Left' })).toBeVisible()
     await page.screenshot({ path: `${SHOTS}/prepare-form-align-menu.png` })
     await page.getByRole('menuitem', { name: 'Align Left' }).click()
-    await expect.poll(async () => (await listAll(page)).map((f) => Math.round(f.rect[0]))).toEqual([80, 80, 80])
+    await expect
+      .poll(async () => (await listAll(page)).map((f) => Math.round(f.rect[0])))
+      .toEqual([80, 80, 80])
     expect(near((await byName(page, 'total'))!.rect, [80, 640, 200, 664])).toBe(true)
     // Match width of the anchor (price)
     await page.locator('.fc-prepare-form-box[data-field-name="price"]').click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Set Fields to Same Size' }).hover()
     await page.getByRole('menuitem', { name: 'Width', exact: true }).click()
-    await expect.poll(async () => (await listAll(page)).map((f) => Math.round(f.rect[2] - f.rect[0]))).toEqual([150, 150, 150])
+    await expect
+      .poll(async () => (await listAll(page)).map((f) => Math.round(f.rect[2] - f.rect[0])))
+      .toEqual([150, 150, 150])
     // each arrangement is one undo step
     await runCommand(page, 'edit.undo')
-    await expect.poll(async () => Math.round((await byName(page, 'total'))!.rect[2] - (await byName(page, 'total'))!.rect[0])).toBe(120)
+    await expect
+      .poll(async () =>
+        Math.round((await byName(page, 'total'))!.rect[2] - (await byName(page, 'total'))!.rect[0])
+      )
+      .toBe(120)
 
     // rubber-band selection: drag around two fields on the empty page
     await page.keyboard.press('Escape')
@@ -449,15 +489,25 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await page.mouse.move(sh.x + sh.width / 2, sh.y + sh.height / 2 + 10 * s15, { steps: 3 })
     await page.mouse.up()
     // the page is turned clockwise: the bottom of the screen is the right side of the page
-    await expect.poll(async () => near((await byName(page, 'total'))!.rect, [before[0], before[1], before[2] + 10, before[3]], 0.6)).toBe(true)
+    await expect
+      .poll(async () =>
+        near((await byName(page, 'total'))!.rect, [before[0], before[1], before[2] + 10, before[3]], 0.6)
+      )
+      .toBe(true)
     await page.keyboard.press('ArrowDown')
-    await expect.poll(async () => near((await byName(page, 'total'))!.rect, [before[0] + 1, before[1], before[2] + 11, before[3]], 0.3)).toBe(true)
+    await expect
+      .poll(async () =>
+        near((await byName(page, 'total'))!.rect, [before[0] + 1, before[1], before[2] + 11, before[3]], 0.3)
+      )
+      .toBe(true)
     await runCommand(page, 'view.rotateCCW')
 
     // keyboard only: choose the check box tool with Enter, Enter again places one mid-view; Delete removes it
     await page.getByRole('button', { name: 'Add check box' }).first().focus()
     await page.keyboard.press('Enter')
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('form.checkbox')
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId))
+      .toBe('form.checkbox')
     await page.keyboard.press('Enter')
     await expect(page.getByRole('textbox', { name: 'Field name' })).toHaveValue('Check Box1')
     await page.keyboard.press('Escape')
@@ -506,8 +556,13 @@ test('request e-signatures: signers, signature fields, save and share by email',
 
     // place Ada's signature and date fields
     await scrollTo(page, 0, 480)
-    await left.locator('.fc-prepare-form-signers li', { hasText: 'Ada Lovelace' }).getByRole('button', { name: 'Signature field' }).click()
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('form.signature')
+    await left
+      .locator('.fc-prepare-form-signers li', { hasText: 'Ada Lovelace' })
+      .getByRole('button', { name: 'Signature field' })
+      .click()
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId))
+      .toBe('form.signature')
     await dragOnPage(page, 0, [72, 600], [252, 640])
     await expect.poll(async () => (await listAll(page)).length).toBe(1)
     const sig = (await listAll(page))[0]
@@ -515,7 +570,10 @@ test('request e-signatures: signers, signature fields, save and share by email',
     expect(sig.type).toBe('signature')
     expect(sig.tooltip).toBe('Signature of Ada Lovelace')
     expect(sig.required).toBe(true)
-    await left.locator('.fc-prepare-form-signers li', { hasText: 'Ada Lovelace' }).getByRole('button', { name: 'Date field' }).click()
+    await left
+      .locator('.fc-prepare-form-signers li', { hasText: 'Ada Lovelace' })
+      .getByRole('button', { name: 'Date field' })
+      .click()
     await clickOnPage(page, 0, [300, 620])
     await expect.poll(async () => (await listAll(page)).length).toBe(2)
     expect((await byName(page, 'Date Ada Lovelace'))!.tooltip).toBe('Date signed by Ada Lovelace')
@@ -541,8 +599,12 @@ test('request e-signatures: signers, signature fields, save and share by email',
     expect(statSync(saved).size).toBeGreaterThan(statSync(fixturePath('text.pdf')).size)
     const links = await externalLinks(app)
     expect(links.length).toBe(1)
-    expect(links[0].startsWith('mailto:ada@example.com?subject=Please%20sign%3A%20contract.pdf&body=')).toBe(true)
-    expect(decodeURIComponent(links[0])).toContain('Signature fields are marked for: Ada Lovelace, C. Babbage')
+    expect(links[0].startsWith('mailto:ada@example.com?subject=Please%20sign%3A%20contract.pdf&body=')).toBe(
+      true
+    )
+    expect(decodeURIComponent(links[0])).toContain(
+      'Signature fields are marked for: Ada Lovelace, C. Babbage'
+    )
     await page.waitForTimeout(200)
     await page.screenshot({ path: `${SHOTS}/prepare-form-request-sent.png` })
     expect((await activeDocState(page))?.dirty).toBe(false)

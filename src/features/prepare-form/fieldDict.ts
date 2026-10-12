@@ -12,6 +12,7 @@ import { EngineError } from '@engine/define'
 import type { PDFDocument, PDFObject, Session } from '@engine/session'
 import { catalog, isNull, readName, readNumber, readString, walkFields } from '@engine/util/pdf'
 import { FONTS, type FieldKind } from './model'
+import { parseFormat } from './scripts'
 
 // Field flags (ISO 32000-1, tables 221, 226, 228, 230)
 export const FF_READ_ONLY = 1
@@ -39,7 +40,22 @@ export const F_PRINT = 4
 export const F_NO_VIEW = 32
 
 /** Keys that belong to the field (moved to the parent when a field gets several widgets). */
-export const FIELD_KEYS = ['FT', 'Ff', 'V', 'DV', 'TU', 'TM', 'MaxLen', 'Opt', 'TI', 'I', 'RV', 'DS', 'Lock', 'SV']
+export const FIELD_KEYS = [
+  'FT',
+  'Ff',
+  'V',
+  'DV',
+  'TU',
+  'TM',
+  'MaxLen',
+  'Opt',
+  'TI',
+  'I',
+  'RV',
+  'DS',
+  'Lock',
+  'SV'
+]
 /** Trigger events of /AA that belong to the field rather than to the widget annotation. */
 export const FIELD_AA_KEYS = ['K', 'F', 'V', 'C']
 
@@ -293,8 +309,8 @@ export function kindOf(w: PDFObject): FieldKind {
   const ff = readNumber(w.getInheritable('Ff'), 0)
   switch (ft) {
     case 'Tx': {
-      const f = fieldScripts(fieldOf(w)).format ?? ''
-      return /^\s*AFDate_Format/.test(f) ? 'date' : 'text'
+      const sc = fieldScripts(fieldOf(w))
+      return parseFormat(sc.format, sc.keystroke).kind === 'date' ? 'date' : 'text'
     }
     case 'Btn':
       if (ff & FF_PUSHBUTTON) return 'button'
@@ -310,7 +326,12 @@ export function kindOf(w: PDFObject): FieldKind {
 }
 
 /** The JavaScript of a field's trigger events (K, F, V, C). */
-export function fieldScripts(field: PDFObject): { keystroke?: string; format?: string; validate?: string; calculate?: string } {
+export function fieldScripts(field: PDFObject): {
+  keystroke?: string
+  format?: string
+  validate?: string
+  calculate?: string
+} {
   const aa = field.get('AA')
   if (isNull(aa)) return {}
   const js = (key: string): string | undefined => {
@@ -478,7 +499,8 @@ export function joinWidgetToField(s: Session, w: PDFObject, target: PDFObject): 
 export function validateFieldName(name: string): string | null {
   if (!name.trim()) return 'Enter a field name'
   if (name !== name.trim()) return 'Field names cannot start or end with spaces'
-  if (/^\.|\.$|\.\./.test(name)) return 'Field names cannot start or end with a period, or contain two periods in a row'
+  if (/^\.|\.$|\.\./.test(name))
+    return 'Field names cannot start or end with a period, or contain two periods in a row'
   return null
 }
 
@@ -504,7 +526,11 @@ export function placeFieldAtName(s: Session, field: PDFObject, name: string) {
       if (readString(k.get('T')) !== part) continue
       const kids = k.get('Kids')
       const terminal = isWidgetDict(k) || isNull(kids) || widgetsOf(k).length > 0
-      if (terminal) throw new EngineError(`“${[...path.map(partialName), part].join('.')}” is already a field, so it cannot hold other fields`, 'NAME_EXISTS')
+      if (terminal)
+        throw new EngineError(
+          `“${[...path.map(partialName), part].join('.')}” is already a field, so it cannot hold other fields`,
+          'NAME_EXISTS'
+        )
       found = k
       break
     }
@@ -535,7 +561,13 @@ export function placeFieldAtName(s: Session, field: PDFObject, name: string) {
 /** Writes a page-space rectangle into /Rect (PDF user space). */
 export function putRect(s: Session, pageIndex: number, w: PDFObject, rect: Rect) {
   const r = normalizeRect(transformRect(normalizeRect(rect), s.pageToUser(pageIndex)))
-  w.put('Rect', newArray(s.pdf, r.map((v) => Math.round(v * 1000) / 1000)))
+  w.put(
+    'Rect',
+    newArray(
+      s.pdf,
+      r.map((v) => Math.round(v * 1000) / 1000)
+    )
+  )
 }
 
 /** Page-space rectangle of a widget. */
@@ -598,7 +630,10 @@ export function mkColor(w: PDFObject, key: 'BC' | 'BG'): string | null {
 
 export function colorArray(s: Session, hex: string | null): PDFObject {
   if (!hex) return s.pdf.newArray()
-  return newArray(s.pdf, hexToRgb(hex).map((v) => Math.round(v * 1000) / 1000))
+  return newArray(
+    s.pdf,
+    hexToRgb(hex).map((v) => Math.round(v * 1000) / 1000)
+  )
 }
 
 export function ensureMK(s: Session, w: PDFObject): PDFObject {

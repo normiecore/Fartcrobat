@@ -1,4 +1,14 @@
-import { Calculator, Ellipsis, Eye, ListOrdered, MousePointer2, PanelRight, Settings2, WandSparkles, X } from 'lucide-react'
+import {
+  Calculator,
+  Ellipsis,
+  Eye,
+  ListOrdered,
+  MousePointer2,
+  PanelRight,
+  Settings2,
+  WandSparkles,
+  X
+} from 'lucide-react'
 import {
   Button,
   DropdownMenu,
@@ -30,7 +40,12 @@ export function FormToolbar({ doc }: { doc: DocumentModel }) {
   const sel = fieldSelection(selection)
   return (
     <div className="fc-prepare-form-toolbar" role="toolbar" aria-label="Form fields">
-      <IconButton icon={MousePointer2} label="Select fields" active={toolId === 'form.select'} onClick={() => setTool('form.select')} />
+      <IconButton
+        icon={MousePointer2}
+        label="Select fields"
+        active={toolId === 'form.select'}
+        onClick={() => setTool('form.select')}
+      />
       <span className="shell-sep" />
       {TYPES.map((t) => (
         <IconButton
@@ -58,20 +73,45 @@ export function FormToolbar({ doc }: { doc: DocumentModel }) {
       </span>
       <span className="fc-prepare-form-toolbar-spacer" />
       {!!sel?.ids.length && (
-        <Button size="sm" icon={Settings2} title="Field properties (Enter)" onClick={() => openProperties(doc, sel.ids)}>
+        <Button
+          size="sm"
+          icon={Settings2}
+          title="Field properties (Enter)"
+          onClick={() => openProperties(doc, sel.ids)}
+        >
           Properties
         </Button>
       )}
-      <Button size="sm" icon={Eye} onClick={() => setTool('select')} title="Fill in the form as your users will">
+      <Button
+        size="sm"
+        icon={Eye}
+        onClick={() => setTool('select')}
+        title="Fill in the form as your users will"
+      >
         Preview
       </Button>
       <DropdownMenu
         align="right"
         trigger={(p) => <IconButton icon={Ellipsis} label="More form options" {...p} />}
         items={() => [
-          { id: 'detect', label: 'Detect form fields automatically', icon: WandSparkles, run: () => void detectFieldsFlow(doc) },
-          { id: 'tabs', label: showTabs ? 'Hide tab numbers' : 'Show tab numbers', icon: ListOrdered, run: () => usePF.setState({ showTabNumbers: !showTabs }) },
-          { id: 'calc', label: 'Set field calculation order…', icon: Calculator, run: () => void openCalculationOrder(doc) },
+          {
+            id: 'detect',
+            label: 'Detect form fields automatically',
+            icon: WandSparkles,
+            run: () => void detectFieldsFlow(doc)
+          },
+          {
+            id: 'tabs',
+            label: showTabs ? 'Hide tab numbers' : 'Show tab numbers',
+            icon: ListOrdered,
+            run: () => usePF.setState({ showTabNumbers: !showTabs })
+          },
+          {
+            id: 'calc',
+            label: 'Set field calculation order…',
+            icon: Calculator,
+            run: () => void openCalculationOrder(doc)
+          },
           { id: 'panel', label: 'Show Fields panel', icon: PanelRight, run: () => openRightPanel('fields') }
         ]}
       />

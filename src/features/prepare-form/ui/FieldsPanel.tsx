@@ -12,7 +12,15 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import { TYPE_LABELS, type PFField, type TabOrder } from '../model'
-import { deleteFields, enterFormEditing, fieldSelection, isFormTool, renameField, selectFields, setTabOrder } from './actions'
+import {
+  deleteFields,
+  enterFormEditing,
+  fieldSelection,
+  isFormTool,
+  renameField,
+  selectFields,
+  setTabOrder
+} from './actions'
 import { openCalculationOrder } from './CalcOrderDialog'
 import { useAllFields } from './hooks'
 import { TYPE_ICONS } from './icons'
@@ -43,7 +51,12 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
 
   const focusField = (f: PFField, additive = false) => {
     if (!editing) enterFormEditing()
-    const ids = additive && sel?.page === f.page ? (sel.ids.includes(f.id) ? sel.ids.filter((x) => x !== f.id) : [...sel.ids, f.id]) : [f.id]
+    const ids =
+      additive && sel?.page === f.page
+        ? sel.ids.includes(f.id)
+          ? sel.ids.filter((x) => x !== f.id)
+          : [...sel.ids, f.id]
+        : [f.id]
     selectFields(doc, f.page, ids)
     doc.view?.scrollToRect(f.page, f.rect, { center: true })
   }
@@ -89,7 +102,12 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
         <span className="shell-muted">
           {fields.length} field{fields.length === 1 ? '' : 's'}
         </span>
-        <Button size="sm" icon={editing ? Eye : PencilLine} onClick={() => (editing ? setTool('select') : enterFormEditing())} aria-pressed={!editing}>
+        <Button
+          size="sm"
+          icon={editing ? Eye : PencilLine}
+          onClick={() => (editing ? setTool('select') : enterFormEditing())}
+          aria-pressed={!editing}
+        >
           {editing ? 'Preview' : 'Edit fields'}
         </Button>
       </div>
@@ -119,7 +137,8 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
                   .map((f) => {
                     const Icon = TYPE_ICONS[f.type]
                     const isSel = sel?.page === page && sel.ids.includes(f.id)
-                    const drop = dropTarget?.id === f.id ? (dropTarget.after ? 'is-drop-after' : 'is-drop-before') : ''
+                    const drop =
+                      dropTarget?.id === f.id ? (dropTarget.after ? 'is-drop-after' : 'is-drop-before') : ''
                     return (
                       <li
                         key={f.id}
@@ -158,7 +177,11 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
                             e.preventDefault()
                             e.stopPropagation()
                             const el = e.currentTarget
-                            const all = [...(el.closest('.fc-prepare-form-panel-list')?.querySelectorAll<HTMLElement>('.fc-prepare-form-field') ?? [])]
+                            const all = [
+                              ...(el
+                                .closest('.fc-prepare-form-panel-list')
+                                ?.querySelectorAll<HTMLElement>('.fc-prepare-form-field') ?? [])
+                            ]
                             const next = all[all.indexOf(el) + (e.key === 'ArrowUp' ? -1 : 1)]
                             next?.focus()
                           } else if (e.key === ' ') {
@@ -184,7 +207,8 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
                         }}
                         onDrop={(e) => {
                           e.preventDefault()
-                          if (dragId !== null && dropTarget) reorder(page, dragId, dropTarget.id, dropTarget.after)
+                          if (dragId !== null && dropTarget)
+                            reorder(page, dragId, dropTarget.id, dropTarget.after)
                           setDragId(null)
                           setDropTarget(null)
                         }}
@@ -208,7 +232,9 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
                             *
                           </span>
                         )}
-                        {f.calculate.kind !== 'none' && <Calculator size={13} className="shell-muted" aria-label="Calculated" />}
+                        {f.calculate.kind !== 'none' && (
+                          <Calculator size={13} className="shell-muted" aria-label="Calculated" />
+                        )}
                       </li>
                     )
                   })}
@@ -218,12 +244,19 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
         })}
       </div>
       <div className="fc-prepare-form-panel-foot">
-        <Checkbox checked={showTabs} onChange={(v) => usePF.setState({ showTabNumbers: v })} label="Show tab numbers" />
+        <Checkbox
+          checked={showTabs}
+          onChange={(v) => usePF.setState({ showTabNumbers: v })}
+          label="Show tab numbers"
+        />
         <Button size="sm" icon={Calculator} onClick={() => void openCalculationOrder(doc)}>
           Calculation order…
         </Button>
       </div>
-      <p className="fc-prepare-form-hint fc-prepare-form-panel-tip">Drag fields (or press Alt+↑/↓) to change the order the Tab key follows. Double-click a name to rename it.</p>
+      <p className="fc-prepare-form-hint fc-prepare-form-panel-tip">
+        Drag fields (or press Alt+↑/↓) to change the order the Tab key follows. Double-click a name to rename
+        it.
+      </p>
     </div>
   )
 }
