@@ -202,6 +202,8 @@ export function drawResult(canvas: HTMLCanvasElement, r: RenderResult) {
   if (canvas.height !== r.height) canvas.height = r.height
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-  if (r.bitmap) ctx.drawImage(r.bitmap, 0, 0)
-  else if (r.pixels) ctx.putImageData(new ImageData(new Uint8ClampedArray(r.pixels), r.width, r.height), 0, 0)
+  if (r.bitmap) {
+    // a bitmap that was released (closed) has no size; drawing it would throw
+    if (r.bitmap.width) ctx.drawImage(r.bitmap, 0, 0)
+  } else if (r.pixels) ctx.putImageData(new ImageData(new Uint8ClampedArray(r.pixels), r.width, r.height), 0, 0)
 }
