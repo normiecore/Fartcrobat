@@ -71,19 +71,30 @@ export function TextEditor({ doc, geometry, item }: { doc: DocumentModel; geomet
       unhideItem(doc, current.page, current.id)
       return
     }
+    if (doc.isClosed) return
     const text = valueRef.current.replace(/[ \t\r\n]+$/, '')
     setFrozen(true)
     try {
+      // Engine calls are queued in order, so a command run by this same key press (Save, Close)
+      // sees the text. Mark the document modified right away so Close still asks to save.
       if (!text.trim()) {
         const label = `Add ${kindLabel(current.kind)}`
-        if (editing.isNew && editing.edits === 0 && doc.state.journal.undoLabel === label) await doc.undo()
-        else await fsOps(doc).remove([current.id], current.kind, current.page)
+        if (editing.isNew && editing.edits === 0 && doc.state.journal.undoLabel === label) {
+          await doc.undo()
+        } else {
+          const p = fsOps(doc).remove([current.id], current.kind, current.page)
+          doc.set({ dirty: true })
+          await p
+        }
         doc.clearSelection()
       } else if (text !== savedText.current) {
         savedText.current = text
-        await fsOps(doc).setText(current.id, text, current.page)
+        const p = fsOps(doc).setText(current.id, text, current.page)
+        doc.set({ dirty: true })
+        await p
       }
     } catch (err) {
+      if (doc.isClosed) return
       if ((err as { code?: string }).code !== 'NO_ANNOTATION') showError(err, 'Could not save the text')
     }
     unhideItem(doc, current.page, current.id)

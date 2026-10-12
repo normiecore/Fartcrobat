@@ -108,6 +108,7 @@
   caret-color: var(--accent);
   letter-spacing: 0;
   font-kerning: none;
+  box-shadow: none !important;
 }
 .fc-fill-sign-textarea.is-frozen {
   outline-color: transparent;

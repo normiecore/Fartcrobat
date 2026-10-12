@@ -4,7 +4,7 @@ import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { RenderResult } from '@engine/ops/render'
 import type { PDFAnnotation, PDFPage, Session } from '@engine/session'
 import { FLAG_LOCKED, FLAG_PRINT, transformAnnotation } from '@engine/ops/annots'
-import { isNull, pageBoxes, readString } from '@engine/util/pdf'
+import { isNull, num, pageBoxes, readString } from '@engine/util/pdf'
 import {
   clampSize,
   DEFAULT_COLOR,
@@ -157,6 +157,7 @@ function itemOf(s: Session, annot: PDFAnnotation, pageIndex: number, position: n
     text: isTextKind(kind) ? safe(() => annot.getContents(), '') : '',
     size: sizeOf(annot, kind, rect, data),
     color: colorOf(annot, kind),
+    spacing: isTextKind(kind) ? spacingOf(annot) : 0,
     locked: (safe(() => annot.getFlags(), 0) & FLAG_LOCKED) !== 0
   }
 }
@@ -209,11 +210,58 @@ function lineCount(text: string): number {
   return Math.max(1, text.split('\n').length)
 }
 
-/** Width of the widest line as MuPDF lays it out (handles fallback fonts for any script). */
-function measureText(annot: PDFAnnotation, x: number, y: number, text: string, size: number): number {
-  if (!text.trim()) return 0
-  annot.setRect([x, y, x + 20000, y + (lineCount(text) + 2) * size * LINE_HEIGHT])
+function spacingOf(annot: PDFAnnotation): number {
+  const v = parseFloat(readData(annot).spacing)
+  return Number.isFinite(v) && v > 0 ? v : 0
+}
+
+const isWs = (b: number) => b === 0x0a || b === 0x0d || b === 0x20 || b === 0x09
+
+/**
+ * Letter spacing ("comb" filling of boxed forms): MuPDF's FreeText appearances have no character
+ * spacing, so "<spacing> Tc" is inserted after every BT of the generated appearance stream. Works
+ * on bytes because the stream contains raw (non-UTF-8) string bytes.
+ */
+function applySpacing(annot: PDFAnnotation, spacing: number) {
+  if (!(spacing > 0)) return
+  let ap: ReturnType<PDFAnnotation['getObject']>
+  try {
+    ap = annot.getObject().get('AP').get('N')
+  } catch {
+    return
+  }
+  if (isNull(ap) || !ap.isStream()) return
+  const buf = ap.readStream()
+  const src = buf.asUint8Array().slice()
+  buf.destroy()
+  const insert = new TextEncoder().encode(`${num(spacing)} Tc\n`)
+  const parts: Uint8Array[] = []
+  let last = 0
+  for (let i = 0; i + 2 < src.length; i++) {
+    if (src[i] === 0x42 && src[i + 1] === 0x54 && isWs(src[i + 2]) && (i === 0 || isWs(src[i - 1]))) {
+      parts.push(src.subarray(last, i + 3), insert)
+      last = i + 3
+    }
+  }
+  if (!parts.length) return
+  parts.push(src.subarray(last))
+  const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0))
+  let o = 0
+  for (const part of parts) {
+    out.set(part, o)
+    o += part.length
+  }
+  ap.writeStream(out)
+}
+
+/** Regenerates a text item's appearance and re-applies its letter spacing. */
+function refreshText(annot: PDFAnnotation) {
   annot.update()
+  applySpacing(annot, spacingOf(annot))
+}
+
+/** Right edge of the widest line, as MuPDF lays it out (handles fallback fonts for any script). */
+function measuredRight(annot: PDFAnnotation, x: number): number {
   let maxX = x
   const list = annot.toDisplayList()
   try {
@@ -230,18 +278,37 @@ function measureText(annot: PDFAnnotation, x: number, y: number, text: string, s
   } finally {
     list.destroy()
   }
-  return Math.max(0, maxX - x)
+  return maxX
 }
 
-/** Sets contents, font and colour of a FreeText item and fits its rect to the text (top-left fixed). */
-function layoutText(annot: PDFAnnotation, x: number, y: number, text: string, size: number, color: string) {
+/**
+ * Sets contents, font, colour and letter spacing of a FreeText item and fits its rect to the
+ * text, keeping the top-left corner at (x, y).
+ */
+function layoutText(
+  annot: PDFAnnotation,
+  x: number,
+  y: number,
+  text: string,
+  size: number,
+  color: string,
+  spacing = spacingOf(annot)
+) {
   annot.setDefaultAppearance('Helv', size, rgb(color))
   annot.setContents(text)
-  const width = measureText(annot, x, y, text, size)
+  let width = 0
+  if (text.trim()) {
+    // lay it out without any wrapping, then measure what MuPDF drew
+    annot.setRect([x, y, x + 20000, y + (lineCount(text) + 2) * size * LINE_HEIGHT])
+    annot.update()
+    applySpacing(annot, spacing)
+    width = Math.max(0, measuredRight(annot, x) - x)
+  }
   const w = Math.max(width + TEXT_SLACK, size * 0.6)
   const h = lineCount(text) * size * LINE_HEIGHT
   annot.setRect([x, y, x + w, y + h])
   annot.update()
+  applySpacing(annot, spacing)
 }
 
 function createText(s: Session, page: PDFPage, topLeft: Point, kind: TextKind, text: string, size: number, color: string) {
@@ -547,18 +614,19 @@ export default defineOps('fill-sign', {
       const f = find(s, id, hintPage)
       assertUnlocked(f)
       const kind = kindOf(f)
+      try {
+        f.annot.setModificationDate(new Date())
+      } catch {}
       if (isTextKind(kind) || kind === 'signature' || kind === 'initials' || kind === 'dot') {
         const r = f.annot.getRect() as Rect
         f.annot.setRect([r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy])
-        f.annot.update()
+        if (isTextKind(kind)) refreshText(f.annot)
+        else f.annot.update()
       } else {
         const b = f.annot.getBounds() as Rect
         transformAnnotation(f.annot, [b[0] + dx, b[1] + dy, b[2] + dx, b[3] + dy])
         f.annot.update()
       }
-      try {
-        f.annot.setModificationDate(new Date())
-      } catch {}
       changed(s, f.pageIndex)
       return describe(s, f)
     }
@@ -614,6 +682,24 @@ export default defineOps('fill-sign', {
     try {
       f.annot.setModificationDate(new Date())
     } catch {}
+    changed(s, f.pageIndex)
+    return describe(s, f)
+  }),
+
+  /** Letter spacing of a text item in points (0 = normal), e.g. to fill boxed "comb" fields. */
+  setSpacing: mutation('Change Letter Spacing', (s, id: number, spacing: number, hintPage?: number): FillSignItem => {
+    const f = find(s, id, hintPage)
+    assertUnlocked(f)
+    const kind = kindOf(f)
+    if (!isTextKind(kind)) throw new EngineError('Only text has letter spacing', 'BAD_KIND')
+    const r = visualRect(f.annot, kind)
+    const size = sizeOf(f.annot, kind, r, readData(f.annot))
+    const sp = Math.round(Math.max(0, Math.min(size * 4, Number.isFinite(spacing) ? spacing : 0)) * 100) / 100
+    writeData(s, f.annot, { spacing: String(sp) })
+    try {
+      f.annot.setModificationDate(new Date())
+    } catch {}
+    layoutText(f.annot, r[0], r[1], safe(() => f.annot.getContents(), ''), size, colorOf(f.annot, kind), sp)
     changed(s, f.pageIndex)
     return describe(s, f)
   }),

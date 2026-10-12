@@ -57,6 +57,8 @@ export interface FillSignItem {
   size: number
   /** #rrggbb */
   color: string
+  /** Extra space between letters of text items, in points (0 = normal). */
+  spacing: number
   locked: boolean
 }
 
