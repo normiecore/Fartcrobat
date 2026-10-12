@@ -116,7 +116,11 @@ function loadScale(doc: DocumentModel, docVersion: number): Promise<MeasureScale
   if (!p) {
     p = measureOps(doc).getScale()
     scaleLoads.set(key, p)
-    p.catch(() => scaleLoads.delete(key))
+    p.catch((err) => {
+      scaleLoads.delete(key)
+      // measuring with a wrong scale would give wrong values: say so (once per load, not per page)
+      if (!doc.isClosed) showError(err, 'Could not read the measurement scale of this document')
+    })
     if (scaleLoads.size > 20) scaleLoads.delete(scaleLoads.keys().next().value!)
   }
   return p
@@ -134,7 +138,9 @@ export function useDocScale(doc: DocumentModel): MeasureScale {
         if (alive && !sameScale(useMeasure.getState().scales[doc.id] ?? null, scale))
           useMeasure.setState((s) => ({ scales: { ...s.scales, [doc.id]: scale } }))
       })
-      .catch((err) => console.warn('Could not read the measurement scale', err))
+      .catch(() => {
+        // reported once by loadScale
+      })
     return () => {
       alive = false
     }

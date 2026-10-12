@@ -500,6 +500,19 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
     await expect(page1Points).toHaveCount(0)
     expect((await annots(page, 1)).length).toBe(0)
 
+    // Right-click while measuring: Complete / Cancel Measurement, as in Acrobat
+    await clickAt(page, 336, 30, 1)
+    await clickAt(page, 408, 30, 1)
+    const rc = await at(page, 408, 60, 1)
+    await page.mouse.click(rc.x, rc.y, { button: 'right' })
+    await expect(page.getByRole('menuitem', { name: 'Complete Measurement' })).toBeEnabled()
+    await expect(page.getByRole('menuitem', { name: 'Cancel Measurement' })).toBeVisible()
+    await page.screenshot({ path: SHOT('context-menu') })
+    await page.getByRole('menuitem', { name: 'Complete Measurement' }).click()
+    await expect.poll(async () => (await annots(page, 1)).filter((a) => a.type === 'PolyLine').length).toBe(1)
+    expect((await annots(page, 1))[0].contents).toBe('5 ft')
+    await expect(page1Points).toHaveCount(0)
+
     // Dark theme panel
     await page.evaluate(() => {
       const { useApp } = (window as any).__fartcrobat

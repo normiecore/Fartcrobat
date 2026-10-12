@@ -1,5 +1,5 @@
 import { Crosshair, FileSpreadsheet, ImagePlus, Pentagon, Ruler, Scale, Spline, Stamp } from 'lucide-react'
-import { defineFeature, openToolGroup, setTool, useApp, type DocumentModel } from '@renderer/sdk'
+import { defineFeature, openToolGroup, setTool, showError, useApp, type DocumentModel } from '@renderer/sdk'
 import { openCustomStampDialog } from './CustomStampDialog'
 import { exportMeasurementsCsv, openScaleDialog } from './MeasureControls'
 import { MeasureLayer } from './MeasureLayer'
@@ -17,6 +17,7 @@ import './styles.css'
 function watchMeasurements(doc: DocumentModel) {
   const pending = new Set<number>()
   let running = false
+  let reported = false
   const flush = async () => {
     running = true
     try {
@@ -26,7 +27,11 @@ function watchMeasurements(doc: DocumentModel) {
         try {
           await measureOps(doc).refreshMeasurements(page)
         } catch (err) {
-          console.warn('Could not refresh measurements', err)
+          // say it once: labels may now show an old value until the measurement is edited again
+          if (!reported && !doc.isClosed) {
+            reported = true
+            showError(err, 'Could not update measurement values')
+          }
         }
       }
     } finally {

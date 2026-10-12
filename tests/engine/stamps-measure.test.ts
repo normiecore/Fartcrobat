@@ -27,6 +27,7 @@ import {
   type MeasureScale
 } from '@features/stamps-measure/measureMath'
 import { customStampDef, stampNameFor, BUILTIN_STAMPS, MUPDF_STAMP_NAMES } from '@features/stamps-measure/stampCatalog'
+import { clickRect, dragRect } from '@features/stamps-measure/stampGeometry'
 import { fixture, openFixture, roundTrip, type OpenedEngine } from './helpers'
 
 const IN_FT: MeasureScale = { pageValue: 1, pageUnit: 'in', realValue: 1, realUnit: 'ft', precision: 2 }
@@ -174,6 +175,38 @@ describe('measuring maths', () => {
     const def = customStampDef({ id: 'x', name: 'Logo', dataUrl: '', width: 300, height: 150, created: 0 })
     expect(def.aspect).toBe(2)
     expect(def.width).toBeCloseTo(144)
+  })
+
+  it('places stamps by click (default size, kept on the page) and by drag (proportional)', () => {
+    const approved = BUILTIN_STAMPS.find((s) => s.id === 'standard:approved')!
+    const r = clickRect(approved, [300, 400], 612, 792)
+    expect(r[2] - r[0]).toBeCloseTo(150, 6)
+    expect((r[2] - r[0]) / (r[3] - r[1])).toBeCloseTo(3.8, 6)
+    expect((r[0] + r[2]) / 2).toBeCloseTo(300, 6)
+    expect((r[1] + r[3]) / 2).toBeCloseTo(400, 6)
+    // near a corner it slides back onto the page
+    const corner = clickRect(approved, [5, 5], 612, 792)
+    expect(corner[0]).toBe(0)
+    expect(corner[1]).toBe(0)
+    // a page smaller than the stamp shrinks it
+    const small = clickRect(approved, [50, 50], 100, 100)
+    expect(small[2] - small[0]).toBeCloseTo(90, 6)
+
+    // drag right/down from the anchor: the larger of width and height (in proportion) wins
+    const d = dragRect(approved, [100, 100], [280, 110], 612, 792)
+    expect(d).toEqual([100, 100, 280, 100 + 180 / 3.8])
+    const tall = dragRect(approved, [100, 100], [110, 150], 612, 792)
+    expect(tall[2] - tall[0]).toBeCloseTo(50 * 3.8, 6)
+    // dragging up/left anchors at the start point
+    const back = dragRect(approved, [300, 300], [150, 290], 612, 792)
+    expect(back[2]).toBe(300)
+    expect(back[3]).toBe(300)
+    expect(back[0]).toBeCloseTo(150, 6)
+    // never larger than the room left on the page, never smaller than 12 pt
+    const edge = dragRect(approved, [500, 100], [900, 100], 612, 792)
+    expect(edge[2]).toBeCloseTo(612, 6)
+    const tiny = dragRect(approved, [100, 100], [102, 101], 612, 792)
+    expect(tiny[2] - tiny[0]).toBeCloseTo(12, 6)
   })
 })
 

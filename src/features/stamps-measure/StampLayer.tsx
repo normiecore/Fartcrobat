@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Point, Rect } from '@shared/geometry'
 import { useDocState, type PageLayerProps } from '@renderer/sdk'
-import { clickRect, dragRect, placeStamp } from './stampPlace'
+import { clickRect, dragRect } from './stampGeometry'
+import { placeStamp } from './stampPlace'
 import { useStampPreview } from './stampRender'
 import { loadStamps, useCurrentStamp } from './stampStore'
 

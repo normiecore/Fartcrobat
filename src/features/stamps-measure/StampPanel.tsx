@@ -20,7 +20,8 @@ import { openCustomStampDialog } from './CustomStampDialog'
 import { EscapeGuard, useEscapeGuard } from './escapeGuard'
 import { useStampPreview } from './stampRender'
 import { deleteCustomStamp, loadStamps, renameCustomStamp, selectStamp, useCurrentStamp, useStamps } from './stampStore'
-import { placeStamp, clickRect } from './stampPlace'
+import { clickRect } from './stampGeometry'
+import { placeStamp } from './stampPlace'
 
 const ORDER: StampCategory[] = ['dynamic', 'signhere', 'standard', 'custom']
 

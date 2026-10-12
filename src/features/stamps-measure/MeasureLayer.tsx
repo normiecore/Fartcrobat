@@ -1,9 +1,18 @@
 import { useEffect, useRef } from 'react'
 import type { Point } from '@shared/geometry'
-import { showError, toast, useApp, type PageLayerProps } from '@renderer/sdk'
+import { setTool, showContextMenu, showError, toast, useApp, type ContextMenuItem, type PageLayerProps } from '@renderer/sdk'
 import { nearestPoint, segmentLength, snap45, type MeasureKind } from './measureMath'
-import { openCalibrateDialog } from './MeasureControls'
-import { liveReadout, measureOps, TOOL_KIND, useDocScale, useMeasure, useSnapTargets, type LiveMeasure } from './measureStore'
+import { openCalibrateDialog, openScaleDialog } from './MeasureControls'
+import {
+  liveReadout,
+  measureOps,
+  setMeasureSettings,
+  TOOL_KIND,
+  useDocScale,
+  useMeasure,
+  useSnapTargets,
+  type LiveMeasure
+} from './measureStore'
 
 /** Snap radius in screen pixels. */
 const SNAP_PX = 8
@@ -174,6 +183,52 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     set({ ...l, points, cursor: p, snapped })
   }
 
+  // Right-click: the same choices as Acrobat's measuring context menu.
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const l = useMeasure.getState().live
+    const drawing = l && l.docId === doc.id && l.page === pageIndex && l.kind === kind && l.points.length ? l : null
+    const { snap, showLabels } = useMeasure.getState().settings
+    const items: ContextMenuItem[] = []
+    if (drawing) {
+      if (kind !== 'distance') {
+        items.push({
+          id: 'complete',
+          label: 'Complete Measurement',
+          disabled: cleanPoints(drawing.points).length < MIN_POINTS[kind],
+          run: () => void finishRef.current(drawing.points)
+        })
+        items.push({
+          id: 'last',
+          label: 'Remove Last Point',
+          shortcut: 'Backspace',
+          run: () => set({ ...drawing, points: drawing.points.slice(0, -1) })
+        })
+      }
+      items.push({ id: 'cancel', label: 'Cancel Measurement', shortcut: 'Esc', run: () => set({ ...drawing, points: [] }) })
+      items.push({ id: 'sep', label: '', separator: true })
+    }
+    items.push(
+      { id: 'snap', label: snap ? 'Turn Off Snapping' : 'Turn On Snapping', run: () => setMeasureSettings({ snap: !snap }) },
+      {
+        id: 'labels',
+        label: showLabels ? 'Hide Values on the Page' : 'Show Values on the Page',
+        run: () => setMeasureSettings({ showLabels: !showLabels })
+      },
+      { id: 'sep2', label: '', separator: true },
+      { id: 'scale', label: 'Change Scale Ratio…', run: () => void openScaleDialog(doc, scale) },
+      {
+        id: 'calibrate',
+        label: 'Calibrate Scale…',
+        run: () => {
+          useMeasure.setState({ calibrating: true, live: null })
+          setTool('measure.distance')
+        }
+      }
+    )
+    showContextMenu(e.clientX, e.clientY, items)
+  }
+
   // Double-click finishes a perimeter or area (both clicks added the same point; duplicates are dropped).
   const onDoubleClick = () => {
     const l = useMeasure.getState().live
@@ -197,6 +252,7 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       onPointerMove={onPointerMove}
       onPointerDown={onPointerDown}
       onDoubleClick={onDoubleClick}
+      onContextMenu={onContextMenu}
       onPointerLeave={() => {
         const l = useMeasure.getState().live
         if (l && l.docId === doc.id && l.page === pageIndex) set(l.points.length ? { ...l, cursor: null } : null)
