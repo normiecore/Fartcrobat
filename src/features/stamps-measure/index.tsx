@@ -73,9 +73,9 @@ export default defineFeature({
       toolbar: StampToolbar,
       onActivate: () => void loadStamps()
     },
-    measureTool('measure.distance', 'Distance', Ruler),
-    measureTool('measure.perimeter', 'Perimeter', Spline),
-    measureTool('measure.area', 'Area', Pentagon)
+    measureTool('measure.distance', 'Measure distance', Ruler),
+    measureTool('measure.perimeter', 'Measure perimeter', Spline),
+    measureTool('measure.area', 'Measure area', Pentagon)
   ],
   toolGroups: [
     {

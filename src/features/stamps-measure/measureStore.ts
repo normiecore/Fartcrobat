@@ -9,6 +9,7 @@ import {
   formatNumber,
   isPageUnit,
   measureShape,
+  sameScale,
   sanitizeScale,
   toRealLength,
   type MeasureKind,
@@ -106,6 +107,21 @@ export function fallbackScale(units: string): MeasureScale {
   return defaultScale(isPageUnit(units) ? units : 'in')
 }
 
+/** One engine read per document version, shared by every page layer and panel asking. */
+const scaleLoads = new Map<string, Promise<MeasureScale | null>>()
+
+function loadScale(doc: DocumentModel, docVersion: number): Promise<MeasureScale | null> {
+  const key = `${doc.id}:${docVersion}`
+  let p = scaleLoads.get(key)
+  if (!p) {
+    p = measureOps(doc).getScale()
+    scaleLoads.set(key, p)
+    p.catch(() => scaleLoads.delete(key))
+    if (scaleLoads.size > 20) scaleLoads.delete(scaleLoads.keys().next().value!)
+  }
+  return p
+}
+
 /** The document's measurement scale (reloaded after undo/redo). */
 export function useDocScale(doc: DocumentModel): MeasureScale {
   const prefs = usePrefs()
@@ -113,10 +129,10 @@ export function useDocScale(doc: DocumentModel): MeasureScale {
   const stored = useMeasure((s) => s.scales[doc.id])
   useEffect(() => {
     let alive = true
-    measureOps(doc)
-      .getScale()
+    loadScale(doc, docVersion)
       .then((scale) => {
-        if (alive) useMeasure.setState((s) => ({ scales: { ...s.scales, [doc.id]: scale } }))
+        if (alive && !sameScale(useMeasure.getState().scales[doc.id] ?? null, scale))
+          useMeasure.setState((s) => ({ scales: { ...s.scales, [doc.id]: scale } }))
       })
       .catch((err) => console.warn('Could not read the measurement scale', err))
     return () => {

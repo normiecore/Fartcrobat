@@ -10,6 +10,17 @@ const SNAP_PX = 8
 
 const MIN_POINTS: Record<MeasureKind, number> = { distance: 2, perimeter: 2, area: 3 }
 
+/** Puts the readout beside the pointer, flipping it near the page edges (pages clip overflow). */
+function readoutPosition(c: Point, w: number, h: number): React.CSSProperties {
+  const flipX = c[0] > w - 170
+  const flipY = c[1] > h - 44
+  return {
+    left: c[0] + (flipX ? -14 : 14),
+    top: c[1] + (flipY ? -16 : 16),
+    transform: `translate(${flipX ? '-100%' : '0'}, ${flipY ? '-100%' : '0'})`
+  }
+}
+
 function cleanPoints(points: Point[]): Point[] {
   const out: Point[] = []
   for (const p of points) {
@@ -30,7 +41,7 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const scale = useDocScale(doc)
   const targets = useSnapTargets(doc, pageIndex, settings.snap)
   const mine: LiveMeasure | null = live && live.docId === doc.id && live.page === pageIndex && live.kind === kind ? live : null
-  const busy = useRef(false)
+  const calibratingDialog = useRef(false)
 
   const set = (l: LiveMeasure | null) => useMeasure.setState({ live: l })
 
@@ -41,14 +52,19 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       if (pts.length > 1 || kind !== 'distance') toast(kind === 'area' ? 'An area needs at least 3 points.' : 'Click at least 2 points.')
       return
     }
-    if (busy.current) return
-    busy.current = true
-    try {
-      if (kind === 'distance' && useMeasure.getState().calibrating) {
-        useMeasure.setState({ calibrating: false })
+    if (kind === 'distance' && useMeasure.getState().calibrating) {
+      if (calibratingDialog.current) return
+      calibratingDialog.current = true
+      useMeasure.setState({ calibrating: false })
+      try {
         await openCalibrateDialog(doc, segmentLength(pts[0], pts[1]), scale)
-        return
+      } finally {
+        calibratingDialog.current = false
       }
+      return
+    }
+    try {
+      // calls are queued by the engine, so quick successive measurements all land
       await measureOps(doc).addMeasurement(pageIndex, {
         kind,
         points: pts,
@@ -58,10 +74,10 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       })
     } catch (err) {
       showError(err, 'Could not add the measurement')
-    } finally {
-      busy.current = false
     }
   }
+  const finishRef = useRef(finish)
+  finishRef.current = finish
 
   // Keyboard while drawing: Esc cancels, Enter finishes, Backspace removes the last point.
   const hasPoints = !!mine && mine.points.length > 0
@@ -78,7 +94,7 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       } else if (e.key === 'Enter') {
         e.preventDefault()
         e.stopPropagation()
-        void finish(l.points)
+        void finishRef.current(l.points)
       } else if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault()
         e.stopPropagation()
@@ -87,8 +103,6 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-    // finish reads the latest state through the store
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasPoints, doc, pageIndex])
 
   const pointFor = (e: React.PointerEvent, points: Point[]): { p: Point; snapped: boolean } => {
@@ -188,14 +202,17 @@ export function MeasureLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           />
         )}
       </svg>
-      {readout && cursorCss && (mine!.points.length > 0 || calibrating) && (
+      {readout && cursorCss && (mine!.points.length > 0 || (calibrating && kind === 'distance')) && (
         <div
           className="fc-stamps-measure-readout"
-          style={{ left: Math.min(cursorCss[0] + 14, geometry.cssWidth - 8), top: cursorCss[1] + 16 }}
+          style={readoutPosition(cursorCss, geometry.cssWidth, geometry.cssHeight)}
           role="status"
         >
-          {calibrating && kind === 'distance' ? 'Calibrating: ' : ''}
-          {readout.headline}
+          {calibrating && kind === 'distance'
+            ? mine!.points.length
+              ? `Calibrating: ${readout.headline}`
+              : 'Click the start of a known length'
+            : readout.headline}
         </div>
       )}
     </div>

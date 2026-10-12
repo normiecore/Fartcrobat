@@ -133,7 +133,8 @@ function MeasurePanelBody({ doc }: { doc: DocumentModel }) {
   const pageLabel = useDocState(doc, (s) => s.info.pages[page]?.label ?? String(page + 1))
   const selectedIds = selection.kind === 'annotations' && selection.page === page ? selection.ids : []
   const scaleText = scaleToString(scale)
-  const other = list.filter((m) => m.ours && m.scale && m.scale !== scaleText)
+  // measurements drawn with another scale or precision can be brought in line in one step
+  const other = list.filter((m) => m.ours && m.scale && (m.scale !== scaleText || m.precision !== scale.precision))
 
   return (
     <ToolPanelFrame

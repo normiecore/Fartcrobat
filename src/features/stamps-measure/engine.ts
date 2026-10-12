@@ -187,7 +187,8 @@ function annotRect(annot: PDFAnnotation): Rect {
 function measureLabelSize(s: Session, pageIndex: number): number {
   const b = s.pageBounds(pageIndex)
   const m = Math.min(b[2] - b[0], b[3] - b[1])
-  return Math.max(8, Math.min(24, m / 60))
+  // about 12 pt on a Letter or A4 page, like the captions MuPDF draws on distance lines
+  return Math.max(9, Math.min(24, m / 51))
 }
 
 // ---- measurement appearance ----------------------------------------------------------------
@@ -251,7 +252,8 @@ function bakePolyAppearance(s: Session, pageIndex: number, annot: PDFAnnotation,
     gstates.FcGS1 = { ca: 0.85 }
     ops.push('q /FcGS1 gs 1 1 1 rg')
     ops.push(`${num(box[0])} ${num(-box[3])} ${num(box[2] - box[0])} ${num(box[3] - box[1])} re f Q`)
-    ops.push(`q BT /FcHelv ${num(fs)} Tf ${colorOp(strokeColor, false)}`)
+    // black text on a light box, like the captions of distance lines
+    ops.push(`q BT /FcHelv ${num(fs)} Tf 0 g`)
     ops.push(`${num(cx - tw / 2)} ${num(-(cy + fs * 0.35))} Td ${pdfLiteral(label)} Tj ET Q`)
     bbox = [Math.min(bbox[0], box[0]), Math.min(bbox[1], box[1]), Math.max(bbox[2], box[2]), Math.max(bbox[3], box[3])]
   }
