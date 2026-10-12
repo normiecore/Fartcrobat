@@ -345,10 +345,31 @@ export class FormController {
     return rt.fieldNames().filter((n) => !excluded.has(n) && ![...excluded].some((e) => n.startsWith(e + '.')))
   }
 
-  /** Clears the form (or the named fields) to default values. */
+  /**
+   * Clears the form (or the named fields and their children) to default values in one undo step,
+   * showing defaults with their field formats and recalculating calculated fields, like Acrobat.
+   */
   reset(names?: string[]): Promise<void> {
     return this.enqueue(async () => {
-      await this.forms.reset(names && names.length ? names : undefined)
+      const list = names && names.length ? names : undefined
+      const defaults = await this.fill.defaultValues(list)
+      if (!defaults.length) return
+      const rt = await this.runtime()
+      const changes: FillChange[] = []
+      for (const d of defaults) {
+        rt.setValue(d.name, d.value)
+        if (d.type !== 'text' || typeof d.value !== 'string' || !d.value || !rt.hasScripts(d.name)) continue
+        const fmt = rt.format(d.name, d.value)
+        if (fmt.display !== d.value || fmt.textColor) changes.push({ name: d.name, value: d.value, display: fmt.display !== d.value ? fmt.display : undefined, textColor: fmt.textColor })
+      }
+      const calc = this.calculations(rt)
+      this.reportProblems(rt)
+      const versionBefore = this.doc.state.docVersion
+      await this.fill.reset(list, this.merge([...changes, ...calc.changes]))
+      if (this.runtimeCache?.runtime === rt && this.doc.state.docVersion === versionBefore + 1) {
+        this.runtimeCache = { version: this.doc.state.docVersion, runtime: rt }
+      }
+      void this.showAlerts([...calc.alerts], 'Message from this form')
     })
   }
 

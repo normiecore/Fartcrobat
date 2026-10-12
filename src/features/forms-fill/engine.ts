@@ -362,6 +362,19 @@ function fieldKind(ft: string | null, flags: number): ExportedField['type'] | 'b
   return null
 }
 
+/** /AS of the first widget of a button field that is switched on, or null. */
+function onWidgetState(field: PDFObject): string | null {
+  const kids = res(field.get('Kids'))
+  const widgets: PDFObject[] = []
+  if (kids && kids.isArray()) for (let i = 0; i < kids.length; i++) widgets.push(kids.get(i).resolve())
+  else widgets.push(field)
+  for (const w of widgets) {
+    const as = readName(w.get('AS'))
+    if (as && as !== 'Off') return as
+  }
+  return null
+}
+
 function allValues(s: Session): ExportedField[] {
   const out: ExportedField[] = []
   walkFields(s.pdf, (field, name, ft) => {
@@ -370,6 +383,8 @@ function allValues(s: Session): ExportedField[] {
     const type = fieldKind(ft, flags)
     if (!type || type === 'button' || type === 'signature') return
     let value = readValue(f.getInheritable('V'))
+    // Some writers only set the widgets' /AS: the button that is on gives the value.
+    if (value === null && (type === 'checkbox' || type === 'radio')) value = onWidgetState(f)
     if (value === null) value = type === 'checkbox' || type === 'radio' ? 'Off' : type === 'list' && flags & (1 << 21) ? [] : ''
     if (type === 'list' && flags & (1 << 21) && !Array.isArray(value)) value = value ? [value] : []
     out.push({ name, type, value, noExport: (flags & 4) !== 0 })
@@ -747,6 +762,47 @@ export function applyFill(s: Session, changes: FillChange[]) {
   return { missing }
 }
 
+// ---- reset ----------------------------------------------------------------------------------------
+
+/** True when `name` is one of `names` or a descendant of one ("address" covers "address.city"). */
+function covered(name: string, names: string[] | undefined): boolean {
+  if (!names || !names.length) return true
+  return names.some((n) => name === n || name.startsWith(n + '.'))
+}
+
+/** Default values (/DV) of the fields a reset would touch. */
+function defaultValues(s: Session, names?: string[]): ExportedField[] {
+  const out: ExportedField[] = []
+  walkFields(s.pdf, (field, name, ft) => {
+    if (!covered(name, names)) return
+    const f = field.resolve()
+    const flags = Math.round(readNumber(f.getInheritable('Ff'), 0))
+    const type = fieldKind(ft, flags)
+    if (!type || type === 'button' || type === 'signature') return
+    const multi = type === 'list' && (flags & (1 << 21)) !== 0
+    let value = readValue(f.getInheritable('DV'))
+    if (value === null) value = type === 'checkbox' || type === 'radio' ? 'Off' : multi ? [] : ''
+    if (multi && !Array.isArray(value)) value = value ? [value] : []
+    if (!multi && Array.isArray(value)) value = value[0] ?? ''
+    out.push({ name, type, value, noExport: (flags & 4) !== 0 })
+  })
+  return out
+}
+
+/**
+ * MuPDF rebuilds choice appearances from /V after a reset, which shows a combo box's export value
+ * instead of its label and loses the list box selection highlight: rebuild them our way.
+ */
+function repairChoiceAppearances(s: Session, names?: string[]) {
+  for (const [name, widgets] of widgetsByName(s)) {
+    if (!covered(name, names)) continue
+    const type = fieldType(widgets[0].widget)
+    if (type !== 'combobox' && type !== 'listbox') continue
+    const v = readValue(fieldDict(widgets[0].widget.getObject()).getInheritable('V'))
+    writeChoice(s, widgets, v === null ? '' : v)
+  }
+}
+
 // ---- FDF ----------------------------------------------------------------------------------------
 
 function fdfFields(node: PDFObject, prefix: string, out: { name: string; value: string | string[] }[], depth: number) {
@@ -860,6 +916,33 @@ export default defineOps('forms-fill', {
     (changes: FillChange[], label?: string) => label ?? (changes.length === 1 ? 'Fill Form Field' : 'Fill Form'),
     (s, changes: FillChange[], _label?: string) => applyFill(s, changes)
   ),
+
+  /** Default values of the fields "Clear Form" resets (all fields, or the named ones and their children). */
+  defaultValues(s, names?: string[]): ExportedField[] {
+    return defaultValues(s, names)
+  },
+
+  /**
+   * Clear Form in one undo step: resets the fields to their defaults (core forms.reset), rebuilds
+   * choice appearances, then writes the formatted defaults and recalculated fields the form's
+   * scripts produced for them (`after`).
+   */
+  reset: mutation('Clear Form', (s, names?: string[], after: FillChange[] = []) => {
+    let list: string[] | undefined
+    if (names && names.length) {
+      // The core op matches full names only: expand parent names ("address") to their fields.
+      list = []
+      walkFields(s.pdf, (_f, name) => {
+        if (covered(name, names)) list!.push(name)
+      })
+      if (!list.length) return
+    }
+    formsOps.ops.reset(s, list)
+    repairChoiceAppearances(s, list)
+    if (after.length) applyFill(s, after)
+    s.touchAll()
+    s.documentChanged()
+  }),
 
   /** Reads the fields of an FDF file. */
   parseFdf(s, bytes: Uint8Array): { file: string; fields: { name: string; value: string | string[] }[] } {

@@ -220,6 +220,81 @@ describe('forms-fill engine', () => {
     await expect(fill.parseFdf(new TextEncoder().encode('not a pdf at all'))).rejects.toThrow()
   })
 
+  it('clears the form to default values in one undo step and repairs choice appearances', async () => {
+    const e = await openFixture('forms-fill/all-fields.pdf')
+    const fill = e.ops<typeof fillOps>('forms-fill')
+    await fill.fill([
+      { name: 'firstName', value: 'Ada' },
+      { name: 'colour', value: 'B' },
+      { name: 'languages', value: ['English'] },
+      { name: 'agree', value: true },
+      { name: 'memberId', value: 'X-1' }
+    ])
+    const defaults = await fill.defaultValues()
+    expect(defaults.find((d) => d.name === 'colour')!.value).toBe('G')
+    expect(defaults.find((d) => d.name === 'languages')!.value).toEqual(['French', 'Japanese'])
+    expect(defaults.find((d) => d.name === 'agree')!.value).toBe('Off')
+    expect(defaults.find((d) => d.name === 'firstName')!.value).toBe('')
+    expect(defaults.some((d) => d.name === 'resetButton' || d.name === 'signature1')).toBe(false)
+
+    await fill.reset(undefined, [{ name: 'firstName', value: '', display: undefined }])
+    expect(e.lastChanges?.journal.undoLabel).toBe('Clear Form')
+    const v = (await fill.snapshot()).values
+    expect(v.firstName).toBe('')
+    expect(v.colour).toBe('G')
+    expect(v.languages).toEqual(['French', 'Japanese'])
+    expect(v.agree).toBe('Off')
+    expect(v.memberId).toBe('M-0042')
+    // the combo box shows its label and the list box its selection, not MuPDF's defaults
+    expect(appearanceText(e, 'colour')).toContain('(Green)')
+    expect(appearanceStream(e, 'languages').match(/0\.6 0\.757 0\.855 rg/g)?.length).toBe(2)
+
+    await e.doc.undo()
+    const back = (await fill.snapshot()).values
+    expect(back.firstName).toBe('Ada')
+    expect(back.colour).toBe('B')
+    expect(back.agree).toBe('Yes')
+  })
+
+  it('resets only the named fields (parent names include their children) and writes formatted defaults', async () => {
+    const e = await openFixture('forms-fill/calc.pdf')
+    const fill = e.ops<typeof fillOps>('forms-fill')
+    await fill.fill([
+      { name: 'amount1', value: '5', display: '$5.00' },
+      { name: 'amount2', value: '7', display: '$7.00' }
+    ])
+    expect((await fill.defaultValues(['amount1'])).map((d) => d.name)).toEqual(['amount1'])
+    await fill.reset(['amount1'], [{ name: 'total', value: '7', display: '$7.00' }])
+    const v = (await fill.snapshot()).values
+    expect(v.amount1).toBe('')
+    expect(v.amount2).toBe('7')
+    expect(v.total).toBe('7')
+    expect(appearanceText(e, 'total')).toContain('$7.00')
+    // undo restores both the cleared field and the recalculated total
+    await e.doc.undo()
+    const back = (await fill.snapshot()).values
+    expect(back.amount1).toBe('5')
+    expect(back.total).toBe('')
+
+    const f = await openFixture('forms-fill/all-fields.pdf')
+    expect(await f.ops<typeof fillOps>('forms-fill').defaultValues(['nothing'])).toEqual([])
+  })
+
+  it('reads radio and check box values from the widget states when the field has no /V', async () => {
+    const e = await openFixture('form.pdf')
+    const s = e.session
+    s.runMutation('test', () => {
+      for (const w of s.page(0).getWidgets()) {
+        if (w.getName() !== 'plan') continue
+        const obj = w.getObject()
+        const field = obj.get('T').isNull() ? obj.get('Parent') : obj
+        field.delete('V')
+      }
+    })
+    const values = await e.ops<typeof fillOps>('forms-fill').exportValues()
+    expect(values.find((x) => x.name === 'plan')!.value).toBe('basic')
+  })
+
   it('replaces the colour in /DA strings', () => {
     expect(daWithColor('/Helv 12 Tf .1 .1 .1 rg', '#ff0000')).toBe('/Helv 12 Tf 1 0 0 rg')
     expect(daWithColor('/Helv 0 Tf 0 g', '#000000')).toBe('/Helv 0 Tf 0 g')

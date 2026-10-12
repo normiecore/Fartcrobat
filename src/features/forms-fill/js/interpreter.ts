@@ -168,7 +168,6 @@ function looseEquals(a: JsValue, b: JsValue): boolean {
   if (isObjectLike(a) && isObjectLike(b)) return a === b
   const pa = isObjectLike(a) ? toPrimitive(a) : a
   const pb = isObjectLike(b) ? toPrimitive(b) : b
-  // eslint-disable-next-line eqeqeq
   return (pa as unknown) == (pb as unknown)
 }
 
@@ -186,24 +185,17 @@ export class Scope {
   ) {}
 
   lookup(name: string): Scope | null {
-    let s: Scope | null = this
-    while (s) {
-      if (s.vars.has(name)) return s
-      s = s.parent
-    }
-    return null
+    if (this.vars.has(name)) return this
+    return this.parent ? this.parent.lookup(name) : null
   }
 
   functionScope(): Scope {
-    let s: Scope = this
-    while (!s.isFunction && s.parent) s = s.parent
-    return s
+    if (this.isFunction || !this.parent) return this
+    return this.parent.functionScope()
   }
 
   root(): Scope {
-    let s: Scope = this
-    while (s.parent) s = s.parent
-    return s
+    return this.parent ? this.parent.root() : this
   }
 }
 
@@ -292,7 +284,7 @@ function numberMember(n: number, key: string): JsValue {
   const m: Record<string, NativeImpl> = {
     toFixed: (_t, a) => n.toFixed(Math.max(0, Math.min(20, argNum(a, 0, 0)!))),
     toPrecision: (_t, a) => (a[0] === undefined ? String(n) : n.toPrecision(Math.max(1, Math.min(21, toNumber(a[0]))))),
-    toString: (_t, a) => n.toString(a[0] === undefined ? 10 : Math.max(2, Math.min(36, toNumber(a[0])))),
+    toString: (_t: JsValue, a: JsValue[]) => n.toString(a[0] === undefined ? 10 : Math.max(2, Math.min(36, toNumber(a[0])))),
     valueOf: () => n,
     toLocaleString: () => n.toLocaleString()
   }

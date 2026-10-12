@@ -56,7 +56,11 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const pageColors = useApp((s) => s.prefs.pageColors)
   const highlightColor = useFormsSettings((s) => s.highlightColor)
   const requiredColor = useFormsSettings((s) => s.requiredColor)
-  const [state, setState] = useState<{ fields: FieldInfo[]; extras: Map<number, WidgetExtra> }>({ fields: [], extras: new Map() })
+  const [state, setState] = useState<{ fields: FieldInfo[]; extras: Map<number, WidgetExtra>; displays: Map<number, string> }>({
+    fields: [],
+    extras: new Map(),
+    displays: new Map()
+  })
   const ctl = formController(doc)
 
   useEffect(() => {
@@ -64,9 +68,26 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     const load = async () => {
       const fields = await doc.ops<typeof formOps>('forms').list(pageIndex)
       const extras = fields.length ? await doc.ops<typeof fillOps>('forms-fill').pageExtras(pageIndex) : []
+      const displays = await formattedValues(fields)
       if (!alive) return
       for (const e of extras) ctl.extras.set(e.id, e)
-      setState({ fields, extras: new Map(extras.map((e) => [e.id, e])) })
+      setState({ fields, extras: new Map(extras.map((e) => [e.id, e])), displays })
+    }
+    // Text the field shows when it is not being edited (its format script applied), like the appearance.
+    const formattedValues = async (fields: FieldInfo[]) => {
+      const out = new Map<number, string>()
+      const formatted = fields.filter((f) => f.type === 'text' && f.scripts.format && f.value && !f.password)
+      if (!formatted.length) return out
+      try {
+        const rt = await ctl.runtime()
+        for (const f of formatted) {
+          const shown = rt.format(f.name, f.value).display
+          if (shown !== f.value) out.set(f.id, shown)
+        }
+      } catch (err) {
+        console.warn('Could not format the form fields', err)
+      }
+      return out
     }
     load().catch((err) => {
       if (alive && !doc.isClosed) ctl.loadFailed(err)
@@ -98,7 +119,8 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           field: f,
           extra,
           box: fieldBox(f, geometry, pageRotation, extra),
-          readOnly: f.readOnly || !canFill
+          readOnly: f.readOnly || !canFill,
+          display: state.displays.get(f.id)
         }
         switch (f.type) {
           case 'text':

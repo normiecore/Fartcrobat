@@ -1,6 +1,6 @@
 """Generates the forms-fill test fixtures (requires reportlab and pypdf).
 
-Run: python3 tests/fixtures/forms-fill/make_fixtures.py   (outputs are committed next to this script)
+Run: python3 tests/fixtures/forms-fill/make_fixtures.py [calc] [all-fields] [xfa]   (outputs are committed next to this script)
 
 calc.pdf       an order form with Acrobat-style JavaScript: number/percent/date/special formats,
                keystroke filters, a range validation and calculated totals (AFSimple_Calculate and a
@@ -8,6 +8,8 @@ calc.pdf       an order form with Acrobat-style JavaScript: number/percent/date/
 all-fields.pdf every interactive field type on two pages: list boxes (single and multi-select),
                editable combo box, combo box with export values, password, comb, read-only and required
                fields, push buttons (reset, submit, JavaScript), an unsigned signature field.
+xfa.pdf        calc.pdf with an /XFA form description added (a "dynamic XFA" form whose static AcroForm
+               fields are still fillable).
 """
 import io
 import os
@@ -249,7 +251,22 @@ def all_fields_form():
     finish(writer, os.path.join(OUT, 'all-fields.pdf'))
 
 
+def xfa_form():
+    writer = PdfWriter(clone_from=PdfReader(os.path.join(OUT, 'calc.pdf')))
+    xdp = StreamObject()
+    xdp.set_data(b'<xdp:xdp xmlns:xdp="http://ns.adobe.com/xdp/"><template xmlns="http://www.xfa.org/schema/xfa-template/3.3/">'
+                 b'<subform name="form1" layout="tb"/></template></xdp:xdp>')
+    writer._root_object['/AcroForm'][NameObject('/XFA')] = writer._add_object(xdp)
+    finish(writer, os.path.join(OUT, 'xfa.pdf'))
+
+
 if __name__ == '__main__':
-    calc_form()
-    all_fields_form()
+    import sys
+    targets = sys.argv[1:] or ['calc', 'all-fields', 'xfa']
+    if 'calc' in targets:
+        calc_form()
+    if 'all-fields' in targets:
+        all_fields_form()
+    if 'xfa' in targets:
+        xfa_form()
     print('fixtures written to', OUT)

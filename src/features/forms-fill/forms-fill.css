@@ -34,18 +34,18 @@
 }
 
 /* Field highlighting (Acrobat's light blue), drawn over the appearance without hiding its text. */
-.fc-forms-fill-layer.is-highlighted .fc-forms-fill-field:not(.is-readonly):not(.is-active):not(.is-signed) {
+.fc-forms-fill-layer.is-highlighted .fc-forms-fill-field:not(.is-readonly):not(.is-active):not(.is-pending):not(.is-signed) {
   background-color: var(--fc-forms-fill-highlight);
   mix-blend-mode: multiply;
 }
-.fc-forms-fill-layer.is-highlighted.is-inverted .fc-forms-fill-field:not(.is-readonly):not(.is-active):not(.is-signed) {
+.fc-forms-fill-layer.is-highlighted.is-inverted .fc-forms-fill-field:not(.is-readonly):not(.is-active):not(.is-pending):not(.is-signed) {
   mix-blend-mode: normal;
 }
 
-/* Required fields: red outline. */
+/* Required fields: red outline, just outside the field's own border so it stays visible. */
 .fc-forms-fill-field.is-required {
   outline: 1.5px solid var(--fc-forms-fill-required);
-  outline-offset: -1.5px;
+  outline-offset: 0;
 }
 
 .fc-forms-fill-field:not(.is-readonly):hover {
@@ -83,6 +83,15 @@ textarea.fc-forms-fill-text {
 .fc-forms-fill-layer.is-inverted .fc-forms-fill-text.is-active {
   color: #f0f0f0;
   caret-color: #f0f0f0;
+}
+/* Just committed: shows the new text until the page has re-rendered the field's appearance. */
+.fc-forms-fill-text.is-pending {
+  color: var(--fc-forms-fill-text, #000);
+  background: var(--fc-forms-fill-pending-bg, var(--fc-forms-fill-active-bg));
+  box-shadow: inset 0 0 0 var(--fc-forms-fill-pending-bw, 0) var(--fc-forms-fill-pending-border, transparent);
+}
+.fc-forms-fill-layer.is-inverted .fc-forms-fill-text.is-pending {
+  color: #f0f0f0;
 }
 .fc-forms-fill-text.is-active::selection {
   background: rgba(51, 144, 255, 0.35);
@@ -320,9 +329,10 @@ textarea.fc-forms-fill-text {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  column-gap: 12px;
+  row-gap: 2px;
   min-height: 40px;
-  padding: 4px 8px 4px 14px;
+  padding: 4px 6px 4px 12px;
   background: #eaf2fd;
   border-bottom: 1px solid #c6daf6;
   color: #1d2b3a;
@@ -333,6 +343,20 @@ textarea.fc-forms-fill-text {
   border-bottom-color: #f2d4a6;
   color: #3b2a12;
 }
+.fc-forms-fill-msgbar-main {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fc-forms-fill-msgbar-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .fc-forms-fill-msgbar-icon {
   flex-shrink: 0;
   color: #1473e6;
@@ -341,10 +365,17 @@ textarea.fc-forms-fill-text {
   color: var(--warning);
 }
 .fc-forms-fill-msgbar-text {
+  min-width: 0;
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.fc-forms-fill-msgbar-spacer {
-  flex: 1;
+.fc-forms-fill-msgbar.is-warning .fc-forms-fill-msgbar-text {
+  white-space: normal;
+}
+.fc-forms-fill-msgbar-required {
+  flex-shrink: 0;
 }
 .fc-forms-fill-msgbar .ui-btn-secondary {
   background: rgba(255, 255, 255, 0.85);

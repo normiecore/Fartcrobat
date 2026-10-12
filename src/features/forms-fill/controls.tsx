@@ -2,10 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { createPortal } from 'react-dom'
 import { ChevronDown, PenLine, ShieldCheck } from 'lucide-react'
 import type { FieldInfo } from '@engine/ops/forms'
-import { openRightPanel, openToolGroup, registry, runCommand, showError, toast, type DocumentModel } from '@renderer/sdk'
+import { openRightPanel, openToolGroup, registry, runCommand, showError, toast, useApp, type DocumentModel } from '@renderer/sdk'
 import type { WidgetExtra } from './engine'
 import type { FormController } from './controller'
 import type { FieldBox } from './FieldLayer'
+import { useFormsSettings } from './settings'
 
 export interface ControlProps {
   doc: DocumentModel
@@ -14,6 +15,8 @@ export interface ControlProps {
   extra: WidgetExtra | undefined
   box: FieldBox
   readOnly: boolean
+  /** Text fields: the formatted text shown while the field is not being edited ("$1,234.50"). */
+  display?: string
 }
 
 // ---- helpers --------------------------------------------------------------------------------
@@ -49,6 +52,18 @@ function fontPx(field: FieldInfo, box: FieldBox, text: string, family: string): 
   const w = text ? textWidth(text, px, family) : 0
   if (w > available && w > 0) px = Math.max(4 * box.scale, (px * available) / w)
   return px
+}
+
+function hexRgb(hex: string): [number, number, number] {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex)
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [255, 255, 255]
+}
+
+/** Two colours multiplied (how the field highlight blends with the field background). */
+function multiplyColors(a: string, b: string): string {
+  const x = hexRgb(a)
+  const y = hexRgb(b)
+  return `rgb(${x.map((v, i) => Math.round((v * y[i]) / 255)).join(', ')})`
 }
 
 function labelOf(field: FieldInfo): string {
@@ -100,7 +115,7 @@ const EDIT_KEYS = new Set(['a', 'c', 'v', 'x', 'z', 'y'])
 
 // ---- text -----------------------------------------------------------------------------------
 
-export function TextControl({ doc, ctl, field, extra, box, readOnly }: ControlProps) {
+export function TextControl({ doc, ctl, field, extra, box, readOnly, display }: ControlProps) {
   const ref = useRef<HTMLInputElement & HTMLTextAreaElement>(null)
   const [focused, setFocused] = useState(false)
   const [draft, setDraft] = useState(field.value)
@@ -109,7 +124,11 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly }: ControlPr
   const originalRef = useRef(field.value)
   const dirtyRef = useRef(false)
   const fieldRef = useRef(field)
-  const pendingFieldRef = useRef<FieldInfo | null>(null)
+  /** Raw value of the last commit while its new appearance is being drawn. */
+  const pendingRawRef = useRef<string | null>(null)
+  const highlight = useApp((st) => st.prefs.highlightFormFields)
+  const inverted = useApp((st) => st.prefs.pageColors !== 'document')
+  const highlightColor = useFormsSettings((st) => st.highlightColor)
   const markedDirtyRef = useRef(false)
   const caretRef = useRef<number | null>(null)
   fieldRef.current = field
@@ -129,13 +148,14 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly }: ControlPr
     }
   }, [field.value, focused])
 
-  // After a commit the page re-renders; keep showing the new text until the new appearance is drawn.
+  // After a commit the page re-renders; keep showing the new text until the new appearance is
+  // drawn: shortly after the layer has the new value (the page was re-rendered at the same time).
   useEffect(() => {
     if (pending === null) return
-    const changed = pendingFieldRef.current !== null && field !== pendingFieldRef.current
-    const t = setTimeout(() => setPending(null), changed ? 250 : 3000)
+    const arrived = field.value === pendingRawRef.current
+    const t = setTimeout(() => setPending(null), arrived ? 200 : 3000)
     return () => clearTimeout(t)
-  }, [field, pending])
+  }, [field.value, pending])
 
   useLayoutEffect(() => {
     if (caretRef.current !== null && ref.current) {
@@ -160,8 +180,8 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly }: ControlPr
       originalRef.current = raw
       markedDirtyRef.current = false
       if (document.activeElement !== ref.current) {
-        pendingFieldRef.current = fieldRef.current
-        setPending(f.password ? '' : r.display)
+        pendingRawRef.current = raw
+        setPending(f.password ? '*'.repeat(Math.min(raw.length, 64)) : r.display)
       }
       return true
     } catch (err) {
@@ -182,7 +202,8 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly }: ControlPr
   const multiline = field.multiline
   const comb = field.comb && field.maxLen > 0 && !multiline && !field.password
   const family = comb ? MONO : fontFamily(field.fontName)
-  const shown = focused ? draft : (pending ?? draft)
+  // Editing shows the raw value; otherwise the formatted text, like the field's appearance.
+  const shown = focused ? draft : (pending ?? (dirtyRef.current || display === undefined ? draft : display))
   let fs = fontPx(field, box, shown, family)
   const style: CSSProperties = {
     ...box.style,
@@ -191,6 +212,15 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly }: ControlPr
     padding: multiline ? `${2 * box.scale}px ${2 * box.scale}px` : `0 ${2 * box.scale}px`,
     '--fc-forms-fill-text': field.textColor
   } as CSSProperties
+  if (!focused && pending !== null && !inverted) {
+    // Look like the new appearance (background, highlight, border) while it is being drawn.
+    const bg = multiplyColors(field.backgroundColor ?? '#ffffff', highlight && !readOnly ? highlightColor : '#ffffff')
+    Object.assign(style, {
+      '--fc-forms-fill-pending-bg': bg,
+      '--fc-forms-fill-pending-border': field.borderColor ?? 'transparent',
+      '--fc-forms-fill-pending-bw': `${Math.max(1, box.scale)}px`
+    })
+  }
   if (comb) {
     const cell = box.width / field.maxLen
     fs = Math.min(fs, (cell / 0.6) * 0.9, box.height * 0.85)
@@ -272,7 +302,8 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly }: ControlPr
     spellCheck: !field.doNotSpellCheck,
     maxLength: field.maxLen > 0 ? field.maxLen : undefined,
     className: classes('fc-forms-fill-field fc-forms-fill-text', {
-      'is-active': focused || pending !== null,
+      'is-active': focused,
+      'is-pending': !focused && pending !== null,
       'is-required': field.required,
       'is-readonly': readOnly,
       'is-comb': comb
@@ -408,14 +439,13 @@ export function SignatureControl({ doc, ctl, field, extra, box, readOnly }: Cont
       toast('This signature field is locked.')
       return
     }
-    if (registry.features.some((f) => f.id === 'digital-signatures')) {
-      window.dispatchEvent(
-        new CustomEvent('fartcrobat:sign-field', {
-          detail: { docId: doc.id, fieldId: field.id, fieldName: field.name, page: field.page, rect: field.rect }
-        })
-      )
-      return
-    }
+    window.dispatchEvent(
+      new CustomEvent('fartcrobat:sign-field', {
+        detail: { docId: doc.id, fieldId: field.id, fieldName: field.name, page: field.page, rect: field.rect }
+      })
+    )
+    // The digital-signatures feature listens for the event and starts certificate signing.
+    if (registry.features.some((f) => f.id === 'digital-signatures')) return
     const fillSign = registry.toolGroups.some((g) => g.id === 'fillsign')
     toast('Signing with a digital ID is not available in this version of Fartcrobat.', {
       kind: 'warning',
@@ -803,9 +833,28 @@ export function ListControl({ doc, ctl, field, extra, box, readOnly }: ControlPr
       } else select(next, multi && e.shiftKey ? 'range' : 'single', false)
       return
     }
-    if (e.key === ' ' && multi) {
+    if (e.key === ' ') {
+      // Space selects (or toggles in a multiple-selection list); never the temporary hand tool.
       e.preventDefault()
-      select(cursor, 'toggle', false)
+      e.stopPropagation()
+      select(cursor, multi ? 'toggle' : 'single', false)
+      return
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && n) {
+      // Type-ahead: jump to the next item starting with the typed letter.
+      const ch = e.key.toLowerCase()
+      for (let k = 1; k <= n; k++) {
+        const i = (cursor + k) % n
+        if (field.options[i].label.toLowerCase().startsWith(ch)) {
+          e.preventDefault()
+          e.stopPropagation()
+          if (multi) {
+            setCursor(i)
+            ;(listRef.current?.children[i] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' })
+          } else select(i, 'single', false)
+          break
+        }
+      }
       return
     }
     if (e.key === 'Enter') {

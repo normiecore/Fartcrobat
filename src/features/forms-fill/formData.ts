@@ -113,6 +113,9 @@ function textOf(el: XmlElement): string {
   return el.children.map((c) => (typeof c === 'string' ? c : textOf(c))).join('')
 }
 
+// eslint-disable-next-line no-control-regex
+const XML_INVALID = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g
+
 function escapeXml(s: string): string {
   return s
     .replace(/&/g, '&amp;')
@@ -120,7 +123,7 @@ function escapeXml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     // characters XML 1.0 cannot carry
-    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
+    .replace(XML_INVALID, '')
 }
 
 // ---- XFDF -----------------------------------------------------------------------------------

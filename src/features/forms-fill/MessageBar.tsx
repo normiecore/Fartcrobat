@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Asterisk, Eraser, Highlighter, Info, TriangleAlert, X } from 'lucide-react'
+import { Asterisk, Info, TriangleAlert, X } from 'lucide-react'
 import {
   Button,
   getActiveDoc,
@@ -100,38 +100,49 @@ function DocMessageBar({ doc }: { doc: DocumentModel }) {
   }
   return createPortal(
     <div className={`fc-forms-fill-msgbar ${info.hasXfa || !canFill ? 'is-warning' : ''}`} role="region" aria-label="Form message bar">
-      {info.hasXfa || !canFill ? <TriangleAlert size={16} className="fc-forms-fill-msgbar-icon" /> : <Info size={16} className="fc-forms-fill-msgbar-icon" />}
-      <span className="fc-forms-fill-msgbar-text">{message}</span>
-      {canFill && summary.emptyRequired.length > 0 && (
-        <Button size="sm" variant="quiet" icon={Asterisk} onClick={nextRequired} title="Go to the next required field that is still empty">
-          {summary.emptyRequired.length === 1 ? '1 required field left' : `${summary.emptyRequired.length} required fields left`}
+      <div className="fc-forms-fill-msgbar-main">
+        {info.hasXfa || !canFill ? <TriangleAlert size={16} className="fc-forms-fill-msgbar-icon" /> : <Info size={16} className="fc-forms-fill-msgbar-icon" />}
+        <span className="fc-forms-fill-msgbar-text" title={message}>
+          {message}
+        </span>
+        {canFill && summary.emptyRequired.length > 0 && (
+          <Button
+            size="sm"
+            variant="quiet"
+            icon={Asterisk}
+            className="fc-forms-fill-msgbar-required"
+            onClick={nextRequired}
+            title="Go to the next required field that is still empty"
+          >
+            {summary.emptyRequired.length === 1 ? '1 required field left' : `${summary.emptyRequired.length} required fields left`}
+          </Button>
+        )}
+      </div>
+      <div className="fc-forms-fill-msgbar-actions">
+        <Button
+          size="sm"
+          variant="secondary"
+          aria-pressed={highlight}
+          className={highlight ? 'fc-forms-fill-pressed' : ''}
+          onClick={() => void setPrefs({ highlightFormFields: !highlight })}
+        >
+          Highlight existing fields
         </Button>
-      )}
-      <span className="fc-forms-fill-msgbar-spacer" />
-      <Button
-        size="sm"
-        variant="secondary"
-        icon={Highlighter}
-        aria-pressed={highlight}
-        className={highlight ? 'fc-forms-fill-pressed' : ''}
-        onClick={() => void setPrefs({ highlightFormFields: !highlight })}
-      >
-        Highlight existing fields
-      </Button>
-      {canFill && (
-        <Button size="sm" variant="secondary" icon={Eraser} onClick={() => void clearForm(doc)}>
-          Clear form
-        </Button>
-      )}
-      <IconButton
-        icon={X}
-        size={16}
-        label="Close the message bar"
-        onClick={() => {
-          dismissed.add(doc.id)
-          setTick((t) => t + 1)
-        }}
-      />
+        {canFill && (
+          <Button size="sm" variant="secondary" onClick={() => void clearForm(doc)}>
+            Clear form
+          </Button>
+        )}
+        <IconButton
+          icon={X}
+          size={16}
+          label="Close the message bar"
+          onClick={() => {
+            dismissed.add(doc.id)
+            setTick((t) => t + 1)
+          }}
+        />
+      </div>
     </div>,
     host
   )

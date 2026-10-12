@@ -25,8 +25,8 @@ export function formatNumber(value: number, decimals: number, sepStyle: number):
   // toFixed handles rounding; add a tiny epsilon so 1.005 rounds like people expect.
   const abs = Math.abs(value)
   const fixed = (abs + (abs > 0 ? abs * Number.EPSILON * 4 : 0)).toFixed(d)
-  let [intPart, frac = ''] = fixed.split('.')
-  if (thousands) intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, thousands)
+  const [rawInt, frac = ''] = fixed.split('.')
+  const intPart = thousands ? rawInt.replace(/\B(?=(\d{3})+(?!\d))/g, thousands) : rawInt
   const out = frac ? `${intPart}${decimal}${frac}` : intPart
   return neg && /[1-9]/.test(out) ? `-${out}` : out
 }

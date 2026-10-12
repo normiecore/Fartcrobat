@@ -83,7 +83,7 @@ export function makeNumber(v: JsValue): number | null {
   let s = v.trim()
   if (!s) return null
   // Strip currency symbols, spaces and percent signs around the number.
-  s = s.replace(/[\s '’]/g, '').replace(/^[^\d.,+-]+|[^\d.,]+$/g, '')
+  s = s.replace(/[\s\u00a0'\u2019]/g, '').replace(/^[^\d.,+-]+|[^\d.,]+$/g, '')
   let neg = false
   if (/^\(.*\)$/.test(v.trim())) neg = true
   if (s.startsWith('-')) {
@@ -209,7 +209,8 @@ export function fieldList(host: AFHost, list: JsValue): string[] {
 }
 
 export function createAFLibrary(host: AFHost): Record<string, NativeFunction> {
-  const fn = (name: string, impl: (args: JsValue[]) => JsValue) => new NativeFunction(name, (_t, args) => impl(args))
+  const fn = (name: string, impl: (args: JsValue[]) => JsValue | void) =>
+    new NativeFunction(name, (_t, args) => impl(args) ?? undefined)
 
   const numberKeystroke = (sepStyle: number) => {
     const e = host.event()
