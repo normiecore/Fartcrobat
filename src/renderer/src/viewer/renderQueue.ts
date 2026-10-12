@@ -58,7 +58,13 @@ class BitmapCache {
     const bytes = result.width * result.height * 4
     this.map.set(key, { result, bytes })
     this.bytes += bytes
-    while (this.bytes > this.maxBytes && this.map.size > 1) {
+    // the newest entry stays even when it alone is over budget
+    this.evictTo(this.maxBytes, 1)
+  }
+
+  /** Drops least recently used entries until at most maxBytes (and keepAtLeast entries) remain. */
+  evictTo(maxBytes: number, keepAtLeast = 0) {
+    while (this.bytes > maxBytes && this.map.size > keepAtLeast) {
       const [k, e] = this.map.entries().next().value as [string, CacheEntry]
       this.map.delete(k)
       this.bytes -= e.bytes
@@ -159,6 +165,15 @@ export class RenderQueue {
           this.pump()
         })
     }
+  }
+
+  /**
+   * Shrinks the caches to at most maxBytes of page bitmaps and no detail tiles, e.g. while the
+   * document is not shown (its tab is in the background) or after it was closed (maxBytes 0).
+   */
+  trim(maxBytes = 0) {
+    this.pages.evictTo(maxBytes)
+    this.tiles.evictTo(0)
   }
 
   clear() {

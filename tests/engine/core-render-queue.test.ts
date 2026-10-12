@@ -107,4 +107,30 @@ describe('render queue', () => {
     expect(q.cached('tile39')).not.toBeNull()
     expect(tiles[39].closed).toBe(false)
   })
+
+  it('trims the caches of a document that is not shown and releases their bitmaps', async () => {
+    const { doc, calls } = fakeDoc()
+    const q = new RenderQueue(doc)
+    const bitmaps: ReturnType<typeof fakeBitmap>[] = []
+    for (let i = 0; i < 4; i++) {
+      const bm = fakeBitmap()
+      bitmaps.push(bm)
+      // 4 MB each; a tile for every second one
+      const r = q.request(`k${i}`, 0, i % 2 ? { scale: 1, clip: [0, 0, 1024, 1024] } : { scale: 1 }, 0)
+      calls[calls.length - 1].finish({ width: 1024, height: 1024, bitmap: bm })
+      await r.promise
+    }
+    q.trim(5 * 1024 * 1024)
+    await tick()
+    // the most recent page bitmap stays, older ones and every tile go
+    expect(q.cached('k2')).not.toBeNull()
+    expect(q.cached('k0')).toBeNull()
+    expect(q.cached('k1')).toBeNull()
+    expect(q.cached('k3')).toBeNull()
+    expect(bitmaps.map((b) => b.closed)).toEqual([true, true, false, true])
+    q.trim(0)
+    await tick()
+    expect(q.cached('k2')).toBeNull()
+    expect(bitmaps[2].closed).toBe(true)
+  })
 })

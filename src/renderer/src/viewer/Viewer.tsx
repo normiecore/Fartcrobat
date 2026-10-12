@@ -6,8 +6,11 @@ import { useApp } from '../app/store'
 import { PageGeometry } from './geometry'
 import { clampZoom, computeLayout, fitZoom, PAGE_GAP, spreads, spreadIndexOf, type PageSlot, type ViewLayout } from './layout'
 import { PageView } from './PageView'
+import { renderQueueFor } from './renderQueue'
 
 const OVERSCAN = 800
+/** Page bitmaps a document keeps while its viewer is not shown (enough to come back quickly). */
+const BACKGROUND_CACHE_BYTES = 48 * 1024 * 1024
 
 /** The point under the cursor while zooming, kept in place by the next layout. */
 interface Anchor {
@@ -342,6 +345,10 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
       if (doc.view === controller) doc.view = null
     }
   }, [doc, continuous])
+
+  // Only the active tab has a viewer: when this one goes away (another tab, a document view, or
+  // the document was closed), release most of the document's page bitmaps.
+  useEffect(() => () => renderQueueFor(doc).trim(doc.isClosed ? 0 : BACKGROUND_CACHE_BYTES), [doc])
 
   // Ctrl/Cmd + wheel zooms around the cursor; in single-page modes the wheel turns pages.
   useEffect(() => {
