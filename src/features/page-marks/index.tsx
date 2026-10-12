@@ -77,7 +77,8 @@ const commands: CommandDefinition[] = [
     icon: Crop,
     keywords: ['crop', 'trim', 'cut margins'],
     checked: () => useApp.getState().toolId === 'marks.crop',
-    run: () => setTool('marks.crop')
+    // Like Acrobat's Crop Pages button: a second click puts the tool away.
+    run: () => setTool(useApp.getState().toolId === 'marks.crop' ? 'select' : 'marks.crop')
   },
   {
     id: 'marks.setPageBoxes',

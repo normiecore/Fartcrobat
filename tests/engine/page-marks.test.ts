@@ -333,7 +333,6 @@ describe('backgrounds and Bates numbers', () => {
       { ...defaultBackground(), source: { kind: 'color', color: '#0000FF' } },
       { mode: 'add', scale: 0.5 }
     )
-    expect(bg.exact).toBe(true)
     expect(bg.inRange).toBe(true)
     expect(Array.from(bg.pixels!.slice(0, 3))).toEqual([0, 0, 255])
     expect(Array.from(plain.pixels!.slice(0, 3))).toEqual([255, 255, 255])
@@ -348,6 +347,118 @@ describe('backgrounds and Bates numbers', () => {
       { mode: 'add', scale: 0.25 }
     )
     expect(out.inRange).toBe(false)
+  })
+})
+
+describe('previews', () => {
+  /** Share of pixels that differ by more than a small tolerance. */
+  function diff(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
+    expect(a.length).toBe(b.length)
+    let n = 0
+    for (let k = 0; k < a.length; k += 4) {
+      if (Math.abs(a[k] - b[k]) + Math.abs(a[k + 1] - b[k + 1]) + Math.abs(a[k + 2] - b[k + 2]) > 24) n++
+    }
+    return n / (a.length / 4)
+  }
+
+  it('keeps the redo history and the document untouched', async () => {
+    const e = await openFixture('text.pdf')
+    const api = marks(e)
+    await api.apply(defaultBates(), { mode: 'add' })
+    await e.doc.undo()
+    expect(e.lastChanges?.journal.redoLabel).toBe('Add Bates Numbering')
+    const objects = e.session.pdf.countObjects()
+    for (const s of [
+      watermark('PREVIEW'),
+      hf({}, { footerCenter: '<<1>>' }),
+      defaultBackground(),
+      defaultBates()
+    ]) {
+      await api.preview(1, s, { mode: 'replace', scale: 0.4 })
+    }
+    expect(e.lastChanges?.journal.canRedo).toBe(true)
+    expect(e.lastChanges?.journal.redoLabel).toBe('Add Bates Numbering')
+    expect(e.lastChanges?.dirty).toBe(false)
+    expect(e.session.pdf.countObjects()).toBe(objects)
+    await e.doc.redo()
+    expect((await allText(e))[4]).toContain('000005')
+  })
+
+  it('looks like the page after OK, form fields included', async () => {
+    for (const name of ['text.pdf', 'form.pdf', 'mixed-sizes.pdf']) {
+      const e = await openFixture(name)
+      const api = marks(e)
+      const page = name === 'mixed-sizes.pdf' ? 2 : 0
+      const settings = [
+        watermark('SAME', { opacity: 0.4 }),
+        hf({}, { headerLeft: 'Left <<1>>', footerRight: '<<Page 1 of n>>' }),
+        { ...defaultBackground(), source: { kind: 'color' as const, color: '#FFE0B2' } }
+      ]
+      for (const s of settings) {
+        const pre = await api.preview(page, s, { mode: 'add', scale: 1 })
+        await api.apply(s, { mode: 'add' })
+        const after = await e.ops<typeof renderOps>('render').page(page, { scale: 1 })
+        expect(diff(pre.pixels!, after.pixels!)).toBeLessThan(0.001)
+        await e.doc.undo()
+      }
+    }
+  })
+
+  it('previews an update that reuses the file already in the document', async () => {
+    const e = await openFixture('text.pdf')
+    const api = marks(e)
+    const src = await api.loadSource(fixture('scan.png'), 'scan.png')
+    const base: WatermarkSettings = {
+      ...defaultWatermark(),
+      opacity: 1,
+      rotation: 0,
+      relativeScale: 80,
+      source: { kind: 'file', fileName: 'scan.png', page: 1, scale: 100, sourceId: src.id }
+    }
+    await api.apply(base, { mode: 'add' })
+    await api.releaseSource(src.id)
+    const update: WatermarkSettings = {
+      ...base,
+      source: { kind: 'file', fileName: 'scan.png', page: 1, scale: 100 }
+    }
+    const pre = await api.preview(2, update, { mode: 'replace', scale: 0.5 })
+    expect(pre.message).toBeUndefined()
+    const before = await e.ops<typeof renderOps>('render').page(2, { scale: 0.5 })
+    expect(diff(pre.pixels!, before.pixels!)).toBeLessThan(0.001)
+  })
+})
+
+describe('pages sharing one resource dictionary', () => {
+  it('adds one resource entry for a watermark used on every page, and removes it cleanly', async () => {
+    const e = await openFixture('text.pdf')
+    const doc = e.session.pdf
+    e.session.runMutation('Share resources', () => {
+      const shared = doc.addObject(doc.newDictionary())
+      for (let i = 0; i < e.session.pageCount(); i++) {
+        const pageObj = doc.findPage(i)
+        const own = pageObj.get('Resources').resolve()
+        own.forEach((v, k) => shared.put(k as string, v))
+        pageObj.put('Resources', shared)
+      }
+    })
+    e.session.invalidatePages()
+    const before = await allText(e)
+    await marks(e).apply(watermark('SHARED'), { mode: 'add' })
+    await marks(e).apply(defaultBates(), { mode: 'add' })
+    const xo = doc.findPage(0).get('Resources').get('XObject')
+    let names = 0
+    xo.forEach(() => names++)
+    // one watermark appearance + one Bates form per page
+    expect(names).toBe(1 + 5)
+    const t = await allText(e)
+    t.forEach((page, i) => {
+      expect(page).toContain('SHARED')
+      expect(page).toContain(`00000${i + 1}`)
+    })
+    await marks(e).remove('Watermark')
+    await marks(e).remove('Bates')
+    expect(await allText(e)).toEqual(before)
+    expect(doc.findPage(3).get('Resources').get('XObject').isNull()).toBe(true)
   })
 })
 

@@ -3,8 +3,8 @@ import type { Rect } from '@shared/geometry'
 import { normalizeRect, rectIntersection, transformRect } from '@shared/geometry'
 import { defineOps, EngineError, mutation, withTransfer, type Transfer } from '@engine/define'
 import pageOps from '@engine/ops/pages'
-import type { PDFPage, Session } from '@engine/session'
-import { isNull, pageBoxes, readRect } from '@engine/util/pdf'
+import { Session, type PDFPage } from '@engine/session'
+import { catalog, isNull, pageBoxes, readRect } from '@engine/util/pdf'
 import {
   applyMarks,
   loadedSources,
@@ -12,7 +12,8 @@ import {
   readEntries,
   readMarkSettings,
   removeMarks,
-  type ApplyOptions
+  type ApplyOptions,
+  type PreviewTarget
 } from './pdfmarks'
 import {
   MARK_NAMES,
@@ -41,8 +42,6 @@ export interface Bitmap {
 export interface PreviewResult extends Bitmap {
   /** False when the page is outside the chosen page range (shown without the new marks). */
   inRange: boolean
-  /** False when the document cannot be previewed in place (it has no undo journal). */
-  exact: boolean
   /** Why the marks are not shown (e.g. no text typed yet). */
   message?: string
 }
@@ -82,13 +81,16 @@ async function toBitmap<T extends object>(pix: MuPDF.Pixmap, extra: T): Promise<
   return withTransfer(result, [pixels.buffer as ArrayBuffer])
 }
 
-/** Renders a page (contents, annotations, widgets) into a white RGBA pixmap. */
+/**
+ * Renders a page (contents, annotations, widgets) into a white RGBA pixmap. `annotsOf` draws the
+ * annotations of another page with the same geometry (a preview copy has none of its own).
+ */
 function renderPage(
   s: Session,
   page: PDFPage,
   scale: number,
   region?: Rect,
-  opts: { annots?: boolean } = {}
+  opts: { annots?: boolean; annotsOf?: PDFPage } = {}
 ): MuPDF.Pixmap {
   const m = s.mupdf
   const b = region ?? (page.getBounds() as Rect)
@@ -108,8 +110,9 @@ function renderPage(
   try {
     page.runPageContents(dev, m.Matrix.identity)
     if (opts.annots !== false) {
-      page.runPageAnnots(dev, m.Matrix.identity)
-      page.runPageWidgets(dev, m.Matrix.identity)
+      const annots = opts.annotsOf ?? page
+      annots.runPageAnnots(dev, m.Matrix.identity)
+      annots.runPageWidgets(dev, m.Matrix.identity)
     }
     dev.close()
   } finally {
@@ -118,30 +121,29 @@ function renderPage(
   return pix
 }
 
-/** Whether changes made inside an operation can be rolled back (the document has a journal). */
-function canRollBack(s: Session): boolean {
-  const key = 'page-marks:journal'
-  const known = s.state.get(key)
-  if (typeof known === 'boolean') return known
-  const doc = s.pdf
-  // The catalog is an indirect object, so its changes are journalled (the trailer's are not).
-  const root = doc.getTrailer().get('Root')
-  let ok = false
+/**
+ * Copies one page into a new scratch document for a preview. The optional content configuration
+ * comes along (with the same graft map, so hidden layers stay hidden) and so does the page's
+ * transparency group, which graftPage leaves out.
+ */
+function previewCopy(s: Session, pageIndex: number): PreviewTarget {
+  const tmp = new s.mupdf.PDFDocument()
+  const session = new Session(s.mupdf)
+  const map = tmp.newGraftMap()
   try {
-    doc.beginOperation('Preview')
-    root.put('FartcrobatProbe', true)
-    doc.abandonOperation()
-    ok = isNull(root.get('FartcrobatProbe'))
-  } catch {
-    ok = false
+    const ocp = catalog(s.pdf).get('OCProperties')
+    if (!isNull(ocp)) catalog(tmp).put('OCProperties', map.graftObject(ocp))
+    map.graftPage(-1, s.pdf, pageIndex)
+    const group = s.pdf.findPage(pageIndex).get('Group')
+    if (!isNull(group)) tmp.findPage(0).put('Group', map.graftObject(group))
+    // Not setDocument(): a scratch copy needs no undo journal.
+    session.doc = tmp
+    return { page: pageIndex, session, map }
+  } catch (err) {
+    map.destroy()
+    tmp.destroy()
+    throw err
   }
-  if (!ok) {
-    try {
-      root.delete('FartcrobatProbe')
-    } catch {}
-  }
-  s.state.set(key, ok)
-  return ok
 }
 
 function mediaRect(s: Session, pageIndex: number): Rect {
@@ -191,11 +193,12 @@ export function contentBoundsOf(s: Session, pageIndex: number): Rect | null {
       }
     }
     if (maxX < 0) return null
+    // One pixel of slack so faint anti-aliased edges of the outermost glyphs are not cut off.
     const r: Rect = [
-      (x0 + minX) / scale,
-      (y0 + minY) / scale,
-      (x0 + maxX + 1) / scale,
-      (y0 + maxY + 1) / scale
+      (x0 + minX - 1) / scale,
+      (y0 + minY - 1) / scale,
+      (x0 + maxX + 2) / scale,
+      (y0 + maxY + 2) / scale
     ]
     return rectIntersection(r, media) ?? r
   } finally {
@@ -272,45 +275,29 @@ export default defineOps('page-marks', {
   ),
 
   /**
-   * Exact preview: applies the marks to one page inside a journal operation that is rolled back
-   * right after rendering, so the document is never changed.
+   * Preview of one page with the marks applied. They are applied to a copy of the page, so the
+   * document and its undo/redo history are never touched.
    */
   async preview(s, pageIndex: number, settings: MarkSettings, opts: ApplyOptions & { scale: number }) {
-    const doc = s.pdf
     const scale = Math.max(0.05, Math.min(4, opts.scale))
     const norm = normalizeSettings(settings)
     const inRange = !!norm && resolvePageRange(norm.range, s.pageCount()).includes(pageIndex)
     let message: string | undefined
-    if (!canRollBack(s)) {
-      const pix = renderPage(s, s.page(pageIndex), scale)
-      return toBitmap(pix, {
-        inRange,
-        exact: false,
-        message: 'A preview is not available for this document.'
-      })
-    }
-    let pix: MuPDF.Pixmap | null = null
-    s.invalidatePages()
-    doc.beginOperation('Preview')
+    const target = previewCopy(s, pageIndex)
+    let pix: MuPDF.Pixmap
     try {
       try {
-        applyMarks(s, settings, opts, pageIndex)
+        applyMarks(s, settings, opts, target)
       } catch (err) {
         if (!(err instanceof EngineError)) throw err
         message = err.message
       }
-      s.invalidatePages()
-      const page = doc.loadPage(pageIndex)
-      try {
-        pix = renderPage(s, page, scale)
-      } finally {
-        page.destroy()
-      }
+      pix = renderPage(s, target.session.page(0), scale, undefined, { annotsOf: s.page(pageIndex) })
     } finally {
-      doc.abandonOperation()
-      s.invalidatePages()
+      target.map.destroy()
+      target.session.closeDocument()
     }
-    return toBitmap(pix!, { inRange, exact: true, message })
+    return toBitmap(pix, { inRange, message })
   },
 
   /** Loads an image or document to use as a watermark or background. */
@@ -397,7 +384,8 @@ export default defineOps('page-marks', {
           }
         }
         changed++
-        if (pages.length > 20 && k % 10 === 9) s.progress((k + 1) / pages.length)
+        if (pages.length > 20 && k % 10 === 9)
+          s.progress((k + 1) / pages.length, `Page ${k + 1} of ${pages.length}`)
       })
       if (!changed)
         throw new EngineError(

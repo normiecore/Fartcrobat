@@ -413,7 +413,8 @@
 
 .fc-page-marks-crop-rect {
   position: absolute;
-  border: 2px solid var(--accent);
+  /* outside the box, so it never hides the content at the edge of the crop */
+  outline: 2px solid var(--accent);
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.42);
   pointer-events: none;
 }

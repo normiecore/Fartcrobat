@@ -455,8 +455,15 @@ export function findExistingSource(
 }
 
 interface ApplyContext {
+  /** The open document's session: page count, loaded files and existing marks come from it. */
   s: Session
+  /** Where the marks are written: `s` itself, or a one-page copy of the previewed page. */
+  work: Session
   doc: PDFDocument
+  /** Index in `work` of a page of the document. */
+  local: (pageIndex: number) => number
+  /** Graft map into the preview copy (null when writing to the document itself). */
+  map: MuPDF.PDFGraftMap | null
   settings: MarkSettings
   settingsRef: PDFObject
   fonts: Map<string, PDFObject>
@@ -465,14 +472,13 @@ interface ApplyContext {
   source: SourceObject | null
   shared: { ref: PDFObject; width: number; height: number } | null
   ocg: PDFObject | null
-  preview: boolean
 }
 
 /**
  * A standard (base-14) font with WinAnsiEncoding: the same dictionary addSimpleFont(font, 'Latin')
  * writes for these fonts. It is built directly because MuPDF's addSimpleFont/addImage keep a
- * per-document resource cache that survives undo and rolled-back operations (previews), and would
- * then hand back references to objects that no longer exist.
+ * per-document resource cache that survives undo, and would then hand back references to objects
+ * that no longer exist (an undone "Add Watermark" followed by a new one would lose its font).
  */
 function fontRef(ctx: ApplyContext, f: FontSpec): PDFObject {
   const name = base14Name(f)
@@ -577,18 +583,28 @@ function xobjectDict(doc: PDFDocument, res: PDFObject): PDFObject {
   return xo
 }
 
-function uniqueName(xo: PDFObject, ref: PDFObject): string {
-  const base = `FcMk${ref.asIndirect()}`
+/**
+ * Resource name for an XObject. Pages often share one resource dictionary: the name already
+ * given to the same object (e.g. a watermark used on every page) is reused instead of adding one
+ * entry per page.
+ */
+function resourceName(xo: PDFObject, ref: PDFObject): string {
+  const num = ref.asIndirect()
+  const base = `FcMk${num}`
   let name = base
   let k = 1
-  while (!isNull(xo.get(name))) name = `${base}_${k++}`
-  return name
+  for (;;) {
+    const cur = xo.get(name)
+    if (isNull(cur)) return name
+    if (cur.isIndirect() && cur.asIndirect() === num) return name
+    name = `${base}_${k++}`
+  }
 }
 
 /** Removes marks of `type` from one page. Returns true when something was removed. */
 function removeFromPage(ctx: ApplyContext, pageIndex: number, type: MarkType): boolean {
   const doc = ctx.doc
-  const pageObj = doc.findPage(pageIndex)
+  const pageObj = doc.findPage(ctx.local(pageIndex))
   const entries = readEntries(pageObj)
   const removed = entries.filter((e) => e.kind === 'mark' && e.type === type)
   if (!removed.length) return false
@@ -618,13 +634,13 @@ interface NewMark {
 
 function addToPage(ctx: ApplyContext, pageIndex: number, mark: NewMark) {
   const doc = ctx.doc
-  const pageObj = doc.findPage(pageIndex)
+  const pageObj = doc.findPage(ctx.local(pageIndex))
   const res = ownResources(doc, pageObj)
   const xo = xobjectDict(doc, res)
   let content = mark.content
   const names: string[] = []
   for (const x of mark.xobjects) {
-    const name = uniqueName(xo, x.ref)
+    const name = resourceName(xo, x.ref)
     xo.put(name, x.ref)
     names.push(name)
     content = content.split(x.placeholder).join(`/${name}`)
@@ -877,8 +893,7 @@ function headerFooterMark(
   total: number
 ): NewMark | null {
   const m = ctx.s.mupdf
-  const page = ctx.s.page(pageIndex)
-  const frame = pageFrame(page)
+  const frame = pageFrame(ctx.work.page(ctx.local(pageIndex)))
   const date = new Date(settings.date || Date.now())
   const tokenCtx = { page: number, total, date: Number.isNaN(date.getTime()) ? new Date() : date }
   const header: TextLineLayout[] = []
@@ -951,8 +966,7 @@ function headerFooterMark(
 }
 
 function batesMark(ctx: ApplyContext, settings: BatesSettings, pageIndex: number, number: number): NewMark {
-  const page = ctx.s.page(pageIndex)
-  const frame = pageFrame(page)
+  const frame = pageFrame(ctx.work.page(ctx.local(pageIndex)))
   const text = formatBates(settings, number)
   const laid = slotLines(ctx.s.mupdf, settings.font, settings.slot, [text], frame, settings.margins)
   const ref = newForm(
@@ -1074,7 +1088,7 @@ function appearanceMark(
   settings: WatermarkSettings | BackgroundSettings,
   pageIndex: number
 ): NewMark {
-  const frame = pageFrame(ctx.s.page(pageIndex))
+  const frame = pageFrame(ctx.work.page(ctx.local(pageIndex)))
   const shared = ctx.shared!
   const view: Matrix =
     settings.source.kind === 'color'
@@ -1119,7 +1133,7 @@ function sourceObject(
       `Choose a file for the ${settings.type === 'Watermark' ? 'watermark' : 'background'}`,
       'NO_SOURCE'
     )
-  return existing
+  return ctx.map ? { ...existing, ref: ctx.map.graftObject(existing.ref) } : existing
 }
 
 export interface ApplyOptions {
@@ -1128,27 +1142,44 @@ export interface ApplyOptions {
 }
 
 /**
- * Applies marks to the session document. With `previewPage`, only that page is processed (for
- * an exact preview inside an abandoned journal operation) and no optional content is created.
- * Returns the indices of the pages that changed.
+ * A one-page copy of a document page that a preview writes its marks to, so the document itself
+ * (and its undo/redo history) is never touched.
+ */
+export interface PreviewTarget {
+  /** Index of the previewed page in the document. */
+  page: number
+  /** Session holding the copy as its only page. */
+  session: Session
+  /** The graft map the page was copied with (objects copied again later are shared). */
+  map: MuPDF.PDFGraftMap
+}
+
+/**
+ * Applies marks to the session document. With a preview target, only the previewed page is
+ * processed, on its copy, and no optional content is created. Returns the indices of the pages
+ * that changed.
  */
 export function applyMarks(
   s: Session,
   input: MarkSettings,
   opts: ApplyOptions,
-  previewPage?: number
+  preview?: PreviewTarget
 ): number[] {
   const settings = normalizeSettings(input)
   if (!settings) throw new EngineError('Invalid settings', 'BAD_SETTINGS')
-  const doc = s.pdf
+  const work = preview?.session ?? s
+  const doc = work.pdf
   const count = s.pageCount()
   const range = resolvePageRange(settings.range, count)
   if (!range.length) throw new EngineError('The page range does not include any pages', 'EMPTY_RANGE')
-  const preview = previewPage !== undefined
+  const previewPage = preview?.page
   const targets = preview ? range.filter((p) => p === previewPage) : range
   const ctx: ApplyContext = {
     s,
+    work,
     doc,
+    local: preview ? () => 0 : (i) => i,
+    map: preview?.map ?? null,
     settings,
     settingsRef: doc.addObject(doc.newString(JSON.stringify(storableSettings(settings)))),
     fonts: new Map(),
@@ -1156,8 +1187,7 @@ export function applyMarks(
     wrapEnd: null,
     source: null,
     shared: null,
-    ocg: null,
-    preview
+    ocg: null
   }
   const changed = new Set<number>()
   if (settings.type === 'Watermark' || settings.type === 'Background') {
@@ -1217,7 +1247,10 @@ export function removeMarks(s: Session, type: MarkType): number[] {
   const settingsRef = doc.newNull()
   const ctx: ApplyContext = {
     s,
+    work: s,
     doc,
+    local: (i) => i,
+    map: null,
     settings: { type } as MarkSettings,
     settingsRef,
     fonts: new Map(),
@@ -1225,8 +1258,7 @@ export function removeMarks(s: Session, type: MarkType): number[] {
     wrapEnd: null,
     source: null,
     shared: null,
-    ocg: null,
-    preview: false
+    ocg: null
   }
   const changed: number[] = []
   const n = s.pageCount()

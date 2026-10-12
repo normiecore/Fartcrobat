@@ -3,9 +3,9 @@ import {
   Eraser,
   FilePen,
   Hash,
-  ImagePlus,
   Layers,
   PaintBucket,
+  PencilLine,
   Plus,
   Scissors,
   Stamp
@@ -119,7 +119,7 @@ export function PageMarksPanel({ doc }: { doc: DocumentModel | null }) {
                 />
                 {e.update && (
                   <ToolRow
-                    icon={ImagePlus}
+                    icon={PencilLine}
                     label={e.updateLabel}
                     description={status(pages, 'Nothing to update yet')}
                     disabled={!has}

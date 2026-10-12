@@ -170,6 +170,20 @@ test('headers, footers, watermarks, backgrounds, Bates numbers and cropping', as
     await expect.poll(async () => Math.round((await pageSize(page, 0)).width)).toBe(612)
     st = await activeDocState(page)
     expect(st?.journal.undoLabel).toBe('Add Background')
+
+    // ---- Previews never touch the document: Redo still works after looking at a dialog ----
+    expect(st?.journal.redoLabel).toBe('Crop Pages')
+    await panel.getByRole('button', { name: /Add watermark/ }).click()
+    const lookOnly = dialog(page, 'Add Watermark')
+    await expect(lookOnly.getByLabel('Watermark text')).toHaveValue('CONFIDENTIAL')
+    await waitForPreview(page)
+    await lookOnly.getByRole('button', { name: 'Cancel' }).click()
+    await expect(lookOnly).toBeHidden()
+    expect((await activeDocState(page))?.journal.redoLabel).toBe('Crop Pages')
+    await page.keyboard.press('Control+Shift+Z')
+    await expect.poll(async () => Math.round((await pageSize(page, 0)).width)).toBeLessThan(612)
+    await page.keyboard.press('Control+z')
+    await expect.poll(async () => Math.round((await pageSize(page, 0)).width)).toBe(612)
     // a full-page background has no white margins: take it away first
     await page.keyboard.press('Control+z')
     await expect.poll(async () => (await activeDocState(page))?.journal.undoLabel).toBe('Add Bates Numbering')
@@ -308,6 +322,41 @@ test('image watermark, add-or-replace prompt and a header on a rotated page', as
         { type: 'HeaderFooter', source: null },
         { type: 'Watermark', source: 'file' }
       ])
+
+    // ---- Crop the rotated page by dragging, at 75% zoom ----
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(0.75))
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(2))
+    await page.waitForTimeout(600)
+    await startCommand(page, 'marks.crop')
+    await expect(page.locator('.fc-page-marks-toolbar')).toBeVisible()
+    const rotated = (await page.locator('.viewer-page[data-page-index="2"]').boundingBox())!
+    const x0 = rotated.x + 60
+    const y0 = rotated.y + 40
+    await page.mouse.move(x0, y0)
+    await page.mouse.down()
+    await page.mouse.move(x0 + 150, y0 + 100, { steps: 4 })
+    await page.mouse.move(x0 + 300, y0 + 210, { steps: 4 })
+    await page.mouse.up()
+    const crop = dialog(page, 'Set Page Boxes')
+    await expect(crop).toBeVisible()
+    // 75% zoom (100% is 96 dpi): 1 pt = 1 CSS px
+    await expect(crop.locator('.fc-page-marks-preview-size')).toContainText('New size')
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: 'test-results/page-marks-rotated-crop-dialog.png' })
+    await crop.getByRole('button', { name: 'OK' }).click()
+    await expect(crop).toBeHidden()
+    await expect.poll(async () => Math.round((await pageSize(page, 2)).width)).toBeGreaterThan(297)
+    const size = await pageSize(page, 2)
+    expect(size.width).toBeLessThan(303)
+    expect(size.height).toBeGreaterThan(207)
+    expect(size.height).toBeLessThan(213)
+    // still turned by /Rotate, cropped in the orientation it is shown in
+    expect(
+      await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[2].rotation)
+    ).toBe(90)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: 'test-results/page-marks-rotated-cropped.png' })
   } finally {
     await app.close()
   }

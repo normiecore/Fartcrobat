@@ -12,6 +12,7 @@ import {
   toast,
   useDocState,
   usePageVersion,
+  withProgress,
   type DocumentModel
 } from '@renderer/sdk'
 import type { BoxesView } from '../engine'
@@ -205,14 +206,18 @@ export function PageBoxesDialog({
   const apply = async (remove: boolean) => {
     setBusy(true)
     try {
-      const res = await doc.busyWhile(remove ? 'Removing crop…' : 'Cropping…', () =>
-        marksApi(doc).setBoxes({
-          pages,
-          box,
-          margins: remove || removeWhite ? null : margins,
-          removeWhiteMargins: !remove && removeWhite
-        })
-      )
+      const req = {
+        pages,
+        box,
+        margins: remove || removeWhite ? null : margins,
+        removeWhiteMargins: !remove && removeWhite
+      }
+      const label = remove ? 'Removing crop…' : removeWhite ? 'Removing white margins…' : 'Cropping…'
+      // Finding the white margins renders every page: show progress on long documents.
+      const res =
+        req.removeWhiteMargins && pages.length > 20
+          ? await withProgress(label, (report) => marksApi(doc, (f, m) => report(f, m)).setBoxes(req))
+          : await doc.busyWhile(label, () => marksApi(doc).setBoxes(req))
       const n = res.pages
       const what =
         box === 'CropBox'
@@ -241,10 +246,11 @@ export function PageBoxesDialog({
       ((e.clientY - b.top) * dpr + view!.y) / view!.scale
     ]
   }
-  const rectPath = (r: Rect) => {
+  /** SVG path of a page-space rectangle, grown by `grow` CSS pixels on every side. */
+  const rectPath = (r: Rect, grow = 0) => {
     const a = toCss([r[0], r[1]])
     const b = toCss([r[2], r[3]])
-    return `M${a[0]},${a[1]}H${b[0]}V${b[1]}H${a[0]}Z`
+    return `M${a[0] - grow},${a[1] - grow}H${b[0] + grow}V${b[1] + grow}H${a[0] - grow}Z`
   }
   const shown: Rect | null = drag ? rectFromPoints(drag.a, drag.b) : newRect
   const cssW = view ? view.width / dpr : pg.width * cssScale
@@ -411,7 +417,8 @@ export function PageBoxesDialog({
                       fillRule="evenodd"
                       fill="rgba(0,0,0,0.45)"
                     />
-                    <path d={rectPath(shown)} fill="none" stroke="var(--accent)" strokeWidth={2} />
+                    {/* drawn just outside the new box so it never hides the content at its edge */}
+                    <path d={rectPath(shown, 1)} fill="none" stroke="var(--accent)" strokeWidth={2} />
                   </>
                 )}
               </svg>
