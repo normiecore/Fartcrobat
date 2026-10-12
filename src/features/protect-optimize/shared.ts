@@ -321,8 +321,10 @@ export function formatBytes(n: number): string {
 /** "Reduced from 12.4 MB to 3.1 MB (75% smaller)". */
 export function reductionSummary(before: number, after: number): string {
   if (after >= before) return `The file is already well optimized (${formatBytes(before)}).`
-  const pct = Math.round(((before - after) / before) * 100)
-  return `Reduced from ${formatBytes(before)} to ${formatBytes(after)} (${pct}% smaller)`
+  const exact = ((before - after) / before) * 100
+  // Never claim 100% (something is left) or 0% (something was saved).
+  const pct = exact < 1 ? 'less than 1%' : `${Math.min(99, Math.round(exact))}%`
+  return `Reduced from ${formatBytes(before)} to ${formatBytes(after)} (${pct} smaller)`
 }
 
 /** "report.pdf" -> "report_compressed.pdf" */

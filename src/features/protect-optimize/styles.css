@@ -347,6 +347,11 @@
 .fc-protect-optimize-result li {
   margin-bottom: 2px;
 }
+.fc-protect-optimize-result-note {
+  margin-top: 8px;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
 .fc-protect-optimize-result-file {
   margin-top: 8px;
   font-size: var(--fs-sm);

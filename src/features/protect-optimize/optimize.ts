@@ -511,7 +511,9 @@ async function optimizeImage(
   const smRef = dict.get('SMask')
   const smNum = !isNull(smRef) && smRef.isIndirect() ? smRef.asIndirect() : 0
   const smDict = smNum ? smRef.resolve() : null
-  const smOk = !!smDict && (smaskUsers.get(smNum) ?? 0) === 1 && isNull(smDict.get('Matte')) && downsampled
+  // A pre-multiplied (/Matte) soft mask must keep the size and colours of its image.
+  if (smDict && !isNull(smDict.get('Matte'))) return null
+  const smOk = !!smDict && (smaskUsers.get(smNum) ?? 0) === 1 && downsampled
   const before = rawLength(e.ref) + (smOk ? rawLength(smRef) : 0)
 
   if (kind === 'mono') {
@@ -546,7 +548,8 @@ async function optimizeImage(
   const pix = drawScaled(m, image, nw, nh, cs)
   let enc: Encoded
   try {
-    enc = await encodePixmap(pix, photo!.quality, false)
+    // Images with a soft mask stay lossless: JPEG ringing would show as halos along transparent edges.
+    enc = await encodePixmap(pix, photo!.quality, !!smDict)
   } finally {
     pix.destroy()
   }

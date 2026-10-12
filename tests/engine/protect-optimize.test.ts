@@ -237,6 +237,7 @@ describe('protect-optimize: compress', () => {
     // RGB logo with soft mask: 1200 px at 1.5 in -> 225 px, and its mask follows
     const logo = after.find((i) => i.smask)!
     expect(logo.w).toBe(225)
+    expect(logo.filter).toBe('/FlateDecode') // lossless next to a soft mask
     const masks = after.filter((i) => i.w === 225 && !i.smask)
     expect(masks.length).toBeGreaterThanOrEqual(1)
     // grayscale 1600x1200 at 2 x 1.5 in -> 300 x 225
@@ -447,6 +448,14 @@ describe('protect-optimize: compress', () => {
     expect(sub.bytes.length).toBeLessThan(src.length / 2)
   })
 
+  it('marks an optimized copy opened in a new tab as unsaved', async () => {
+    const e = await openFixture('text.pdf')
+    expect(await e.doc.isDirty()).toBe(false)
+    await e.ops<typeof ops>(NS).markUnsaved()
+    expect(e.lastChanges?.dirty).toBe(true)
+    expect(await e.doc.isDirty()).toBe(true)
+  })
+
   it('audits space usage', async () => {
     const e = await openFixture('protect-optimize/mixed-images.pdf')
     const audit = await e.ops<typeof ops>(NS).audit()
@@ -499,6 +508,9 @@ describe('protect-optimize: helpers', () => {
     expect(formatBytes(3_100_000)).toBe('3.1 MB')
     expect(formatBytes(512)).toBe('512 bytes')
     expect(reductionSummary(12_400_000, 3_100_000)).toBe('Reduced from 12.4 MB to 3.1 MB (75% smaller)')
+    expect(reductionSummary(1_300_000, 5_500)).toBe('Reduced from 1.3 MB to 5.5 KB (99% smaller)')
+    expect(reductionSummary(1_000_000, 996_000)).toBe('Reduced from 1 MB to 996 KB (less than 1% smaller)')
+    expect(reductionSummary(1_000, 1_200)).toMatch(/already well optimized/)
     expect(compressedName('Report.PDF')).toBe('Report_compressed.pdf')
   })
 })

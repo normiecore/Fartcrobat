@@ -298,21 +298,23 @@ export async function compressDocument(doc: DocumentModel, options: OptimizeOpti
     const name = compressedName(title)
     const base = { before, after: bytes.length, name, report, summary: reductionSummary(before, bytes.length) }
     if (bytes.length >= before) {
-      const result: CompressResult = { ...base, smaller: false, path: null }
+      const result: CompressResult = { ...base, smaller: false, path: null, openedInTab: false }
       setResult(doc, result)
       toast(`“${title}” is already well optimized: these settings would not make it smaller.`, { kind: 'info' })
       return result
     }
     let path: string | null = null
     if (output === 'tab') {
-      await openNewDocument(bytes, name)
+      const opened = await openNewDocument(bytes, name)
+      if (!opened) return null
+      await poOps(opened).markUnsaved()
     } else {
       path = await chooseSavePath('Save Compressed PDF', siblingPath(doc, name))
       if (!path) return null
       await writeFile(path, bytes)
       if (path === doc.state.filePath) await reloadFromSaved(doc, bytes, path, password)
     }
-    const result: CompressResult = { ...base, smaller: true, path }
+    const result: CompressResult = { ...base, smaller: true, path, openedInTab: output === 'tab' }
     setResult(doc, result)
     const saved = path
     toast(result.summary, {

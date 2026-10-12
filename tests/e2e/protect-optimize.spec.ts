@@ -156,6 +156,9 @@ test('protect using password, reopen asks for it; restrictions, copy blocking an
     await page.getByTestId('security-badge').click()
     await expect(page.getByTestId('security-permissions')).toContainText('Low resolution only')
     await shot(page, 'panel-restricted')
+    await setTheme(page, 'dark')
+    await shot(page, 'panel-restricted-dark')
+    await setTheme(page, 'light')
 
     // the permissions password lifts the restrictions
     await page.getByTestId('restricted-bar').getByRole('button', { name: 'Enter password…' }).click()
@@ -223,26 +226,54 @@ test('compress a PDF with a large image and see the size reduction', async () =>
     await waitForRender(page)
     await shot(page, 'compressed-opened')
 
-    // Advanced optimization: keyboard-accessible sections and the space audit
+    // back on the original: pick "Small size" with the keyboard and "Open in a new tab"
+    await page.locator('.shell-tab', { hasText: 'big-image.pdf' }).first().click()
+    await expect(page.getByTestId('compress-result')).toBeVisible()
+    await page.getByRole('radio', { name: /Medium/ }).focus()
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByRole('radio', { name: /Small size/ })).toBeChecked()
+    await page.getByRole('radio', { name: /Open in a new tab/ }).check()
+
+    // Advanced optimization: sections, the space audit, and running it with custom settings
     await fire(page, 'compress.advanced')
     const adv = dialogTitled(page, 'Advanced optimization')
     await expect(adv).toBeVisible()
-    await expect(adv.getByLabel('Settings')).toHaveValue('medium')
+    await expect(adv.getByLabel('Settings')).toHaveValue('small')
+    await adv.getByLabel('Settings').selectOption('medium')
     await adv.getByLabel('Color images: target resolution in ppi').fill('100')
     await expect(adv.getByLabel('Settings')).toHaveValue('custom')
     await shot(page, 'optimizer-images')
     await adv.getByRole('button', { name: 'Space usage' }).click()
     await expect(adv.getByTestId('space-audit')).toContainText('Images')
     await shot(page, 'optimizer-audit')
+    await adv.getByRole('button', { name: 'Clean up' }).click()
+    await expect(adv.getByText('Remove unused objects and merge duplicates')).toBeVisible()
+    await shot(page, 'optimizer-cleanup')
+    await adv.getByRole('button', { name: 'Discard user data' }).click()
+    await expect(adv.getByText('Discard all comments')).toBeVisible()
     await adv.getByRole('button', { name: 'Discard objects' }).click()
-    await expect(adv.getByText('Discard bookmarks')).toBeVisible()
-    await page.keyboard.press('Escape')
+    await adv.getByText('Discard bookmarks').click()
+    await shot(page, 'optimizer-discard')
+    await adv.getByRole('button', { name: 'Optimize', exact: true }).click()
     await expect(adv).toHaveCount(0)
+    // the optimized copy opens as a new, unsaved tab
+    await expect.poll(async () => page.locator('.shell-tab').count()).toBe(3)
+    await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
+    expect((await activeDocState(page))?.title).toBe('big-image_compressed.pdf')
+    await waitForRender(page)
+    const optimized = await page.evaluate(async () => {
+      const d = (window as any).__fartcrobat.getActiveDoc()
+      const bytes: Uint8Array = await d.saveBytes({})
+      return bytes.length
+    })
+    expect(optimized).toBeLessThan(statSync(src).size / 20)
 
     // dark theme
     await setTheme(page, 'dark')
     await page.locator('.shell-tab', { hasText: 'big-image.pdf' }).first().click()
     await expect(page.getByTestId('compress-result')).toBeVisible()
+    await page.getByRole('radio', { name: /Medium/ }).check()
+    await page.getByRole('radio', { name: /Save as a new file/ }).check()
     await shot(page, 'compress-dark')
     await fire(page, 'protect.encrypt')
     await expect(dialogTitled(page, 'Protect using password')).toBeVisible()

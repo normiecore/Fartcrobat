@@ -10,6 +10,8 @@ export interface CompressResult {
   smaller: boolean
   /** Where the compressed file was saved (null when opened as a new tab or not saved). */
   path: string | null
+  /** The compressed copy was opened as a new, unsaved tab. */
+  openedInTab: boolean
   name: string
   report: OptimizeReport
 }

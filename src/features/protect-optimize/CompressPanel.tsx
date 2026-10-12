@@ -127,6 +127,7 @@ function CompressPanelBody({ doc }: { doc: DocumentModel }) {
                 ))}
               </ul>
             )}
+            {result.openedInTab && <div className={`${P}-result-note`}>Opened in a new tab as “{result.name}”. Save it to keep it.</div>}
             {result.path && (
               <>
                 <div className={`${P}-result-file`} title={result.path}>

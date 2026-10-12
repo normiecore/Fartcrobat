@@ -107,6 +107,11 @@ export default defineOps('protect-optimize', {
     return withTransfer({ bytes, report }, [bytes.buffer as ArrayBuffer])
   },
 
+  /** Marks a document opened from optimized bytes as unsaved, so closing it asks to save. */
+  markUnsaved(s) {
+    s.markDirty()
+  },
+
   /** Bytes used by images, fonts, page content... ("Audit space usage"). */
   audit(s) {
     return auditSpace(s)
