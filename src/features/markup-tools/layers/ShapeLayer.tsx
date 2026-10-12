@@ -42,7 +42,9 @@ function fitTextBox(box: Rect, text: string, tool: MarkupTool, page: { width: nu
   return fitRect([box[0], box[1], box[0] + w, box[1] + h], page.width, page.height)
 }
 
-async function createShape(doc: DocumentModel, tool: MarkupTool, page: number, a: Point, b: Point, size: { width: number; height: number }) {
+export const TEXTBOX_DEFAULT_SIZE = TEXTBOX_SIZE
+
+export async function createShape(doc: DocumentModel, tool: MarkupTool, page: number, a: Point, b: Point, size: { width: number; height: number }) {
   const st = getToolStyle(tool.key)
   const spec = styleSpec(tool, st)
   if (tool.kind === 'line') {

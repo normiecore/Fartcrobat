@@ -345,6 +345,31 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     await page.keyboard.press('Escape')
     expect(await toolId(page)).toBe('select')
 
+    // keyboard only: with the sticky note tool, Enter puts a note in the middle of the view
+    const hasComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
+    await page.keyboard.press('s')
+    await settle(page)
+    const centre = await page.evaluate(() => {
+      const d = (window as any).__fartcrobat.getActiveDoc()
+      const r = d.view.getViewportElement().getBoundingClientRect()
+      return d.view.hitTest(r.left + r.width / 2, r.top + r.height / 2)
+    })
+    await page.keyboard.press('Enter')
+    if (!hasComments) {
+      await expect(page.locator('.ui-dialog', { hasText: 'Add sticky note' })).toBeVisible()
+      await page.keyboard.type('Placed from the keyboard')
+      await page.keyboard.press('Control+Enter')
+    }
+    await expect.poll(async () => (await ofType(page, 'Text')).length).toBe(1)
+    const kbNote = (await ofType(page, 'Text'))[0]
+    expect(centre.pageIndex).toBe(0)
+    expect((kbNote.rect[0] + kbNote.rect[2]) / 2).toBeCloseTo(centre.point[0] + 2, -1)
+    expect((kbNote.rect[1] + kbNote.rect[3]) / 2).toBeCloseTo(centre.point[1] + 2, -1)
+    if (!hasComments) expect(kbNote.contents).toBe('Placed from the keyboard')
+    await runCommand(page, 'edit.undo')
+    await expect.poll(async () => (await ofType(page, 'Text')).length).toBe(0)
+    await page.locator('.viewer-scroll').click({ position: { x: 5, y: 5 } })
+
     // tool options are remembered per tool
     await page.keyboard.press('s')
     await page.locator('.fc-markup-tools-color', { hasText: 'Colour' }).click()
@@ -360,7 +385,6 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     // keep tool selected: place two notes in a row
     await page.locator('.fc-markup-tools-pin').click()
     await expect(page.locator('.fc-markup-tools-pin')).toHaveAttribute('aria-pressed', 'true')
-    const hasComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
     for (const x of [300, 340]) {
       const pt = await toScreen(page, 0, x, 400)
       await page.mouse.click(pt.x, pt.y)
@@ -499,9 +523,14 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     // defaults saved by the comments feature ("Make current properties default") are picked up
     await page.evaluate(() => (window as any).api.invoke('store:set', 'comments:defaults:Square', { color: '#4caf50', borderWidth: 4, dashes: [3, 3] }))
 
+    // comments hidden (View > Show/Hide > Comments): picking a comment tool shows them again
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().set({ showAnnotations: false }))
+
     // ---- rectangle in a view rotated 90° clockwise lands where it was drawn
     await runCommand(page, 'view.rotateCW')
     await activate(page, 'comment.rectangle')
+    expect(await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.showAnnotations)).toBe(true)
+    await expect(page.locator('.toast-message', { hasText: 'Comments were hidden' })).toBeVisible()
     await expect(page.locator('.fc-markup-tools-color', { hasText: 'Colour' }).locator('.fc-markup-tools-color-swatch')).toHaveCSS('background-color', 'rgb(76, 175, 80)')
     await expect(page.locator('select[aria-label="Line width"]')).toHaveValue('4')
     await drag(page, await toScreen(page, 0, 100, 100), await toScreen(page, 0, 220, 160))

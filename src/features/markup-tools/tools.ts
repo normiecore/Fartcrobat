@@ -202,7 +202,7 @@ export const TOOLS: MarkupTool[] = [
     section: 'comment',
     annotType: 'Text',
     props: ['color', 'icon', 'opacity'],
-    hint: 'Click where the note should go, then type your comment.',
+    hint: 'Click where the note should go (or press Enter for the middle of the view), then type your comment.',
     keywords: ['note', 'comment', 'sticky', 'popup'],
     edits: true
   },
@@ -217,7 +217,7 @@ export const TOOLS: MarkupTool[] = [
     section: 'comment',
     annotType: 'FreeText',
     props: ['fontColor', 'font', 'fontSize', 'opacity'],
-    hint: 'Click anywhere on the page and start typing.',
+    hint: 'Click anywhere on the page (or press Enter for the middle of the view) and start typing.',
     keywords: ['typewriter', 'type', 'add text', 'free text'],
     edits: true
   },
@@ -233,7 +233,7 @@ export const TOOLS: MarkupTool[] = [
     section: 'comment',
     annotType: 'FreeText',
     props: textBoxProps,
-    hint: 'Drag to draw a text box (or click for a standard size), then type.',
+    hint: 'Drag to draw a text box (or click, or press Enter, for a standard size), then type.',
     keywords: ['text box', 'free text', 'box'],
     edits: true
   },
@@ -263,7 +263,7 @@ export const TOOLS: MarkupTool[] = [
     section: 'comment',
     annotType: 'FileAttachment',
     props: ['color', 'attachIcon'],
-    hint: 'Click where the attachment icon should go, then choose the file to attach.',
+    hint: 'Click where the attachment icon should go (or press Enter for the middle of the view), then choose the file.',
     keywords: ['attach', 'attachment', 'file', 'embed', 'paperclip']
   },
   // ---- Drawing

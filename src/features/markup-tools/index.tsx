@@ -8,6 +8,7 @@ import { Highlighter, MessageSquarePlus, StickyNote, Strikethrough, Underline } 
 import {
   defineFeature,
   setTool,
+  toast,
   useApp,
   type CommandDefinition,
   type MenuContribution,
@@ -21,6 +22,7 @@ import { PencilLayer, endPencilSession } from './layers/PencilLayer'
 import { PolyLayer, cancelPolyDraft } from './layers/PolyLayer'
 import { ShapeLayer, cancelCalloutTip } from './layers/ShapeLayer'
 import { TextMarkupLayer, useTextDrag } from './layers/TextMarkupLayer'
+import { KeyboardPlacement } from './KeyboardPlacement'
 import { CommentPanel } from './Panel'
 import { loadToolStyles, syncCommentDefaults } from './style'
 import { MarkupToolbar } from './Toolbar'
@@ -61,8 +63,13 @@ const tools: ToolDefinition[] = TOOLS.map((t) => ({
   toolbar: MarkupToolbar,
   onActivate: (ctx) => {
     void syncCommentDefaults(t)
-    // Text already selected? Apply the markup to it straight away (like Acrobat).
     const doc = ctx.doc
+    // New comments would be invisible while View > Show/Hide > Comments is off.
+    if (doc && !doc.state.showAnnotations) {
+      doc.set({ showAnnotations: true })
+      toast('Comments were hidden. They are shown again so you can see what you add.')
+    }
+    // Text already selected? Apply the markup to it straight away (like Acrobat).
     if (doc && (t.kind === 'textMarkup' || t.kind === 'replaceText')) {
       const sel = doc.state.selection
       if (sel.kind === 'text' && sel.ranges.some((r) => r.end > r.start)) void applyTextMarkup(doc, t, sel.ranges)
@@ -166,5 +173,5 @@ export default defineFeature({
       }
     }
   ],
-  globals: [DefaultsLoader]
+  globals: [DefaultsLoader, KeyboardPlacement]
 })
