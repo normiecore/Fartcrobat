@@ -227,7 +227,7 @@ test('Fit Width does not flicker as the vertical scrollbar comes and goes', asyn
     // Window sizes where the page is about as tall as the viewport used to flip forever.
     await runCommand(page, 'view.fitWidth')
     await countZoomChanges(page)
-    for (let w = 980; w <= 994; w += 2) {
+    for (let w = 982; w <= 992; w++) {
       await setContentSize(app, w, 900)
       await page.waitForTimeout(250)
       await resetZoomChanges(page)
