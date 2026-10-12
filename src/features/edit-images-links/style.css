@@ -136,6 +136,8 @@
   pointer-events: auto;
   cursor: default;
   white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 .fc-edit-images-links-toolbar .ui-icon-btn {
   width: 30px;

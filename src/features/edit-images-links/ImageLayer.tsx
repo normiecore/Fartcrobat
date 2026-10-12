@@ -571,8 +571,11 @@ function ImageToolbar({
   cropping: boolean
   onApplyCrop: () => void
 }) {
-  const width = cropping ? 220 : 330
-  const height = 38
+  // On very small pages (strong zoom out) the buttons wrap so they stay on the page.
+  const room = Math.max(120, pageSize[0] - 8)
+  const natural = cropping ? 220 : 310
+  const width = Math.min(natural, room)
+  const height = natural > room ? 74 : 38
   const below = frame.top + frame.height + 12
   const above = frame.top - height - 34
   const top = below + height <= pageSize[1] - 4 ? below : above >= 4 ? above : Math.max(4, frame.top + 8)
@@ -584,7 +587,7 @@ function ImageToolbar({
       role="toolbar"
       aria-label="Image tools"
       className="fc-edit-images-links-toolbar"
-      style={{ left, top }}
+      style={{ left, top, maxWidth: room }}
       onPointerDown={stop}
       onContextMenu={(e) => e.stopPropagation()}
     >

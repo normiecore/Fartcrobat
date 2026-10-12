@@ -324,6 +324,21 @@ test('edit images: select, move, resize, rotate, nudge, replace, crop, arrange, 
     expect((await images(page))[0].bbox[1]).toBeCloseTo(before.bbox[1], 0)
     await page.waitForTimeout(300)
     await shot(page, '11-rotated-view')
+
+    // ---- strong zoom out: the toolbar wraps to stay on the page ------------------------------------
+    await runCommand(page, 'view.rotateCCW')
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(0.3))
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(0.3, 2)
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+    await page.waitForTimeout(400)
+    const small = page.getByRole('toolbar', { name: 'Image tools' })
+    await expect(small).toBeVisible()
+    const tb = (await small.boundingBox())!
+    const pb = (await page.locator('.viewer-page[data-page-index="0"]').boundingBox())!
+    expect(tb.x).toBeGreaterThanOrEqual(pb.x)
+    expect(tb.x + tb.width).toBeLessThanOrEqual(pb.x + pb.width + 0.5)
+    await expect(small.getByRole('button', { name: 'Delete image' })).toBeVisible()
+    await shot(page, '12-small-zoom')
   } finally {
     await app.close()
   }
@@ -345,7 +360,7 @@ test('add image: click to place at natural size, drag to fill an area', async ()
     await page.mouse.move(place.x + 5, place.y + 5)
     await page.mouse.move(place.x, place.y)
     await expect(page.locator('.fc-edit-images-links-ghost')).toBeVisible()
-    await shot(page, '12-add-image-ghost')
+    await shot(page, '13-add-image-ghost')
     await page.mouse.click(place.x, place.y)
     await expect.poll(async () => (await images(page)).length).toBe(3)
     const added = (await images(page))[2]
@@ -359,7 +374,7 @@ test('add image: click to place at natural size, drag to fill an area', async ()
     expect(await toolId(page)).toBe('edit.content')
     expect((await activeDocState(page))?.selection).toMatchObject({ kind: 'custom', type: 'edit-images-links:image' })
     await page.waitForTimeout(300)
-    await shot(page, '13-image-added')
+    await shot(page, '14-image-added')
 
     // ---- drag a rectangle: the image fills it, keeping its proportions ------------------------------
     await answerOpenDialog(app, [FIX('replacement.png')])
@@ -370,7 +385,7 @@ test('add image: click to place at natural size, drag to fill an area', async ()
     await page.mouse.move(a.x, a.y)
     await page.mouse.down()
     for (let i = 1; i <= 8; i++) await page.mouse.move(a.x + (a.w * i) / 8, a.y + (a.h * i) / 8)
-    await shot(page, '14-add-image-drag')
+    await shot(page, '15-add-image-drag')
     await page.mouse.up()
     await expect.poll(async () => (await images(page)).length).toBe(4)
     const drawn = (await images(page))[3]
@@ -418,7 +433,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await create.getByLabel('Line style').selectOption('dashed')
     await expect(create.getByLabel('Line thickness')).toBeVisible()
     await page.waitForTimeout(250)
-    await shot(page, '15-create-link-dialog')
+    await shot(page, '16-create-link-dialog')
     await create.getByRole('button', { name: 'Create link' }).click()
     await expect.poll(async () => (await navLinks(page)).map((l) => l.uri)).toContain('https://example.com/docs')
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Create Link')
@@ -438,7 +453,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.keyboard.press('ArrowRight')
     await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(1)
     await page.waitForTimeout(400)
-    await shot(page, '16-go-to-view')
+    await shot(page, '17-go-to-view')
     await bar.getByRole('button', { name: 'Set Link' }).click()
     await expect(bar).toHaveCount(0)
     await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
@@ -465,7 +480,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
       })
       .toBe(Math.round(wl.w + 30))
     await page.waitForTimeout(300)
-    await shot(page, '17-link-tool')
+    await shot(page, '18-link-tool')
 
     // ---- arrow keys move the selected link ------------------------------------------------------------
     const y0 = (await navLinks(page)).find((l) => l.uri === 'https://example.com/docs')!.rect[1]
@@ -501,7 +516,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     const auto = dialogNamed(page, 'Create Links from URLs')
     await expect(auto).toBeVisible()
     await page.waitForTimeout(250)
-    await shot(page, '18-create-links-from-urls')
+    await shot(page, '19-create-links-from-urls')
     await auto.getByRole('button', { name: 'Create links' }).click()
     await expect
       .poll(async () => (await navLinks(page)).map((l) => l.uri))
@@ -522,7 +537,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
 
     // ---- visible link borders are drawn in the normal view -----------------------------------------------
     await page.waitForTimeout(300)
-    await shot(page, '19-links-normal-view')
+    await shot(page, '20-links-normal-view')
 
     // ---- Remove All Links ----------------------------------------------------------------------------------
     await startCommand(page, 'edit.removeAllLinks')
@@ -547,7 +562,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.mouse.dblclick(center(al).x, center(al).y)
     await expect(props).toBeVisible()
     await page.waitForTimeout(250)
-    await shot(page, '20-dark-link-properties')
+    await shot(page, '21-dark-link-properties')
     await props.getByRole('button', { name: 'Cancel' }).click()
     await enterEditMode(page)
     const d0 = (await images(page))[0]
@@ -555,7 +570,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.mouse.click(center(dc).x, center(dc).y)
     await expect(page.locator('.fc-edit-images-links-frame')).toBeVisible()
     await page.waitForTimeout(300)
-    await shot(page, '21-dark-image-selected')
+    await shot(page, '22-dark-image-selected')
   } finally {
     await app.close()
   }
