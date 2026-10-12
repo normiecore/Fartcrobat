@@ -95,6 +95,12 @@ export function buildDocInfo(s: Session): DocInfo {
       cropBox: b.cropBox
     })
   }
+  return { ...documentFacts(s), pageCount: count, pages }
+}
+
+/** Everything in DocInfo except the per-page list: cheap enough to refresh after every change. */
+export function documentFacts(s: Session): Omit<DocInfo, 'pages'> {
+  const doc = s.pdf
   const permissions = {} as Record<Permission, boolean>
   for (const p of PERMISSIONS) {
     try {
@@ -108,8 +114,7 @@ export function buildDocInfo(s: Session): DocInfo {
   let encryption: string | null = safe(() => doc.getMetaData('encryption') ?? null, null)
   if (encryption === 'None' || encryption === '') encryption = null
   return {
-    pageCount: count,
-    pages,
+    pageCount: doc.countPages(),
     metadata: readMetadata(doc),
     version,
     format: s.converted ? s.sourceFormat : `PDF ${version}`,
@@ -392,6 +397,11 @@ export default defineOps('doc', {
 
   info(s): DocInfo {
     return buildDocInfo(s)
+  },
+
+  /** DocInfo without the page list (metadata, security, form, signatures, attachments...). */
+  facts(s): Omit<DocInfo, 'pages'> {
+    return documentFacts(s)
   },
 
   save(s, opts: SaveOptions = {}) {
