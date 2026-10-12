@@ -225,6 +225,8 @@ function setWidgetValue(s: Session, widget: PDFWidget, pageIndex: number, value:
     const v = String(value)
     if (opts.display !== undefined && opts.display !== v) {
       widget.setTextValue(opts.display)
+      // Build the appearance from the formatted text now: update() regenerates it from /V.
+      widget.update()
       // Keep the raw value in /V while the appearance shows the formatted text.
       const field = widget.getObject()
       const target = isNull(field.get('T')) && !isNull(field.get('Parent')) ? field.get('Parent') : field
