@@ -198,7 +198,7 @@ export function nestedTreePdf(): Uint8Array {
   const res = helvResources(doc)
   const content = (label: string) => {
     const d = doc.newDictionary()
-    return doc.addStream(`BT /Helv 24 Tf 72 500 Td (${label}) Tj ET`, d)
+    return doc.addStream(`BT /Helv 24 Tf 50 150 Td (${label}) Tj ET`, d)
   }
   const pagesRoot = doc.getTrailer().get('Root').get('Pages')
   const mk = (label: string, parent: Obj, own: boolean) => {
