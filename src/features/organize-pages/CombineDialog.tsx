@@ -120,7 +120,7 @@ function PageStrip({
   const parsed = item.range.trim() ? parsePageRange(item.range, item.pageCount) : null
   const included = new Set(parsed?.ok ? parsed.pages : Array.from({ length: item.pageCount }, (_, i) => i))
   return (
-    <div className="fc-organize-pages-strip" role="group" aria-label={`Pages of ${item.name}`}>
+    <div className="fc-organize-pages-strip" role="group" aria-label={`Page previews of ${item.name}`}>
       {Array.from({ length: max }, (_, i) => (
         <button
           key={i}

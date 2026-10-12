@@ -320,3 +320,158 @@ test('organize dialogs: rotate, page labels, insert from file, replace, split, c
     await app.close()
   }
 })
+
+test('organize pages: keyboard moves, copy by dragging, clipboard and Delete Pages dialog', async () => {
+  const { app, page } = await launch()
+  try {
+    await page.setViewportSize({ width: 1280, height: 860 })
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
+    await waitForThumbs(page, 5)
+
+    // Alt+Right moves the selected page one place to the right.
+    await cell(page, 0).click()
+    await page.keyboard.press('Alt+ArrowRight')
+    await expect.poll(() => pageOrder(page)).toEqual(['C2', 'C1', 'C3', 'C4', 'C5'])
+    await expect(cell(page, 1)).toHaveClass(/is-selected/)
+    await page.keyboard.press('Alt+ArrowLeft')
+    await expect.poll(() => pageOrder(page)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5'])
+
+    // Ctrl+drag copies page 2 to the end.
+    await cell(page, 1).click()
+    const from = await cell(page, 1).locator('.fc-organize-pages-page').boundingBox()
+    const last = await cell(page, 4).locator('.fc-organize-pages-page').boundingBox()
+    await page.mouse.move(from!.x + 20, from!.y + 20)
+    await page.mouse.down()
+    await page.mouse.move(from!.x + 60, from!.y + 40, { steps: 3 })
+    await page.keyboard.down('Control')
+    await page.mouse.move(last!.x + last!.width - 6, last!.y + last!.height / 2, { steps: 10 })
+    await expect(page.locator('.fc-organize-pages-ghost')).toContainText('Copy 1 page to the end')
+    await page.mouse.up()
+    await page.keyboard.up('Control')
+    await expect.poll(() => pageOrder(page)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C2'])
+    await expect(cell(page, 5)).toHaveClass(/is-selected/)
+
+    // Insert copied text from the clipboard after the selected page.
+    await app.evaluate(async ({ clipboard }) => {
+      await clipboard.writeText('Hello from the clipboard.\n\nSecond paragraph.')
+    })
+    await page
+      .locator('.fc-organize-pages-toolbar')
+      .getByRole('button', { name: /^Insert/ })
+      .click()
+    await page.getByRole('menuitem', { name: 'From clipboard' }).click()
+    await expect.poll(async () => (await pageTexts(page))[6] ?? '').toContain('Hello from the clipboard.')
+    await waitForThumbs(page, 7)
+    await page.screenshot({ path: 'test-results/organize-pages-clipboard.png' })
+
+    // Delete Pages… (Ctrl+Shift+D) removes a range.
+    await page.keyboard.press('Control+Shift+D')
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Delete Pages')
+    await dialog.getByLabel('Page range').fill('6-7')
+    await expect(dialog).toContainText('2 pages will be deleted')
+    await dialog.getByRole('button', { name: 'Delete', exact: true }).click()
+    await expect.poll(() => pageOrder(page)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5'])
+
+    // Deleting every page is refused.
+    await page.keyboard.press('Control+a')
+    await page.keyboard.press('Delete')
+    await expect(page.locator('.toast').last()).toContainText("You can't delete every page")
+    expect((await activeDocState(page))?.pageCount).toBe(5)
+
+    // Select > Even pages, then Ctrl+Shift+R rotates them.
+    await page.locator('.fc-organize-pages-toolbar').getByRole('button', { name: 'Select' }).click()
+    await page.getByRole('menuitem', { name: 'Even pages' }).click()
+    await expect(page.locator('.fc-organize-pages-status')).toContainText('2 selected (2, 4)')
+    await page.keyboard.press('Control+Shift+R')
+    await expect.poll(() => rotations(page)).toEqual([0, 90, 0, 90, 0])
+
+    // The quick buttons on a hovered thumbnail act on that page.
+    await cell(page, 0).click()
+    await cell(page, 4).hover()
+    await cell(page, 4).getByRole('button', { name: 'Rotate counterclockwise (page 5)' }).click()
+    await expect.poll(() => rotations(page)).toEqual([0, 90, 0, 90, 270])
+
+    // Files dragged in from the desktop show where they will be inserted.
+    const target = await cell(page, 2).boundingBox()
+    await page.evaluate(
+      ({ x, y }) => {
+        const dt = new DataTransfer()
+        dt.items.add(new File(['%PDF-1.4'], 'dropped.pdf', { type: 'application/pdf' }))
+        const el = document.querySelector('.fc-organize-pages-scroll')!
+        el.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }))
+      },
+      { x: target!.x + 10, y: target!.y + 60 }
+    )
+    await expect(page.locator('.fc-organize-pages-indicator.is-file')).toBeVisible()
+    await page.screenshot({ path: 'test-results/organize-pages-file-drop.png' })
+    await page.evaluate(() => {
+      document
+        .querySelector('.fc-organize-pages-scroll')!
+        .dispatchEvent(new DragEvent('dragleave', { bubbles: true, cancelable: true, relatedTarget: document.body }))
+    })
+    await expect(page.locator('.fc-organize-pages-indicator')).toHaveCount(0)
+
+    // Double-click opens the page in the normal view.
+    await cell(page, 3).dblclick()
+    await expect(page.locator('.fc-organize-pages-view')).toHaveCount(0)
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view?.visiblePages().includes(3)))
+      .toBe(true)
+  } finally {
+    await app.close()
+  }
+})
+
+test('combine files: page ranges, open documents and sorting', async () => {
+  const { app, page } = await launch()
+  try {
+    await page.setViewportSize({ width: 1280, height: 860 })
+    await openFile(page, fixturePath('mixed-sizes.pdf'))
+    await waitForRender(page)
+    await stubOpenDialog(app, [fixturePath('text.pdf')])
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await page.getByRole('menuitem', { name: 'File', exact: true }).hover()
+    await page.getByRole('menuitem', { name: 'Combine Files…' }).click()
+    const dialog = page.getByRole('dialog')
+    await dialog.getByRole('button', { name: 'Add files…' }).click()
+    await expect(dialog.locator('.fc-organize-pages-combine-row')).toHaveCount(1)
+    await dialog.getByRole('button', { name: 'Add open files' }).click()
+    await page.getByRole('menuitem', { name: 'mixed-sizes.pdf' }).click()
+    await expect(dialog.locator('.fc-organize-pages-combine-thumb img')).toHaveCount(2)
+    await expect(dialog).toContainText('2 files · 8 pages')
+
+    // Choose pages 2-3 of text.pdf, then leave page 3 out by clicking its preview.
+    await dialog.getByRole('button', { name: /All 5 pages/ }).click()
+    await dialog.getByLabel('Pages of text.pdf').fill('2-3')
+    await expect(dialog).toContainText('2 files · 5 pages')
+    await dialog.locator('.fc-organize-pages-strip-page').nth(2).click()
+    await expect(dialog.getByLabel('Pages of text.pdf')).toHaveValue('2')
+    await expect(dialog).toContainText('2 files · 4 pages')
+    await expect(dialog.locator('.fc-organize-pages-strip-page img')).toHaveCount(5)
+    await page.screenshot({ path: 'test-results/organize-pages-combine-ranges.png' })
+
+    // Sort by name (Z to A) puts text.pdf first.
+    await dialog.getByRole('button', { name: 'Sort' }).click()
+    await page.getByRole('menuitem', { name: 'Name (Z to A)' }).click()
+    await expect(dialog.locator('.fc-organize-pages-combine-name').first()).toHaveText('text.pdf')
+
+    await dialog.getByRole('button', { name: 'Combine', exact: true }).click()
+    await expect.poll(async () => (await activeDocState(page))?.title).toBe('Binder1.pdf')
+    // (the third page of mixed-sizes.pdf has no extractable text)
+    expect(await pageOrder(page)).toEqual(['C2', 'other', 'other', 'blank'])
+    const outline = await page.evaluate(async () => {
+      const d = (window as any).__fartcrobat.getActiveDoc()
+      const o = await d.core.nav.outline()
+      return o.map((b: any) => [b.title, b.dest?.page, b.children.map((c: any) => c.title)])
+    })
+    expect(outline).toEqual([
+      ['text', 0, ['Chapter 2']],
+      ['mixed-sizes', 1, []]
+    ])
+  } finally {
+    await app.close()
+  }
+})

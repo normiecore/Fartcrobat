@@ -50,6 +50,7 @@ import {
   selectIndices,
   selectedIndices,
   setFocusIndex,
+  ORGANIZE_GROUP,
   useOrganize,
   useOrgState
 } from './store'
@@ -91,6 +92,27 @@ function modKey(e: { ctrlKey: boolean; metaKey: boolean }) {
 export function openPageInViewer(doc: DocumentModel, index: number) {
   doc.set({ currentPage: Math.max(0, Math.min(doc.pageCount - 1, index)) })
   openToolGroup(null)
+}
+
+/**
+ * After the grid closes, scrolls the page viewer to the current page once it has mounted and
+ * picked its zoom (the viewer's first layout uses a provisional size).
+ */
+function revealInViewer(doc: DocumentModel, page: number) {
+  let tries = 0
+  const attempt = () => {
+    if (doc.isClosed || useApp.getState().toolGroupId === ORGANIZE_GROUP) return
+    if (!doc.view) {
+      if (tries++ < 30) window.setTimeout(attempt, 20)
+      return
+    }
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!doc.isClosed && page < doc.pageCount) doc.view?.goToPage(page)
+      })
+    )
+  }
+  window.setTimeout(attempt, 0)
 }
 
 function setThumbSize(size: number) {
@@ -325,6 +347,7 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
       const p = cellPosition(mRef.current, f)
       if (p.top + mRef.current.cellHeight > el.clientHeight) el.scrollTop = p.top - el.clientHeight / 3
     }
+    return () => revealInViewer(doc, doc.state.currentPage)
   }, [doc])
 
   // Keep the focused page visible (keyboard navigation, inserted pages).
