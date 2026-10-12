@@ -1,7 +1,17 @@
 import type { DocInfo, DocMetadata, OpenResult, PageInfo, Permission, SaveOptions } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, Session } from '../session'
-import { countSignatures, hasForm, hasXfa, pageBoxes, pageLabels, parsePdfDate } from '../util/pdf'
+import {
+  catalog,
+  countSignatures,
+  hasForm,
+  hasXfa,
+  pageBoxes,
+  pageLabels,
+  parsePdfDate,
+  pdfDate,
+  readString
+} from '../util/pdf'
 
 const PERMISSIONS: Permission[] = ['print', 'copy', 'edit', 'annotate', 'form', 'accessibility', 'assemble', 'print-hq']
 
@@ -113,7 +123,8 @@ export function buildDocInfo(s: Session): DocInfo {
     attachmentCount: safe(() => Object.keys(doc.getEmbeddedFiles()).length, 0),
     wasRepaired: safe(() => doc.wasRepaired(), false),
     canSaveIncrementally: safe(() => doc.canBeSavedIncrementally(), false),
-    language: safe(() => doc.getLanguage(), null)
+    // Read /Lang as written: MuPDF's getLanguage() drops region subtags ("en-US" -> "en").
+    language: safe(() => readString(catalog(doc).get('Lang')) || doc.getLanguage() || null, null)
   }
 }
 
@@ -121,7 +132,9 @@ export function buildDocInfo(s: Session): DocInfo {
 export function convertToPdf(s: Session, src: InstanceType<Session['mupdf']['Document']>): PDFDocument {
   const m = s.mupdf
   try {
-    if ((src as any).isReflowable()) src.layout(612, 792, 11)
+    // Lays out reflowable formats (text, HTML, EPUB...) on Letter pages; fixed-layout formats
+    // ignore it. (mupdf.js isReflowable() has no return value, so it cannot be used to decide.)
+    src.layout(612, 792, 11)
   } catch {}
   const buf = new m.Buffer()
   const writer = new m.DocumentWriter(buf, 'pdf', '')
@@ -188,55 +201,80 @@ export function permissionBits(p: Partial<Record<Permission, boolean>>): number 
   return bits | 0
 }
 
-/** Two-stage save so that compaction never touches the live document (it would break undo). */
+function takeBuffer(buf: InstanceType<Session['mupdf']['Buffer']>): Uint8Array {
+  try {
+    return buf.asUint8Array().slice()
+  } finally {
+    buf.destroy()
+  }
+}
+
+/**
+ * 'auto' saves append an incremental update when the document is signed (or was signed when it
+ * was opened, so a cleared signature still keeps its signed revision in the file).
+ */
+function prefersIncremental(s: Session): boolean {
+  const doc = s.pdf
+  if (!safe(() => doc.canBeSavedIncrementally(), false)) return false
+  return s.signedOnOpen || safe(() => countSignatures(doc), 0) > 0
+}
+
+/** Appends the changes to the file as an incremental update (keeps signed revisions intact). */
+function saveIncrementally(s: Session): Uint8Array {
+  const bytes = takeBuffer(s.pdf.saveToBuffer('incremental'))
+  // MuPDF builds every incremental save on the bytes the document was opened from. Reopen from
+  // the bytes just produced, so the next incremental save appends to them with a valid /Prev.
+  // This also checks the output: a damaged file throws here instead of reaching the disk.
+  s.rebase(bytes)
+  return bytes
+}
+
+/**
+ * Serialises the document. Anything beyond a plain save (compaction, image/font recompression,
+ * cleaning, security changes) runs on a copy, so the live document keeps its undo history and
+ * its own security settings.
+ */
 export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
   const doc = s.pdf
-  const sigs = safe(() => countSignatures(doc), 0)
   let mode = opts.mode ?? 'auto'
   const changesSecurity = !!opts.encrypt || !!opts.decrypt
-  if (mode === 'auto') {
-    mode = sigs > 0 && !changesSecurity && safe(() => doc.canBeSavedIncrementally(), false) ? 'incremental' : 'full'
-  }
+  if (mode === 'auto') mode = !changesSecurity && prefersIncremental(s) ? 'incremental' : 'full'
   if (mode === 'incremental') {
     if (changesSecurity) throw new EngineError('Security changes need a full save', 'BAD_SAVE')
-    const buf = doc.saveToBuffer('incremental')
-    const out = buf.asUint8Array().slice()
-    buf.destroy()
-    return out
+    return saveIncrementally(s)
   }
-  const needsSecondPass =
+  const needsCopy =
     opts.garbage === 'compact' ||
     opts.garbage === 'deduplicate' ||
     !!opts.compressImages ||
     !!opts.compressFonts ||
     !!opts.clean ||
-    !!opts.sanitize
-  if (!needsSecondPass) {
-    const buf = doc.saveToBuffer(saveOptionString(opts, false))
-    const out = buf.asUint8Array().slice()
-    buf.destroy()
-    return out
-  }
-  // First pass: a plain save that leaves the live document (and its undo history) untouched.
-  const first = doc.saveToBuffer('garbage=yes')
-  const firstBytes = first.asUint8Array().slice()
-  first.destroy()
-  const copy = new s.mupdf.PDFDocument(firstBytes)
+    !!opts.sanitize ||
+    changesSecurity
+  if (!needsCopy) return takeBuffer(doc.saveToBuffer(saveOptionString(opts, false)))
+  // First pass: a plain save that keeps the current encryption and leaves the live document
+  // untouched (saving with encrypt=none or a new encryption rewrites the live trailer).
+  const copy = new s.mupdf.PDFDocument(takeBuffer(doc.saveToBuffer('garbage=yes')))
   try {
-    if (copy.needsPassword()) {
-      // The copy inherits the original encryption; the caller must pass encrypt/decrypt options.
-      throw new EngineError('Cannot optimise an encrypted document without removing security first', 'ENCRYPTED')
+    if (copy.needsPassword() && !(s.password && copy.authenticatePassword(s.password))) {
+      throw new EngineError('Cannot optimise an encrypted document whose password is not known', 'ENCRYPTED')
     }
-    const buf = copy.saveToBuffer(saveOptionString(opts, false))
-    const out = buf.asUint8Array().slice()
-    buf.destroy()
-    return out
+    // Second pass: the requested options, including the final security, on the copy.
+    return takeBuffer(copy.saveToBuffer(saveOptionString(opts, false)))
   } finally {
     copy.destroy()
   }
 }
 
-function openInto(s: Session, data: Uint8Array, fileName: string, password?: string): OpenResult {
+interface OpenOptions {
+  password?: string
+  /** Report the document as unsaved (it only exists in memory). */
+  dirty?: boolean
+  /** Replacing the open document: keep it open on failure, keep tab settings, reuse its password. */
+  reload?: boolean
+}
+
+function openInto(s: Session, data: Uint8Array, fileName: string, opts: OpenOptions = {}): OpenResult {
   const m = s.mupdf
   const ext = extensionOf(fileName) || 'pdf'
   const magic = OPENABLE_FORMATS[ext] ? fileName : 'application/pdf'
@@ -246,41 +284,74 @@ function openInto(s: Session, data: Uint8Array, fileName: string, password?: str
   } catch (err) {
     throw new EngineError(`This file could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
   }
+  let password: string | undefined
   if (src.needsPassword()) {
-    if (!password || !src.authenticatePassword(password)) {
+    const candidates = [opts.password, opts.reload ? s.password : null].filter((p): p is string => !!p)
+    password = candidates.find((p) => src.authenticatePassword(p))
+    if (password === undefined) {
+      if (opts.reload) {
+        // The open document stays as it is; the caller can ask for the password and retry.
+        src.destroy()
+        return { ok: false, needsPassword: true, wrongPassword: !!opts.password }
+      }
+      if (s.pending && s.pending !== src) {
+        try {
+          s.pending.destroy()
+        } catch {}
+      }
       s.pending = src
       s.pendingBytes = data
+      s.pendingDirty = !!opts.dirty
       s.fileName = fileName
-      return { ok: false, needsPassword: true, wrongPassword: !!password }
+      return { ok: false, needsPassword: true, wrongPassword: !!opts.password }
     }
   }
-  return finishOpen(s, src, fileName, data)
+  return finishOpen(s, src, fileName, data, { password, dirty: opts.dirty, keepSettings: opts.reload })
 }
 
 function finishOpen(
   s: Session,
   src: InstanceType<Session['mupdf']['Document']>,
   fileName: string,
-  bytes: Uint8Array | null
+  bytes: Uint8Array | null,
+  opts: { password?: string; dirty?: boolean; keepSettings?: boolean } = {}
 ): OpenResult {
   s.pending = null
+  s.pendingBytes = null
+  s.pendingDirty = false
   const pdf = src.asPDF()
   if (pdf) {
-    s.setDocument(pdf, { fileName, sourceFormat: 'PDF', converted: false })
+    s.setDocument(pdf, { fileName, sourceFormat: 'PDF', converted: false, dirty: opts.dirty, keepSettings: opts.keepSettings })
     s.sourceBytes = bytes
+    s.password = opts.password ?? null
   } else {
     const ext = extensionOf(fileName)
     const converted = convertToPdf(s, src)
     src.destroy()
-    s.setDocument(converted, { fileName, sourceFormat: OPENABLE_FORMATS[ext] ?? ext.toUpperCase(), converted: true })
+    s.setDocument(converted, {
+      fileName,
+      sourceFormat: OPENABLE_FORMATS[ext] ?? ext.toUpperCase(),
+      converted: true,
+      keepSettings: opts.keepSettings
+    })
     s.sourceBytes = null
+    s.password = null
   }
   return { ok: true, info: buildDocInfo(s) }
 }
 
+/** ISO date (as returned in DocMetadata) or PDF date -> PDF date string. */
+function toPdfDate(value: string): string {
+  if (!value || /^D:/.test(value)) return value
+  const t = Date.parse(value)
+  if (Number.isNaN(t)) throw new EngineError(`“${value}” is not a valid date`, 'BAD_DATE')
+  return pdfDate(new Date(t))
+}
+
 export default defineOps('doc', {
-  open(s, data: Uint8Array, opts: { fileName: string; password?: string }): OpenResult {
-    return openInto(s, data, opts.fileName, opts.password)
+  /** Opens a file. `dirty` reports it as unsaved until it is saved (new, combined, converted documents). */
+  open(s, data: Uint8Array, opts: { fileName: string; password?: string; dirty?: boolean }): OpenResult {
+    return openInto(s, data, opts.fileName, { password: opts.password, dirty: opts.dirty })
   },
 
   /** Creates a new document with blank pages (File > Create > Blank Page). */
@@ -297,19 +368,26 @@ export default defineOps('doc', {
     return { ok: true, info: buildDocInfo(s) }
   },
 
-  authenticate(s, password: string): OpenResult {
+  authenticate(s, password: string, opts: { dirty?: boolean } = {}): OpenResult {
     const src = s.pending
     if (!src) throw new EngineError('No document is waiting for a password', 'NO_PENDING')
     if (!src.authenticatePassword(password)) return { ok: false, needsPassword: true, wrongPassword: true }
-    const bytes = s.pendingBytes
-    s.pendingBytes = null
-    return finishOpen(s, src, s.fileName, bytes)
+    return finishOpen(s, src, s.fileName, s.pendingBytes, { password, dirty: opts.dirty || s.pendingDirty })
   },
 
-  /** Replaces the open document with new bytes (after signing or optimising). Clears undo. */
-  reload(s, data: Uint8Array, opts: { password?: string } = {}): OpenResult {
+  /**
+   * Replaces the open document with new bytes (after signing or optimising). Clears undo. The
+   * password the document was opened with is tried automatically; when the new bytes need
+   * another one the result asks for it and the open document is left unchanged. `dirty` reports
+   * the new content as unsaved (it was not written to the document's file).
+   */
+  reload(s, data: Uint8Array, opts: { password?: string; dirty?: boolean } = {}): OpenResult {
     const name = s.fileName
-    return openInto(s, data, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', opts.password)
+    return openInto(s, data, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', {
+      password: opts.password,
+      dirty: opts.dirty,
+      reload: true
+    })
   },
 
   info(s): DocInfo {
@@ -332,6 +410,11 @@ export default defineOps('doc', {
     return s.isDirty()
   },
 
+  /** Reports the document as unsaved until the next markSaved (e.g. content not written to its file). */
+  markDirty(s) {
+    s.markDirty()
+  },
+
   undo(s) {
     s.undo()
   },
@@ -344,22 +427,32 @@ export default defineOps('doc', {
     return s.journal()
   },
 
+  /**
+   * Changes document properties. Dates may be ISO strings (as `info().metadata` returns them) or
+   * PDF dates; the modification date is set to now unless the patch sets it.
+   */
   setMetadata: mutation('Change Document Properties', (s, patch: Partial<DocMetadata>) => {
     const doc = s.pdf
     for (const [k, v] of Object.entries(patch) as [keyof DocMetadata, string][]) {
-      if (v === undefined) continue
-      doc.setMetaData(META_KEYS[k], v)
+      if (v === undefined || !(k in META_KEYS)) continue
+      doc.setMetaData(META_KEYS[k], k === 'creationDate' || k === 'modDate' ? toPdfDate(v) : v)
     }
+    if (patch.modDate === undefined) doc.setMetaData(META_KEYS.modDate, pdfDate())
     s.documentChanged()
   }),
 
+  /** Sets the document language (/Lang), e.g. "en-US". An empty string removes it. */
   setLanguage: mutation('Change Document Language', (s, lang: string) => {
-    s.pdf.setLanguage(lang)
+    // MuPDF's setLanguage() keeps only the primary subtag; write /Lang as given.
+    const root = catalog(s.pdf)
+    if (lang) root.put('Lang', s.pdf.newString(lang))
+    else root.delete('Lang')
     s.documentChanged()
   }),
 
   close(s) {
     s.closeDocument()
+    s.password = null
   }
 })
 
