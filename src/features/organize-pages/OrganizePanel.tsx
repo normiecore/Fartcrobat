@@ -128,6 +128,7 @@ function Body({ doc }: { doc: DocumentModel }) {
         <b>Tips</b>
         <ul>
           <li>Drag pages to reorder them. Hold {isMac ? '⌥ Option' : 'Ctrl'} to copy instead.</li>
+          <li>Drop pages on another document's tab to copy them there.</li>
           <li>Drop PDFs or images from your computer between pages to insert them.</li>
           <li>Shift+click selects a range; {isMac ? '⌘' : 'Ctrl'}+click adds pages.</li>
           <li>Double-click a page to open it.</li>

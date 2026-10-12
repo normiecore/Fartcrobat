@@ -36,6 +36,20 @@
 .fc-organize-pages-caret {
   opacity: 0.7;
 }
+/* Narrow windows: toolbar buttons show icons only (their names stay in tooltips and aria-labels). */
+.fc-organize-pages-toolbar {
+  container: fc-organize-pages-toolbar / inline-size;
+}
+@container fc-organize-pages-toolbar (max-width: 880px) {
+  .fc-organize-pages-btn-text,
+  .fc-organize-pages-tools .ui-btn > span:has(> .fc-organize-pages-btn-text:only-child) {
+    display: none;
+  }
+  .fc-organize-pages-tools .ui-btn-sm {
+    padding-left: 7px;
+    padding-right: 7px;
+  }
+}
 .fc-organize-pages-zoom {
   display: inline-flex;
   align-items: center;
@@ -136,8 +150,12 @@
   opacity: 1;
   pointer-events: auto;
 }
-.fc-organize-pages-scroll.is-dragging .fc-organize-pages-quick {
+.fc-organize-pages-scroll.is-dragging .fc-organize-pages-quick,
+.fc-organize-pages-scroll.is-marquee .fc-organize-pages-quick {
   display: none;
+}
+.fc-organize-pages-scroll.is-marquee .fc-organize-pages-cell:hover:not(.is-selected) {
+  background: transparent;
 }
 .fc-organize-pages-quick-btn {
   width: 28px;
@@ -253,6 +271,15 @@
   font-weight: 600;
   box-shadow: var(--shadow-lg);
   white-space: nowrap;
+}
+/* Another document's tab while pages are dragged onto it. */
+.fc-organize-pages-tab-target {
+  position: fixed;
+  z-index: 1199;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  background: var(--bg-active);
 }
 .fc-organize-pages-status {
   display: flex;

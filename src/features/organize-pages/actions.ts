@@ -1,10 +1,10 @@
-import { invoke, openNewDocument, showError, toast, withProgress, type DocumentModel } from '@renderer/sdk'
+import { invoke, openNewDocument, showError, toast, useApp, withProgress, type DocumentModel } from '@renderer/sdk'
 import type pageOps from '@engine/ops/pages'
 import { loadFile, orgOps, withPassword, type LoadedFile } from './files'
 import type { OrganizeClipboard } from './ipc'
 import { isNoopMove, movedIndices } from './order'
 import { countLabel, describePages } from './ranges'
-import { clearSelection, isOrganizeOpen, selectIndices, setFocusIndex } from './store'
+import { clearSelection, isOrganizeOpen, ORGANIZE_GROUP, selectIndices, setFocusIndex } from './store'
 import './ipc'
 
 export function pagesOps(doc: DocumentModel) {
@@ -34,11 +34,35 @@ export async function afterChange<T>(doc: DocumentModel, fn: () => Promise<T>): 
   return result
 }
 
-/** Opens tool output (combined or extracted pages) as a new, unsaved tab. */
+/** Titles of tool output being opened right now (see markToolOutputUnsaved). */
+const pendingUnsaved = new Set<string>()
+
+/**
+ * Opens tool output (combined or extracted pages) as a new, unsaved tab: closing it asks to save
+ * and the tab shows the unsaved-changes marker.
+ */
 export async function openAsNewDocument(bytes: Uint8Array, name: string): Promise<DocumentModel | null> {
-  const doc = await openNewDocument(bytes, name)
-  if (doc) await orgOps(doc).markUnsaved()
-  return doc
+  const title = name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf'
+  pendingUnsaved.add(title)
+  try {
+    const doc = await openNewDocument(bytes, title)
+    // Already done by the onDocumentOpen hook; repeating it is harmless and waits for it.
+    if (doc) await orgOps(doc).markUnsaved()
+    return doc
+  } finally {
+    pendingUnsaved.delete(title)
+  }
+}
+
+/**
+ * onDocumentOpen hook. Marks a document opened by openAsNewDocument as unsaved in its engine
+ * before the viewer's first engine calls, so the "unsaved" state never flickers off.
+ */
+export function markToolOutputUnsaved(doc: DocumentModel) {
+  if (doc.state.filePath || !pendingUnsaved.delete(doc.state.title)) return
+  void orgOps(doc)
+    .markUnsaved()
+    .catch((err) => console.warn('Could not mark the new document as unsaved', err))
 }
 
 /**
@@ -134,6 +158,38 @@ export async function movePages(doc: DocumentModel, indices: number[], gap: numb
     if (isOrganizeOpen(doc)) selectIndices(doc, after, { focus: after[0], anchor: after[0] })
   } catch (err) {
     showError(err, 'Could not move the pages')
+  }
+}
+
+/**
+ * Copies pages (with their comments, links and form fields) to the end of another open document,
+ * as one undoable step there. Used when pages are dragged onto another document's tab.
+ */
+export async function copyPagesToDocument(source: DocumentModel, indices: number[], target: DocumentModel) {
+  if (!indices.length || target.isClosed) return
+  try {
+    const bytes = await orgOps(source).extract(indices)
+    await afterChange(target, () =>
+      orgOps(target).insertFiles(-1, [{ data: bytes, fileName: 'pages.pdf' }], { bookmarks: false })
+    )
+    toast(`Copied ${countLabel(indices.length)} to the end of ${target.state.title}`, {
+      kind: 'success',
+      action: {
+        label: 'Show',
+        run: () => {
+          if (target.isClosed) return
+          const first = Math.max(0, target.pageCount - indices.length)
+          const copied = Array.from({ length: target.pageCount - first }, (_, k) => first + k)
+          // The grid (or the viewer) of the target opens at its current page.
+          if (useApp.getState().toolGroupId === ORGANIZE_GROUP)
+            selectIndices(target, copied, { focus: first, anchor: first })
+          else target.set({ currentPage: first })
+          useApp.setState({ activeDocId: target.id })
+        }
+      }
+    })
+  } catch (err) {
+    showError(err, `Could not copy the pages to ${target.state.title}`)
   }
 }
 

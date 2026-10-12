@@ -24,7 +24,7 @@ import {
   type DocumentModel,
   type MenuContribution
 } from '@renderer/sdk'
-import { deletePages, duplicatePages, insertFromClipboard, rotatePages } from './actions'
+import { deletePages, duplicatePages, insertFromClipboard, markToolOutputUnsaved, rotatePages } from './actions'
 import { openCombineDialog } from './CombineDialog'
 import { openDeleteDialog } from './dialogs/DeleteDialog'
 import { openExtractDialog } from './dialogs/ExtractDialog'
@@ -308,5 +308,6 @@ export default defineFeature({
       documentView: OrganizeView
     }
   ],
-  pageContextMenu: [{ id: 'organize-pages', order: 70, items: pageMenuItems }]
+  pageContextMenu: [{ id: 'organize-pages', order: 70, items: pageMenuItems }],
+  onDocumentOpen: markToolOutputUnsaved
 })

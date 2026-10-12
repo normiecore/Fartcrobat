@@ -24,7 +24,7 @@ import { openReplaceFlow } from './dialogs/ReplaceDialog'
 import { openSplitDialog } from './dialogs/SplitDialog'
 import { filterPages, type SelectFilter } from './order'
 import { parsePageRange } from './ranges'
-import { selectIndices } from './store'
+import { focusedIndex, selectIndices } from './store'
 import { prompt } from '@renderer/sdk'
 
 /** Items of the Insert menu for a given insertion gap. */
@@ -61,7 +61,10 @@ export function insertItems(doc: DocumentModel, gap: number): ContextMenuItem[] 
 
 export function selectBy(doc: DocumentModel, filter: SelectFilter) {
   const pages = filterPages(doc.state.info.pages, filter)
-  selectIndices(doc, pages, { focus: pages[0] ?? 0, anchor: pages[0] ?? 0 })
+  // Keep the keyboard focus (and the scroll position) when the focused page is selected too.
+  const focused = focusedIndex(doc)
+  const focus = pages.includes(focused) ? focused : (pages[0] ?? 0)
+  selectIndices(doc, pages, { focus, anchor: pages[0] ?? 0 })
 }
 
 export async function selectRange(doc: DocumentModel) {

@@ -33,7 +33,7 @@ import {
   useDocState,
   type DocumentModel
 } from '@renderer/sdk'
-import { deletePages, duplicatePages, insertPaths, movePages, rotatePages } from './actions'
+import { copyPagesToDocument, deletePages, duplicatePages, insertPaths, movePages, rotatePages } from './actions'
 import { openExtractDialog } from './dialogs/ExtractDialog'
 import { openLabelsDialog } from './dialogs/LabelsDialog'
 import { openReplaceFlow } from './dialogs/ReplaceDialog'
@@ -59,10 +59,21 @@ import { Thumbnail } from './Thumbnail'
 const OVERSCAN_ROWS = 2
 const EDGE = 56
 
+interface TabTarget {
+  docId: string
+  title: string
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
 interface DragState {
   /** Page ids being dragged. */
   ids: number[]
   gap: { gap: number; left: number; top: number } | null
+  /** Another document's tab under the pointer: the pages are copied to that document. */
+  tab: TabTarget | null
   x: number
   y: number
   copy: boolean
@@ -86,6 +97,19 @@ function isTypingTarget(el: EventTarget | null): boolean {
 
 function modKey(e: { ctrlKey: boolean; metaKey: boolean }) {
   return isMac ? e.metaKey : e.ctrlKey
+}
+
+/** The tab of another open document under a screen point (dragging pages to another document). */
+function tabTargetAt(source: DocumentModel, x: number, y: number): TabTarget | null {
+  const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('.shell-tabs .shell-tab')
+  if (!el) return null
+  // Tabs are rendered in the order of the open documents.
+  const tabs = [...document.querySelectorAll<HTMLElement>('.shell-tabs .shell-tab')]
+  const docs = useApp.getState().docs
+  const target = tabs.length === docs.length ? docs[tabs.indexOf(el)] : undefined
+  if (!target || target.id === source.id || target.isClosed) return null
+  const r = el.getBoundingClientRect()
+  return { docId: target.id, title: target.state.title, left: r.left, top: r.top, width: r.width, height: r.height }
 }
 
 /** Leaves the grid and shows the page in the normal view. */
@@ -152,6 +176,11 @@ function ThumbSizeControl() {
   )
 }
 
+/** Toolbar button text; hidden when the toolbar is narrow (the button keeps its aria-label). */
+function Label({ children }: { children: string }) {
+  return <span className="fc-organize-pages-btn-text">{children}</span>
+}
+
 function Toolbar({ doc, selected }: { doc: DocumentModel; selected: number[] }) {
   const journal = useDocState(doc, (s) => s.journal)
   const none = selected.length === 0
@@ -163,8 +192,16 @@ function Toolbar({ doc, selected }: { doc: DocumentModel; selected: number[] }) 
         <DropdownMenu
           items={() => selectItems(doc)}
           trigger={(p) => (
-            <Button variant="quiet" size="sm" icon={SquareDashedMousePointer} {...p} title="Select pages">
-              Select <ChevronDown size={14} className="fc-organize-pages-caret" />
+            <Button
+              variant="quiet"
+              size="sm"
+              icon={SquareDashedMousePointer}
+              {...p}
+              aria-label="Select"
+              title="Select pages (all, even, odd, a page range…)"
+            >
+              <Label>Select</Label>
+              <ChevronDown size={14} className="fc-organize-pages-caret" />
             </Button>
           )}
         />
@@ -204,9 +241,11 @@ function Toolbar({ doc, selected }: { doc: DocumentModel; selected: number[] }) 
               size="sm"
               icon={FilePlus2}
               {...p}
+              aria-label="Insert"
               title={n ? `Insert pages after page ${gap}` : 'Insert pages at the end'}
             >
-              Insert <ChevronDown size={14} className="fc-organize-pages-caret" />
+              <Label>Insert</Label>
+              <ChevronDown size={14} className="fc-organize-pages-caret" />
             </Button>
           )}
         />
@@ -214,24 +253,41 @@ function Toolbar({ doc, selected }: { doc: DocumentModel; selected: number[] }) 
           variant="quiet"
           size="sm"
           icon={FileOutput}
+          aria-label="Extract"
+          title="Extract pages as a new PDF"
           onClick={() => void openExtractDialog(doc, selected)}
         >
-          Extract
+          <Label>Extract</Label>
         </Button>
-        <Button variant="quiet" size="sm" icon={Scissors} onClick={() => void openSplitDialog(doc)}>
-          Split
+        <Button
+          variant="quiet"
+          size="sm"
+          icon={Scissors}
+          aria-label="Split"
+          title="Split the document into several files"
+          onClick={() => void openSplitDialog(doc)}
+        >
+          <Label>Split</Label>
         </Button>
-        <Button variant="quiet" size="sm" icon={Replace} onClick={() => void openReplaceFlow(doc, selected)}>
-          Replace
+        <Button
+          variant="quiet"
+          size="sm"
+          icon={Replace}
+          aria-label="Replace"
+          title="Replace pages with pages from another file"
+          onClick={() => void openReplaceFlow(doc, selected)}
+        >
+          <Label>Replace</Label>
         </Button>
         <Button
           variant="quiet"
           size="sm"
           icon={Hash}
-          onClick={() => void openLabelsDialog(doc, selected)}
+          aria-label="Page labels"
           title="Page labels (page numbering)"
+          onClick={() => void openLabelsDialog(doc, selected)}
         >
-          Page labels
+          <Label>Page labels</Label>
         </Button>
         <span className="shell-sep" />
         <IconButton
@@ -253,10 +309,11 @@ function Toolbar({ doc, selected }: { doc: DocumentModel; selected: number[] }) 
         <Button
           size="sm"
           icon={X}
+          aria-label="Close"
           onClick={() => openToolGroup(null)}
           title="Close Organize Pages (back to the document)"
         >
-          Close
+          <Label>Close</Label>
         </Button>
       </div>
     </div>
@@ -381,7 +438,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
       }
       const r = el.getBoundingClientRect()
       let dy = 0
-      if (pt.y < r.top + EDGE) dy = -Math.ceil(((r.top + EDGE - pt.y) / EDGE) * 18)
+      // Above the grid only the first band scrolls, so pages can be dragged up to the tabs.
+      if (dragRef.current?.tab) dy = 0
+      else if (pt.y < r.top + EDGE && pt.y > r.top - EDGE)
+        dy = -Math.ceil(((r.top + EDGE - pt.y) / EDGE) * 18)
       else if (pt.y > r.bottom - EDGE) dy = Math.ceil(((pt.y - (r.bottom - EDGE)) / EDGE) * 18)
       if (dy) {
         const before = el.scrollTop
@@ -458,7 +518,13 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
       if (dragging) {
         const d = dragRef.current
         setDrag(null)
-        if (d?.gap && ev.type === 'pointerup') {
+        if (d?.tab && ev.type === 'pointerup') {
+          const target = useApp.getState().docs.find((x) => x.id === d.tab!.docId)
+          const indices = d.ids
+            .map((id) => doc.state.info.pages.findIndex((p) => p.id === id))
+            .filter((i) => i >= 0)
+          if (target) void copyPagesToDocument(doc, indices, target)
+        } else if (d?.gap && ev.type === 'pointerup') {
           const indices = d.ids
             .map((id) => doc.state.info.pages.findIndex((p) => p.id === id))
             .filter((i) => i >= 0)
@@ -504,9 +570,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
 
   const updateDrag = (clientX: number, clientY: number, copy: boolean) => {
     const { x, y } = toContent(clientX, clientY)
-    const gap = gapAt(mRef.current, doc.pageCount, x, y)
+    const tab = tabTargetAt(doc, clientX, clientY)
+    const gap = tab ? null : gapAt(mRef.current, doc.pageCount, x, y)
     const ids = dragRef.current?.ids ?? selectedIndices(doc).map((i) => doc.state.info.pages[i].id)
-    setDrag({ ids, gap, x: clientX, y: clientY, copy })
+    setDrag({ ids, gap, tab, x: clientX, y: clientY, copy })
   }
 
   const onBackgroundPointerDown = (e: React.PointerEvent, mod: boolean) => {
@@ -632,7 +699,14 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
       const app = useApp.getState()
       if (app.dialogs.length || app.paletteOpen || app.contextMenu || app.activeDocId !== doc.id) return
       if (isTypingTarget(e.target)) return
-      if ((e.target as HTMLElement | null)?.closest?.('.ui-dialog, .ui-menu')) return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      if (target?.closest('.ui-dialog, .ui-menu')) return
+      // An open dropdown or context menu keeps its keys.
+      if (document.querySelector('.ui-popover-scrim')) return
+      /** Focus is on the grid (or nowhere), not on a toolbar button or panel control. */
+      const inGrid = !target || target === document.body || !!scrollRef.current?.contains(target)
+      /** Sliders, checkboxes and lists use the arrow keys themselves. */
+      const onControl = !!target && (target.tagName === 'INPUT' || target.tagName === 'SELECT')
       const mod = modKey(e)
       const n = doc.pageCount
       const cols = mRef.current.columns
@@ -640,9 +714,11 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         e.preventDefault()
         e.stopPropagation()
         setKeyboard(true)
+        if (!inGrid) scrollRef.current?.focus({ preventScroll: true })
       }
       const nav = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']
       if (nav.includes(e.key)) {
+        if (onControl) return
         const sel = selectedIndices(doc)
         if (e.altKey && e.key.startsWith('Arrow')) {
           const delta =
@@ -669,6 +745,8 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         return
       }
       if (e.key === ' ' && !e.altKey) {
+        // Space and Enter activate a focused button rather than acting on pages.
+        if (!inGrid) return
         const f = focusedIndex(doc)
         handled()
         if (f < 0) return
@@ -682,6 +760,7 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         return
       }
       if (e.key === 'Enter' && !mod && !e.altKey) {
+        if (!inGrid) return
         const f = focusedIndex(doc)
         if (f < 0) return
         handled()
@@ -770,7 +849,7 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         thumb={thumb}
         selected={selectedSet.has(p.id)}
         focused={focusIndex === i}
-        dragging={!!draggingIds?.has(p.id) && !drag?.copy}
+        dragging={!!draggingIds?.has(p.id) && !drag?.copy && !drag?.tab}
         priority={Math.abs(pos.top + m.cellHeight / 2 - center) / 10000}
         onQuick={onQuick}
       />
@@ -807,7 +886,7 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
       <Toolbar doc={doc} selected={selected} />
       <div
         ref={scrollRef}
-        className={`fc-organize-pages-scroll ${drag ? 'is-dragging' : ''} ${keyboard ? 'is-keyboard' : ''}`}
+        className={`fc-organize-pages-scroll ${drag ? 'is-dragging' : ''} ${marquee ? 'is-marquee' : ''} ${keyboard ? 'is-keyboard' : ''}`}
         tabIndex={0}
         role="listbox"
         aria-multiselectable
@@ -858,6 +937,17 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         </span>
         <ThumbSizeControl />
       </div>
+      {drag?.tab && (
+        <>
+          <div
+            className="fc-organize-pages-tab-target"
+            style={{ left: drag.tab.left, top: drag.tab.top, width: drag.tab.width, height: drag.tab.height }}
+          />
+          <div className="fc-organize-pages-ghost" style={{ left: drag.x + 14, top: drag.y + 14 }}>
+            Copy {countLabel(drag.ids.length)} to the end of {drag.tab.title}
+          </div>
+        </>
+      )}
       {drag && drag.gap && (
         <div className="fc-organize-pages-ghost" style={{ left: drag.x + 14, top: drag.y + 14 }}>
           {drag.copy ? 'Copy' : 'Move'} {countLabel(drag.ids.length)}

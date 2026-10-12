@@ -135,6 +135,8 @@ function SplitDialog({ doc, close }: { doc: DocumentModel; close: () => void }) 
   const names = parts
     ? partFileNames(base, parts, { label: s.label, useTitles: s.mode === 'bookmarks' && s.useTitles })
     : []
+  // With bookmark titles as names, the label only names a part before the first bookmark.
+  const labelUnused = s.mode === 'bookmarks' && s.useTitles && !!parts && parts.every((p) => !!p.title)
   const valid =
     !!s.folder &&
     (s.mode === 'size'
@@ -236,7 +238,13 @@ function SplitDialog({ doc, close }: { doc: DocumentModel; close: () => void }) 
       </Field>
       <div className="fc-organize-pages-row2">
         <Field label="Label added to file names">
-          <TextInput value={s.label} onChange={(e) => set({ label: e.target.value })} placeholder="Part" />
+          <TextInput
+            value={s.label}
+            onChange={(e) => set({ label: e.target.value })}
+            placeholder="Part"
+            disabled={labelUnused}
+            title={labelUnused ? 'The files are named after the bookmarks' : undefined}
+          />
         </Field>
         <div className="fc-organize-pages-checks is-tight">
           {s.mode === 'bookmarks' && (

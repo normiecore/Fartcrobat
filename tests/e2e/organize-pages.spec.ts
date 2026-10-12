@@ -157,6 +157,7 @@ test('organize pages: select, rotate, drag, delete, insert, extract, undo', asyn
     await page.evaluate(() => (document.documentElement.dataset.theme = 'dark'))
     await cell(page, 2).click()
     await cell(page, 3).hover()
+    await page.waitForTimeout(300)
     await page.screenshot({ path: 'test-results/organize-pages-dark.png' })
     await page.evaluate(() => (document.documentElement.dataset.theme = 'light'))
 
@@ -471,6 +472,141 @@ test('combine files: page ranges, open documents and sorting', async () => {
       ['text', 0, ['Chapter 2']],
       ['mixed-sizes', 1, []]
     ])
+  } finally {
+    await app.close()
+  }
+})
+
+test('organize pages: narrow window, copy pages to another document, 640 pages', async () => {
+  const { app, page } = await launch()
+  try {
+    await page.setViewportSize({ width: 960, height: 720 })
+    await openFile(page, fixturePath('mixed-sizes.pdf'))
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
+    await waitForThumbs(page, 5)
+
+    // In a narrow window the toolbar shows icons only; the buttons keep their names.
+    const toolbar = page.locator('.fc-organize-pages-toolbar')
+    await expect(toolbar.locator('.fc-organize-pages-btn-text').first()).toBeHidden()
+    await expect(toolbar.getByRole('button', { name: 'Extract', exact: true })).toBeVisible()
+    const tb = await toolbar.boundingBox()
+    expect(tb!.height).toBeLessThan(50)
+    await page.screenshot({ path: 'test-results/organize-pages-narrow.png' })
+
+    // Keyboard: Enter on a focused toolbar button runs it (it doesn't open the focused page);
+    // arrow keys still move through the pages and bring the focus back to the grid.
+    await cell(page, 2).click()
+    await toolbar.getByRole('button', { name: 'Extract', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog')).toContainText('Extract Pages')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await toolbar.getByRole('button', { name: 'Split', exact: true }).focus()
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('.fc-organize-pages-status')).toContainText('1 selected (4)')
+    await expect(page.locator('.fc-organize-pages-scroll')).toBeFocused()
+
+    // Drag pages 1-2 onto the other document's tab: they are copied to its end.
+    await cell(page, 0).click()
+    await cell(page, 1).click({ modifiers: ['Shift'] })
+    const from = await cell(page, 1).locator('.fc-organize-pages-page').boundingBox()
+    const tab = await page.locator('.shell-tab', { hasText: 'mixed-sizes.pdf' }).boundingBox()
+    await page.mouse.move(from!.x + 30, from!.y + 30)
+    await page.mouse.down()
+    await page.mouse.move(from!.x + 60, from!.y + 50, { steps: 3 })
+    await page.mouse.move(tab!.x + tab!.width / 2, tab!.y + tab!.height / 2, { steps: 12 })
+    await expect(page.locator('.fc-organize-pages-ghost')).toHaveText('Copy 2 pages to the end of mixed-sizes.pdf')
+    await expect(page.locator('.fc-organize-pages-tab-target')).toBeVisible()
+    await page.screenshot({ path: 'test-results/organize-pages-drag-to-tab.png' })
+    await page.mouse.up()
+    const docsState = () =>
+      page.evaluate(() =>
+        (window as any).__fartcrobat.useApp
+          .getState()
+          .docs.map((d: any) => ({ title: d.state.title, pages: d.pageCount, dirty: d.state.dirty }))
+      )
+    await expect.poll(docsState).toEqual([
+      { title: 'mixed-sizes.pdf', pages: 5, dirty: true },
+      { title: 'text.pdf', pages: 5, dirty: false }
+    ])
+    // "Show" switches to the other document with the copied pages selected.
+    await page.locator('.toast', { hasText: 'Copied 2 pages' }).getByRole('button', { name: 'Show' }).click()
+    await expect.poll(async () => (await activeDocState(page))?.title).toBe('mixed-sizes.pdf')
+    await waitForThumbs(page, 5)
+    await expect(page.locator('.fc-organize-pages-status')).toContainText('2 selected (4-5)')
+    expect((await pageOrder(page)).slice(3)).toEqual(['C1', 'C2'])
+    await page.keyboard.press('Control+z')
+    await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(3)
+
+    // A long document: only the visible thumbnails are in the page.
+    await page.locator('.shell-tab', { hasText: 'text.pdf' }).click()
+    await waitForThumbs(page, 5)
+    await page.evaluate(async () => {
+      const d = (window as any).__fartcrobat.getActiveDoc()
+      for (let k = 0; k < 7; k++) {
+        const n = (await d.core.doc.info()).pageCount
+        await d.ops('pages').duplicate([...Array(n).keys()], n)
+      }
+    })
+    await expect(page.locator('.fc-organize-pages-status')).toContainText('640 pages')
+    expect(await page.locator('.fc-organize-pages-cell').count()).toBeLessThan(60)
+    await cell(page, 0).click()
+    await page.keyboard.press('End')
+    await expect(cell(page, 639)).toBeInViewport()
+    await expect(cell(page, 639)).toHaveClass(/is-selected/)
+    await page.keyboard.press('Control+a')
+    await expect(page.locator('.fc-organize-pages-status')).toContainText('640 selected (1-640)')
+    await expect(cell(page, 639)).toBeInViewport()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: 'test-results/organize-pages-640.png' })
+  } finally {
+    await app.close()
+  }
+})
+
+test('extract pages as separate files and split by bookmarks', async () => {
+  const { app, page } = await launch()
+  try {
+    await page.setViewportSize({ width: 1280, height: 860 })
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
+    await waitForThumbs(page, 5)
+
+    // Extract pages 2-3 as separate files, deleting them afterwards.
+    const extractDir = mkdtempSync(join(tmpdir(), 'fartcrobat-extract-'))
+    await stubOpenDialog(app, [extractDir])
+    await cell(page, 1).click()
+    await cell(page, 2).click({ modifiers: ['Shift'] })
+    await page.locator('.fc-organize-pages-toolbar').getByRole('button', { name: 'Extract' }).click()
+    let dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Delete pages after extracting').check()
+    await dialog.getByLabel('Extract pages as separate files').check()
+    await expect(dialog).toContainText('Saves 2 files (one per page)')
+    await dialog.getByRole('button', { name: 'Extract', exact: true }).click()
+    await expect
+      .poll(() => (existsSync(extractDir) ? readdirSync(extractDir).sort() : []))
+      .toEqual(['text - page 2.pdf', 'text - page 3.pdf'])
+    await expect.poll(() => pageOrder(page)).toEqual(['C1', 'C4', 'C5'])
+    await page.keyboard.press('Control+z')
+    await expect.poll(() => pageOrder(page)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5'])
+
+    // Split at the top-level bookmarks, naming the files after them.
+    const splitDir = mkdtempSync(join(tmpdir(), 'fartcrobat-split-'))
+    await stubOpenDialog(app, [splitDir])
+    await page.locator('.fc-organize-pages-toolbar').getByRole('button', { name: 'Split' }).click()
+    dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Top-level bookmarks').check()
+    await dialog.getByRole('button', { name: 'Change…' }).click()
+    await expect(dialog).toContainText('Creates 5 files')
+    await page.waitForTimeout(250)
+    await page.screenshot({ path: 'test-results/organize-pages-split-bookmarks.png' })
+    await dialog.getByRole('button', { name: 'Split', exact: true }).click()
+    await expect
+      .poll(() => (existsSync(splitDir) ? readdirSync(splitDir).sort() : []))
+      .toEqual(['Chapter 1.pdf', 'Chapter 2.pdf', 'Chapter 3.pdf', 'Chapter 4.pdf', 'Chapter 5.pdf'])
   } finally {
     await app.close()
   }
