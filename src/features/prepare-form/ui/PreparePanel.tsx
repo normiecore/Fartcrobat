@@ -7,6 +7,7 @@ import {
   PanelRight,
   PencilLine,
   Trash,
+  TriangleAlert,
   WandSparkles
 } from 'lucide-react'
 import {
@@ -70,6 +71,8 @@ function PreparePanelBody({ doc }: { doc: DocumentModel }) {
   const toolId = useApp((s) => s.toolId)
   const showTabs = usePF((s) => s.showTabNumbers)
   const hasForm = useDocState(doc, (s) => s.info.hasForm)
+  const signed = useDocState(doc, (s) => s.info.signatureCount > 0)
+  const xfa = useDocState(doc, (s) => s.info.hasXfa)
   const { fields, loaded } = useAllFields(doc)
 
   // Acrobat offers automatic field detection when a document without fields is opened here.
@@ -85,6 +88,23 @@ function PreparePanelBody({ doc }: { doc: DocumentModel }) {
         <EditPreviewSwitch />
         <span className="shell-muted">{editing ? 'Editing fields' : 'Filling in the form'}</span>
       </div>
+      {signed && (
+        <div className="fc-prepare-form-note is-warning" role="note">
+          <TriangleAlert size={16} aria-hidden />
+          <span>
+            This document is signed. Adding or changing fields makes the existing signatures invalid.
+          </span>
+        </div>
+      )}
+      {xfa && (
+        <div className="fc-prepare-form-note is-warning" role="note">
+          <TriangleAlert size={16} aria-hidden />
+          <span>
+            This form also has an XFA (LiveCycle) design. Fartcrobat edits its standard fields; apps that show
+            the XFA design will not see the changes.
+          </span>
+        </div>
+      )}
       <Section title="Add a form field">
         <ToolRow
           icon={MousePointer2}

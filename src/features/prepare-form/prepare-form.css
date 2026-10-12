@@ -342,6 +342,9 @@
 .fc-prepare-form-note {
   color: var(--text);
 }
+.fc-prepare-form-note.is-warning svg {
+  color: var(--warning);
+}
 .fc-prepare-form-hint {
   margin: 4px 0;
   color: var(--text-muted);

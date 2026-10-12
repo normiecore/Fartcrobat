@@ -696,7 +696,7 @@ function ChoiceOptions({ draft, set }: { draft: Draft; set: SetFn }) {
           </div>
         ))}
       </div>
-      <p className="fc-prepare-form-hint">The ticked item is selected when the form opens or is cleared.</p>
+      <p className="fc-prepare-form-hint">Mark an item on the left to select it when the form opens or is cleared.</p>
       <div className="fc-prepare-form-checks">
         <Checkbox checked={draft.sort} onChange={(v) => set('sort', v)} label="Sort items" />
         {draft.type === 'combo' && (
