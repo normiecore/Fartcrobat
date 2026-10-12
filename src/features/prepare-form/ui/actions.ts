@@ -80,7 +80,9 @@ export async function createField(doc: DocumentModel, type: PFType, page: number
   if (type === 'radio' && st.radioGroup) name = st.radioGroup
   const signer = st.pendingSigner
   if (signer && (type === 'signature' || type === 'date')) {
-    name = type === 'signature' ? `Signature ${signer.name}` : `Date ${signer.name}`
+    // periods would make a field hierarchy ("J. Smith" -> "J" > " Smith")
+    const who = signer.name.replace(/\./g, '').replace(/\s+/g, ' ').trim() || 'signer'
+    name = type === 'signature' ? `Signature ${who}` : `Date ${who}`
     props.tooltip = type === 'signature' ? `Signature of ${signer.name}` : `Date signed by ${signer.name}`
     if (type === 'signature') props.required = true
   }

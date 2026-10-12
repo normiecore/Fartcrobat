@@ -25,7 +25,7 @@ type Drag =
   | { kind: 'create'; a: Point; b: Point; startClient: Point }
   | { kind: 'band'; a: Point; b: Point; base: number[] }
   | { kind: 'move'; ids: number[]; start: Point; dx: number; dy: number; moved: boolean; startClient: Point }
-  | { kind: 'resize'; id: number; handle: Handle; orig: Rect; rect: Rect }
+  | { kind: 'resize'; id: number; handle: Handle; orig: Rect; rect: Rect; start: Point }
 
 const MIN = 6
 
@@ -114,7 +114,7 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     e.stopPropagation()
     ref.current!.setPointerCapture(e.pointerId)
     setHiddenAnnotations(doc, pageIndex, [f.id])
-    setDrag({ kind: 'resize', id: f.id, handle, orig: f.rect, rect: f.rect })
+    setDrag({ kind: 'resize', id: f.id, handle, orig: f.rect, rect: f.rect, start: toPage(e) })
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -158,13 +158,16 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         break
       }
       case 'resize': {
+        // the grabbed edge follows the pointer movement (grabbing a handle does not make it jump)
         let [x0, y0, x1, y1] = d.orig
-        const px = Math.max(0, Math.min(pageW, snap(p[0])))
-        const py = Math.max(0, Math.min(pageH, snap(p[1])))
-        if (d.handle.includes('w')) x0 = Math.min(px, x1 - MIN)
-        if (d.handle.includes('e')) x1 = Math.max(px, x0 + MIN)
-        if (d.handle.includes('n')) y0 = Math.min(py, y1 - MIN)
-        if (d.handle.includes('s')) y1 = Math.max(py, y0 + MIN)
+        const dx = p[0] - d.start[0]
+        const dy = p[1] - d.start[1]
+        const ex = (v: number) => Math.max(0, Math.min(pageW, snap(v)))
+        const ey = (v: number) => Math.max(0, Math.min(pageH, snap(v)))
+        if (d.handle.includes('w')) x0 = Math.min(ex(x0 + dx), x1 - MIN)
+        if (d.handle.includes('e')) x1 = Math.max(ex(x1 + dx), x0 + MIN)
+        if (d.handle.includes('n')) y0 = Math.min(ey(y0 + dy), y1 - MIN)
+        if (d.handle.includes('s')) y1 = Math.max(ey(y1 + dy), y0 + MIN)
         if (e.shiftKey && d.handle.length === 2) {
           // keep the proportions with Shift
           const ratio = (d.orig[2] - d.orig[0]) / Math.max(1, d.orig[3] - d.orig[1])
@@ -245,6 +248,24 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     }
   }
 
+  /** The topmost field under a pointer event (events can land on the layer while it holds the pointer). */
+  const fieldAt = (e: { clientX: number; clientY: number }): PFField | undefined => {
+    const [x, y] = toPage(e)
+    for (let i = fields.length - 1; i >= 0; i--) {
+      const r = fields[i].rect
+      if (x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3]) return fields[i]
+    }
+    return undefined
+  }
+
+  const onDoubleClick = (e: React.MouseEvent) => {
+    if (createType) return
+    const f = fieldAt(e)
+    if (!f) return
+    e.stopPropagation()
+    openProperties(doc, [f.id])
+  }
+
   const onContextMenu = (e: React.MouseEvent, f?: PFField) => {
     e.preventDefault()
     e.stopPropagation()
@@ -300,7 +321,8 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       onPointerUp={finish}
       onPointerCancel={finish}
       onPointerLeave={() => setHover(null)}
-      onContextMenu={(e) => onContextMenu(e)}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={(e) => onContextMenu(e, fieldAt(e))}
       data-page={pageIndex}
     >
       {fields.map((f) => {
@@ -310,7 +332,7 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         return (
           <div
             key={f.id}
-            className={`fc-prepare-form-box ${isSel ? 'is-selected' : ''} ${small ? 'is-small' : ''} ${f.visibility === 'hidden' ? 'is-hidden' : ''} type-${f.type}`}
+            className={`fc-prepare-form-box ${isSel ? 'is-selected' : ''} ${isSel && single ? 'is-solo' : ''} ${small ? 'is-small' : ''} ${f.visibility === 'hidden' ? 'is-hidden' : ''} type-${f.type}`}
             style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
             data-field-id={f.id}
             data-field-name={f.name}
@@ -320,10 +342,6 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
             aria-label={`${TYPE_LABELS[f.type]} ${f.name}${f.required ? ', required' : ''}`}
             title={`${TYPE_LABELS[f.type]}: ${f.name}${f.tooltip ? `\n${f.tooltip}` : ''}\nDouble-click for properties`}
             onPointerDown={(e) => onFieldDown(e, f)}
-            onDoubleClick={(e) => {
-              e.stopPropagation()
-              openProperties(doc, [f.id])
-            }}
             onContextMenu={(e) => onContextMenu(e, f)}
             onFocus={() => {
               if (!selected.includes(f.id)) selectFields(doc, pageIndex, [f.id])

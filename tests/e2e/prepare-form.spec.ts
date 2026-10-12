@@ -1,5 +1,5 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRender } from './helpers'
@@ -84,6 +84,42 @@ async function stubSaveDialog(app: ElectronApplication, path: string) {
   }, path)
 }
 
+/** Replaces shell:openExternal so the test can see the mailto: link instead of opening a mail app. */
+async function captureExternalLinks(app: ElectronApplication) {
+  await app.evaluate(({ ipcMain }) => {
+    ;(globalThis as any).__pfLinks = []
+    ipcMain.removeHandler('shell:openExternal')
+    ipcMain.handle('shell:openExternal', (_e, url: string) => {
+      ;(globalThis as any).__pfLinks.push(url)
+    })
+  })
+}
+
+async function externalLinks(app: ElectronApplication): Promise<string[]> {
+  return app.evaluate(() => (globalThis as any).__pfLinks ?? [])
+}
+
+async function pageFieldOrder(page: Page, pageIndex: number): Promise<string[]> {
+  return page.evaluate(async (p) => {
+    const d = (window as any).__fartcrobat.getActiveDoc()
+    const fields = await d.ops('prepare-form').listPage(p)
+    return fields.map((f: any) => f.name)
+  }, pageIndex)
+}
+
+async function selectedFieldIds(page: Page): Promise<number[]> {
+  const st = await activeDocState(page)
+  return ((st?.selection as any)?.data?.ids as number[]) ?? []
+}
+
+async function setTheme(page: Page, theme: 'light' | 'dark') {
+  await page.evaluate((t) => {
+    const { useApp } = (window as any).__fartcrobat
+    useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: t } }))
+  }, theme)
+  await page.waitForTimeout(150)
+}
+
 const near = (a: number[], b: number[], tol = 1.5) => a.every((v, i) => Math.abs(v - b[i]) <= tol)
 
 test('prepare a form: create fields, edit them, preview, save and reopen', async () => {
@@ -138,7 +174,7 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
       await item.fill(v)
       await item.press('Enter')
     }
-    await props.getByRole('checkbox', { name: 'Select Green by default' }).check()
+    await props.getByRole('radio', { name: 'Select Green by default' }).check()
     await page.waitForTimeout(200)
     await page.screenshot({ path: `${SHOTS}/prepare-form-properties-options.png` })
     await props.getByRole('button', { name: 'OK' }).click()
@@ -275,6 +311,206 @@ test('auto-detect finds the blanks of a printed form', async () => {
     // one undo removes them all
     await runCommand(page, 'edit.undo')
     await expect.poll(async () => (await listAll(page)).length).toBe(0)
+  } finally {
+    await app.close()
+  }
+})
+
+test('arranging fields at 150% zoom: multi-select, align, tab order, calculations, dark mode', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
+    await runCommand(page, 'form.prepare')
+    await page.locator('.ui-dialog', { hasText: 'Detect form fields automatically?' }).getByRole('button', { name: 'Not now' }).click()
+    await scrollTo(page, 0, 520)
+
+    // three text fields: two placed with a click (default size 150 x 22), one drawn
+    const addText = page.getByRole('button', { name: 'Add text field' }).first()
+    await addText.click()
+    await clickOnPage(page, 0, [80, 560])
+    const name = page.getByRole('textbox', { name: 'Field name' })
+    await name.fill('price')
+    await name.press('Enter')
+    await addText.click()
+    await clickOnPage(page, 0, [95, 600])
+    await name.fill('qty')
+    await name.press('Enter')
+    await addText.click()
+    await dragOnPage(page, 0, [300, 640], [420, 664])
+    await name.fill('total')
+    await name.press('Enter')
+    await expect.poll(async () => (await listAll(page)).map((f) => f.name).sort()).toEqual(['price', 'qty', 'total'])
+    // page coordinates are right at this zoom
+    expect(near((await byName(page, 'price'))!.rect, [80, 560, 230, 582])).toBe(true)
+    expect(near((await byName(page, 'qty'))!.rect, [95, 600, 245, 622])).toBe(true)
+    expect(near((await byName(page, 'total'))!.rect, [300, 640, 420, 664])).toBe(true)
+    // the blue boxes sit exactly over the fields
+    const boxPos = await page.locator('.fc-prepare-form-box[data-field-name="qty"]').boundingBox()
+    const expected = await pagePoint(page, 0, 95, 600)
+    expect(Math.abs(boxPos!.x - expected.x)).toBeLessThan(2)
+    expect(Math.abs(boxPos!.y - expected.y)).toBeLessThan(2)
+    expect(Math.abs(boxPos!.width - 150 * 1.5 * (96 / 72))).toBeLessThan(2)
+
+    // Shift-click selects several fields; right-click > Align Left lines them up with the clicked one
+    await page.locator('.fc-prepare-form-box[data-field-name="price"]').click()
+    await page.locator('.fc-prepare-form-box[data-field-name="qty"]').click({ modifiers: ['Shift'] })
+    await page.locator('.fc-prepare-form-box[data-field-name="total"]').click({ modifiers: ['Shift'] })
+    await expect.poll(async () => (await selectedFieldIds(page)).length).toBe(3)
+    await page.locator('.fc-prepare-form-box[data-field-name="price"]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Align, Distribute or Center' }).hover()
+    await expect(page.getByRole('menuitem', { name: 'Align Left' })).toBeVisible()
+    await page.screenshot({ path: `${SHOTS}/prepare-form-align-menu.png` })
+    await page.getByRole('menuitem', { name: 'Align Left' }).click()
+    await expect.poll(async () => (await listAll(page)).map((f) => Math.round(f.rect[0]))).toEqual([80, 80, 80])
+    expect(near((await byName(page, 'total'))!.rect, [80, 640, 200, 664])).toBe(true)
+    // Match width of the anchor (price)
+    await page.locator('.fc-prepare-form-box[data-field-name="price"]').click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Set Fields to Same Size' }).hover()
+    await page.getByRole('menuitem', { name: 'Width', exact: true }).click()
+    await expect.poll(async () => (await listAll(page)).map((f) => Math.round(f.rect[2] - f.rect[0]))).toEqual([150, 150, 150])
+    // each arrangement is one undo step
+    await runCommand(page, 'edit.undo')
+    await expect.poll(async () => Math.round((await byName(page, 'total'))!.rect[2] - (await byName(page, 'total'))!.rect[0])).toBe(120)
+
+    // rubber-band selection: drag around two fields on the empty page
+    await page.keyboard.press('Escape')
+    await expect.poll(async () => (await selectedFieldIds(page)).length).toBe(0)
+    await scrollTo(page, 0, 520)
+    await dragOnPage(page, 0, [60, 550], [260, 630])
+    await expect.poll(async () => (await selectedFieldIds(page)).length).toBe(2)
+    // Ctrl+A selects every field on the page
+    await page.keyboard.press('Control+A')
+    await expect.poll(async () => (await selectedFieldIds(page)).length).toBe(3)
+
+    // Calculate tab: total = sum of price and qty, written as AFSimple_Calculate
+    await page.keyboard.press('Escape')
+    await page.locator('.fc-prepare-form-box[data-field-name="total"]').dblclick()
+    const props = page.locator('.ui-dialog', { hasText: 'Text field Properties' })
+    await expect(props).toBeVisible()
+    await props.getByRole('tab', { name: 'Calculate' }).click()
+    await props.getByRole('radio', { name: 'Value is the' }).check()
+    await props.getByRole('checkbox', { name: 'price' }).check()
+    await props.getByRole('checkbox', { name: 'qty' }).check()
+    await page.screenshot({ path: `${SHOTS}/prepare-form-calculate.png` })
+    await props.getByRole('tab', { name: 'Format' }).click()
+    await props.getByRole('combobox', { name: 'Format category' }).selectOption('number')
+    await expect(props.locator('.fc-prepare-form-example')).toContainText('1,234.56')
+    await page.screenshot({ path: `${SHOTS}/prepare-form-format.png` })
+    await props.getByRole('button', { name: 'OK' }).click()
+    await expect(props).toBeHidden()
+    const scripts = await page.evaluate(async () => {
+      const d = (window as any).__fartcrobat.getActiveDoc()
+      const f = (await d.ops('forms').listAll()).find((x: any) => x.name === 'total')
+      return { scripts: f.scripts, order: await d.ops('forms').calculationOrder() }
+    })
+    expect(scripts.scripts.calculate).toBe('AFSimple_Calculate("SUM", new Array ("price", "qty"));')
+    expect(scripts.scripts.format).toBe('AFNumber_Format(2, 0, 0, 0, "", true);')
+    expect(scripts.order).toEqual(['total'])
+
+    // Fields panel: tab order numbers, reorder with Alt+Down, rename inline
+    await page.getByRole('button', { name: 'Fields', exact: true }).click()
+    const panel = page.getByRole('complementary', { name: 'Fields' })
+    await panel.getByRole('checkbox', { name: 'Show tab numbers' }).check()
+    await expect(page.locator('.fc-prepare-form-tab').first()).toBeVisible()
+    expect(await pageFieldOrder(page, 0)).toEqual(['price', 'qty', 'total'])
+    const priceRow = panel.locator('.fc-prepare-form-field[data-field-name="price"]')
+    await priceRow.focus()
+    await page.keyboard.press('Alt+ArrowDown')
+    await expect.poll(() => pageFieldOrder(page, 0)).toEqual(['qty', 'price', 'total'])
+    await expect(panel.getByRole('combobox', { name: 'Tab order on page 1' })).toHaveValue('structure')
+    await panel.locator('.fc-prepare-form-field[data-field-name="qty"]').dblclick()
+    const rename = panel.getByRole('textbox', { name: 'Field name' })
+    await rename.fill('quantity')
+    await rename.press('Enter')
+    await expect.poll(() => pageFieldOrder(page, 0)).toEqual(['quantity', 'price', 'total'])
+    // the calculation follows the rename
+    const calc = await page.evaluate(async () => {
+      const d = (window as any).__fartcrobat.getActiveDoc()
+      return (await d.ops('forms').listAll()).find((x: any) => x.name === 'total').scripts.calculate
+    })
+    expect(calc).toBe('AFSimple_Calculate("SUM", new Array ("price", "quantity"));')
+
+    // dark theme: panels and dialogs follow the theme; boxes stay readable on the white page
+    await setTheme(page, 'dark')
+    await page.locator('.fc-prepare-form-box[data-field-name="price"]').click()
+    await page.waitForTimeout(300)
+    await page.screenshot({ path: `${SHOTS}/prepare-form-dark.png` })
+    await page.locator('.fc-prepare-form-box[data-field-name="price"]').dblclick()
+    await expect(page.locator('.ui-dialog', { hasText: 'Text field Properties' })).toBeVisible()
+    await page.locator('.ui-dialog').getByRole('tab', { name: 'Appearance' }).click()
+    await page.waitForTimeout(200)
+    await page.screenshot({ path: `${SHOTS}/prepare-form-dark-properties.png` })
+    await page.keyboard.press('Escape')
+  } finally {
+    await app.close()
+  }
+})
+
+test('request e-signatures: signers, signature fields, save and share by email', async () => {
+  const { app, page } = await launch()
+  const out = mkdtempSync(join(tmpdir(), 'fartcrobat-pf-sign-'))
+  // work on a copy: "Save and share" saves the document in place
+  const original = join(out, 'contract.pdf')
+  copyFileSync(fixturePath('text.pdf'), original)
+  try {
+    await openFile(page, original)
+    await waitForRender(page)
+    await runCommand(page, 'view.actualSize')
+    await page.locator('.shell-alltools-item', { hasText: 'Request e-signatures' }).click()
+    const left = page.locator('.fc-prepare-form-request')
+    await expect(left).toContainText('works offline')
+    await expect(left.getByRole('button', { name: 'Save and share' })).toBeDisabled()
+
+    await left.getByRole('textbox', { name: 'Signer name' }).fill('Ada Lovelace')
+    await left.getByRole('textbox', { name: 'Signer email' }).fill('ada@example.com')
+    await left.getByRole('button', { name: 'Add signer' }).click()
+    await left.getByRole('textbox', { name: 'Signer name' }).fill('C. Babbage')
+    await left.getByRole('button', { name: 'Add signer' }).click()
+    await expect(left.locator('.fc-prepare-form-signers li')).toHaveCount(2)
+
+    // place Ada's signature and date fields
+    await scrollTo(page, 0, 480)
+    await left.locator('.fc-prepare-form-signers li', { hasText: 'Ada Lovelace' }).getByRole('button', { name: 'Signature field' }).click()
+    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('form.signature')
+    await dragOnPage(page, 0, [72, 600], [252, 640])
+    await expect.poll(async () => (await listAll(page)).length).toBe(1)
+    const sig = (await listAll(page))[0]
+    expect(sig.name).toBe('Signature Ada Lovelace')
+    expect(sig.type).toBe('signature')
+    expect(sig.tooltip).toBe('Signature of Ada Lovelace')
+    expect(sig.required).toBe(true)
+    await left.locator('.fc-prepare-form-signers li', { hasText: 'Ada Lovelace' }).getByRole('button', { name: 'Date field' }).click()
+    await clickOnPage(page, 0, [300, 620])
+    await expect.poll(async () => (await listAll(page)).length).toBe(2)
+    expect((await byName(page, 'Date Ada Lovelace'))!.tooltip).toBe('Date signed by Ada Lovelace')
+    // a plain signature field, then assigned to Babbage from the list (the period does not create a hierarchy)
+    await page.getByRole('button', { name: 'Add digital signature' }).first().click()
+    await dragOnPage(page, 0, [72, 660], [252, 700])
+    await page.keyboard.press('Escape')
+    await expect.poll(async () => (await listAll(page)).length).toBe(3)
+    await left.getByRole('combobox', { name: 'Signer of Signature1' }).selectOption('C. Babbage')
+    await expect.poll(async () => (await byName(page, 'Signature1'))?.tooltip).toBe('Signature of C. Babbage')
+    await expect(left.locator('.fc-prepare-form-signers li', { hasText: 'Babbage' })).toContainText('1 field')
+    await page.waitForTimeout(200)
+    await page.screenshot({ path: `${SHOTS}/prepare-form-request-signers.png` })
+
+    // Save and share: saves the PDF and opens the email app with a mailto: link
+    const saved = original
+    await captureExternalLinks(app)
+    await left.getByRole('button', { name: 'Save and share' }).click()
+    await expect(left.locator('.fc-prepare-form-sent')).toBeVisible()
+    await expect(left.locator('.fc-prepare-form-path')).toHaveText(saved)
+    expect(statSync(saved).size).toBeGreaterThan(statSync(fixturePath('text.pdf')).size)
+    const links = await externalLinks(app)
+    expect(links.length).toBe(1)
+    expect(links[0].startsWith('mailto:ada@example.com?subject=Please%20sign%3A%20contract.pdf&body=')).toBe(true)
+    expect(decodeURIComponent(links[0])).toContain('Signature fields are marked for: Ada Lovelace, C. Babbage')
+    await page.waitForTimeout(200)
+    await page.screenshot({ path: `${SHOTS}/prepare-form-request-sent.png` })
+    expect((await activeDocState(page))?.dirty).toBe(false)
   } finally {
     await app.close()
   }

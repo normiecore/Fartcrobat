@@ -13,7 +13,7 @@ import {
   useDocState,
   type DocumentModel
 } from '@renderer/sdk'
-import { enterFormEditing, selectFields } from './actions'
+import { enterFormEditing, selectFields, updateFields } from './actions'
 import { useAllFields } from './hooks'
 import { usePF, type Signer } from './state'
 
@@ -118,6 +118,11 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
   }
 
   const fieldsOf = (s: Signer) => sigFields.filter((f) => f.tooltip === `Signature of ${s.name}`)
+
+  /** Assigns a signature field to a signer (stored as the field's tooltip, like Acrobat's signer roles). */
+  const assign = async (id: number, signer: string) => {
+    await updateFields(doc, [id], signer ? { tooltip: `Signature of ${signer}`, required: true } : { tooltip: '' })
+  }
   const unassigned = sigFields.filter((f) => !SIGNER_RE.test(f.tooltip))
 
   return (
@@ -191,30 +196,42 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
           <p className="fc-prepare-form-hint">No signature fields yet. Use “Signature field” next to a signer, then click on the page where they should sign.</p>
         ) : (
           <ul className="fc-prepare-form-sigfields">
-            {sigFields.map((f) => (
-              <li key={f.id}>
-                <button
-                  className="fc-prepare-form-link"
-                  onClick={() => {
-                    enterFormEditing()
-                    selectFields(doc, f.page, [f.id])
-                    doc.view?.scrollToRect(f.page, f.rect, { center: true })
-                  }}
-                >
-                  {f.name}
-                </button>
-                <span className="shell-muted">
-                  {' '}
-                  page {f.page + 1}
-                  {SIGNER_RE.test(f.tooltip) ? ` · ${SIGNER_RE.exec(f.tooltip)![1]}` : ' · no signer'}
-                </span>
-              </li>
-            ))}
+            {sigFields.map((f) => {
+              const assigned = SIGNER_RE.exec(f.tooltip)?.[1] ?? ''
+              return (
+                <li key={f.id}>
+                  <div>
+                    <button
+                      className="fc-prepare-form-link"
+                      onClick={() => {
+                        enterFormEditing()
+                        selectFields(doc, f.page, [f.id])
+                        doc.view?.scrollToRect(f.page, f.rect, { center: true })
+                      }}
+                    >
+                      {f.name}
+                    </button>
+                    <span className="shell-muted"> · page {f.page + 1}</span>
+                  </div>
+                  <select
+                    className="ui-input ui-select fc-prepare-form-assign"
+                    aria-label={`Signer of ${f.name}`}
+                    value={assigned}
+                    onChange={(e) => void assign(f.id, e.target.value)}
+                  >
+                    <option value="">No signer</option>
+                    {[...signers.map((s) => s.name), ...(assigned && !signers.some((s) => s.name === assigned) ? [assigned] : [])].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </li>
+              )
+            })}
           </ul>
         )}
-        {unassigned.length > 0 && signers.length > 0 && (
-          <p className="fc-prepare-form-hint">Tip: set a field’s tooltip to “Signature of Name” in its properties to assign it to someone.</p>
-        )}
+        {unassigned.length > 0 && signers.length > 0 && <p className="fc-prepare-form-hint">Choose who signs each field. The signer’s name becomes the field’s tooltip.</p>}
       </Section>
 
       <Section title="3. Send">

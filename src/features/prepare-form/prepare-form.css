@@ -46,36 +46,44 @@
 
 .fc-prepare-form-name {
   position: absolute;
-  left: 3px;
+  left: 2px;
   top: 50%;
   transform: translateY(-50%);
-  max-width: calc(100% - 6px);
+  max-width: calc(100% - 4px);
+  padding: 0 3px;
+  border-radius: 2px;
+  /* opaque chip: the name stays readable over the field's own text */
+  background: rgba(232, 240, 255, 0.94);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 600 11px/1.2 var(--font);
+  font: 600 11px/14px var(--font);
   color: #0f4fa8;
   pointer-events: none;
 }
 .fc-prepare-form-box.type-list .fc-prepare-form-name,
 .fc-prepare-form-box.type-signature .fc-prepare-form-name {
-  top: 3px;
+  top: 2px;
   transform: none;
 }
-/* tiny fields (check boxes, radio buttons): the name sits to their right */
+/* tiny fields (check boxes, radio buttons): the name shows above them on hover or when selected */
 .fc-prepare-form-box.is-small .fc-prepare-form-name {
-  left: calc(100% + 4px);
+  left: -2px;
+  top: auto;
+  bottom: calc(100% + 5px);
+  transform: none;
   max-width: none;
   overflow: visible;
-  padding: 0 3px;
-  border-radius: 3px;
-  background: rgba(255, 255, 255, 0.85);
+  background: #fff;
+  border: 1px solid var(--pf-blue-line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
   font-weight: 500;
   opacity: 0;
   transition: opacity 0.1s;
+  z-index: 3;
 }
 .fc-prepare-form-box.is-small:hover .fc-prepare-form-name,
-.fc-prepare-form-box.is-small.is-selected .fc-prepare-form-name {
+.fc-prepare-form-box.is-small.is-solo .fc-prepare-form-name {
   opacity: 1;
 }
 .fc-prepare-form-req {
@@ -360,7 +368,17 @@
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+.fc-prepare-form-sigfields li {
+  display: flex;
+  flex-direction: column;
   gap: 4px;
+}
+.fc-prepare-form-assign {
+  height: 28px;
+  padding: 2px 6px;
+  font-size: var(--fs-sm);
 }
 .fc-prepare-form-sent {
   margin-top: 10px;
@@ -524,10 +542,10 @@
 }
 .fc-prepare-form-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 2px;
   border-bottom: 1px solid var(--border);
   margin-bottom: 14px;
-  overflow-x: auto;
 }
 .fc-prepare-form-tabs button {
   border: none;

@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { getActiveDoc, setTool, useApp } from '@renderer/sdk'
-import { clearFieldSelection, isFormTool, nudgeSelected, selectedIds } from './actions'
+import { clearFieldSelection, isFormTool, nudgeSelected, selectAllFields, selectedIds } from './actions'
 import { openProperties } from './PropertiesDialog'
 import { usePF } from './state'
 
@@ -50,6 +50,13 @@ export function PrepareFormKeys() {
       // arrows and Enter only act on fields when the focus is on the document (not in a panel)
       const t = e.target as HTMLElement | null
       const onDocument = !t || t === document.body || !!t.closest?.('.viewer-scroll')
+      // Ctrl+A selects every field on the current page (like Acrobat), not the page text
+      if (onDocument && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        e.stopPropagation()
+        void selectAllFields(doc)
+        return
+      }
       const ids = selectedIds(doc)
       if (!onDocument || !ids.length || e.ctrlKey || e.metaKey || e.altKey) return
       const step = e.shiftKey ? 10 : 1
