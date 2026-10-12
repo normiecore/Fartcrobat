@@ -167,26 +167,32 @@ function LineStyleIcon({ style }: { style: LineStyle }) {
  * back when there is room again.
  */
 function useCompact(ref: React.RefObject<HTMLDivElement | null>, key: string) {
-  const [compact, setCompact] = useState(false)
-  const needed = useRef(0)
-  useEffect(() => setCompact(false), [key])
+  const [state, setState] = useState({ key, compact: false, needed: 0 })
+  // another tool: start from the full layout again
+  if (state.key !== key) setState({ key, compact: false, needed: 0 })
+  const check = () => {
+    const el = ref.current
+    if (!el) return
+    const overflow = el.scrollWidth > el.clientWidth + 1
+    const full = el.scrollWidth
+    const room = el.clientWidth
+    setState((s) => {
+      if (!s.compact) return overflow ? { ...s, compact: true, needed: full } : s
+      return room >= s.needed + 4 ? { ...s, compact: false } : s
+    })
+  }
+  // content changes (e.g. Finish/Cancel appearing) and container resizes both re-measure
+  useLayoutEffect(check)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const check = () => {
-      if (!compact) {
-        if (el.scrollWidth > el.clientWidth + 1) {
-          needed.current = el.scrollWidth
-          setCompact(true)
-        }
-      } else if (el.clientWidth >= needed.current + 4) setCompact(false)
-    }
-    check()
-    const ro = new ResizeObserver(check)
+    const ro = new ResizeObserver(() => check())
     ro.observe(el)
     return () => ro.disconnect()
-  }, [ref, compact, key])
-  return compact
+    // check only uses refs and the state setter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref])
+  return state.key === key && state.compact
 }
 
 export function MarkupToolbar({ doc }: { doc: DocumentModel }) {
