@@ -10,6 +10,7 @@ import {
   ToolPanelFrame,
   ToolRow,
   useApp,
+  useDocState,
   usePrefs,
   type CommandDefinition,
   type DocumentModel
@@ -34,11 +35,32 @@ function commandEnabled(cmd: CommandDefinition, doc: DocumentModel | null) {
   }
 }
 
+function CommandRows({ commands, doc }: { commands: CommandDefinition[]; doc: DocumentModel | null }) {
+  return (
+    <Section title="Manage comments">
+      {commands.map((c) => (
+        <ToolRow
+          key={c.id}
+          icon={c.icon}
+          label={commandLabel(c, doc)}
+          shortcut={firstShortcut(c.shortcut)}
+          disabled={!commandEnabled(c, doc)}
+          onClick={() => void runCommand(c.id)}
+        />
+      ))}
+    </Section>
+  )
+}
+
+/** Command rows that follow the document's state (e.g. "Hide comments" / "Show comments"). */
+function LiveCommandRows({ commands, doc }: { commands: CommandDefinition[]; doc: DocumentModel }) {
+  useDocState(doc, (s) => s)
+  return <CommandRows commands={commands} doc={doc} />
+}
+
 export function CommentPanel({ doc }: { doc: DocumentModel | null }) {
   const toolId = useApp((s) => s.toolId)
   const keep = usePrefs().keepToolSelected
-  // Re-render when the document changes so command states (e.g. Show/Hide Comments) stay current.
-  useApp((s) => s.activeDocId)
   const choose = (id: string) => setTool(toolId === id ? 'select' : id)
   const foreignTools = FOREIGN_TOOLS.map((id) => registry.tools.get(id)).filter((t) => !!t)
   const commands = FOREIGN_COMMANDS.map((id) => registry.commands.get(id)).filter((c) => !!c)
@@ -83,20 +105,8 @@ export function CommentPanel({ doc }: { doc: DocumentModel | null }) {
             ))}
           </Section>
         )}
-        {commands.length > 0 && (
-          <Section title="Manage comments">
-            {commands.map((c) => (
-              <ToolRow
-                key={c.id}
-                icon={c.icon}
-                label={commandLabel(c, doc)}
-                shortcut={firstShortcut(c.shortcut)}
-                disabled={!commandEnabled(c, doc)}
-                onClick={() => void runCommand(c.id)}
-              />
-            ))}
-          </Section>
-        )}
+        {commands.length > 0 &&
+          (doc ? <LiveCommandRows key={doc.id} commands={commands} doc={doc} /> : <CommandRows commands={commands} doc={null} />)}
       </div>
     </ToolPanelFrame>
   )

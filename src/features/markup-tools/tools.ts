@@ -71,7 +71,10 @@ export interface MarkupTool {
   /** Undo label of the change the tool makes. */
   undoLabel: string
   icon: Icon
+  /** Acrobat's single-key shortcut (shown in the panel and tooltips). */
   shortcut?: string
+  /** More shortcuts for the same tool (e.g. Acrobat's Ctrl+6 for sticky notes). */
+  moreShortcuts?: string[]
   section: Section
   /** PDF annotation subtype the tool creates (for 'comments:defaults:<type>'). */
   annotType: string
@@ -195,6 +198,7 @@ export const TOOLS: MarkupTool[] = [
     undoLabel: 'Add Sticky Note',
     icon: StickyNote,
     shortcut: 'S',
+    moreShortcuts: ['Mod+6'],
     section: 'comment',
     annotType: 'Text',
     props: ['color', 'icon', 'opacity'],
@@ -391,6 +395,7 @@ export const TOOLS: MarkupTool[] = [
     menuLabel: 'Cloud',
     undoLabel: 'Add Cloud',
     icon: Cloud,
+    shortcut: 'Q',
     section: 'drawing',
     annotType: 'Polygon',
     props: ['color', 'fill', 'width', 'opacity'],
@@ -433,15 +438,17 @@ export const CYCLES: { id: string; label: string; shortcut: string; tools: strin
     id: 'comment.cycleDrawing',
     label: 'Next Drawing Tool',
     shortcut: 'Shift+D',
+    // Acrobat's order
     tools: [
-      'comment.pencil',
+      'comment.cloud',
+      'comment.arrow',
+      'comment.line',
       'comment.rectangle',
       'comment.oval',
-      'comment.line',
-      'comment.arrow',
-      'comment.polygon',
       'comment.polyline',
-      'comment.cloud'
+      'comment.polygon',
+      'comment.pencil',
+      'comment.eraser'
     ]
   },
   {

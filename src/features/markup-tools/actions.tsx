@@ -174,7 +174,13 @@ export async function applyTextMarkup(
   ranges: TextRange[],
   opts: { withNote?: boolean } = {}
 ): Promise<boolean> {
-  const byPage = await quadsByPage(doc, ranges)
+  let byPage: Map<number, Quad[]>
+  try {
+    byPage = await quadsByPage(doc, ranges)
+  } catch (err) {
+    showError(err, 'Could not read the selected text')
+    return false
+  }
   if (!byPage.size) return false
   const style = styleSpec(tool, getToolStyle(tool.key))
   if (tool.kind === 'replaceText') {

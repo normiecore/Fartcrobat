@@ -5,7 +5,22 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, Cloud, Pin, RotateCcw, X } from 'lucide-react'
+import {
+  ALargeSmall,
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  Baseline,
+  Blend,
+  Check,
+  Circle,
+  Cloud,
+  PaintBucket,
+  Paperclip,
+  Pin,
+  RotateCcw,
+  StickyNote,
+  X
+} from 'lucide-react'
 import type { LineEnding } from '@engine/ops/annots'
 import {
   Button,
@@ -15,7 +30,8 @@ import {
   Segmented,
   setPrefs,
   usePrefs,
-  type DocumentModel
+  type DocumentModel,
+  type Icon
 } from '@renderer/sdk'
 import { cancelPolyDraft, finishPolyDraft, usePolyDraft } from './layers/PolyLayer'
 import { useActiveToolAndStyle } from './layers/shared'
@@ -62,21 +78,27 @@ const FONTS: { value: FontKey; label: string }[] = [
   { value: 'Cour', label: 'Courier' }
 ]
 
+const SWATCHES_PER_ROW = 8
+
 /** Colour swatch button with a popover picker (rendered in a portal so the bar cannot clip it). */
 export function ColorControl({
   label,
   value,
   onChange,
-  allowNone
+  allowNone,
+  icon: IconC
 }: {
   label: string
   value: string | null
   onChange: (v: string | null) => void
   allowNone?: boolean
+  /** Shown instead of the label when the options bar is compact. */
+  icon?: Icon
 }) {
   const btn = useRef<HTMLButtonElement>(null)
   const pop = useRef<HTMLDivElement>(null)
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
+  const open = !!at
 
   useLayoutEffect(() => {
     if (!at || !pop.current) return
@@ -84,8 +106,21 @@ export function ColorControl({
     if (r.right > window.innerWidth - 8) setAt({ x: Math.max(8, window.innerWidth - r.width - 8), y: at.y })
   }, [at])
 
+  // Keyboard users land on the current colour as soon as the picker opens.
   useEffect(() => {
-    if (!at) return
+    if (!open) return
+    const swatches = pop.current?.querySelectorAll<HTMLElement>('.ui-swatch')
+    const active = pop.current?.querySelector<HTMLElement>('.ui-swatch.is-active')
+    ;(active ?? swatches?.[0])?.focus()
+  }, [open])
+
+  const close = (refocus: boolean) => {
+    setAt(null)
+    if (refocus) btn.current?.focus()
+  }
+
+  useEffect(() => {
+    if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
@@ -96,7 +131,31 @@ export function ColorControl({
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [at])
+  }, [open])
+
+  /** Arrow keys move between swatches (8 per row); Tab leaves the picker like a single control. */
+  const onPopoverKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      setAt(null)
+      const b = btn.current
+      if (!b) return
+      const bar = b.closest('[role="group"]') ?? b.parentElement
+      const focusable = bar
+        ? [...bar.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled)')]
+        : []
+      const next = e.shiftKey ? null : focusable[focusable.indexOf(b) + 1]
+      ;(next ?? b).focus()
+      return
+    }
+    const step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -SWATCHES_PER_ROW, ArrowDown: SWATCHES_PER_ROW }[e.key]
+    if (!step || !pop.current) return
+    const items = [...pop.current.querySelectorAll<HTMLElement>('.ui-swatch, .ui-swatch-custom')]
+    const i = items.indexOf(document.activeElement as HTMLElement)
+    if (i < 0) return
+    e.preventDefault()
+    items[Math.max(0, Math.min(items.length - 1, i + step))].focus()
+  }
 
   return (
     <>
@@ -107,9 +166,9 @@ export function ColorControl({
         title={label}
         aria-label={`${label}: ${value ?? 'none'}`}
         aria-haspopup="dialog"
-        aria-expanded={!!at}
+        aria-expanded={open}
         onClick={() => {
-          if (at) return setAt(null)
+          if (at) return close(false)
           const r = btn.current!.getBoundingClientRect()
           setAt({ x: r.left, y: r.bottom + 6 })
         }}
@@ -118,20 +177,32 @@ export function ColorControl({
           {value === null && <span className="ui-swatch-none-line" />}
         </span>
         <span className="fc-markup-tools-color-label fc-markup-tools-label">{label}</span>
+        {IconC && <IconC size={14} className="fc-markup-tools-compact-icon" aria-hidden="true" />}
       </button>
       {at &&
         createPortal(
           <>
-            <div className="ui-popover-scrim" onMouseDown={() => setAt(null)} />
-            <div ref={pop} className="fc-markup-tools-popover" role="dialog" aria-label={label} style={{ left: at.x, top: at.y }}>
+            <div className="ui-popover-scrim" onMouseDown={() => close(false)} />
+            <div
+              ref={pop}
+              className="fc-markup-tools-popover"
+              role="dialog"
+              aria-label={label}
+              style={{ left: at.x, top: at.y }}
+              onKeyDown={onPopoverKey}
+              onBlur={(e) => {
+                // Tabbing out of the picker closes it.
+                const next = e.relatedTarget as Node | null
+                if (next && !pop.current?.contains(next)) close(false)
+              }}
+            >
               <div className="fc-markup-tools-popover-title">{label}</div>
               <ColorPicker
                 value={value}
                 allowNone={allowNone}
                 onChange={(v) => {
                   onChange(v)
-                  setAt(null)
-                  btn.current?.focus()
+                  close(true)
                 }}
               />
             </div>
@@ -142,12 +213,25 @@ export function ColorControl({
   )
 }
 
-function Labeled({ label, children }: { label: string; children: ReactNode }) {
+/** A control with a text label, or just an icon when the options bar is compact. */
+function Labeled({ label, icon: IconC, children }: { label: string; icon?: Icon; children: ReactNode }) {
   return (
     <label className="fc-markup-tools-field" title={label}>
       <span className="fc-markup-tools-label">{label}</span>
+      {IconC && <IconC size={14} className="fc-markup-tools-compact-icon" aria-hidden="true" />}
       {children}
     </label>
+  )
+}
+
+/** Three lines of increasing thickness (line / border width). */
+function LineWidthIcon({ size = 14, className }: { size?: number | string; className?: string }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" className={className} aria-hidden="true">
+      <line x1="2" y1="3" x2="14" y2="3" stroke="currentColor" strokeWidth="1" />
+      <line x1="2" y1="7.5" x2="14" y2="7.5" stroke="currentColor" strokeWidth="2" />
+      <line x1="2" y1="12.5" x2="14" y2="12.5" stroke="currentColor" strokeWidth="3" />
+    </svg>
   )
 }
 
@@ -219,10 +303,10 @@ export function MarkupToolbar({ doc }: { doc: DocumentModel }) {
         <span className="fc-markup-tools-label">{tool.label}</span>
       </span>
       {has('color') && <ColorControl label="Colour" value={style.color} onChange={(v) => v && set({ color: v })} />}
-      {has('fontColor') && <ColorControl label={isText ? 'Text & border' : 'Text colour'} value={style.fontColor} onChange={(v) => v && set({ fontColor: v })} />}
-      {has('fill') && <ColorControl label="Fill" value={style.fill} allowNone onChange={(v) => set({ fill: v })} />}
+      {has('fontColor') && <ColorControl label={isText ? 'Text & border' : 'Text colour'} icon={Baseline} value={style.fontColor} onChange={(v) => v && set({ fontColor: v })} />}
+      {has('fill') && <ColorControl label="Fill" icon={PaintBucket} value={style.fill} allowNone onChange={(v) => set({ fill: v })} />}
       {has('width') && (
-        <Labeled label={isText ? 'Border' : 'Width'}>
+        <Labeled label={isText ? 'Border' : 'Width'} icon={LineWidthIcon}>
           <Select
             aria-label={isText ? 'Border width' : 'Line width'}
             value={String(style.width)}
@@ -247,10 +331,10 @@ export function MarkupToolbar({ doc }: { doc: DocumentModel }) {
           </Labeled>
         ) : (
           <>
-            <Labeled label="Start">
+            <Labeled label="Start" icon={ArrowLeftToLine}>
               <Select aria-label="Line start" value={style.startEnd} onChange={(v) => set({ startEnd: v })} options={LINE_ENDINGS} />
             </Labeled>
-            <Labeled label="End">
+            <Labeled label="End" icon={ArrowRightToLine}>
               <Select aria-label="Line end" value={style.endEnd} onChange={(v) => set({ endEnd: v })} options={LINE_ENDINGS} />
             </Labeled>
           </>
@@ -261,7 +345,7 @@ export function MarkupToolbar({ doc }: { doc: DocumentModel }) {
         </span>
       )}
       {has('fontSize') && (
-        <Labeled label="Size">
+        <Labeled label="Size" icon={ALargeSmall}>
           <Select
             aria-label="Font size"
             value={String(style.fontSize)}
@@ -271,12 +355,12 @@ export function MarkupToolbar({ doc }: { doc: DocumentModel }) {
         </Labeled>
       )}
       {has('icon') && (
-        <Labeled label="Icon">
+        <Labeled label="Icon" icon={StickyNote}>
           <Select aria-label="Note icon" value={style.icon} onChange={(v) => set({ icon: v })} options={NOTE_ICONS} />
         </Labeled>
       )}
       {has('attachIcon') && (
-        <Labeled label="Icon">
+        <Labeled label="Icon" icon={Paperclip}>
           <Select
             aria-label="Attachment icon"
             value={ATTACH_ICONS.some((i) => i.value === style.icon) ? style.icon : 'PushPin'}
@@ -286,12 +370,12 @@ export function MarkupToolbar({ doc }: { doc: DocumentModel }) {
         </Labeled>
       )}
       {has('eraserSize') && (
-        <Labeled label="Eraser size">
+        <Labeled label="Eraser size" icon={Circle}>
           <Select aria-label="Eraser size" value={String(style.eraserSize)} onChange={(v) => set({ eraserSize: parseFloat(v) })} options={ERASER_SIZES.map((s) => ({ value: String(s), label: `${s} pt` }))} />
         </Labeled>
       )}
       {has('opacity') && (
-        <Labeled label="Opacity">
+        <Labeled label="Opacity" icon={Blend}>
           <Select
             aria-label="Opacity"
             value={String(Math.round(style.opacity * 100))}

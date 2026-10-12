@@ -100,11 +100,28 @@ async function editEvents(page: Page): Promise<{ docId: string; id: number; page
   return page.evaluate(() => (window as any).__editEvents)
 }
 
+/**
+ * Waits until the pages stop moving. The options bar takes room above the document while a comment
+ * tool is active, so "Fit page" / "Fit width" zoom changes whenever a tool is picked or put away.
+ */
+async function settle(page: Page) {
+  let last = ''
+  for (let i = 0; i < 50; i++) {
+    const now = await page.evaluate(() => {
+      const r = document.querySelector('.viewer-page[data-page-index="0"]')?.getBoundingClientRect()
+      return JSON.stringify([r?.left, r?.top, r?.width, r?.height, (window as any).__fartcrobat.getActiveDoc()?.state.zoom])
+    })
+    if (now === last) return
+    last = now
+    await page.waitForTimeout(100)
+  }
+}
+
 /** Activates a tool and waits until the options bar is shown and the page layout has settled. */
 async function activate(page: Page, id: string) {
   await runCommand(page, id)
   await expect(page.locator('.fc-markup-tools-toolbar')).toBeVisible()
-  await page.waitForTimeout(350)
+  await settle(page)
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/markup-tools-${name}.png` })
@@ -121,6 +138,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     await page.locator('.shell-quicktools button[aria-label="Highlight text"]').click()
     expect(await toolId(page)).toBe('comment.highlight')
     await expect(page.locator('.fc-markup-tools-toolbar')).toBeVisible()
+    await settle(page)
     const fox = await textQuads(page, 0, 'quick brown fox')
     const midY = (fox.first[1] + fox.first[5]) / 2
     const a = await toScreen(page, 0, fox.first[0] + 1, midY)
@@ -148,6 +166,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     await undoRedo(page, 'Highlight', 1)
 
     // ---- 2. Select text, then "Underline" in the selection mini toolbar
+    await settle(page)
     const lazy = await textQuads(page, 0, 'lazy dog')
     const ly = (lazy.first[1] + lazy.first[5]) / 2
     await page.locator('.viewer-scroll').click({ position: { x: 5, y: 5 } })
@@ -171,6 +190,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     await shot(page, '05-panel')
     await page.locator('.ui-tool-row', { hasText: 'Draw rectangle' }).click()
     expect(await toolId(page)).toBe('comment.rectangle')
+    await settle(page)
     const r0 = await toScreen(page, 0, 120, 260)
     const r1 = { x: r0.x + 150, y: r0.y + 90 }
     await page.mouse.move(r0.x, r0.y)
@@ -196,6 +216,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     // ---- 4. Arrow with Shift (snaps to 45°)
     await page.locator('.ui-tool-row', { hasText: 'Draw arrow' }).click()
     await expect(page.locator('.fc-markup-tools-toolbar')).toContainText('Draw arrow')
+    await settle(page)
     const s0 = await toScreen(page, 0, 330, 260)
     await drag(page, s0, { x: s0.x + 160, y: s0.y + 120 }, { shift: true })
     await expect.poll(async () => (await ofType(page, 'Line')).length).toBe(1)
@@ -213,6 +234,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
 
     // ---- 5. Pencil from the quick toolbar
     await page.locator('.shell-quicktools button[aria-label="Draw free form"]').click()
+    await settle(page)
     const ink0 = await toScreen(page, 0, 100, 520)
     const ink1 = await toScreen(page, 0, 400, 520)
     await page.mouse.move(ink0.x, ink0.y)
@@ -237,6 +259,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
 
     // ---- 6. Sticky note (comments feature absent here: a small dialog asks for the text)
     await page.locator('.shell-quicktools button[aria-label="Add sticky note"]').click()
+    await settle(page)
     const n = await toScreen(page, 0, 500, 120)
     await page.mouse.click(n.x, n.y)
     const dialog = page.locator('.ui-dialog', { hasText: 'Add sticky note' })
@@ -258,7 +281,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     await undoRedo(page, 'Text', 1)
 
     // ---- 7. Eraser: erase the right half of the drawing
-    await runCommand(page, 'comment.eraser')
+    await activate(page, 'comment.eraser')
     expect(await toolId(page)).toBe('comment.eraser')
     const e0 = await toScreen(page, 0, 255, 490)
     const e1 = await toScreen(page, 0, 420, 550)
@@ -311,6 +334,14 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     expect(await toolId(page)).toBe('comment.pencil')
     await page.keyboard.press('x')
     expect(await toolId(page)).toBe('comment.textbox')
+    await page.keyboard.press('Shift+X')
+    expect(await toolId(page)).toBe('comment.callout')
+    await page.keyboard.press('q')
+    expect(await toolId(page)).toBe('comment.cloud')
+    await page.keyboard.press('Shift+D')
+    expect(await toolId(page)).toBe('comment.arrow')
+    await page.keyboard.press('Control+6')
+    expect(await toolId(page)).toBe('comment.note')
     await page.keyboard.press('Escape')
     expect(await toolId(page)).toBe('select')
 
@@ -423,10 +454,30 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     })
     await page.locator('.shell-alltools-item', { hasText: 'Add comments' }).click()
     await page.locator('.ui-tool-row', { hasText: 'Draw oval' }).click()
-    await page.locator('.fc-markup-tools-color', { hasText: 'Fill' }).click()
-    await page.waitForTimeout(300)
+    // the colour picker works from the keyboard: Enter opens it on the current colour, arrows move,
+    // Enter picks, focus returns to the button
+    const fill = page.locator('.fc-markup-tools-color', { hasText: 'Fill' })
+    await fill.focus()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.fc-markup-tools-popover')).toBeVisible()
+    await expect(page.locator('.fc-markup-tools-popover .ui-swatch-none')).toBeFocused()
+    await page.waitForTimeout(200)
     await shot(page, '19-dark')
-    await page.keyboard.press('Escape')
+    await page.keyboard.press('ArrowRight')
+    await expect(page.locator('.fc-markup-tools-popover .ui-swatch[title="#FFEB3B"]')).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.fc-markup-tools-popover')).toHaveCount(0)
+    await expect(fill).toBeFocused()
+    await expect(fill).toHaveAttribute('aria-label', 'Fill: #FFEB3B')
+    await expect
+      .poll(async () => (await page.evaluate(() => (window as any).api.invoke('store:get', 'markup-tools:defaults')))?.tools?.oval?.fill)
+      .toBe('#FFEB3B')
+    // Tab leaves the picker (closing it) for the next control of the options bar
+    await page.keyboard.press('Enter')
+    await expect(page.locator('.fc-markup-tools-popover')).toBeVisible()
+    await page.keyboard.press('Tab')
+    await expect(page.locator('.fc-markup-tools-popover')).toHaveCount(0)
+    await expect(page.locator('select[aria-label="Line width"]')).toBeFocused()
   } finally {
     await app.close()
   }
@@ -515,13 +566,15 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     await page.keyboard.press('Shift+U')
     await page.keyboard.press('Shift+U')
     expect(await toolId(page)).toBe('comment.squiggly')
-    await page.waitForTimeout(300)
+    await settle(page)
     const cons = await textQuads(page, 0, 'consectetur')
     const cy = (cons.first[1] + cons.first[5]) / 2
     await drag(page, await toScreen(page, 0, cons.first[0] + 0.3, cy), await toScreen(page, 0, cons.last[2] - 0.3, cy))
     await expect.poll(async () => (await ofType(page, 'Squiggly')).length).toBe(1)
 
     // ---- "Add note to text" from the selection toolbar: a highlight with a comment
+    await expect.poll(() => toolId(page)).toBe('select')
+    await settle(page)
     const hello = await textQuads(page, 0, 'Hello Fartcrobat')
     const hy = (hello.first[1] + hello.first[5]) / 2
     await drag(page, await toScreen(page, 0, hello.first[0] + 0.3, hy), await toScreen(page, 0, hello.last[2] - 0.3, hy))
@@ -532,7 +585,11 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
       await page.keyboard.press('Control+Enter')
     }
     await expect.poll(async () => (await ofType(page, 'Highlight')).length).toBe(1)
-    if (!hasComments) expect((await ofType(page, 'Highlight'))[0].contents).toBe('Greeting')
+    const greeting = (await ofType(page, 'Highlight'))[0]
+    if (!hasComments) expect(greeting.contents).toBe('Greeting')
+    // the highlight covers exactly "Hello Fartcrobat"
+    expect(Math.min(greeting.quads[0][0], greeting.quads[0][4])).toBeCloseTo(hello.first[0], 0)
+    expect(Math.max(greeting.quads[0][2], greeting.quads[0][6])).toBeCloseTo(hello.last[2], 0)
 
     // ---- Attach file: click, choose a file (native dialog stubbed), the file is embedded
     await app.evaluate(({ dialog }, file) => {
@@ -556,7 +613,6 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     // ---- a scanned page has no text: the Highlight tool highlights an area instead
     await openFile(page, fixturePath('scanned.pdf'))
     await waitForRender(page)
-    await page.waitForTimeout(300)
     await activate(page, 'comment.highlight')
     const s0 = await toScreen(page, 0, 70, 95)
     const s1 = await toScreen(page, 0, 420, 150)
@@ -617,6 +673,57 @@ test('with the comments feature installed, new comments open its editor instead 
     await expect.poll(async () => (await editEvents(page)).length).toBe(3)
     expect((await editEvents(page))[2].id).toBe(caret.id)
     await expect(page.locator('.ui-dialog')).toHaveCount(0)
+  } finally {
+    await app.close()
+  }
+})
+
+test('the Add comments panel lists stamp, measure and comment commands when those features are installed', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    // stand-ins for the stamps-measure and comments features when they are not part of this build
+    await page.evaluate(() => {
+      const w = window as any
+      const reg = w.__fartcrobat.registry
+      const icon = reg.tools.get('select').icon
+      w.__ran = []
+      const fakeTools = [
+        { id: 'stamps.stamp', label: 'Add stamp', icon, shortcut: 'K' },
+        { id: 'measure.distance', label: 'Distance', icon },
+        { id: 'measure.perimeter', label: 'Perimeter', icon },
+        { id: 'measure.area', label: 'Area', icon }
+      ].filter((t) => !reg.tools.has(t.id))
+      const fakeCommands = [
+        { id: 'comments.export', label: 'Export comments', icon },
+        { id: 'comments.import', label: 'Import comments', icon },
+        { id: 'comments.summarize', label: 'Summarize comments', icon },
+        { id: 'comments.toggleVisibility', label: 'Show/Hide Comments', icon, shortcut: 'Mod+Shift+8' }
+      ]
+        .filter((c) => !reg.commands.has(c.id))
+        .map((c) => ({ ...c, run: () => w.__ran.push(c.id) }))
+      reg.register({ id: 'markup-tools-e2e-standins', tools: fakeTools, commands: fakeCommands })
+    })
+    await page.locator('.shell-alltools-item', { hasText: 'Add comments' }).click()
+    const panel = page.locator('.fc-markup-tools-panel')
+    await expect(panel.locator('.ui-section', { hasText: 'Stamps & measure' }).locator('.ui-tool-row')).toHaveCount(4)
+    const stamp = await page.evaluate(() => {
+      const t = (window as any).__fartcrobat.registry.tools.get('stamps.stamp')
+      return { label: t.label as string, shortcut: (t.shortcut ?? null) as string | null }
+    })
+    const stampRow = panel.locator('.ui-tool-row', { hasText: stamp.label })
+    if (stamp.shortcut && /^[A-Z]$/.test(stamp.shortcut)) await expect(stampRow).toContainText(stamp.shortcut)
+    await expect(panel.locator('.ui-section', { hasText: 'Manage comments' }).locator('.ui-tool-row')).toHaveCount(4)
+    await stampRow.click()
+    expect(await toolId(page)).toBe('stamps.stamp')
+    const realComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
+    if (!realComments) {
+      await panel.locator('.ui-tool-row', { hasText: 'Export comments' }).click()
+      await expect.poll(() => page.evaluate(() => (window as any).__ran)).toEqual(['comments.export'])
+    }
+    await panel.locator('.ui-section', { hasText: 'Manage comments' }).scrollIntoViewIfNeeded()
+    await shot(page, '25-panel-with-other-tools')
   } finally {
     await app.close()
   }

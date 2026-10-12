@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Point } from '@shared/geometry'
-import { useApp, type PageGeometry } from '@renderer/sdk'
+import { getLoadedText, loadText, showError, useApp, type DocumentModel, type PageGeometry, type PageText } from '@renderer/sdk'
 import { clampPoint } from '../geometry'
 import { useToolStyle } from '../style'
 import { TOOL_BY_ID, type MarkupTool } from '../tools'
@@ -65,4 +65,25 @@ export function useLatest<T>(value: T) {
   const ref = useRef(value)
   ref.current = value
   return ref
+}
+
+const reported = new Set<string>()
+
+/**
+ * The text of a page, loading it when needed. A failure is shown once (per page version) and gives
+ * null, so pointer handlers can call this freely.
+ */
+export async function pageTextOrReport(doc: DocumentModel, page: number): Promise<PageText | null> {
+  const cached = getLoadedText(doc, page)
+  if (cached) return cached
+  try {
+    return await loadText(doc, page)
+  } catch (err) {
+    const key = `${doc.id}:${page}:${doc.pageVersion(page)}`
+    if (!doc.isClosed && !reported.has(key)) {
+      reported.add(key)
+      showError(err, `Could not read the text on page ${page + 1}`)
+    }
+    return null
+  }
 }

@@ -9,7 +9,6 @@ import type { Point, Quad, Rect } from '@shared/geometry'
 import {
   caretAt,
   getLoadedText,
-  loadText,
   rangeQuads,
   toast,
   usePageVersion,
@@ -24,7 +23,7 @@ import { quadFromRect, rectFrom } from '../geometry'
 import { MarkupPreview, PreviewSvg, RectPreview } from '../Preview'
 import { getToolStyle, styleSpec } from '../style'
 import { TOOL_BY_ID, type MarkupTool } from '../tools'
-import { autoScroll, pagePoint, useActiveToolAndStyle } from './shared'
+import { autoScroll, pagePoint, pageTextOrReport, useActiveToolAndStyle } from './shared'
 
 interface Caret {
   page: number
@@ -72,9 +71,9 @@ export function TextMarkupLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     const cached = getLoadedText(doc, pageIndex)
     if (cached) setText(cached)
     else
-      void loadText(doc, pageIndex)
-        .then((t) => alive && setText(t))
-        .catch(() => {})
+      void pageTextOrReport(doc, pageIndex).then((t) => {
+        if (alive && t) setText(t)
+      })
     return () => {
       alive = false
     }
@@ -90,7 +89,8 @@ export function TextMarkupLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     const p = pagePoint(e, el, geometry)
     const t = getLoadedText(doc, pageIndex)
     if (!t) {
-      void loadText(doc, pageIndex).then(setText)
+      // still loading: the next press works
+      void pageTextOrReport(doc, pageIndex).then((tt) => tt && setText(tt))
       return
     }
     el.setPointerCapture(e.pointerId)
@@ -130,7 +130,7 @@ export function TextMarkupLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     if (!hit) return
     const t = getLoadedText(doc, hit.pageIndex)
     if (!t) {
-      void loadText(doc, hit.pageIndex)
+      void pageTextOrReport(doc, hit.pageIndex)
       return
     }
     const focus = { page: hit.pageIndex, index: Math.max(0, caretAt(t, hit.point)) }

@@ -149,6 +149,9 @@ describe('markup-tools engine', () => {
     const again = await roundTrip(e)
     const list = await again.ops<typeof annotOps>('annots').list(0)
     expect(list[0].type).toBe('Highlight')
+    // the crisp appearance is saved with the file
+    const reopened = await again.ops<typeof renderOps>('render').page(0, { scale: 1 })
+    expect(px(reopened, 61, 101)).toEqual([255, 255, 0])
   })
 
   it('groups the strike-out and caret of Replace Text and undoes them together', async () => {

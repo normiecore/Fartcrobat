@@ -49,7 +49,9 @@ export function EraserLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       .then((list) => {
         inks.current = list.filter((a) => a.type === 'Ink' && !a.hidden && !a.locked && a.ink.length > 0)
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (!doc.isClosed) showError(err, `Could not read the drawings on page ${pageIndex + 1}`)
+      })
 
   useEffect(() => {
     void refresh()

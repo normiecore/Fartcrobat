@@ -41,7 +41,12 @@ describe('markup-tools tool definitions', () => {
     expect(tool('comment.highlight').shortcut).toBe('U')
     expect(tool('comment.pencil').shortcut).toBe('D')
     expect(tool('comment.textbox').shortcut).toBe('X')
+    expect(tool('comment.cloud').shortcut).toBe('Q')
+    expect(tool('comment.note').moreShortcuts).toEqual(['Mod+6'])
     expect(CYCLES.map((c) => c.shortcut)).toEqual(['Shift+U', 'Shift+D', 'Shift+X'])
+    // single keys are unique among the tools
+    const keys = TOOLS.map((t) => t.shortcut).filter(Boolean)
+    expect(new Set(keys).size).toBe(keys.length)
     for (const c of CYCLES) for (const id of c.tools) expect(TOOL_BY_ID.has(id)).toBe(true)
   })
 })

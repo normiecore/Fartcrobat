@@ -82,7 +82,7 @@ const commands: CommandDefinition[] = [
       id: t.id,
       label: t.menuLabel,
       icon: t.icon,
-      shortcut: t.shortcut,
+      shortcut: t.moreShortcuts ? [...(t.shortcut ? [t.shortcut] : []), ...t.moreShortcuts] : t.shortcut,
       keywords: [t.label, ...t.keywords, 'comment', 'annotate', 'markup'],
       checked: () => useApp.getState().toolId === t.id,
       run: () => setTool(t.id)

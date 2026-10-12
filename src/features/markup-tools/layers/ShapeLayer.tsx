@@ -178,7 +178,8 @@ export function ShapeLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   let preview: React.ReactNode = null
   if (isCallout && tip) {
     const at = drag && !phase1.current ? null : (drag?.b ?? hover)
-    const box = drag && !phase1.current ? rectFrom(drag.a, drag.b) : at ? calloutBoxAt(tip, at, CALLOUT_SIZE) : null
+    // the same placement (kept on the page) as the callout that will be created
+    const box = drag && !phase1.current ? rectFrom(drag.a, drag.b) : at ? fitRect(calloutBoxAt(tip, at, CALLOUT_SIZE), size.width, size.height) : null
     preview = box ? <CalloutPreview g={geometry} line={calloutLine(tip, box)} box={box} st={style} /> : null
     if (!box) preview = <circle cx={geometry.toCss(tip)[0]} cy={geometry.toCss(tip)[1]} r={4} fill={style.fontColor} />
   } else if (drag && dist(drag.a, drag.b) > 0) {

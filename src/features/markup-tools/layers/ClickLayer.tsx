@@ -5,12 +5,12 @@
 import { useRef, useState } from 'react'
 import { Paperclip, StickyNote } from 'lucide-react'
 import type { Point, Rect } from '@shared/geometry'
-import { basename, getLoadedText, invoke, loadText, readFile, showError, withProgress, type DocumentModel, type PageLayerProps } from '@renderer/sdk'
+import { basename, getLoadedText, invoke, readFile, showError, withProgress, type DocumentModel, type PageLayerProps } from '@renderer/sdk'
 import { caretRectAt, commentsInstalled, createWith, finishCreate, insertionPoint, textForNewComment } from '../actions'
 import { fitRect } from '../geometry'
 import { getToolStyle, styleSpec, type ToolStyle } from '../style'
 import type { MarkupTool } from '../tools'
-import { pagePoint, useActiveToolAndStyle } from './shared'
+import { pagePoint, pageTextOrReport, useActiveToolAndStyle } from './shared'
 
 const FONT_FAMILIES: Record<string, string> = {
   Helv: 'Helvetica, Arial, "Liberation Sans", sans-serif',
@@ -66,7 +66,8 @@ export async function placeTypewriter(doc: DocumentModel, tool: MarkupTool, page
 }
 
 export async function placeCaret(doc: DocumentModel, tool: MarkupTool, page: number, p: Point) {
-  const t = getLoadedText(doc, page) ?? (await loadText(doc, page))
+  const t = await pageTextOrReport(doc, page)
+  if (!t) return
   const ip = insertionPoint(t, p) ?? { x: p[0], bottom: p[1] }
   const text = await textForNewComment(tool)
   if (text === null) return
@@ -189,7 +190,7 @@ export function ClickLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       className={`viewer-layer fc-markup-tools-layer fc-markup-tools-cursor-${tool.kind}`}
       onClick={onClick}
       onPointerMove={(e) => {
-        if (tool.kind === 'insertText' && !getLoadedText(doc, pageIndex)) void loadText(doc, pageIndex)
+        if (tool.kind === 'insertText' && !getLoadedText(doc, pageIndex)) void pageTextOrReport(doc, pageIndex)
         setHover(pagePoint(e, ref.current!, geometry))
       }}
       onPointerLeave={() => setHover(null)}

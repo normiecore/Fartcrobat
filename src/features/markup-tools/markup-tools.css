@@ -99,19 +99,32 @@
   flex-shrink: 0;
 }
 .fc-markup-tools-toolbar.is-compact {
-  gap: 6px;
+  gap: 5px;
 }
 .fc-markup-tools-toolbar.is-compact .fc-markup-tools-label {
   display: none;
 }
+/* compact layout: a small icon replaces each text label (the full name stays in the tooltip) */
+.fc-markup-tools-compact-icon {
+  display: none;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-compact-icon {
+  display: inline-block;
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-field {
+  gap: 3px;
+}
 .fc-markup-tools-toolbar.is-compact .fc-markup-tools-color {
-  padding: 0 4px;
+  gap: 3px;
+  padding: 0 5px 0 4px;
 }
 .fc-markup-tools-toolbar.is-compact .fc-markup-tools-toolname {
   padding-right: 6px;
 }
 .fc-markup-tools-toolbar.is-compact .ui-select {
-  max-width: 118px;
+  max-width: 112px;
 }
 .fc-markup-tools-toolbar.is-compact .fc-markup-tools-draft .ui-btn {
   padding: 0 7px;

@@ -4,7 +4,7 @@
  * default" ('comments:defaults:<AnnotType>') whenever that value changes.
  */
 import { create } from 'zustand'
-import { invoke, showError } from '@renderer/sdk'
+import { invoke, showError, toast } from '@renderer/sdk'
 import { TOOLS, type MarkupTool } from './tools'
 import { builtinStyle, defaultsApply, fromAnnotDefaults, sanitize, type ToolStyle } from './styleModel'
 
@@ -55,6 +55,7 @@ export function loadToolStyles(): Promise<void> {
         raw = await invoke('store:get', STORE_KEY)
       } catch (err) {
         console.warn('Could not read markup tool defaults', err)
+        toast('Your comment tool settings could not be loaded, so the standard settings are used for now.', { kind: 'warning' })
       }
       const src = (raw && typeof raw === 'object' ? raw : {}) as Partial<StoredDefaults>
       const tools: Record<string, Partial<ToolStyle>> = {}
@@ -72,7 +73,9 @@ export async function syncCommentDefaults(tool: MarkupTool): Promise<void> {
   let value: unknown
   try {
     value = await invoke('store:get', `comments:defaults:${tool.annotType}`)
-  } catch {
+  } catch (err) {
+    // optional: the tool keeps its own remembered settings
+    console.warn('Could not read the comment defaults', err)
     return
   }
   if (value === undefined || value === null) return
