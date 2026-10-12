@@ -217,6 +217,14 @@ describe('page alignment', () => {
     expect(describe_(r)).toEqual(['Page 2 added'])
   })
 
+  it('reports a removed page exactly, even when the next page starts with the same words', () => {
+    const sec = (n: string) => [`Section ${n}`, `Paragraph one of section ${n} describes clause ${n}.`, `Paragraph two of section ${n}.`]
+    const r = run(doc([sec('1'), sec('2'), sec('3'), sec('4')]), doc([sec('1'), sec('2'), sec('4')]))
+    expect(describe_(r)).toEqual(['Page 3 removed'])
+    const r2 = run(doc([sec('1'), sec('2'), sec('4')]), doc([sec('1'), sec('2'), sec('3'), sec('4')]))
+    expect(describe_(r2)).toEqual(['Page 3 added'])
+  })
+
   it('finds a removed page', () => {
     const r = run(doc([LOREM, CONTACTS, TERMS]), doc([LOREM, TERMS]))
     expect(describe_(r)).toEqual(['Page 2 removed'])

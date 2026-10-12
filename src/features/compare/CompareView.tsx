@@ -102,6 +102,17 @@ function SetupLanding() {
 
 function ProgressCard() {
   const running = useCompare((s) => s.running)
+  useEffect(() => {
+    if (!running) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || useApp.getState().dialogs.length) return
+      e.preventDefault()
+      e.stopPropagation()
+      getCompare().running?.cancel()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [running])
   if (!running) return null
   const pct = Math.round(running.fraction * 100)
   return (
@@ -112,7 +123,9 @@ function ProgressCard() {
           <div style={{ width: `${pct}%` }} />
         </div>
         <div className="fc-compare-muted fc-compare-progress-msg">{running.message}</div>
-        <Button onClick={running.cancel}>Cancel</Button>
+        <Button onClick={running.cancel} title="Cancel (Esc)">
+          Cancel
+        </Button>
       </div>
     </div>
   )
@@ -316,7 +329,8 @@ function ResultsView({ session }: { session: Session }) {
   const filter = useCompare((s) => s.filter)
   const selected = useCompare((s) => s.selected)
   const focusTick = useCompare((s) => s.focusTick)
-  const [size, setSize] = useState({ width: 900, height: 600 })
+  const [measured, setMeasured] = useState<{ width: number; height: number } | null>(null)
+  const size = measured ?? { width: 900, height: 600 }
   const [scroll, setScroll] = useState({ top: 0, left: 0 })
   const { result } = session
   const oldDoc = session.old.doc
@@ -325,9 +339,9 @@ function ResultsView({ session }: { session: Session }) {
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }))
+    const ro = new ResizeObserver(() => setMeasured({ width: el.clientWidth, height: el.clientHeight }))
     ro.observe(el)
-    setSize({ width: el.clientWidth, height: el.clientHeight })
+    setMeasured({ width: el.clientWidth, height: el.clientHeight })
     return () => ro.disconnect()
   }, [])
 
@@ -366,7 +380,8 @@ function ResultsView({ session }: { session: Session }) {
   const handledTick = useRef(-1)
   useLayoutEffect(() => {
     const el = scrollRef.current
-    if (!el || handledTick.current === focusTick) return
+    // wait for the real viewport size, the layout depends on it
+    if (!el || !measured || handledTick.current === focusTick) return
     handledTick.current = focusTick
     const c = result.changes.find((x) => x.id === selected)
     if (!c) return
@@ -399,7 +414,7 @@ function ResultsView({ session }: { session: Session }) {
     const right = Math.max(...spans.map((s) => s.right))
     if (left < el.scrollLeft || right > el.scrollLeft + el.clientWidth) el.scrollLeft = Math.max(0, (left + right) / 2 - el.clientWidth / 2)
     setScroll({ top: el.scrollTop, left: el.scrollLeft })
-  }, [focusTick, selected, layout, result.changes])
+  }, [focusTick, selected, layout, result.changes, measured])
 
   const setZoom = (z: number, anchorClientY?: number) => {
     const el = scrollRef.current

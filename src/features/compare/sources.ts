@@ -161,7 +161,7 @@ export function watchTabs(): () => void {
     if (session) {
       for (const side of [session.old, session.new]) {
         if (!owned.has(side.doc) && !s.docs.includes(side.doc) && prev.docs.includes(side.doc)) {
-          setCompare({ stale: `“${side.name}” was closed, so its pages can no longer be shown. Compare again to refresh the results.` })
+          setCompare({ stale: `“${side.name}” was closed, so its pages can no longer be shown.` })
         }
       }
     }

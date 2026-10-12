@@ -389,6 +389,63 @@ const charLen = (s: STok[], from: number, to: number) => {
   return n
 }
 
+/** How well an inserted/deleted run [s0, s1) of a stream lines up with page and line breaks. */
+function boundaryScore(S: STok[], s0: number, s1: number): number {
+  const pageStart = s0 === 0 || S[s0].page !== S[s0 - 1].page
+  const pageEnd = s1 >= S.length || S[s1 - 1].page !== S[s1].page
+  const lineStart = pageStart || S[s0].tok.line !== S[s0 - 1].tok.line
+  const lineEnd = pageEnd || S[s1 - 1].tok.line !== S[s1].tok.line
+  return (pageStart ? 4 : 0) + (pageEnd ? 4 : 0) + (lineStart ? 1 : 0) + (lineEnd ? 1 : 0)
+}
+
+/**
+ * A pure insertion or deletion next to equal words can often be placed in several equivalent
+ * positions ("Section 40 … Section" vs "… Section 41"). Slides each one to the position that
+ * best matches page and line breaks, so a removed page is reported as exactly that page.
+ */
+function slideEdits(blocks: Block[], oldS: STok[], newS: STok[]) {
+  const key = (S: STok[], i: number) => S[i].tok.norm
+  for (let k = 0; k < blocks.length; k++) {
+    const e = blocks[k]
+    if (e.eq) continue
+    const del = e.n0 === e.n1
+    const ins = e.o0 === e.o1
+    if (del === ins) continue
+    const prev = blocks[k - 1]?.eq ? blocks[k - 1] : null
+    const next = blocks[k + 1]?.eq ? blocks[k + 1] : null
+    const S = del ? oldS : newS
+    const s0 = del ? e.o0 : e.n0
+    const s1 = del ? e.o1 : e.n1
+    let left = 0
+    while (prev && prev.o1 - prev.o0 - left > 1 && key(S, s0 - left - 1) === key(S, s1 - left - 1)) left++
+    let right = 0
+    while (next && next.o1 - next.o0 - right > 1 && s1 + right < S.length && key(S, s0 + right) === key(S, s1 + right)) right++
+    if (!left && !right) continue
+    let best = 0
+    let bestScore = boundaryScore(S, s0, s1)
+    for (let d = -left; d <= right; d++) {
+      const sc = boundaryScore(S, s0 + d, s1 + d)
+      if (sc > bestScore || (sc === bestScore && Math.abs(d) < Math.abs(best))) {
+        best = d
+        bestScore = sc
+      }
+    }
+    if (!best) continue
+    if (prev) {
+      prev.o1 += best
+      prev.n1 += best
+    }
+    e.o0 += best
+    e.o1 += best
+    e.n0 += best
+    e.n1 += best
+    if (next) {
+      next.o0 += best
+      next.n0 += best
+    }
+  }
+}
+
 /**
  * Turns diff parts into hunks, first absorbing short runs of equal words that sit between larger
  * edits ("…days. Late payments incur a fee of 2%." vs "…days of the invoice date." should not
@@ -416,6 +473,7 @@ function cleanupSemantic(
     b.o1 = oi
     b.n1 = ni
   }
+  slideEdits(blocks, oldS, newS)
   const editSize = (b: Block) => Math.max(charLen(oldS, b.o0, b.o1), charLen(newS, b.n0, b.n1))
   let changed = true
   while (changed) {

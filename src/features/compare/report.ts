@@ -5,6 +5,7 @@
  */
 import type { Rect } from '@shared/geometry'
 import type { PDFDocument, PDFPage, Session } from '@engine/session'
+import { applySpec, FLAG_NO_ROTATE, FLAG_NO_ZOOM, FLAG_PRINT, type AnnotSpec } from '@engine/ops/annots'
 import { describeChange } from './core'
 import { CATEGORY_LABELS, categoryOf, type Change, type ChangeCategory, type CompareOptions } from './types'
 
@@ -223,19 +224,37 @@ function popupFor(r: Rect, bounds: Rect): Rect {
   return [x, y, x + w, y + h]
 }
 
-function finish(annot: ReturnType<PDFPage['createAnnotation']>, contents: string, subject: string, r: Rect, bounds: Rect) {
-  annot.setContents(contents)
-  try {
-    if (annot.hasAuthor()) annot.setAuthor(AUTHOR)
-    if (annot.hasSubject()) annot.setSubject(subject)
-  } catch {}
+/**
+ * Adds one comment to a report page with the core annotation code (`applySpec`, as used by
+ * annots.create), tagged as compare data. Only properties stored on the annotation itself are
+ * passed to applySpec; the FartcrobatData tag is written here because applySpec would create it in
+ * the session's document instead of the report.
+ */
+function addComment(
+  s: Session,
+  out: PDFDocument,
+  page: PDFPage,
+  type: 'Highlight' | 'StrikeOut' | 'Underline' | 'Square' | 'Text',
+  spec: AnnotSpec,
+  change: Change,
+  near: Rect
+) {
+  const annot = page.createAnnotation(type)
   try {
     annot.setCreationDate(new Date())
-    annot.setModificationDate(new Date())
   } catch {}
-  annot.setFlags(4) // print
+  applySpec(s, annot, {
+    author: AUTHOR,
+    flags: FLAG_PRINT | (type === 'Text' ? FLAG_NO_ZOOM | FLAG_NO_ROTATE : 0),
+    ...spec
+  })
+  const obj = annot.getObject()
+  obj.put('FartcrobatData', out.newDictionary())
+  const data = obj.get('FartcrobatData')
+  data.put('fartcrobat', out.newString('compare'))
+  data.put('change', out.newString(change.type))
   try {
-    annot.setPopup(popupFor(r, bounds))
+    annot.setPopup(popupFor(near, page.getBounds() as Rect))
   } catch {}
   annot.update()
 }
@@ -244,48 +263,27 @@ function union(rects: Rect[]): Rect {
   return rects.reduce((a, r) => [Math.min(a[0], r[0]), Math.min(a[1], r[1]), Math.max(a[2], r[2]), Math.max(a[3], r[3])])
 }
 
-function markup(page: PDFPage, type: 'Highlight' | 'StrikeOut' | 'Underline', rects: Rect[], color: RGB, contents: string, subject: string) {
-  const usable = rects.filter((r) => r[2] > r[0] && r[3] > r[1])
-  if (!usable.length) return
-  const a = page.createAnnotation(type)
-  a.setColor(color)
-  a.setQuadPoints(usable.map(rectToQuad))
-  finish(a, contents, subject, union(usable), page.getBounds() as Rect)
-}
-
-function box(page: PDFPage, rect: Rect, color: RGB, contents: string, subject: string, width = 1.5) {
-  const a = page.createAnnotation('Square')
-  a.setRect(rect)
-  a.setColor(color)
-  try {
-    a.setBorderWidth(width)
-  } catch {}
-  finish(a, contents, subject, rect, page.getBounds() as Rect)
-}
-
-function note(page: PDFPage, at: [number, number], color: RGB, contents: string, subject: string) {
-  const a = page.createAnnotation('Text')
-  const r: Rect = [at[0], at[1], at[0] + 20, at[1] + 20]
-  a.setRect(r)
-  a.setColor(color)
-  try {
-    a.setIcon('Comment')
-  } catch {}
-  finish(a, contents, subject, r, page.getBounds() as Rect)
-}
-
-function annotate(page: PDFPage, rp: ReportPage) {
+function annotate(s: Session, out: PDFDocument, page: PDFPage, rp: ReportPage) {
   const bounds = page.getBounds() as Rect
   const inset = (d: number): Rect => [bounds[0] + d, bounds[1] + d, bounds[2] - d, bounds[3] - d]
+  const corner: Rect = [bounds[0] + 10, bounds[1] + 10, bounds[0] + 30, bounds[1] + 30]
   for (const c of rp.changes) {
-    const color = REPORT_COLORS[categoryOf(c.type)]
+    const color = hex(REPORT_COLORS[categoryOf(c.type)])
     const text = describeChange(c, 400)
+    const markup = (type: 'Highlight' | 'StrikeOut' | 'Underline', rects: Rect[], contents: string, subject: string) => {
+      const usable = rects.filter((r) => r[2] > r[0] && r[3] > r[1])
+      if (usable.length) addComment(s, out, page, type, { color, quads: usable.map(rectToQuad), contents, subject }, c, union(usable))
+    }
+    const box = (rect: Rect, boxColor: string, contents: string, subject: string, borderWidth = 1.5) =>
+      addComment(s, out, page, 'Square', { rect, color: boxColor, borderWidth, contents, subject }, c, rect)
+    const note = (noteColor: string, contents: string, subject: string) =>
+      addComment(s, out, page, 'Text', { rect: corner, color: noteColor, icon: 'Comment', contents, subject }, c, corner)
     switch (c.type) {
       case 'replaced':
-        markup(page, 'Highlight', c.new!.rects, color, text, 'Replaced text')
+        markup('Highlight', c.new!.rects, text, 'Replaced text')
         break
       case 'inserted':
-        markup(page, 'Highlight', c.new!.rects, color, text, 'Inserted text')
+        markup('Highlight', c.new!.rects, text, 'Inserted text')
         break
       case 'deleted': {
         // The deleted words are not on the new page: strike out the place where they were.
@@ -293,25 +291,27 @@ function annotate(page: PDFPage, rp: ReportPage) {
           const x = (r[0] + r[2]) / 2
           return [x - 5, r[1], x + 5, r[3]]
         })
-        markup(page, 'StrikeOut', marks, color, text, 'Deleted text')
+        markup('StrikeOut', marks, text, 'Deleted text')
         break
       }
       case 'formatting':
-        markup(page, 'Underline', c.new!.rects, color, `${text}. ${c.detail}.`, 'Formatting changed')
+        markup('Underline', c.new!.rects, `${text}. ${c.detail}.`, 'Formatting changed')
         break
       case 'image':
-        for (const r of c.new!.rects) box(page, [r[0] - 2, r[1] - 2, r[2] + 2, r[3] + 2], color, c.detail || text, c.detail || 'Image changed')
+        for (const r of c.new!.rects) box([r[0] - 2, r[1] - 2, r[2] + 2, r[3] + 2], color, c.detail || text, c.detail || 'Image changed')
         break
-      case 'pageAdded':
-        box(page, inset(3), REPORT_COLORS.inserted, `Page ${c.new!.page + 1} was added in the new document.`, 'Page added', 3)
-        note(page, [bounds[0] + 10, bounds[1] + 10], REPORT_COLORS.inserted, `Page ${c.new!.page + 1} was added in the new document.`, 'Page added')
+      case 'pageAdded': {
+        const msg = `Page ${c.new!.page + 1} was added in the new document.`
+        box(inset(3), hex(REPORT_COLORS.inserted), msg, 'Page added', 3)
+        note(hex(REPORT_COLORS.inserted), msg, 'Page added')
         break
+      }
       case 'pageRemoved':
-        box(page, inset(3), REPORT_COLORS.deleted, `Page ${c.old!.page + 1} of the old document was removed.`, 'Page removed', 3)
-        note(page, [bounds[0] + 10, bounds[1] + 10], REPORT_COLORS.deleted, `Page ${c.old!.page + 1} of the old document was removed. This is a copy of the old page.`, 'Page removed')
+        box(inset(3), hex(REPORT_COLORS.deleted), `Page ${c.old!.page + 1} of the old document was removed.`, 'Page removed', 3)
+        note(hex(REPORT_COLORS.deleted), `Page ${c.old!.page + 1} of the old document was removed. This is a copy of the old page.`, 'Page removed')
         break
       case 'pageMoved':
-        note(page, [bounds[0] + 10, bounds[1] + 10], REPORT_COLORS.page, `${text}.`, 'Page moved')
+        note(color, `${text}.`, 'Page moved')
         break
     }
   }
@@ -361,7 +361,7 @@ export function buildReport(s: Session, input: ReportInput): Uint8Array {
     pages.forEach((rp, k) => {
       const index = summary.pageCount + k
       const page = out.loadPage(index)
-      annotate(page, rp)
+      annotate(s, out, page, rp)
       const n = rp.changes.length
       outline.push({
         title:

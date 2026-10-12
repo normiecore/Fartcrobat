@@ -136,6 +136,7 @@ function ResultsPanel() {
   const selected = useCompare((s) => s.selected)
   const stale = useCompare((s) => s.stale)
   const running = useCompare((s) => !!s.running)
+  const canRerun = useCompare(() => compareBlocker() === null)
   const listRef = useRef<HTMLDivElement>(null)
   const { result } = session
   const changes = result.changes.filter((c) => filter[categoryOf(c.type)])
@@ -195,9 +196,15 @@ function ResultsPanel() {
         <div className="fc-compare-stale" role="status">
           <AlertTriangle size={16} />
           <span>{stale}</span>
-          <Button size="sm" icon={RefreshCw} onClick={() => void runCompare()} disabled={running || !!compareBlocker()}>
-            Compare again
-          </Button>
+          {canRerun ? (
+            <Button size="sm" icon={RefreshCw} onClick={() => void runCompare()} disabled={running}>
+              Compare again
+            </Button>
+          ) : (
+            <Button size="sm" icon={RotateCcw} onClick={newComparison} disabled={running}>
+              Choose files again
+            </Button>
+          )}
         </div>
       )}
       {total > 0 && (

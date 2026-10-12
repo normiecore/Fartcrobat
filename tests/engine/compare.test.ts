@@ -193,9 +193,12 @@ describe('compare report', () => {
     expect(annots(4)[0]).toBe('Square: Page 5 of the old document was removed.')
     // the removed page is a copy of the old page
     expect(doc.loadPage(4).toStructuredText('').asText()).toContain('Obsolete notes')
-    // highlights have popup notes
+    // highlights have popup notes, an author and the compare tag
     const hl = doc.loadPage(1).getAnnotations().find((a) => a.getType() === 'Highlight')!
     expect(hl.getObject().get('Popup').isNull()).toBe(false)
+    expect(hl.getAuthor()).toBe('Fartcrobat Compare')
+    expect(hl.getObject().get('FartcrobatData').get('fartcrobat').asString()).toBe('compare')
+    expect(hl.getColor().map((v) => Math.round(v * 100) / 100)).toEqual([0.96, 0.62, 0.04])
     expect(doc.loadOutline()?.map((o) => o.title)).toEqual([
       'Summary',
       'New page 1 — 5 changes',
