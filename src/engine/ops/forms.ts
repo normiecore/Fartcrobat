@@ -197,48 +197,163 @@ export interface SetValueOptions {
   display?: string
 }
 
+type PlacedWidget = { pageIndex: number; widget: PDFWidget }
+
+/** The field dictionary that holds a widget's value: the nearest node (itself included) with a /T. */
+function fieldHead(widgetObj: PDFObject): PDFObject {
+  let f = widgetObj
+  for (let depth = 0; depth < 32 && isNull(f.get('T')) && !isNull(f.get('Parent')); depth++) f = f.get('Parent')
+  return f
+}
+
+function objNum(obj: PDFObject): number {
+  try {
+    return obj.asIndirect()
+  } catch {
+    return 0
+  }
+}
+
+function annotsContain(page: PDFObject, num: number): boolean {
+  const annots = page.get('Annots')
+  if (isNull(annots)) return false
+  const a = annots.resolve()
+  for (let i = 0; i < a.length; i++) if (objNum(a.get(i)) === num) return true
+  return false
+}
+
+/**
+ * Every widget of the field `widget` belongs to, with its page. Only the pages holding those
+ * widgets are loaded (found through /P, or a scan of the pages' /Annots arrays).
+ */
+function fieldWidgets(s: Session, widget: PDFWidget, pageIndex: number): PlacedWidget[] {
+  const obj = widget.getObject()
+  const self = objNum(obj)
+  const head = fieldHead(obj)
+  const nums = new Set<number>()
+  if (self) nums.add(self)
+  const kids = head.get('Kids')
+  if (!isNull(kids) && kids.resolve().isArray()) {
+    kids.resolve().forEach((k) => {
+      if (k.isIndirect() && isNull(k.resolve().get('T'))) nums.add(k.asIndirect())
+    })
+  }
+  const byPage = new Map<number, Set<number>>()
+  const count = s.pageCount()
+  for (const n of nums) {
+    let index = n === self ? pageIndex : -1
+    if (index < 0) {
+      const p = s.pdf.newIndirect(n).resolve().get('P')
+      if (!isNull(p) && p.isIndirect()) index = s.pageIndexById(p.asIndirect())
+      if (index >= 0 && !annotsContain(s.pdf.findPage(index), n)) index = -1
+    }
+    for (let i = 0; index < 0 && i < count; i++) if (annotsContain(s.pdf.findPage(i), n)) index = i
+    if (index < 0) continue
+    if (!byPage.has(index)) byPage.set(index, new Set())
+    byPage.get(index)!.add(n)
+  }
+  const out: PlacedWidget[] = []
+  for (const [p, wanted] of byPage) {
+    for (const w of s.page(p).getWidgets()) if (wanted.has(objNum(w.getObject()))) out.push({ pageIndex: p, widget: w })
+  }
+  if (!out.some((g) => g.widget === widget || objNum(g.widget.getObject()) === self)) out.push({ pageIndex, widget })
+  return out
+}
+
+/**
+ * Checkbox and radio values. `value` is an on-state name ("Yes", "pro"...), "Off"/"" to clear,
+ * or a boolean for `widget` itself. Only the widget whose on-state matches is turned on: a
+ * checkbox field whose widgets export different values ("Yes" and "No") behaves like a radio
+ * group. A text value that matches no widget of a checkbox means "checked" (single-state
+ * checkboxes filled from data that says "On" or "true"). Values are written directly, so radio
+ * groups with NoToggleToOff can be cleared too (MuPDF's toggle refuses to).
+ */
+function setButtonValue(s: Session, type: FieldType, widget: PDFWidget, group: PlacedWidget[], value: string | boolean) {
+  const states = group.map((g) => ({ ...g, on: onStateOf(g.widget) }))
+  const own = onStateOf(widget)
+  let target: string | null
+  if (typeof value === 'boolean') {
+    if (!value && readName(widget.getObject().get('AS')) !== own) return // already off
+    target = value ? own : null
+  } else if (value === '' || value === 'Off') target = null
+  else if (states.some((g) => g.on === value)) target = value
+  else if (type === 'checkbox') target = own
+  else return // a radio value that matches no button
+  fieldHead(widget.getObject()).put('V', s.pdf.newName(target ?? 'Off'))
+  for (const g of states) {
+    g.widget.getObject().put('AS', s.pdf.newName(target !== null && g.on === target ? target : 'Off'))
+  }
+}
+
+/**
+ * Text values. With `display`, /V keeps the raw value while every widget shows the formatted
+ * text (as Acrobat does for number and date formats).
+ */
+function setTextValue(s: Session, widget: PDFWidget, value: string, display?: string) {
+  if (display === undefined || display === value) {
+    widget.setTextValue(value)
+    widget.update()
+    return
+  }
+  // MuPDF draws appearances from /V when a widget is updated: draw them now with the display
+  // text (the field's pages are loaded, so this reaches every widget), then store the raw value.
+  // Writing /V directly does not ask for new appearances, so the formatted text stays.
+  widget.setTextValue(display)
+  widget.update()
+  fieldHead(widget.getObject()).put('V', s.pdf.newString(value))
+}
+
 function setWidgetValue(s: Session, widget: PDFWidget, pageIndex: number, value: string | boolean, opts: SetValueOptions = {}) {
   const type = TYPE_MAP[safe(() => widget.getFieldType(), 'widget')] ?? 'unknown'
-  if (type === 'checkbox') {
-    const on = onStateOf(widget)
-    const isOn = readName(widget.getObject().get('AS')) === on
-    const want = typeof value === 'boolean' ? value : value !== '' && value !== 'Off'
-    if (isOn !== want) widget.toggle()
-  } else if (type === 'radio') {
-    // value is the on-state name of the radio button to select (or this widget when true)
-    const on = onStateOf(widget)
-    const target = typeof value === 'boolean' ? (value ? on : 'Off') : value
-    if (target === on) {
-      if (readName(widget.getObject().get('AS')) !== on) widget.toggle()
-    } else {
-      // select the sibling with that state
-      const name = widget.getName()
-      for (const sib of widgetsNamed(s, name)) {
-        const sibOn = onStateOf(sib.widget)
-        const sibIsOn = readName(sib.widget.getObject().get('AS')) === sibOn
-        if (sibOn === target && !sibIsOn) sib.widget.toggle()
-        if (target === 'Off' && sibIsOn) sib.widget.toggle()
-        s.touch(sib.pageIndex)
-      }
-    }
+  // Loads the pages of every widget of the field, so all of them get new appearances.
+  const group = fieldWidgets(s, widget, pageIndex)
+  if (type === 'checkbox' || type === 'radio') {
+    setButtonValue(s, type, widget, group, value)
   } else if (type === 'text') {
-    const v = String(value)
-    if (opts.display !== undefined && opts.display !== v) {
-      widget.setTextValue(opts.display)
-      // Keep the raw value in /V while the appearance shows the formatted text.
-      const field = widget.getObject()
-      const target = isNull(field.get('T')) && !isNull(field.get('Parent')) ? field.get('Parent') : field
-      target.put('V', s.pdf.newString(v))
-    } else {
-      widget.setTextValue(v)
-    }
+    setTextValue(s, widget, String(value), opts.display)
   } else if (type === 'combo' || type === 'list') {
     widget.setChoiceValue(String(value))
+    widget.update()
   } else {
     throw new EngineError(`Cannot set the value of a ${type} field`, 'BAD_FIELD')
   }
-  widget.update()
-  s.touch(pageIndex)
+  for (const g of group) s.touch(g.pageIndex)
+}
+
+/** Field names locked by signatures (FieldMDP /Lock, or a DocMDP signature allowing no changes). */
+function signatureLocks(s: Session): (name: string) => boolean {
+  let all = false
+  const include: string[] = []
+  const exclude: string[][] = []
+  const names = (arr: PDFObject): string[] => {
+    const out: string[] = []
+    if (!isNull(arr) && arr.resolve().isArray()) arr.resolve().forEach((n) => out.push(readString(n)))
+    return out
+  }
+  const addLock = (lock: PDFObject) => {
+    if (isNull(lock)) return
+    const action = readName(lock.get('Action'))
+    if (action === 'All') all = true
+    else if (action === 'Include') include.push(...names(lock.get('Fields')))
+    else if (action === 'Exclude') exclude.push(names(lock.get('Fields')))
+  }
+  walkFields(s.pdf, (field, _name, ft) => {
+    if (ft !== 'Sig') return
+    const f = field.resolve()
+    const v = f.get('V')
+    if (isNull(v)) return
+    addLock(f.get('Lock'))
+    const refs = v.resolve().get('Reference')
+    if (isNull(refs) || !refs.resolve().isArray()) return
+    refs.resolve().forEach((r) => {
+      const method = readName(r.resolve().get('TransformMethod'))
+      const params = r.resolve().get('TransformParams')
+      if (method === 'FieldMDP') addLock(params)
+      else if (method === 'DocMDP' && readNumber(params.get('P'), 2) === 1) all = true
+    })
+  })
+  const covers = (list: string[], name: string) => list.some((n) => name === n || name.startsWith(n + '.'))
+  return (name) => all || covers(include, name) || exclude.some((ex) => !covers(ex, name))
 }
 
 export default defineOps('forms', {
@@ -283,37 +398,26 @@ export default defineOps('forms', {
     for (const v of values) {
       const ws = widgetsNamed(s, v.name)
       if (!ws.length) continue
-      const first = ws[0]
-      const type = TYPE_MAP[safe(() => first.widget.getFieldType(), 'widget')]
-      if (type === 'checkbox' || type === 'radio') {
-        if (type === 'radio') setWidgetValue(s, first.widget, first.pageIndex, v.value, {})
-        else for (const w of ws) setWidgetValue(s, w.widget, w.pageIndex, v.value, {})
-      } else {
-        setWidgetValue(s, first.widget, first.pageIndex, v.value, { display: v.display })
-        // other widgets of the same field share the value; refresh their appearance
-        for (const w of ws.slice(1)) {
-          w.widget.update()
-          s.touch(w.pageIndex)
-        }
-      }
+      // One call per field: it updates every widget of the field.
+      setWidgetValue(s, ws[0].widget, ws[0].pageIndex, v.value, { display: v.display })
     }
     s.documentChanged()
   }),
 
-  /** Clears the form (all fields, or only the named ones). */
+  /**
+   * Clears the form (all fields, or only the named ones). Signature fields and fields locked by
+   * a signature are left alone: clearing a signature field would delete the signature.
+   */
   reset: mutation('Clear Form', (s, names?: string[]) => {
     const doc = s.pdf
-    if (!names || !names.length) {
-      // resetForm(empty, exclude=true) does not reset anything in MuPDF; pass every field.
-      const all = doc.getTrailer().get('Root', 'AcroForm', 'Fields')
-      if (!isNull(all)) doc.resetForm(all, false)
-    } else {
-      const arr = doc.newArray()
-      walkFields(doc, (field, name) => {
-        if (names.includes(name)) arr.push(field)
-      })
-      doc.resetForm(arr, false)
-    }
+    const locked = signatureLocks(s)
+    const arr = doc.newArray()
+    walkFields(doc, (field, name, ft) => {
+      if (ft === 'Sig' || locked(name)) return
+      if (names && names.length && !names.includes(name)) return
+      arr.push(field)
+    })
+    if (arr.length) doc.resetForm(arr, false)
     const n = s.pageCount()
     for (let p = 0; p < n; p++) {
       for (const w of s.page(p).getWidgets()) {
