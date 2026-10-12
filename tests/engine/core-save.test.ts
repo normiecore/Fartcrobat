@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type annotOps from '@engine/ops/annots'
 import type formOps from '@engine/ops/forms'
+import { saveDocument } from '@engine/ops/doc'
 import { openBytes, reopen, signedFormPdf, xrefChain } from './core-docs'
 
 function startsWith(bytes: Uint8Array, prefix: Uint8Array) {
@@ -94,5 +95,19 @@ describe('incremental saves', () => {
     const fields = await forms.listAll()
     expect(fields.find((f) => f.name === 'Name')!.value).toBe('Before')
     expect(e.session.sourceBytes).not.toBeNull()
+  })
+
+  it('refuses an incremental save from inside an undoable operation and stays usable', async () => {
+    const original = signedFormPdf()
+    const e = await openBytes(original, 'signed.pdf')
+    expect(() =>
+      e.session.runMutation('Feature', () => saveDocument(e.session, { mode: 'incremental' }))
+    ).toThrow(/inside an undoable operation/)
+    await e.ops<typeof annotOps>('annots').create(0, { type: 'Square', rect: [10, 10, 50, 50] })
+    const bytes = await e.doc.save({})
+    expect(startsWith(bytes, original)).toBe(true)
+    const d = reopen(bytes)
+    expect(d.wasRepaired()).toBe(false)
+    d.destroy()
   })
 })

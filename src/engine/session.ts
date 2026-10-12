@@ -111,6 +111,7 @@ export class Session {
    * the bytes do not reopen cleanly.
    */
   rebase(bytes: Uint8Array) {
+    if (this.opDepth > 0) throw new EngineError('The document cannot be reopened during an operation', 'BAD_STATE')
     const old = this.pdf
     const fresh = new this.mupdf.PDFDocument(bytes)
     try {
@@ -326,6 +327,11 @@ export class Session {
   }
 
   // ---- journalled operations ----------------------------------------------------------
+
+  /** True while a mutation (runMutation) is running. */
+  get inOperation(): boolean {
+    return this.opDepth > 0
+  }
 
   /** Runs fn as one undoable step. Nested calls join the outer step. */
   runMutation<R>(label: string, fn: () => R): R {

@@ -226,6 +226,10 @@ function prefersIncremental(s: Session): boolean {
 
 /** Appends the changes to the file as an incremental update (keeps signed revisions intact). */
 function saveIncrementally(s: Session): Uint8Array {
+  if (s.inOperation) {
+    // The document is reopened below, which cannot happen in the middle of an undo step.
+    throw new EngineError('Incremental saves cannot run inside an undoable operation', 'BAD_SAVE')
+  }
   const bytes = takeBuffer(s.pdf.saveToBuffer('incremental'))
   // MuPDF builds every incremental save on the bytes the document was opened from. Reopen from
   // the bytes just produced, so the next incremental save appends to them with a valid /Prev.
