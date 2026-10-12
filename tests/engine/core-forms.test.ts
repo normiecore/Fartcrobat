@@ -95,6 +95,25 @@ describe('checkbox fields whose widgets export different values', () => {
     await forms.setValues([{ name: 'subscribe', value: false }])
     expect((await forms.listAll()).find((f) => f.name === 'subscribe')!.checked).toBe(false)
   })
+
+  it('checks a checkbox that has no appearance states yet', async () => {
+    const e = await openFixture('form.pdf')
+    const forms = e.ops<typeof formOps>('forms')
+    const sub = (await forms.listAll()).find((f) => f.name === 'subscribe')!
+    // strip the appearance states, as some generators do
+    e.session.runMutation('Strip', () => {
+      const w = e.session
+        .page(sub.page)
+        .getWidgets()
+        .find((x) => x.getObject().asIndirect() === sub.id)!
+      w.getObject().delete('AP')
+      w.getObject().put('AS', e.session.pdf.newName('Off'))
+    })
+    await forms.setValue(sub.id, true)
+    const after = (await forms.listAll()).find((f) => f.name === 'subscribe')!
+    expect(after.value).not.toBe('Off')
+    expect(after.checked).toBe(true)
+  })
 })
 
 describe('radio groups with NoToggleToOff', () => {

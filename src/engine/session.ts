@@ -30,7 +30,10 @@ export class Session {
   /** The pending document should open as unsaved (see doc.open's `dirty`). */
   pendingDirty = false
   fileName = ''
-  /** The exact bytes the document was opened (or last reloaded) from. Needed to validate signatures. */
+  /**
+   * The exact bytes the document was opened (or last reloaded, or last saved incrementally) from.
+   * Needed to validate signatures.
+   */
   sourceBytes: Uint8Array | null = null
   sourceFormat = 'PDF'
   converted = false

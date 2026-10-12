@@ -135,7 +135,11 @@ export function fieldInfo(s: Session, w: PDFWidget, pageIndex: number, position:
     type,
     rect: safe(() => w.getRect() as Rect, [0, 0, 0, 0]),
     value,
-    checked: onState !== null ? appearanceState === onState || value === onState : false,
+    checked:
+      onState !== null
+        ? appearanceState === onState || value === onState
+        : // a checkbox without appearance states: on whenever its value is not Off
+          type === 'checkbox' && value !== '' && value !== 'Off',
     onState,
     options,
     tooltip: readString(obj.getInheritable('TU')),
@@ -269,8 +273,9 @@ function fieldWidgets(s: Session, widget: PDFWidget, pageIndex: number): PlacedW
  * groups with NoToggleToOff can be cleared too (MuPDF's toggle refuses to).
  */
 function setButtonValue(s: Session, type: FieldType, widget: PDFWidget, group: PlacedWidget[], value: string | boolean) {
-  const states = group.map((g) => ({ ...g, on: onStateOf(g.widget) }))
-  const own = onStateOf(widget)
+  // Like MuPDF, a button without appearance states is on in state "Yes".
+  const states = group.map((g) => ({ ...g, on: onStateOf(g.widget) ?? 'Yes' }))
+  const own = onStateOf(widget) ?? 'Yes'
   let target: string | null
   if (typeof value === 'boolean') {
     if (!value && readName(widget.getObject().get('AS')) !== own) return // already off
