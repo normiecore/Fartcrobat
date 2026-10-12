@@ -6,6 +6,7 @@ import {
   followExternalLink,
   showContextMenu,
   showError,
+  useActiveDoc,
   useDocState,
   usePageVersion,
   type ContextMenuItem,
@@ -14,7 +15,7 @@ import {
   type PageLayerProps
 } from '@renderer/sdk'
 import type { LinkItem } from './engine'
-import { LINK_SELECTION, ops, returnToEditTool, selectLink, selectedLink } from './common'
+import { LINK_SELECTION, keyboardTaken, ops, returnToEditTool, selectLink, selectedLink } from './common'
 import { createLinksFromUrls, openLinkDialog, removeAllLinks } from './LinkDialogs'
 import { openFileLink } from './LinkBordersLayer'
 
@@ -84,9 +85,65 @@ export function LinkToolLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const [links, setLinks] = useState<LinkItem[]>([])
   const [drag, setDrag] = useState<Drag | null>(null)
   const [pendingRect, setPendingRect] = useState<CssRect | null>(null)
+  const [nudge, setNudge] = useState<{ id: number; dx: number; dy: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const nudgeTimer = useRef<number | null>(null)
   const sel =
     selection.kind === 'custom' && selection.type === LINK_SELECTION && selection.page === pageIndex ? (selection.data as LinkItem) : null
+  const activeDoc = useActiveDoc()
+
+  // Keyboard: arrows move the selected link (Shift: 10 points), Escape deselects it. Moves are
+  // collected for a moment and committed as one undoable step.
+  const nudgeRef = useRef<{ id: number; dx: number; dy: number } | null>(null)
+  const nudgeBusy = useRef(false)
+  useEffect(() => {
+    if (!sel || activeDoc !== doc) return
+    const commit = () => {
+      nudgeTimer.current = null
+      const n = nudgeRef.current
+      const done = () => {
+        nudgeRef.current = null
+        nudgeBusy.current = false
+        setNudge(null)
+      }
+      if (!n || (!n.dx && !n.dy)) return done()
+      nudgeBusy.current = true
+      const r = sel.rect
+      void ops(doc)
+        .updateLink(pageIndex, n.id, { rect: [r[0] + n.dx, r[1] + n.dy, r[2] + n.dx, r[3] + n.dy] })
+        .then((l) => selectLink(doc, pageIndex, l))
+        .catch((err) => showError(err, 'Could not move the link'))
+        .finally(done)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      const typing = !!t && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))
+      if (typing || keyboardTaken(e) || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        selectLink(doc, pageIndex, null)
+        return
+      }
+      const step = e.shiftKey ? 10 : 1
+      const d: Record<string, Point> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }
+      const v = d[e.key]
+      if (!v) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (nudgeBusy.current) return
+      // arrows move in screen directions: convert to page space for rotated views
+      const o = geometry.toPage([0, 0])
+      const p = geometry.toPage([v[0] * geometry.scale, v[1] * geometry.scale])
+      const n = nudgeRef.current
+      nudgeRef.current = { id: sel.id, dx: (n?.dx ?? 0) + (p[0] - o[0]), dy: (n?.dy ?? 0) + (p[1] - o[1]) }
+      setNudge(nudgeRef.current)
+      if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current)
+      nudgeTimer.current = window.setTimeout(commit, 450)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [sel, activeDoc, doc, geometry, pageIndex])
 
   useEffect(() => {
     let alive = true
@@ -215,6 +272,11 @@ export function LinkToolLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         let c = geometry.rectToCss(l.rect)
         if (isSel && drag?.mode === 'move' && drag.link.id === l.id) c = { ...c, left: c.left + drag.dx, top: c.top + drag.dy }
         if (isSel && drag?.mode === 'resize' && drag.link.id === l.id) c = drag.rect
+        if (nudge && nudge.id === l.id) {
+          const a = geometry.toCss([0, 0])
+          const b = geometry.toCss([nudge.dx, nudge.dy])
+          c = { ...c, left: c.left + b[0] - a[0], top: c.top + b[1] - a[1] }
+        }
         return (
           <div
             key={l.id}

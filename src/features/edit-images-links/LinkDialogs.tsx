@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Crosshair, Link2 } from 'lucide-react'
 import type { Rect } from '@shared/geometry'
 import {
@@ -359,7 +359,27 @@ export function currentView(doc: DocumentModel): { page: number; x: number; y: n
 export function GoToViewBar() {
   const req = useUi((s) => s.goToView)
   const activeId = useApp((s) => s.activeDocId)
-  if (!req || req.docId !== activeId) return null
+  const shown = !!req && req.docId === activeId
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  // Float at the top centre of the document area (it moves with panes and option bars).
+  useLayoutEffect(() => {
+    if (!shown) return
+    const vp = getActiveDoc()?.view?.getViewportElement()
+    if (!vp) return
+    const place = () => {
+      const r = vp.getBoundingClientRect()
+      setPos({ top: r.top + 12, left: r.left + r.width / 2 })
+    }
+    place()
+    const ro = new ResizeObserver(place)
+    ro.observe(vp)
+    window.addEventListener('resize', place)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', place)
+    }
+  }, [shown, activeId])
+  if (!req || !shown) return null
   const finish = (set: boolean) => {
     const doc = getActiveDoc()
     useUi.setState({ goToView: null })
@@ -367,7 +387,7 @@ export function GoToViewBar() {
     else req.onCancel()
   }
   return (
-    <div className="fc-edit-images-links-gotoview" role="dialog" aria-label="Create Go to View">
+    <div className="fc-edit-images-links-gotoview" role="dialog" aria-label="Create Go to View" style={pos ?? undefined}>
       <Link2 size={18} />
       <div>
         <b>Create Go to View</b>

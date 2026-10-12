@@ -3,8 +3,8 @@ import {
   Check,
   Crop,
   Download,
-  FlipHorizontal2,
-  FlipVertical2,
+  TrianglesCenterlineDashedVertical,
+  TrianglesCenterlineDashedHorizontal,
   Layers,
   Replace,
   RotateCcw,
@@ -17,7 +17,6 @@ import {
   IconButton,
   showContextMenu,
   useActiveDoc,
-  useApp,
   useDocState,
   usePageVersion,
   type CssRect,
@@ -28,6 +27,7 @@ import type { PageImage } from './engine'
 import {
   IMAGE_SELECTION,
   imageKey,
+  keyboardTaken,
   ops,
   rectCenter,
   rectToRect,
@@ -118,6 +118,11 @@ function snapAngle(deg: number, fine: boolean): number {
   return Math.abs(deg - near) < 4 ? near : Math.round(deg)
 }
 
+/** True when the image's edges are parallel to the page edges (0, 90, 180 or 270 degrees). */
+function rightAngled(img: PageImage): boolean {
+  return img.rotation % 90 === 0
+}
+
 function sameImage(a: PageImage, b: PageImage): boolean {
   return a.xref === b.xref && a.loc.join() === b.loc.join() && a.visible.every((v, i) => Math.abs(v - b.visible[i]) < 0.01) && a.index === b.index
 }
@@ -165,6 +170,14 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     }
   }, [doc, pageIndex, version])
 
+  // An image selected with the keyboard takes the focus (its hit box is replaced by the frame).
+  const focusFrame = useRef(false)
+  useEffect(() => {
+    if (!sel || !focusFrame.current) return
+    focusFrame.current = false
+    frameRef.current?.focus({ preventScroll: true })
+  }, [sel])
+
   // Drop a finished drag preview once the page has re-rendered with the change.
   useEffect(() => {
     if (!drag?.done) return
@@ -180,29 +193,42 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cropping, sel?.xref, sel?.loc.join()])
 
+  // Arrow-key moves are collected for a moment and committed as one undoable step.
+  const nudgeRef = useRef<{ dx: number; dy: number } | null>(null)
+  const nudgeBusy = useRef(false)
   const commitNudge = useCallback(() => {
     if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current)
     nudgeTimer.current = null
-    setNudge((n) => {
-      const img = sel
-      if (n && img && (n.dx || n.dy)) {
-        void transformImage(doc, pageIndex, img, translation(n.dx, n.dy), 'move').finally(() => setNudge(null))
-        return n
-      }
-      return null
-    })
+    const n = nudgeRef.current
+    const done = () => {
+      nudgeRef.current = null
+      nudgeBusy.current = false
+      setNudge(null)
+    }
+    if (!n || !sel || (!n.dx && !n.dy)) return done()
+    nudgeBusy.current = true
+    void transformImage(doc, pageIndex, sel, translation(n.dx, n.dy), 'move').finally(done)
   }, [doc, pageIndex, sel])
 
   // Keyboard: arrows nudge the selected image, Enter/Escape finish cropping.
   useEffect(() => {
     if (!sel || activeDoc !== doc) return
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(e.target) || useApp.getState().dialogs.length || e.ctrlKey || e.metaKey || e.altKey) return
+      if (isTyping(e.target) || keyboardTaken(e) || e.ctrlKey || e.metaKey || e.altKey) return
+      // Enter on a focused button belongs to the button
+      if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
       if (cropping && (e.key === 'Escape' || e.key === 'Enter')) {
         e.preventDefault()
         e.stopPropagation()
         if (e.key === 'Enter' && cropRect) void cropImage(doc, pageIndex, sel, geometry.cssToRect(cropRect))
         useUi.setState({ crop: null })
+        return
+      }
+      if (e.key === 'Escape') {
+        // Escape first deselects the image; a second Escape leaves the tool (core shortcut)
+        e.preventDefault()
+        e.stopPropagation()
+        selectImage(doc, pageIndex, null)
         return
       }
       const step = e.shiftKey ? 10 : 1
@@ -211,10 +237,14 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       if (!v || cropping) return
       e.preventDefault()
       e.stopPropagation()
+      // presses while the previous move is being written are dropped (the image is about to jump)
+      if (nudgeBusy.current) return
       // arrows move in screen directions: convert to page space for rotated views
       const o = geometry.toPage([0, 0])
       const p = geometry.toPage([v[0] * geometry.scale, v[1] * geometry.scale])
-      setNudge((n) => ({ dx: (n?.dx ?? 0) + (p[0] - o[0]), dy: (n?.dy ?? 0) + (p[1] - o[1]) }))
+      const n = nudgeRef.current
+      nudgeRef.current = { dx: (n?.dx ?? 0) + (p[0] - o[0]), dy: (n?.dy ?? 0) + (p[1] - o[1]) }
+      setNudge(nudgeRef.current)
       if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current)
       nudgeTimer.current = window.setTimeout(commitNudge, 450)
     }
@@ -307,7 +337,9 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       const snap = drag.snap ?? (Math.hypot(dx, dy) > 2 ? grabSnapshot(layerRef.current, css) : null)
       setDrag({ ...drag, dx, dy, snap })
     } else if (drag.mode === 'resize') {
-      setDrag({ ...drag, rect: resizeRect(drag.from, drag.handle, p[0] - drag.start[0], p[1] - drag.start[1], !e.shiftKey) })
+      // images turned by an odd angle always keep their proportions (a free resize would skew them)
+      const keep = !e.shiftKey || !rightAngled(drag.img)
+      setDrag({ ...drag, rect: resizeRect(drag.from, drag.handle, p[0] - drag.start[0], p[1] - drag.start[1], keep) })
     } else {
       const a = Math.atan2(p[1] - drag.center[1], p[0] - drag.center[0])
       setDrag({ ...drag, angle: snapAngle(((a - drag.a0) * 180) / Math.PI, e.shiftKey) })
@@ -435,6 +467,9 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault()
+                e.stopPropagation()
+                // keep keyboard focus on the selection so Tab reaches its toolbar
+                focusFrame.current = true
                 selectImage(doc, pageIndex, img)
               }
             }}
@@ -456,7 +491,7 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         >
           {preview && <img className="fc-edit-images-links-preview" src={preview} alt="" draggable={false} />}
           {!cropping &&
-            HANDLES.map((h) => (
+            HANDLES.filter((h) => h.length === 2 || rightAngled(sel)).map((h) => (
               <div
                 key={h}
                 className={`fc-edit-images-links-handle fc-edit-images-links-handle-${h}`}
@@ -479,7 +514,7 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       )}
       {sel && cropping && cropRect && (
         <>
-          <div className="fc-edit-images-links-crop-bounds" style={geometry.rectToCss(sel.bbox)} />
+          <CropShade bounds={geometry.rectToCss(sel.bbox)} crop={cropRect} />
           <div data-fc-eil="" className="fc-edit-images-links-crop" style={{ ...cropRect }}>
             {HANDLES.map((h) => (
               <div
@@ -503,6 +538,18 @@ export function ImageLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           onApplyCrop={applyCrop}
         />
       )}
+    </div>
+  )
+}
+
+/** Dims the parts of the image that the crop will hide (only inside the image). */
+function CropShade({ bounds, crop }: { bounds: CssRect; crop: CssRect }) {
+  return (
+    <div className="fc-edit-images-links-crop-bounds" style={{ ...bounds }}>
+      <div
+        className="fc-edit-images-links-crop-shade"
+        style={{ left: crop.left - bounds.left, top: crop.top - bounds.top, width: crop.width, height: crop.height }}
+      />
     </div>
   )
 }
@@ -551,8 +598,8 @@ function ImageToolbar({
         <>
           <IconButton icon={RotateCcw} label="Rotate counterclockwise" size={17} onClick={() => void rotateImage(doc, page, img, -90)} />
           <IconButton icon={RotateCw} label="Rotate clockwise" size={17} onClick={() => void rotateImage(doc, page, img, 90)} />
-          <IconButton icon={FlipHorizontal2} label="Flip horizontal" size={17} onClick={() => void flipImage(doc, page, img, 'horizontal')} />
-          <IconButton icon={FlipVertical2} label="Flip vertical" size={17} onClick={() => void flipImage(doc, page, img, 'vertical')} />
+          <IconButton icon={TrianglesCenterlineDashedVertical} label="Flip horizontal" size={17} onClick={() => void flipImage(doc, page, img, 'horizontal')} />
+          <IconButton icon={TrianglesCenterlineDashedHorizontal} label="Flip vertical" size={17} onClick={() => void flipImage(doc, page, img, 'vertical')} />
           <span className="fc-edit-images-links-sep" />
           <IconButton icon={Crop} label="Crop image" size={17} onClick={() => startCrop(doc, page, img)} />
           <IconButton icon={Replace} label="Replace image" size={17} onClick={() => void replaceImage(doc, page, img)} />

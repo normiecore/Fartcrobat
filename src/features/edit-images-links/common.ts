@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Matrix, Rect } from '@shared/geometry'
-import { registry, setTool, type DocumentModel } from '@renderer/sdk'
+import { registry, setTool, useApp, type DocumentModel } from '@renderer/sdk'
 import type engineOps from './engine'
 import type { LinkItem, PageImage } from './engine'
 
@@ -88,6 +88,27 @@ export interface GoToViewRequest {
 export const useUi = create<UiState>(() => ({ crop: null, pending: null, goToView: null, busyKey: null }))
 
 export const imageKey = (i: PageImage) => `${i.xref}:${i.loc.join('/')}`
+
+let menuClosedAt = 0
+useApp.subscribe((s, prev) => {
+  if (prev.contextMenu && !s.contextMenu) menuClosedAt = performance.now()
+})
+
+/** True while a context menu is open, or when this very key press just closed it (its listener may run first). */
+export function contextMenuActive(): boolean {
+  return !!useApp.getState().contextMenu || performance.now() - menuClosedAt < 80
+}
+
+/** True while something else owns the keyboard: a dialog, the command palette or a context menu. */
+export function keyboardTaken(e: KeyboardEvent): boolean {
+  const s = useApp.getState()
+  if (contextMenuActive()) {
+    // Escape only closes the menu: keep it from also leaving the current tool
+    if (e.key === 'Escape') e.preventDefault()
+    return true
+  }
+  return !!s.dialogs.length || s.paletteOpen
+}
 
 /** The tool to return to after placing an image or cancelling: Edit text & images if available. */
 export function returnToEditTool() {

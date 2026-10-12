@@ -7,8 +7,8 @@ import {
   ClipboardCopy,
   Crop,
   Download,
-  FlipHorizontal2,
-  FlipVertical2,
+  TrianglesCenterlineDashedVertical,
+  TrianglesCenterlineDashedHorizontal,
   Layers,
   Replace,
   RotateCcw,
@@ -211,8 +211,8 @@ export function imageMenu(doc: DocumentModel, page: number, img: PageImage): Con
   return [
     { id: 'rotate-cw', label: 'Rotate Clockwise', icon: RotateCw, run: () => void rotateImage(doc, page, img, 90) },
     { id: 'rotate-ccw', label: 'Rotate Counterclockwise', icon: RotateCcw, run: () => void rotateImage(doc, page, img, -90) },
-    { id: 'flip-h', label: 'Flip Horizontal', icon: FlipHorizontal2, run: () => void flipImage(doc, page, img, 'horizontal') },
-    { id: 'flip-v', label: 'Flip Vertical', icon: FlipVertical2, run: () => void flipImage(doc, page, img, 'vertical') },
+    { id: 'flip-h', label: 'Flip Horizontal', icon: TrianglesCenterlineDashedVertical, run: () => void flipImage(doc, page, img, 'horizontal') },
+    { id: 'flip-v', label: 'Flip Vertical', icon: TrianglesCenterlineDashedHorizontal, run: () => void flipImage(doc, page, img, 'vertical') },
     { id: 'sep1', label: '', separator: true },
     { id: 'crop', label: 'Crop Image', icon: Crop, run: () => startCrop(doc, page, img) },
     { id: 'replace', label: 'Replace Image…', icon: Replace, run: () => void replaceImage(doc, page, img) },
@@ -239,13 +239,25 @@ function PropertiesBody({ img, pageSize, close }: { img: PageImage; pageSize: [n
   const [w, setW] = useState(toU(v[2] - v[0]))
   const [h, setH] = useState(toU(v[3] - v[1]))
   const [rot, setRot] = useState(0)
-  const [keep, setKeep] = useState(true)
+  // an image turned by an odd angle would be skewed by a free resize
+  const rightAngled = img.rotation % 90 === 0
+  const [keepChoice, setKeep] = useState(true)
+  const keep = keepChoice || !rightAngled
   const ratio = (v[2] - v[0]) / Math.max(1e-6, v[3] - v[1])
   const valid = w > 0 && h > 0 && [x, y, w, h, rot].every(Number.isFinite)
   const submit = () => {
     if (!valid) return
-    const f = 1 / u.perPoint
-    close({ rect: [x * f, y * f, (x + w) * f, (y + h) * f], rotation: rot })
+    // fields the user did not change keep their exact value (the display is rounded)
+    const exact = (shown: number, pt: number) => (shown === toU(pt) ? pt : shown / u.perPoint)
+    const left = exact(x, v[0])
+    const top = exact(y, v[1])
+    let width = exact(w, v[2] - v[0])
+    let height = exact(h, v[3] - v[1])
+    if (keep) {
+      if (width !== v[2] - v[0]) height = width / ratio
+      else if (height !== v[3] - v[1]) width = height * ratio
+    }
+    close({ rect: [left, top, left + width, top + height], rotation: rot })
   }
   return (
     <Dialog
@@ -302,7 +314,12 @@ function PropertiesBody({ img, pageSize, close }: { img: PageImage; pageSize: [n
             <NumberInput value={rot} step={15} min={-360} max={360} onChange={setRot} aria-label="Rotate by" />
           </Field>
         </div>
-        <Checkbox checked={keep} onChange={setKeep} label="Keep proportions" />
+        <Checkbox
+          checked={keep}
+          disabled={!rightAngled}
+          onChange={setKeep}
+          label={rightAngled ? 'Keep proportions' : 'Keep proportions (always on for images turned at an angle)'}
+        />
       </div>
     </Dialog>
   )
