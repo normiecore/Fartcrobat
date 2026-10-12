@@ -94,14 +94,18 @@ export function isSelfOrDescendant(tree: Bookmark[], ancestorId: number, id: num
 
 /**
  * The bookmark for the section the reader is in: the last bookmark (in document order) whose
- * destination is on the furthest page not after `page`.
+ * destination is at or before the reading position (page, and optionally y on that page).
  */
-export function currentBookmarkId(tree: Bookmark[], page: number): number | null {
-  let best: { id: number; page: number } | null = null
+export function currentBookmarkId(tree: Bookmark[], page: number, y: number = Infinity): number | null {
+  let best: { id: number; page: number; y: number } | null = null
   const walk = (list: Bookmark[]) => {
     for (const b of list) {
-      const p = b.dest?.page
-      if (p !== undefined && p <= page && (!best || p >= best.page)) best = { id: b.id, page: p }
+      const d = b.dest
+      if (d) {
+        const by = d.y ?? 0
+        const reached = d.page < page || (d.page === page && by <= y)
+        if (reached && (!best || d.page > best.page || (d.page === best.page && by >= best.y))) best = { id: b.id, page: d.page, y: by }
+      }
       walk(b.children)
     }
   }

@@ -119,6 +119,12 @@ function DescriptionTab({
   )
 }
 
+/** "Standard V2 R3 128-bit RC4" -> "128-bit RC4". */
+function encryptionLabel(raw: string): string {
+  const m = /(\d+)-bit\s+(AES|RC4)/i.exec(raw)
+  return m ? `${m[1]}-bit ${m[2].toUpperCase()}` : raw.replace(/^Standard\s+/i, '')
+}
+
 // ---- Security --------------------------------------------------------------------------------------
 
 function SecurityTab({ doc, close }: { doc: DocumentModel; close: () => void }) {
@@ -143,7 +149,7 @@ function SecurityTab({ doc, close }: { doc: DocumentModel; close: () => void }) 
     <div className="fc-navigation-props-tab">
       <div className="fc-navigation-props-grid">
         <Row label="Security Method">{encrypted ? 'Password Security' : 'No Security'}</Row>
-        {encrypted && <Row label="Encryption">{info.encryption!.replace(/^Standard\s+/i, '')}</Row>}
+        {encrypted && <Row label="Encryption">{encryptionLabel(info.encryption!)}</Row>}
       </div>
       {change && (
         <div className="fc-navigation-props-actions">
@@ -179,14 +185,23 @@ function SecurityTab({ doc, close }: { doc: DocumentModel; close: () => void }) 
 
 const FONT_CHUNK = 8
 
+/** Scanned fonts per document, reused while the document is unchanged. */
+const fontCache = new WeakMap<DocumentModel, { key: string; fonts: FontInfo[] }>()
+
 function FontsTab({ doc }: { doc: DocumentModel }) {
   const pageCount = useDocState(doc, (s) => s.info.pageCount)
-  const [fonts, setFonts] = useState<FontInfo[]>([])
-  const [scanned, setScanned] = useState(0)
+  const cacheKey = useDocState(doc, (s) => `${s.docVersion}:${s.globalVersion}:${s.info.pageCount}`)
+  const cached = fontCache.get(doc)
+  const hit = cached && cached.key === cacheKey ? cached.fonts : null
+  const [fonts, setFonts] = useState<FontInfo[]>(hit ?? [])
+  const [scanned, setScanned] = useState(hit ? pageCount : 0)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
+    const c = fontCache.get(doc)
+    if (c && c.key === cacheKey) return
     let alive = true
     const merged = new Map<string, FontInfo>()
+    const sorted = () => [...merged.values()].sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
     ;(async () => {
       for (let from = 0; from < pageCount && alive; from += FONT_CHUNK) {
         const chunk = await navOps(doc).fonts(from, Math.min(pageCount, from + FONT_CHUNK))
@@ -197,14 +212,15 @@ function FontsTab({ doc }: { doc: DocumentModel }) {
           else merged.set(key, { ...f })
         }
         if (!alive) return
-        setFonts([...merged.values()].sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type)))
+        setFonts(sorted())
         setScanned(Math.min(pageCount, from + FONT_CHUNK))
       }
+      if (alive) fontCache.set(doc, { key: cacheKey, fonts: sorted() })
     })().catch((err) => alive && setError(err instanceof Error ? err.message : String(err)))
     return () => {
       alive = false
     }
-  }, [doc, pageCount])
+  }, [doc, pageCount, cacheKey])
   const done = scanned >= pageCount
   return (
     <div className="fc-navigation-props-tab">

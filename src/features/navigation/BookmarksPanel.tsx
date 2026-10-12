@@ -203,11 +203,39 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
 
   const rows: FlatRow[] = useMemo(() => (tree ? flattenVisible(tree, ui.expanded) : []), [tree, ui.expanded])
   const rowIndex = useMemo(() => new Map(rows.map((r, i) => [r.bookmark.id, i])), [rows])
+  // Reading position: a point a quarter of the way down the viewport, tracked while scrolling.
+  const [reading, setReading] = useState<{ page: number; y: number }>({ page: currentPage, y: Infinity })
+  useEffect(() => {
+    let raf = 0
+    const el = doc.view?.getViewportElement() ?? null
+    const update = () => {
+      raf = 0
+      const view = doc.view
+      const vp = view?.getViewportElement()
+      if (!view || !vp) {
+        setReading({ page: doc.state.currentPage, y: Infinity })
+        return
+      }
+      const r = vp.getBoundingClientRect()
+      const hit = view.hitTest(r.left + r.width / 2, r.top + Math.min(r.height * 0.25, 220))
+      const next = hit ? { page: hit.pageIndex, y: hit.point[1] } : { page: doc.state.currentPage, y: Infinity }
+      setReading((prev) => (prev.page === next.page && Math.abs(prev.y - next.y) < 2 ? prev : next))
+    }
+    const onScroll = () => {
+      if (!raf) raf = requestAnimationFrame(update)
+    }
+    el?.addEventListener('scroll', onScroll, { passive: true })
+    update()
+    return () => {
+      el?.removeEventListener('scroll', onScroll)
+      cancelAnimationFrame(raf)
+    }
+  }, [doc, currentPage])
   const currentId = useMemo(() => {
     if (!tree) return null
-    const id = currentBookmarkId(tree, currentPage)
+    const id = currentBookmarkId(tree, reading.page, reading.y)
     return id === null ? null : visibleRowFor(tree, id, ui.expanded)
-  }, [tree, currentPage, ui.expanded])
+  }, [tree, reading, ui.expanded])
   const selected = ui.selected !== null && rowIndex.has(ui.selected) ? ui.selected : null
 
   // Rows have a fixed height, so only the ones near the viewport are rendered.

@@ -3,6 +3,7 @@
 Run: python3 tests/fixtures/navigation/make_fixtures.py   (outputs are committed next to this script)
 
 - layers.pdf        two pages with three optional content groups (one hidden by default)
+- broken-outline.pdf bookmarks with missing /Parent, a wrong /Prev and a wrong /Count
 - attachments.pdf   an embedded file with a description plus a FileAttachment annotation on page 2
 - initial-view.pdf  nested bookmarks and an initial view (/PageMode /UseOutlines, two-up layout,
                     opens on page 3 at 150%)
@@ -82,6 +83,22 @@ def layers_doc():
         stream(page2),
     ]
     write_raw_pdf(os.path.join(OUT, 'layers.pdf'), objects)
+
+
+def broken_outline_doc():
+    """Outline items without /Parent, a wrong /Prev and a wrong /Count (common in the wild)."""
+    objects = [
+        b'<< /Type /Catalog /Pages 2 0 R /Outlines 5 0 R >>',
+        b'<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
+        b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R >>',
+        b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R >>',
+        b'<< /Type /Outlines /First 6 0 R /Last 7 0 R /Count 9 >>',
+        b'<< /Title (One) /Dest [3 0 R /Fit] /Next 7 0 R >>',
+        b'<< /Title (Two) /Dest [4 0 R /XYZ 0 700 0] /Prev 8 0 R /First 8 0 R /Last 8 0 R /Count 1 >>',
+        b'<< /Title (Child) /Dest [4 0 R /Fit] >>',
+        stream(b'0 0 1 rg 72 600 100 100 re f'),
+    ]
+    write_raw_pdf(os.path.join(OUT, 'broken-outline.pdf'), objects)
 
 
 def attachments_doc():
@@ -189,6 +206,7 @@ def fonts_doc():
 
 if __name__ == '__main__':
     layers_doc()
+    broken_outline_doc()
     attachments_doc()
     initial_view_doc()
     fonts_doc()

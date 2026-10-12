@@ -161,6 +161,29 @@ describe('navigation: bookmarks', () => {
     expect(e.lastChanges?.dirty).toBe(false)
   })
 
+  it('reads and repairs an inconsistent outline while editing it, with working undo', async () => {
+    const e = await openFixture('navigation/broken-outline.pdf')
+    const n = nav(e)
+    let list = await n.outline()
+    expect(titles(list)).toEqual(['One', ['Two', ['Child']]])
+    expect(list[1].dest).toMatchObject({ page: 1, type: 'XYZ' })
+    expect(list[1].dest!.y).toBeCloseTo(92)
+    // the core outline (MuPDF) can be read too, and reading does not leave the journal in a bad state
+    await e.ops<typeof navOps>('nav').outline()
+    const id = await n.addBookmark(null, -1, 'Three', { page: 1, x: null, y: null, zoom: null })
+    checkOutlineStructure(e)
+    list = await n.outline()
+    expect(titles(list)).toEqual(['One', ['Two', ['Child']], 'Three'])
+    await n.moveBookmark(id, list[1].id, 0)
+    checkOutlineStructure(e)
+    expect(titles(await n.outline())).toEqual(['One', ['Two', ['Three', 'Child']]])
+    await e.doc.undo()
+    await e.doc.undo()
+    expect(titles(await n.outline())).toEqual(['One', ['Two', ['Child']]])
+    const again = await roundTrip(e)
+    expect(titles(await nav(again).outline())).toEqual(['One', ['Two', ['Child']]])
+  })
+
   it('keeps destinations pointing at the right page after pages are reordered', async () => {
     const e = await openFixture('text.pdf')
     await e.ops<typeof pageOps>('pages').move([4], 0)

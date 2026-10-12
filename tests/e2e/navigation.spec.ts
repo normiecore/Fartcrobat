@@ -247,6 +247,18 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     await page.keyboard.press('Escape')
 
     await setTheme(page, 'dark')
+    // Bookmark Properties: bold + colour
+    await page.getByRole('treeitem', { name: /Chapter 2/ }).click({ button: 'right' })
+    await page.getByRole('menuitem', { name: 'Properties…' }).click()
+    const props = page.locator('.ui-dialog', { hasText: 'Bookmark Properties' })
+    await props.getByLabel('Bold').check()
+    await props.locator('.ui-swatch[title="#F44336"]').click()
+    await shot(page, 'bookmark-properties-dark')
+    await props.getByRole('button', { name: 'OK' }).click()
+    await expect(props).toBeHidden()
+    await expect
+      .poll(async () => (await engine<any[]>(page, 'navigation', 'outline')).find((b) => b.title === 'Chapter 2'))
+      .toMatchObject({ bold: true, color: '#f44336' })
     await shot(page, 'bookmarks-dark')
   } finally {
     await app.close()
@@ -298,12 +310,24 @@ test('document properties: description, fonts, security, initial view, custom; u
     await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author)).toBe('Fartcrobat Tests')
     expect((await engine<any>(page, 'navigation', 'properties')).custom).toEqual([])
 
-    // encrypted document: security tab lists the restrictions
+    // encrypted document: the Security tab lists the restrictions
     await setTheme(page, 'dark')
+    const opening = page.evaluate((p) => (window as any).__fartcrobat.openPaths([p]), fixturePath('encrypted.pdf'))
+    await page.getByLabel('Password').fill('secret')
+    await page.keyboard.press('Enter')
+    await opening
+    await expect.poll(async () => (await activeDocState(page))?.title).toBe('encrypted.pdf')
+    await waitForRender(page)
     await page.keyboard.press('Control+d')
     await dialog.getByRole('tab', { name: 'Security' }).click()
+    await expect(dialog).toContainText('Password Security')
+    await expect(dialog).toContainText('128-bit RC4')
+    await expect(dialog.locator('.fc-navigation-denied').first()).toHaveText('Not Allowed')
     await shot(page, 'properties-security-dark')
+    await dialog.getByRole('tab', { name: 'Description' }).click()
+    await shot(page, 'properties-description-dark')
     await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await expect(dialog).toBeHidden()
   } finally {
     await app.close()
   }

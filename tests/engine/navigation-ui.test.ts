@@ -83,6 +83,13 @@ describe('navigation outline model', () => {
     expect(currentBookmarkId(tree, 4)).toBe(body.id)
     expect(currentBookmarkId(tree, 5)).toBe(partB.id)
     expect(currentBookmarkId(tree, 99)).toBe(methods.id)
+    // several bookmarks on one page: the reading position on the page decides
+    const top = bm('Top', 2)
+    const lower = { ...bm('Lower', 2), dest: { page: 2, x: null, y: 400, zoom: null, type: 'XYZ' } }
+    expect(currentBookmarkId([top, lower], 2, 100)).toBe(top.id)
+    expect(currentBookmarkId([top, lower], 2, 500)).toBe(lower.id)
+    expect(currentBookmarkId([top, lower], 3)).toBe(lower.id)
+    expect(currentBookmarkId([top, lower], 1)).toBeNull()
     expect(ancestorsOf(tree, methods.id)).toEqual([partB.id])
     expect(visibleRowFor(tree, methods.id, new Set())).toBe(partB.id)
     expect(visibleRowFor(tree, methods.id, new Set([partB.id]))).toBe(methods.id)
