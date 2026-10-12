@@ -52,6 +52,18 @@ describe('compare: compare-a.pdf vs compare-b.pdf', () => {
     expect(result.changes).toEqual([])
     expect(result.rows).toHaveLength(5)
   })
+
+  it('handles rotated pages of different sizes and pages without text', async () => {
+    const mixed = await compareFixtures('mixed-sizes.pdf', 'mixed-sizes.pdf')
+    expect(mixed.result.changes).toEqual([])
+    expect(mixed.result.rows.map((r) => r.kind)).toEqual(['match', 'match', 'match'])
+    const scanned = await compareFixtures('scanned.pdf', 'scanned.pdf')
+    expect(scanned.result.changes).toEqual([])
+    expect(scanned.result.rows).toEqual([{ old: 0, new: 0, kind: 'match' }])
+    // an image-only page against a text page: the whole page is different
+    const other = await compareFixtures('scanned.pdf', 'compare-a.pdf')
+    expect(titles(other.result).sort()).toEqual(['Page 1 added', 'Page 1 removed'])
+  })
 })
 
 describe('compare: multi-page contract', () => {

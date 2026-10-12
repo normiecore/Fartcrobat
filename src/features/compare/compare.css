@@ -743,3 +743,10 @@
   min-width: 0;
   display: flex;
 }
+
+/* While Compare files shows its own view, the hidden document's toolbar (zoom, tools, find) and
+   page/zoom controls would do nothing: the compare toolbar replaces them. */
+.shell-docarea:has(> .shell-viewer-wrap > .fc-compare-view) > .shell-doctoolbar,
+.shell-main:has(.fc-compare-view) .shell-rightrail-bottom {
+  display: none;
+}
