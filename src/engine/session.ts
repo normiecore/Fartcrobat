@@ -140,7 +140,8 @@ export class Session {
     this.knownPosition = position
     // A saved state other than the current one cannot be reached any more.
     this.savedPosition = clean ? position : -1
-    this.sourceBytes = bytes
+    // A copy: the caller usually transfers `bytes` to the UI thread, which detaches them here.
+    this.sourceBytes = bytes.slice()
     this.changedDocument = true
   }
 

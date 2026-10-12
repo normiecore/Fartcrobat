@@ -88,13 +88,18 @@ describe('incremental saves', () => {
     const forms = e.ops<typeof formOps>('forms')
     await annots.setAuthor('Darren')
     await forms.setValues([{ name: 'Name', value: 'Before' }])
-    await e.doc.save({})
+    const saved = await e.doc.save({})
+    const copy = saved.slice()
+    // The worker transfers the returned buffer to the UI thread, which detaches it here.
+    structuredClone(saved.buffer, { transfer: [saved.buffer] })
     await e.doc.markSaved('signed.pdf')
     const note = await annots.create(0, { type: 'Text', rect: [10, 10, 30, 30] })
     expect(note.author).toBe('Darren')
     const fields = await forms.listAll()
     expect(fields.find((f) => f.name === 'Name')!.value).toBe('Before')
-    expect(e.session.sourceBytes).not.toBeNull()
+    // the session's copy of the file (used to validate signatures) survives the transfer
+    expect(e.session.sourceBytes?.length).toBe(copy.length)
+    expect(e.session.sourceBytes).toEqual(copy)
   })
 
   it('refuses an incremental save from inside an undoable operation and stays usable', async () => {
