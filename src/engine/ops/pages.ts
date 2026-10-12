@@ -3,7 +3,7 @@ import { normalizeRect, transformRect } from '@shared/geometry'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, PDFObject, Session } from '../session'
 import { copyPages, removePageFields } from '../util/graft'
-import { catalog, isNull, readNumber } from '../util/pdf'
+import { catalog, isNull, pageRotation, readNumber } from '../util/pdf'
 import { convertToPdf, OPENABLE_FORMATS } from './doc'
 
 function uniqueSorted(indices: number[], count: number): number[] {
@@ -117,7 +117,7 @@ export default defineOps('pages', {
       const list = uniqueSorted(indices, s.pageCount())
       for (const i of list) {
         const obj = s.pdf.findPage(i)
-        const cur = Math.round(readNumber(obj.getInheritable('Rotate'), 0))
+        const cur = pageRotation(readNumber(obj.getInheritable('Rotate'), 0))
         const next = (((cur + degrees) % 360) + 360) % 360
         obj.put('Rotate', next)
       }
