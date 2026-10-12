@@ -73,8 +73,8 @@ export function fieldMenu(doc: DocumentModel, page: number, ids: number[], ancho
         { id: 'right', label: 'Align Right', icon: AlignEndVertical, run: arrange('right') },
         { id: 'top', label: 'Align Top', icon: AlignStartHorizontal, run: arrange('top') },
         { id: 'bottom', label: 'Align Bottom', icon: AlignEndHorizontal, run: arrange('bottom') },
-        { id: 'cx', label: 'Align Centers (Vertical Line)', icon: AlignCenterVertical, run: arrange('center-x') },
-        { id: 'cy', label: 'Align Centers (Horizontal Line)', icon: AlignCenterHorizontal, run: arrange('center-y') },
+        { id: 'cx', label: 'Align Centers in a Column', icon: AlignCenterVertical, run: arrange('center-x') },
+        { id: 'cy', label: 'Align Centers in a Row', icon: AlignCenterHorizontal, run: arrange('center-y') },
         SEP('a1'),
         { id: 'dx', label: 'Distribute Horizontally', icon: AlignHorizontalDistributeCenter, disabled: ids.length < 3, run: arrange('distribute-x') },
         { id: 'dy', label: 'Distribute Vertically', icon: AlignVerticalDistributeCenter, disabled: ids.length < 3, run: arrange('distribute-y') }
@@ -85,7 +85,8 @@ export function fieldMenu(doc: DocumentModel, page: number, ids: number[], ancho
       label: 'Center on Page',
       submenu: [
         { id: 'px', label: 'Horizontally', run: arrange('page-center-x') },
-        { id: 'py', label: 'Vertically', run: arrange('page-center-y') }
+        { id: 'py', label: 'Vertically', run: arrange('page-center-y') },
+        { id: 'pb', label: 'Both', run: arrange('page-center-both') }
       ]
     },
     {

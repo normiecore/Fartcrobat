@@ -6,7 +6,6 @@ import {
   isMac,
   saveDocument,
   Section,
-  setTool,
   showError,
   toast,
   ToolPanelFrame,
@@ -92,10 +91,9 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
   }
 
   const place = (signer: Signer, kind: 'signature' | 'date') => {
+    // the form toolbar tells the user to click or drag on the page
+    enterFormEditing(kind === 'signature' ? 'form.signature' : 'form.date')
     usePF.setState({ pendingSigner: signer })
-    enterFormEditing()
-    setTool(kind === 'signature' ? 'form.signature' : 'form.date')
-    toast(`Click or drag on the page to place ${signer.name}’s ${kind === 'signature' ? 'signature' : 'date'} field.`, { timeout: 3500 })
   }
 
   const saveAndShare = async () => {
@@ -240,7 +238,7 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
         </Button>
         <p className="fc-prepare-form-hint">Saves the PDF and opens your email app with a message to {signers.some((s) => s.email) ? 'the signers' : 'your signers'}. Attach the saved file to the email.</p>
         {sent && (
-          <div className="fc-prepare-form-sent" role="status">
+          <div className="fc-prepare-form-sent" role="status" ref={(el) => el?.scrollIntoView({ block: 'nearest' })}>
             <div>
               <Mail size={16} aria-hidden /> <b>Your email app should open now.</b>
             </div>

@@ -1,8 +1,22 @@
 import { useEffect } from 'react'
 import { getActiveDoc, setTool, useApp } from '@renderer/sdk'
-import { clearFieldSelection, isFormTool, nudgeSelected, selectAllFields, selectedIds } from './actions'
+import { clearFieldSelection, isFormTool, nudgeSelected, placeInView, selectAllFields, selectedIds, TOOL_TYPES } from './actions'
 import { openProperties } from './PropertiesDialog'
 import { usePF } from './state'
+
+/** An arrow-key step on the screen in page space (View > Rotate View turns the page). */
+function screenToPage(rotation: number, u: number, v: number): [number, number] {
+  switch (rotation) {
+    case 90:
+      return [v, -u]
+    case 180:
+      return [-u, -v]
+    case 270:
+      return [-v, u]
+    default:
+      return [u, v]
+  }
+}
 
 function isTyping(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false
@@ -57,6 +71,16 @@ export function PrepareFormKeys() {
         void selectAllFields(doc)
         return
       }
+      // Enter with a field tool places a field in the middle of the view (no mouse needed)
+      const createType = TOOL_TYPES[app.toolId]
+      // ...also right after choosing the tool with the keyboard (focus still on its button)
+      const onActiveTool = !!t?.closest?.('.fc-prepare-form-toolbar [aria-pressed="true"], .fc-prepare-form-left .ui-tool-row.is-active')
+      if (createType && (onDocument || onActiveTool) && e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        e.stopPropagation()
+        void placeInView(doc, createType)
+        return
+      }
       const ids = selectedIds(doc)
       if (!onDocument || !ids.length || e.ctrlKey || e.metaKey || e.altKey) return
       const step = e.shiftKey ? 10 : 1
@@ -74,9 +98,10 @@ export function PrepareFormKeys() {
       } else return
       e.preventDefault()
       e.stopPropagation()
+      const [px, py] = screenToPage(doc.state.viewRotation, dx, dy)
       // coalesce key repeats into one move
-      pendingDx += dx
-      pendingDy += dy
+      pendingDx += px
+      pendingDy += py
       if (timer === null) timer = window.setTimeout(flush, 120)
     }
     window.addEventListener('keydown', onKey, true)

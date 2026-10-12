@@ -11,7 +11,7 @@ import {
   type Selection
 } from '@renderer/sdk'
 import type pfOps from '../engine'
-import { SELECTION_TYPE, TYPE_LABELS, type FieldProps, type PFField, type PFType, type TabOrder } from '../model'
+import { DEFAULT_SIZE, SELECTION_TYPE, TYPE_LABELS, type FieldProps, type PFField, type PFType, type TabOrder } from '../model'
 import { usePF } from './state'
 
 export const pf = (doc: DocumentModel) => doc.ops<typeof pfOps>('prepare-form')
@@ -97,6 +97,32 @@ export async function createField(doc: DocumentModel, type: PFType, page: number
     showError(err, `Could not add the ${TYPE_LABELS[type].toLowerCase()}`)
     return null
   }
+}
+
+/**
+ * Places a field of default size in the middle of what is on screen (Enter while a field tool is
+ * active), so fields can be added without a mouse.
+ */
+export async function placeInView(doc: DocumentModel, type: PFType): Promise<PFField | null> {
+  let page = doc.state.currentPage
+  let point: [number, number] | null = null
+  const vp = doc.view?.getViewportElement()
+  if (vp) {
+    const b = vp.getBoundingClientRect()
+    const hit = doc.view?.hitTest(b.left + b.width / 2, b.top + b.height / 2)
+    if (hit) {
+      page = hit.pageIndex
+      point = hit.point
+    }
+  }
+  const pg = doc.state.info.pages[page]
+  if (!pg) return null
+  const [w, h] = DEFAULT_SIZE[type]
+  const cx = point?.[0] ?? pg.width / 2
+  const cy = point?.[1] ?? pg.height / 2
+  const x = Math.max(0, Math.min(pg.width - w, cx - w / 2))
+  const y = Math.max(0, Math.min(pg.height - h, cy - h / 2))
+  return createField(doc, type, page, [x, y, x + w, y + h])
 }
 
 // ---- editing ------------------------------------------------------------------------------
@@ -240,6 +266,7 @@ export type ArrangeMode =
   | 'center-y'
   | 'page-center-x'
   | 'page-center-y'
+  | 'page-center-both'
   | 'distribute-x'
   | 'distribute-y'
   | 'match-width'
@@ -303,6 +330,11 @@ export function arrangeRects(fields: PFField[], anchor: PFField, mode: ArrangeMo
         const g0 = Math.min(...fields.map((x) => x.rect[1]))
         const g1 = Math.max(...fields.map((x) => x.rect[3]))
         move(f, 0, pageSize[1] / 2 - (g0 + g1) / 2)
+        break
+      }
+      case 'page-center-both': {
+        const g = [Math.min(...fields.map((x) => x.rect[0])), Math.min(...fields.map((x) => x.rect[1])), Math.max(...fields.map((x) => x.rect[2])), Math.max(...fields.map((x) => x.rect[3]))]
+        move(f, pageSize[0] / 2 - (g[0] + g[2]) / 2, pageSize[1] / 2 - (g[1] + g[3]) / 2)
         break
       }
       case 'match-width':

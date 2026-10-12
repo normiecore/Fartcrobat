@@ -23,14 +23,14 @@ import { TYPE_ICONS } from './icons'
 import { usePF } from './state'
 
 const ADD: { type: PFType; desc: string }[] = [
-  { type: 'text', desc: 'Names, addresses, any typed answer' },
-  { type: 'checkbox', desc: 'Yes/no choices; several can be ticked' },
-  { type: 'radio', desc: 'Pick one option from a group' },
+  { type: 'text', desc: 'Any typed answer' },
+  { type: 'checkbox', desc: 'Yes or no; tick several' },
+  { type: 'radio', desc: 'Pick one option of a group' },
   { type: 'list', desc: 'A scrolling list of options' },
   { type: 'combo', desc: 'A drop-down list of options' },
-  { type: 'button', desc: 'Clear the form, open a link, print…' },
-  { type: 'date', desc: 'A text field formatted as a date' },
-  { type: 'signature', desc: 'Where someone signs digitally' }
+  { type: 'button', desc: 'Clear the form, open a link…' },
+  { type: 'date', desc: 'A date in a set format' },
+  { type: 'signature', desc: 'Where someone signs' }
 ]
 
 export function EditPreviewSwitch() {
@@ -74,7 +74,7 @@ function PreparePanelBody({ doc }: { doc: DocumentModel }) {
     <div className="fc-prepare-form-left">
       <div className="fc-prepare-form-mode">
         <EditPreviewSwitch />
-        <span className="shell-muted">{editing ? 'Editing fields' : 'Previewing: fill in the form'}</span>
+        <span className="shell-muted">{editing ? 'Editing fields' : 'Filling in the form'}</span>
       </div>
       <Section title="Add a form field">
         <ToolRow icon={MousePointer2} label="Select and move fields" active={toolId === 'form.select'} onClick={() => setTool('form.select')} />
@@ -93,7 +93,7 @@ function PreparePanelBody({ doc }: { doc: DocumentModel }) {
         ))}
       </Section>
       <Section title="More">
-        <ToolRow icon={WandSparkles} label="Detect form fields automatically" description="Turn blanks, lines and boxes into fields" onClick={() => void detectFieldsFlow(doc)} />
+        <ToolRow icon={WandSparkles} label="Detect form fields automatically" description="Turn blanks and boxes into fields" onClick={() => void detectFieldsFlow(doc)} />
         <ToolRow icon={PanelRight} label="Fields panel" description={`${fields.length} field${fields.length === 1 ? '' : 's'} in this document`} onClick={() => openRightPanel('fields')} />
         <ToolRow
           icon={ListOrdered}

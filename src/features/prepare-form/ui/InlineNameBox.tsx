@@ -61,7 +61,8 @@ export function InlineNameBox({ doc, field, geometry }: { doc: DocumentModel; fi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos === null, field.id])
 
-  const close = () => usePF.setState({ inline: null })
+  // only close the box of this field: another field may have been placed while a rename was saving
+  const close = () => usePF.setState((s) => (s.inline?.id === field.id && s.inline.docId === doc.id ? { inline: null } : {}))
 
   // latest values, so a click elsewhere (which closes the box) still applies the typed name
   const latest = useRef({ name, choice, field })

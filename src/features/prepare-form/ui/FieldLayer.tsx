@@ -109,12 +109,23 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     setDrag({ kind: 'move', ids, start: toPage(e), dx: 0, dy: 0, moved: false, startClient: [e.clientX, e.clientY] })
   }
 
+  /** The page-space edges moved by a handle drawn on the screen (View > Rotate View turns the page). */
+  const pageHandle = (h: Handle): Handle => {
+    const v: Point = [h.includes('e') ? 1 : h.includes('w') ? -1 : 0, h.includes('s') ? 1 : h.includes('n') ? -1 : 0]
+    const a = geometry.toPage([0, 0])
+    const b = geometry.toPage(v)
+    const dx = b[0] - a[0]
+    const dy = b[1] - a[1]
+    const eps = 1e-6
+    return ((dy < -eps ? 'n' : dy > eps ? 's' : '') + (dx < -eps ? 'w' : dx > eps ? 'e' : '')) as Handle
+  }
+
   const onHandleDown = (e: React.PointerEvent, f: PFField, handle: Handle) => {
     if (e.button !== 0) return
     e.stopPropagation()
     ref.current!.setPointerCapture(e.pointerId)
     setHiddenAnnotations(doc, pageIndex, [f.id])
-    setDrag({ kind: 'resize', id: f.id, handle, orig: f.rect, rect: f.rect, start: toPage(e) })
+    setDrag({ kind: 'resize', id: f.id, handle: pageHandle(handle), orig: f.rect, rect: f.rect, start: toPage(e) })
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -328,11 +339,16 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       {fields.map((f) => {
         const r = geometry.rectToCss(rectFor(f))
         const isSel = selected.includes(f.id)
-        const small = r.width < 44 || r.height < 13
+        // the name and tab number turn with the page (View > Rotate View)
+        const rot = geometry.rotation
+        const swap = rot === 90 || rot === 270
+        const innerW = swap ? r.height : r.width
+        const innerH = swap ? r.width : r.height
+        const small = innerW < 44 || innerH < 13
         return (
           <div
             key={f.id}
-            className={`fc-prepare-form-box ${isSel ? 'is-selected' : ''} ${isSel && single ? 'is-solo' : ''} ${small ? 'is-small' : ''} ${f.visibility === 'hidden' ? 'is-hidden' : ''} type-${f.type}`}
+            className={`fc-prepare-form-box ${isSel ? 'is-selected' : ''} ${isSel && single ? 'is-solo' : ''} ${small ? 'is-small' : ''} ${showTabs ? 'has-tab' : ''} ${f.visibility === 'hidden' ? 'is-hidden' : ''} type-${f.type}`}
             style={{ left: r.left, top: r.top, width: r.width, height: r.height }}
             data-field-id={f.id}
             data-field-name={f.name}
@@ -347,11 +363,16 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
               if (!selected.includes(f.id)) selectFields(doc, pageIndex, [f.id])
             }}
           >
-            <span className="fc-prepare-form-name">
-              {f.name}
-              {f.required && <span className="fc-prepare-form-req">*</span>}
+            <span
+              className="fc-prepare-form-inner"
+              style={rot ? { left: '50%', top: '50%', right: 'auto', bottom: 'auto', width: innerW, height: innerH, transform: `translate(-50%, -50%) rotate(${rot}deg)` } : undefined}
+            >
+              <span className="fc-prepare-form-name">
+                {f.name}
+                {f.required && <span className="fc-prepare-form-req">*</span>}
+              </span>
+              {showTabs && <span className="fc-prepare-form-tab">{f.tabIndex + 1}</span>}
             </span>
-            {showTabs && <span className="fc-prepare-form-tab">{f.tabIndex + 1}</span>}
             {isSel &&
               single &&
               !drag &&
@@ -362,7 +383,7 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         )
       })}
       {preview}
-      {inlineField && !drag && <InlineNameBox doc={doc} field={inlineField} geometry={geometry} />}
+      {inlineField && !drag && <InlineNameBox key={inlineField.id} doc={doc} field={inlineField} geometry={geometry} />}
     </div>
   )
 }

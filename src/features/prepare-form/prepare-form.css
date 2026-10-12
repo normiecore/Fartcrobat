@@ -3,7 +3,8 @@
 
 .fc-prepare-form-layer {
   --pf-blue: #1f6fd6;
-  --pf-blue-soft: rgba(80, 150, 255, 0.16);
+  /* fairly opaque, so names stay readable over the field's own text and the page */
+  --pf-blue-soft: rgba(222, 234, 255, 0.72);
   --pf-blue-line: rgba(31, 111, 214, 0.75);
   cursor: default;
   user-select: none;
@@ -25,12 +26,12 @@
   outline: none;
 }
 .fc-prepare-form-box:hover {
-  background: rgba(80, 150, 255, 0.24);
+  background: rgba(208, 224, 255, 0.8);
   border-color: var(--pf-blue);
 }
 .fc-prepare-form-box.is-selected {
   border: 2px solid var(--pf-blue);
-  background: rgba(80, 150, 255, 0.22);
+  background: rgba(208, 224, 255, 0.8);
   z-index: 2;
 }
 .fc-prepare-form-box:focus-visible {
@@ -44,6 +45,11 @@
   border-radius: 50%;
 }
 
+.fc-prepare-form-inner {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .fc-prepare-form-name {
   position: absolute;
   left: 2px;
@@ -94,8 +100,8 @@
 
 .fc-prepare-form-tab {
   position: absolute;
-  left: -9px;
-  top: -9px;
+  left: 1px;
+  top: 1px;
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
@@ -106,6 +112,21 @@
   text-align: center;
   pointer-events: none;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.fc-prepare-form-box.has-tab .fc-prepare-form-name {
+  left: 22px;
+  max-width: calc(100% - 24px);
+}
+/* check boxes and radio buttons are too small to hold the number: it sits on their left */
+.fc-prepare-form-box.is-small .fc-prepare-form-tab {
+  left: auto;
+  right: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+.fc-prepare-form-box.is-small.has-tab .fc-prepare-form-name {
+  left: -2px;
+  max-width: none;
 }
 
 .fc-prepare-form-handle {
@@ -245,6 +266,26 @@
   gap: 2px;
   width: 100%;
   min-width: 0;
+  container-type: inline-size;
+}
+/* narrow windows (or a side panel open): drop the hint, then the button labels */
+@container (max-width: 760px) {
+  .fc-prepare-form-toolbar-hint {
+    display: none;
+  }
+}
+@container (max-width: 600px) {
+  .fc-prepare-form-toolbar .ui-btn {
+    padding: 0 7px;
+  }
+  .fc-prepare-form-toolbar .ui-btn > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 .fc-prepare-form-toolbar-hint {
   color: var(--text-muted);
@@ -272,6 +313,13 @@
   align-items: center;
   gap: 10px;
   padding: 4px 4px 8px;
+}
+.fc-prepare-form-mode .ui-segmented {
+  flex: none;
+}
+.fc-prepare-form-mode > span {
+  min-width: 0;
+  font-size: var(--fs-sm);
 }
 .fc-prepare-form-tip,
 .fc-prepare-form-note {

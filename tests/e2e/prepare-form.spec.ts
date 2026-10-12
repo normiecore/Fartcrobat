@@ -433,6 +433,39 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     })
     expect(calc).toBe('AFSimple_Calculate("SUM", new Array ("price", "quantity"));')
 
+    // View > Rotate View: handles and arrow keys follow what is on the screen
+    await runCommand(page, 'view.rotateCW')
+    await page.waitForTimeout(300)
+    const before = (await byName(page, 'total'))!.rect
+    const totalBox = page.locator('.fc-prepare-form-box[data-field-name="total"]')
+    await totalBox.click()
+    await page.waitForTimeout(100)
+    await page.screenshot({ path: `${SHOTS}/prepare-form-rotated-view.png` })
+    const sh = (await totalBox.locator('.h-s').boundingBox())!
+    const s15 = 1.5 * (96 / 72)
+    await page.mouse.move(sh.x + sh.width / 2, sh.y + sh.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(sh.x + sh.width / 2, sh.y + sh.height / 2 + 5 * s15, { steps: 3 })
+    await page.mouse.move(sh.x + sh.width / 2, sh.y + sh.height / 2 + 10 * s15, { steps: 3 })
+    await page.mouse.up()
+    // the page is turned clockwise: the bottom of the screen is the right side of the page
+    await expect.poll(async () => near((await byName(page, 'total'))!.rect, [before[0], before[1], before[2] + 10, before[3]], 0.6)).toBe(true)
+    await page.keyboard.press('ArrowDown')
+    await expect.poll(async () => near((await byName(page, 'total'))!.rect, [before[0] + 1, before[1], before[2] + 11, before[3]], 0.3)).toBe(true)
+    await runCommand(page, 'view.rotateCCW')
+
+    // keyboard only: choose the check box tool with Enter, Enter again places one mid-view; Delete removes it
+    await page.getByRole('button', { name: 'Add check box' }).first().focus()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('form.checkbox')
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('textbox', { name: 'Field name' })).toHaveValue('Check Box1')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('textbox', { name: 'Field name' })).toBeHidden()
+    expect((await byName(page, 'Check Box1'))!.page).toBe(0)
+    await page.keyboard.press('Delete')
+    await expect.poll(async () => (await listAll(page)).length).toBe(3)
+
     // dark theme: panels and dialogs follow the theme; boxes stay readable on the white page
     await setTheme(page, 'dark')
     await page.locator('.fc-prepare-form-box[data-field-name="price"]').click()
@@ -489,7 +522,9 @@ test('request e-signatures: signers, signature fields, save and share by email',
     // a plain signature field, then assigned to Babbage from the list (the period does not create a hierarchy)
     await page.getByRole('button', { name: 'Add digital signature' }).first().click()
     await dragOnPage(page, 0, [72, 660], [252, 700])
+    await expect(page.getByRole('textbox', { name: 'Field name' })).toHaveValue('Signature1')
     await page.keyboard.press('Escape')
+    await expect(page.getByRole('textbox', { name: 'Field name' })).toBeHidden()
     await expect.poll(async () => (await listAll(page)).length).toBe(3)
     await left.getByRole('combobox', { name: 'Signer of Signature1' }).selectOption('C. Babbage')
     await expect.poll(async () => (await byName(page, 'Signature1'))?.tooltip).toBe('Signature of C. Babbage')

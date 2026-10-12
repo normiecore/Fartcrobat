@@ -51,14 +51,14 @@ export function FormToolbar({ doc }: { doc: DocumentModel }) {
           : radioGroup && toolId === 'form.radio'
             ? `Adding a button to “${radioGroup}”: click on the page`
             : toolId !== 'form.select'
-              ? 'Click to place, or drag to draw the field. Esc to stop.'
+              ? 'Click to place, drag to draw, or press Enter. Esc to stop.'
               : sel?.ids.length
                 ? `${sel.ids.length} field${sel.ids.length > 1 ? 's' : ''} selected`
                 : ''}
       </span>
       <span className="fc-prepare-form-toolbar-spacer" />
       {!!sel?.ids.length && (
-        <Button size="sm" icon={Settings2} onClick={() => openProperties(doc, sel.ids)}>
+        <Button size="sm" icon={Settings2} title="Field properties (Enter)" onClick={() => openProperties(doc, sel.ids)}>
           Properties
         </Button>
       )}
