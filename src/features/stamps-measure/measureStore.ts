@@ -117,8 +117,8 @@ function loadScale(doc: DocumentModel, docVersion: number): Promise<MeasureScale
     p = measureOps(doc).getScale()
     scaleLoads.set(key, p)
     p.catch((err) => {
-      scaleLoads.delete(key)
-      // measuring with a wrong scale would give wrong values: say so (once per load, not per page)
+      // Measuring with a wrong scale would give wrong values: say so, once (the failed read stays
+      // cached, so layers mounting while scrolling do not repeat it; the next document change retries).
       if (!doc.isClosed) showError(err, 'Could not read the measurement scale of this document')
     })
     if (scaleLoads.size > 20) scaleLoads.delete(scaleLoads.keys().next().value!)
