@@ -492,10 +492,11 @@ function removeFromArray(arr: PDFObject, target: PDFObject): boolean {
 }
 
 function detachNode(doc: PDFDocument, acro: PDFObject, node: PDFObject) {
+  // A widget merged with its field (or a field left without widgets) may be in the calculation order.
+  removeFromArray(acro.get('CO'), node)
   const parent = node.resolve().get('Parent')
   if (isNull(parent)) {
     removeFromArray(acro.get('Fields'), node)
-    removeFromArray(acro.get('CO'), node)
     return
   }
   const kids = parent.resolve().get('Kids')

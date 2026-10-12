@@ -184,6 +184,14 @@ describe('copying pages keeps annotations, links and form fields', () => {
 describe('deleting pages', () => {
   it('removes the form fields (and signatures) that lived on the deleted pages', async () => {
     const e = await openBytes(signedFormPdf(), 'signed.pdf')
+    const acro = catalog(e.session.pdf).get('AcroForm')
+    // a calculation order listing the text field and the signature field
+    e.session.runMutation('Set Calculation Order', () => {
+      const co = e.session.pdf.newArray()
+      co.push(acro.get('Fields').get(0))
+      co.push(acro.get('Fields').get(2))
+      acro.put('CO', co)
+    })
     await e.ops<typeof pageOps>('pages').delete([1])
     const info = await e.doc.info()
     expect(info.signatureCount).toBe(0)
@@ -195,6 +203,9 @@ describe('deleting pages', () => {
     expect(names.sort()).toEqual(['Choice', 'Name'])
     const name = fields.get(0).resolve()
     expect(name.get('Kids').length).toBe(1)
+    const co = catalog(d).get('AcroForm', 'CO')
+    expect(co.length).toBe(1)
+    expect(co.get(0).resolve().get('T').asString()).toBe('Name')
     await e.doc.undo()
     expect((await e.doc.info()).signatureCount).toBe(1)
   })
