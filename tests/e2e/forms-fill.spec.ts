@@ -266,12 +266,10 @@ test('calculations, formats, keystroke filters and validation (calc.pdf)', async
     await shot(page, '9-calc')
 
     // Controls follow the zoom
-    await runCommand(page, 'view.actualSize')
-    await runCommand(page, 'view.zoomIn')
-    await runCommand(page, 'view.zoomIn')
-    await page.waitForTimeout(500)
-    const zoom = (await activeDocState(page))!.zoom
-    expect(zoom).toBeGreaterThan(1.4)
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
+    await page.waitForTimeout(300)
+    const zoom = 1.5
     const box = await field(page, 'amount1').boundingBox()
     // the field is 160 x 20 points; 1 point = 4/3 CSS pixels at 100%
     expect(box!.width).toBeCloseTo((160 * zoom * 4) / 3, 0)
@@ -281,6 +279,19 @@ test('calculations, formats, keystroke filters and validation (calc.pdf)', async
     await page.waitForTimeout(300)
     await shot(page, '10-zoomed')
     await page.keyboard.press('Escape')
+
+    // Rotated view: the controls turn with the page
+    await runCommand(page, 'view.rotateCW')
+    await page.waitForTimeout(400)
+    const turned = await field(page, 'amount1').boundingBox()
+    expect(turned!.width).toBeCloseTo((20 * zoom * 4) / 3, 0)
+    expect(turned!.height).toBeCloseTo((160 * zoom * 4) / 3, 0)
+    await field(page, 'amount1').click()
+    await expect(field(page, 'amount1')).toBeFocused()
+    await waitForRender(page)
+    await shot(page, '10b-rotated')
+    await page.keyboard.press('Escape')
+    await runCommand(page, 'view.rotateCCW')
 
     // Recalculation can be switched off in Preferences > Forms
     await runCommand(page, 'app.preferences')
@@ -454,7 +465,7 @@ test('all field types, buttons, signature fields, form data and dark mode', asyn
   }
 })
 
-test('dynamic XFA forms say what is supported', async () => {
+test('dynamic XFA forms and signed signature fields', async () => {
   const { app, page } = await launch()
   try {
     await openFile(page, fixturePath('forms-fill/xfa.pdf'))
@@ -467,6 +478,24 @@ test('dynamic XFA forms say what is supported', async () => {
     await page.keyboard.press('Tab')
     await expect.poll(() => valueOf(page, 'total')).toBe('5')
     await shot(page, '18-xfa')
+
+    // A signed signature field says who signed it and points to the Signatures panel
+    await openFile(page, fixturePath('forms-fill/signed.pdf'))
+    await waitForRender(page)
+    const sig = field(page, 'signature1')
+    await expect(sig).toHaveAttribute('title', /^Signed by Jane Signer on .+ — see Signatures panel$/)
+    await expect(sig).toHaveClass(/is-signed/)
+    const events = await page.evaluate(() => {
+      const list: unknown[] = []
+      window.addEventListener('fartcrobat:sign-field', (e) => list.push((e as CustomEvent).detail))
+      ;(window as any).__signedEvents = list
+      return list.length
+    })
+    expect(events).toBe(0)
+    await sig.click()
+    // no new signing starts on a signed field
+    expect(await page.evaluate(() => (window as any).__signedEvents.length)).toBe(0)
+    await expect(page.locator('.toast', { hasText: 'Signed by Jane Signer' }).first()).toBeVisible()
   } finally {
     await app.close()
   }

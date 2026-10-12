@@ -40,6 +40,7 @@ function sameValue(a: FieldValue, b: FieldValue): boolean {
 export class FormController {
   private snapshotCache: { version: number; promise: Promise<FormSnapshotData> } | null = null
   private runtimeCache: { version: number; runtime: FormRuntime } | null = null
+  private runtimeLoading: { version: number; promise: Promise<FormRuntime> } | null = null
   private queue: Promise<unknown> = Promise.resolve()
   private reportedProblems = 0
   private notified = new Set<string>()
@@ -87,14 +88,25 @@ export class FormController {
   }
 
   /** Script runtime matching the current document state (rebuilt after changes made elsewhere). */
-  async runtime(): Promise<FormRuntime> {
+  runtime(): Promise<FormRuntime> {
     const version = this.doc.state.docVersion
-    if (this.runtimeCache?.version === version) return this.runtimeCache.runtime
-    const snap = await this.snapshot()
-    const runtime = new FormRuntime(snap, this.host())
-    this.runtimeCache = { version, runtime }
-    this.reportedProblems = 0
-    return runtime
+    if (this.runtimeCache?.version === version) return Promise.resolve(this.runtimeCache.runtime)
+    // Callers that ask at the same time (several pages, an edit) share one runtime.
+    if (this.runtimeLoading?.version === version) return this.runtimeLoading.promise
+    const promise = this.snapshot().then((snap) => {
+      const cached = this.runtimeCache
+      if (cached && cached.version === version) return cached.runtime
+      const runtime = new FormRuntime(snap, this.host())
+      this.runtimeCache = { version, runtime }
+      this.reportedProblems = 0
+      return runtime
+    })
+    this.runtimeLoading = { version, promise }
+    const done = () => {
+      if (this.runtimeLoading?.promise === promise) this.runtimeLoading = null
+    }
+    promise.then(done, done)
+    return promise
   }
 
   /** The runtime if it is ready and current (for synchronous keystroke checks). */

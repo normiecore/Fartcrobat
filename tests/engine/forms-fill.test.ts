@@ -295,6 +295,25 @@ describe('forms-fill engine', () => {
     expect(values.find((x) => x.name === 'plan')!.value).toBe('basic')
   })
 
+  it('reports who signed a signed signature field', async () => {
+    const e = await openFixture('forms-fill/all-fields.pdf')
+    const s = e.session
+    s.runMutation('test', () => {
+      const w = s.page(0).getWidgets().find((x) => x.getName() === 'signature1')!
+      const sig = s.pdf.newDictionary()
+      sig.put('Type', s.pdf.newName('Sig'))
+      sig.put('Name', s.pdf.newString('Jane Signer'))
+      sig.put('M', s.pdf.newString("D:20240305140709+00'00'"))
+      w.getObject().put('V', s.pdf.addObject(sig))
+    })
+    const fields = await e.ops<typeof formOps>('forms').list(0)
+    const sigField = fields.find((f) => f.name === 'signature1')!
+    expect(sigField.signed).toBe(true)
+    const extra = (await e.ops<typeof fillOps>('forms-fill').pageExtras(0)).find((x) => x.id === sigField.id)!
+    expect(extra.signer).toBe('Jane Signer')
+    expect(extra.signedAt).toMatch(/^2024-03-05T/)
+  })
+
   it('replaces the colour in /DA strings', () => {
     expect(daWithColor('/Helv 12 Tf .1 .1 .1 rg', '#ff0000')).toBe('/Helv 12 Tf 1 0 0 rg')
     expect(daWithColor('/Helv 0 Tf 0 g', '#000000')).toBe('/Helv 0 Tf 0 g')

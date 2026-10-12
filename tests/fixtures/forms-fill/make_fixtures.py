@@ -1,6 +1,6 @@
 """Generates the forms-fill test fixtures (requires reportlab and pypdf).
 
-Run: python3 tests/fixtures/forms-fill/make_fixtures.py [calc] [all-fields] [xfa]   (outputs are committed next to this script)
+Run: python3 tests/fixtures/forms-fill/make_fixtures.py [calc] [all-fields] [xfa] [signed]   (outputs are committed next to this script)
 
 calc.pdf       an order form with Acrobat-style JavaScript: number/percent/date/special formats,
                keystroke filters, a range validation and calculated totals (AFSimple_Calculate and a
@@ -10,6 +10,8 @@ all-fields.pdf every interactive field type on two pages: list boxes (single and
                fields, push buttons (reset, submit, JavaScript), an unsigned signature field.
 xfa.pdf        calc.pdf with an /XFA form description added (a "dynamic XFA" form whose static AcroForm
                fields are still fillable).
+signed.pdf     all-fields.pdf whose signature field carries a signature dictionary (signer name and time;
+               no real PKCS#7 data: enough to show the signed state, not to validate it).
 """
 import io
 import os
@@ -260,13 +262,29 @@ def xfa_form():
     finish(writer, os.path.join(OUT, 'xfa.pdf'))
 
 
+def signed_form():
+    writer = PdfWriter(clone_from=PdfReader(os.path.join(OUT, 'all-fields.pdf')))
+    sig = DictionaryObject({
+        NameObject('/Type'): NameObject('/Sig'),
+        NameObject('/Filter'): NameObject('/Adobe.PPKLite'),
+        NameObject('/SubFilter'): NameObject('/adbe.pkcs7.detached'),
+        NameObject('/Name'): TextStringObject('Jane Signer'),
+        NameObject('/M'): TextStringObject("D:20240305140709+00'00'"),
+    })
+    annot, _ = field_map(writer)['signature1']
+    annot[NameObject('/V')] = writer._add_object(sig)
+    finish(writer, os.path.join(OUT, 'signed.pdf'))
+
+
 if __name__ == '__main__':
     import sys
-    targets = sys.argv[1:] or ['calc', 'all-fields', 'xfa']
+    targets = sys.argv[1:] or ['calc', 'all-fields', 'xfa', 'signed']
     if 'calc' in targets:
         calc_form()
     if 'all-fields' in targets:
         all_fields_form()
     if 'xfa' in targets:
         xfa_form()
+    if 'signed' in targets:
+        signed_form()
     print('fixtures written to', OUT)
