@@ -1,7 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Pause, Play, Square, Volume2 } from 'lucide-react'
 import { create } from 'zustand'
-import { Button, displayShortcut, Field, IconButton, Select, Slider, toast, useApp, type DocumentModel } from '@renderer/sdk'
+import {
+  Button,
+  displayShortcut,
+  Field,
+  IconButton,
+  Select,
+  Slider,
+  toast,
+  useApp,
+  type DocumentModel
+} from '@renderer/sdk'
 import { scheduleMenuUpdate } from '@renderer/app/commands'
 import { loadNavSettings, setReadingSettings, useNavSettings } from './state'
 import { speechChunks } from './util'
@@ -17,7 +27,14 @@ interface ReadState {
   mode: 'page' | 'end'
 }
 
-export const useReadAloud = create<ReadState>(() => ({ active: false, status: 'idle', docId: null, page: 0, pageCount: 0, mode: 'page' }))
+export const useReadAloud = create<ReadState>(() => ({
+  active: false,
+  status: 'idle',
+  docId: null,
+  page: 0,
+  pageCount: 0,
+  mode: 'page'
+}))
 
 useReadAloud.subscribe((s, p) => {
   if (s.active !== p.active || s.status !== p.status) scheduleMenuUpdate()
@@ -66,14 +83,21 @@ function speak(text: string, voices: SpeechSynthesisVoice[], my: number): Promis
     u.onend = () => resolve()
     u.onerror = (e) => {
       if (e.error === 'interrupted' || e.error === 'canceled') resolve()
-      else reject(new Error(e.error === 'synthesis-unavailable' || e.error === 'voice-unavailable' ? NO_VOICES : `Speech failed (${e.error})`))
+      else
+        reject(
+          new Error(
+            e.error === 'synthesis-unavailable' || e.error === 'voice-unavailable'
+              ? NO_VOICES
+              : `Speech failed (${e.error})`
+          )
+        )
     }
     s.speak(u)
   })
 }
 
 /** Turns Read Out Loud on. Returns false (after telling the user) when speech is unavailable. */
-export async function activateReadOutLoud(): Promise<boolean> {
+export async function activateReadOutLoud(opts: { hint?: boolean } = {}): Promise<boolean> {
   if (useReadAloud.getState().active) return true
   await loadNavSettings()
   const voices = await loadVoices()
@@ -82,9 +106,13 @@ export async function activateReadOutLoud(): Promise<boolean> {
     return false
   }
   useReadAloud.setState({ active: true })
-  toast(`Read Out Loud is on. ${displayShortcut('Mod+Shift+V')} reads this page, ${displayShortcut('Mod+Shift+B')} reads to the end.`, {
-    timeout: 5000
-  })
+  if (opts.hint)
+    toast(
+      `Read Out Loud is on. ${displayShortcut('Mod+Shift+V')} reads this page, ${displayShortcut('Mod+Shift+B')} reads to the end.`,
+      {
+        timeout: 5000
+      }
+    )
   return true
 }
 
@@ -144,7 +172,8 @@ export async function readAloud(doc: DocumentModel, mode: 'page' | 'end') {
       )
     }
   } catch (err) {
-    if (my === token) toast(err instanceof Error ? err.message : String(err), { kind: 'error', timeout: 10000 })
+    if (my === token)
+      toast(err instanceof Error ? err.message : String(err), { kind: 'error', timeout: 10000 })
   } finally {
     if (my === token) useReadAloud.setState({ status: 'idle' })
   }
@@ -172,7 +201,12 @@ export function ReadOutLoudBar() {
         shortcut={displayShortcut('Mod+Shift+C')}
         onClick={togglePause}
       />
-      <IconButton icon={Square} label="Stop" shortcut={displayShortcut('Mod+Shift+E')} onClick={stopReading} />
+      <IconButton
+        icon={Square}
+        label="Stop"
+        shortcut={displayShortcut('Mod+Shift+E')}
+        onClick={stopReading}
+      />
     </div>
   )
 }
@@ -206,7 +240,9 @@ export function ReadingSettings() {
   return (
     <div className="fc-navigation-reading-prefs">
       <h4 className="fc-navigation-props-heading">Read Out Loud</h4>
-      {voices !== null && !voices.length && <p className="fc-navigation-hint fc-navigation-warn">{NO_VOICES}</p>}
+      {voices !== null && !voices.length && (
+        <p className="fc-navigation-hint fc-navigation-warn">{NO_VOICES}</p>
+      )}
       <Field label="Voice">
         <Select<string>
           value={reading.voice}
@@ -218,13 +254,34 @@ export function ReadingSettings() {
         />
       </Field>
       <Field label="Speed">
-        <Slider value={reading.rate} min={0.5} max={2} step={0.1} format={(v) => `${v.toFixed(1)}×`} onChange={(v) => setReadingSettings({ rate: v })} />
+        <Slider
+          value={reading.rate}
+          min={0.5}
+          max={2}
+          step={0.1}
+          format={(v) => `${v.toFixed(1)}×`}
+          onChange={(v) => setReadingSettings({ rate: v })}
+        />
       </Field>
       <Field label="Pitch">
-        <Slider value={reading.pitch} min={0.5} max={2} step={0.1} format={(v) => v.toFixed(1)} onChange={(v) => setReadingSettings({ pitch: v })} />
+        <Slider
+          value={reading.pitch}
+          min={0.5}
+          max={2}
+          step={0.1}
+          format={(v) => v.toFixed(1)}
+          onChange={(v) => setReadingSettings({ pitch: v })}
+        />
       </Field>
       <Field label="Volume">
-        <Slider value={reading.volume} min={0} max={1} step={0.05} format={(v) => `${Math.round(v * 100)}%`} onChange={(v) => setReadingSettings({ volume: v })} />
+        <Slider
+          value={reading.volume}
+          min={0}
+          max={1}
+          step={0.05}
+          format={(v) => `${Math.round(v * 100)}%`}
+          onChange={(v) => setReadingSettings({ volume: v })}
+        />
       </Field>
       <div className="fc-navigation-reading-test">
         <Button icon={Volume2} onClick={() => void test()}>
@@ -232,8 +289,8 @@ export function ReadingSettings() {
         </Button>
       </div>
       <p className="fc-navigation-hint">
-        Use View › Read Out Loud, or {displayShortcut('Mod+Shift+V')} to read the current page and {displayShortcut('Mod+Shift+B')} to read to
-        the end.
+        Use View › Read Out Loud, or {displayShortcut('Mod+Shift+V')} to read the current page and{' '}
+        {displayShortcut('Mod+Shift+B')} to read to the end.
       </p>
     </div>
   )

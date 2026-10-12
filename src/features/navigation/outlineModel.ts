@@ -104,7 +104,8 @@ export function currentBookmarkId(tree: Bookmark[], page: number, y: number = In
       if (d) {
         const by = d.y ?? 0
         const reached = d.page < page || (d.page === page && by <= y)
-        if (reached && (!best || d.page > best.page || (d.page === best.page && by >= best.y))) best = { id: b.id, page: d.page, y: by }
+        if (reached && (!best || d.page > best.page || (d.page === best.page && by >= best.y)))
+          best = { id: b.id, page: d.page, y: by }
       }
       walk(b.children)
     }
@@ -149,7 +150,11 @@ export function computeMove(
 }
 
 /** Whether a move would leave the tree unchanged. */
-export function isNoopMove(tree: Bookmark[], draggedId: number, move: { parentId: number | null; index: number }): boolean {
+export function isNoopMove(
+  tree: Bookmark[],
+  draggedId: number,
+  move: { parentId: number | null; index: number }
+): boolean {
   const cur = locate(tree, draggedId)
   if (!cur || cur.parentId !== move.parentId) return false
   const index = move.index < 0 ? cur.siblings.length - 1 : move.index

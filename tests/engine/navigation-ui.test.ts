@@ -100,7 +100,10 @@ describe('navigation outline model', () => {
     const expanded = new Set([partA.id])
     expect(computeMove(tree, partA.id, intro.id, 'inside', expanded)).toBeNull()
     expect(computeMove(tree, partA.id, partA.id, 'before', expanded)).toBeNull()
-    expect(computeMove(tree, link.id, intro.id, 'inside', expanded)).toEqual({ parentId: intro.id, index: -1 })
+    expect(computeMove(tree, link.id, intro.id, 'inside', expanded)).toEqual({
+      parentId: intro.id,
+      index: -1
+    })
     expect(computeMove(tree, link.id, body.id, 'before', expanded)).toEqual({ parentId: partA.id, index: 1 })
     expect(computeMove(tree, intro.id, partB.id, 'after', expanded)).toEqual({ parentId: null, index: 2 })
     // the line under an expanded parent means "first child"
@@ -195,11 +198,17 @@ describe('navigation helpers', () => {
   })
 
   it('trims result context to whole words', () => {
-    expect(tidyContext({ before: 'pter 1 Hello ', match: 'quick', after: ' brown fox jum' }, true, true)).toEqual({
+    expect(
+      tidyContext({ before: 'pter 1 Hello ', match: 'quick', after: ' brown fox jum' }, true, true)
+    ).toEqual({
       before: '1 Hello ',
       match: 'quick',
       after: ' brown fox'
     })
-    expect(tidyContext({ before: 'Hello ', match: 'x', after: ' end' }, false, false)).toEqual({ before: 'Hello ', match: 'x', after: ' end' })
+    expect(tidyContext({ before: 'Hello ', match: 'x', after: ' end' }, false, false)).toEqual({
+      before: 'Hello ',
+      match: 'x',
+      after: ' end'
+    })
   })
 })

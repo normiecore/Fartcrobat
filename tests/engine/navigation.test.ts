@@ -9,7 +9,8 @@ import type { Bookmark } from '@features/navigation/types'
 import { openFixture, roundTrip, type OpenedEngine } from './helpers'
 
 const nav = (e: OpenedEngine) => e.ops<typeof navigationOps>('navigation')
-const titles = (list: Bookmark[]): unknown[] => list.map((b) => (b.children.length ? [b.title, titles(b.children)] : b.title))
+const titles = (list: Bookmark[]): unknown[] =>
+  list.map((b) => (b.children.length ? [b.title, titles(b.children)] : b.title))
 
 /** Checks the low-level outline invariants MuPDF and Acrobat rely on. */
 function checkOutlineStructure(e: OpenedEngine) {
@@ -45,7 +46,13 @@ describe('navigation: bookmarks', () => {
   it('lists the outline with stable ids and destinations', async () => {
     const e = await openFixture('text.pdf')
     const list = await nav(e).outline()
-    expect(list.map((b) => b.title)).toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'Chapter 5'])
+    expect(list.map((b) => b.title)).toEqual([
+      'Chapter 1',
+      'Chapter 2',
+      'Chapter 3',
+      'Chapter 4',
+      'Chapter 5'
+    ])
     expect(list[3].dest).toMatchObject({ page: 3, type: 'Fit' })
     expect(new Set(list.map((b) => b.id)).size).toBe(5)
     expect(list.every((b) => b.id > 0)).toBe(true)
@@ -72,7 +79,14 @@ describe('navigation: bookmarks', () => {
     expect(e.lastChanges?.journal.undoLabel).toBe('Add Bookmark')
     expect(e.lastChanges?.dirty).toBe(true)
     let list = await n.outline()
-    expect(list.map((b) => b.title)).toEqual(['Chapter 1', 'Chapter 2', 'Summary', 'Chapter 3', 'Chapter 4', 'Chapter 5'])
+    expect(list.map((b) => b.title)).toEqual([
+      'Chapter 1',
+      'Chapter 2',
+      'Summary',
+      'Chapter 3',
+      'Chapter 4',
+      'Chapter 5'
+    ])
     const added = list[2]
     expect(added.id).toBe(id)
     expect(added.dest).toMatchObject({ page: 1, type: 'XYZ', zoom: 1.5 })
@@ -86,7 +100,12 @@ describe('navigation: bookmarks', () => {
     await n.moveBookmark(id, c2.id, 0)
     await n.moveBookmark(c3.id, c2.id, -1)
     list = await n.outline()
-    expect(titles(list)).toEqual(['Chapter 1', ['Chapter 2', ['Summary of results', 'Chapter 3']], 'Chapter 4', 'Chapter 5'])
+    expect(titles(list)).toEqual([
+      'Chapter 1',
+      ['Chapter 2', ['Summary of results', 'Chapter 3']],
+      'Chapter 4',
+      'Chapter 5'
+    ])
     expect(list[1].open).toBe(true)
     checkOutlineStructure(e)
     // core outline (MuPDF) agrees
@@ -99,7 +118,13 @@ describe('navigation: bookmarks', () => {
     // un-nest chapter 3 back to the top level before chapter 1
     await n.moveBookmark(c3.id, null, 0)
     list = await n.outline()
-    expect(titles(list)).toEqual(['Chapter 3', 'Chapter 1', ['Chapter 2', ['Summary of results']], 'Chapter 4', 'Chapter 5'])
+    expect(titles(list)).toEqual([
+      'Chapter 3',
+      'Chapter 1',
+      ['Chapter 2', ['Summary of results']],
+      'Chapter 4',
+      'Chapter 5'
+    ])
     checkOutlineStructure(e)
 
     // deleting a parent removes its children
@@ -111,7 +136,13 @@ describe('navigation: bookmarks', () => {
 
     // undo everything step by step
     await e.doc.undo()
-    expect(titles(await n.outline())).toEqual(['Chapter 3', 'Chapter 1', ['Chapter 2', ['Summary of results']], 'Chapter 4', 'Chapter 5'])
+    expect(titles(await n.outline())).toEqual([
+      'Chapter 3',
+      'Chapter 1',
+      ['Chapter 2', ['Summary of results']],
+      'Chapter 4',
+      'Chapter 5'
+    ])
     await e.doc.undo()
     await e.doc.undo()
     await e.doc.undo()
@@ -119,7 +150,13 @@ describe('navigation: bookmarks', () => {
     await e.doc.undo()
     expect((await n.outline())[2].title).toBe('Summary')
     await e.doc.undo()
-    expect((await n.outline()).map((b) => b.title)).toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'Chapter 5'])
+    expect((await n.outline()).map((b) => b.title)).toEqual([
+      'Chapter 1',
+      'Chapter 2',
+      'Chapter 3',
+      'Chapter 4',
+      'Chapter 5'
+    ])
     expect(e.lastChanges?.dirty).toBe(false)
     await e.doc.redo()
     expect((await n.outline()).length).toBe(6)
@@ -129,12 +166,22 @@ describe('navigation: bookmarks', () => {
     const e = await openFixture('text.pdf')
     const n = nav(e)
     const list = await n.outline()
-    const child = await n.addBookmark(list[0].id, -1, 'Ünïcödé – 日本', { page: 0, x: null, y: 300, zoom: null })
+    const child = await n.addBookmark(list[0].id, -1, 'Ünïcödé – 日本', {
+      page: 0,
+      x: null,
+      y: 300,
+      zoom: null
+    })
     await n.setBookmarkStyle(child, { bold: true, italic: true, color: '#cc0000' })
     await n.setBookmarkDestination(list[4].id, { page: 2, x: null, y: 50, zoom: null })
     const again = await roundTrip(e)
     const out = await nav(again).outline()
-    expect(out[0].children[0]).toMatchObject({ title: 'Ünïcödé – 日本', bold: true, italic: true, color: '#cc0000' })
+    expect(out[0].children[0]).toMatchObject({
+      title: 'Ünïcödé – 日本',
+      bold: true,
+      italic: true,
+      color: '#cc0000'
+    })
     expect(out[0].children[0].dest?.y).toBeCloseTo(300)
     expect(out[0].children[0].dest?.zoom).toBeNull()
     expect(out[4].dest).toMatchObject({ page: 2, type: 'XYZ' })
@@ -198,7 +245,13 @@ describe('navigation: attachments', () => {
     const e = await openFixture('navigation/attachments.pdf')
     const { files, annotations } = await nav(e).attachments()
     expect(files).toHaveLength(1)
-    expect(files[0]).toMatchObject({ key: 'data.csv', fileName: 'data.csv', size: 29, description: 'Quarterly figures', mimeType: 'text/csv' })
+    expect(files[0]).toMatchObject({
+      key: 'data.csv',
+      fileName: 'data.csv',
+      size: 29,
+      description: 'Quarterly figures',
+      mimeType: 'text/csv'
+    })
     expect(files[0].modified).toBe('2024-03-05T10:15:00.000Z')
     expect(annotations).toHaveLength(1)
     expect(annotations[0]).toMatchObject({ page: 1, fileName: 'notes.txt', size: 30 })
@@ -314,7 +367,13 @@ describe('navigation: document properties', () => {
     const n = nav(e)
     await n.setProperties({
       metadata: { author: 'Jane Smith', keywords: 'alpha, beta' },
-      initialView: { navigationTab: 'thumbnails', pageLayout: 'two-up-cover', magnification: 'fit-width', openToPage: 3, displayDocTitle: true },
+      initialView: {
+        navigationTab: 'thumbnails',
+        pageLayout: 'two-up-cover',
+        magnification: 'fit-width',
+        openToPage: 3,
+        displayDocTitle: true
+      },
       custom: [
         { key: 'Department', value: 'Finance' },
         { key: 'Title', value: 'ignored' }
@@ -342,9 +401,23 @@ describe('navigation: document properties', () => {
     await n.setProperties({ initialView: { magnification: 2 } })
     p = await n.properties()
     expect(p.initialView).toMatchObject({ magnification: 2, openToPage: 3 })
-    await n.setProperties({ initialView: { magnification: 'default', openToPage: 0, navigationTab: 'page', pageLayout: 'default', displayDocTitle: false }, custom: [] })
+    await n.setProperties({
+      initialView: {
+        magnification: 'default',
+        openToPage: 0,
+        navigationTab: 'page',
+        pageLayout: 'default',
+        displayDocTitle: false
+      },
+      custom: []
+    })
     p = await n.properties()
-    expect(p.initialView).toMatchObject({ navigationTab: 'page', pageLayout: 'default', magnification: 'default', openToPage: 0 })
+    expect(p.initialView).toMatchObject({
+      navigationTab: 'page',
+      pageLayout: 'default',
+      magnification: 'default',
+      openToPage: 0
+    })
     expect(p.custom).toEqual([])
     expect(e.session.pdf.getTrailer().get('Root').get('OpenAction').isNull()).toBe(true)
     await e.doc.undo()
@@ -360,7 +433,9 @@ describe('navigation: document properties', () => {
 
   it('rejects invalid custom property names', async () => {
     const e = await openFixture('text.pdf')
-    await expect(nav(e).setProperties({ custom: [{ key: 'has space', value: 'x' }] })).rejects.toThrow(/not a valid property name/)
+    await expect(nav(e).setProperties({ custom: [{ key: 'has space', value: 'x' }] })).rejects.toThrow(
+      /not a valid property name/
+    )
   })
 
   it('creates the information dictionary for custom keys when missing', async () => {
@@ -380,7 +455,12 @@ describe('navigation: document properties', () => {
     const fonts = await nav(e).fonts(0, 2)
     const by = (name: string) => fonts.find((f) => f.name === name)!
     expect(by('DejaVuSans')).toMatchObject({ type: 'TrueType', embedded: true, subset: true })
-    expect(by('Helvetica')).toMatchObject({ type: 'Type 1', embedded: false, subset: false, encoding: 'Ansi' })
+    expect(by('Helvetica')).toMatchObject({
+      type: 'Type 1',
+      embedded: false,
+      subset: false,
+      encoding: 'Ansi'
+    })
     expect(by('Times-Roman').embedded).toBe(false)
     expect(by('Courier').pages).toEqual([0, 1])
     // chunked scanning returns the per-page usage of each chunk

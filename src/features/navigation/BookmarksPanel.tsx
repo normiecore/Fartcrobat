@@ -102,7 +102,15 @@ function RenameInput({ initial, onDone }: { initial: string; onDone: (value: str
   )
 }
 
-function BookmarkPropertiesDialog({ doc, bookmark, close }: { doc: DocumentModel; bookmark: Bookmark; close: () => void }) {
+function BookmarkPropertiesDialog({
+  doc,
+  bookmark,
+  close
+}: {
+  doc: DocumentModel
+  bookmark: Bookmark
+  close: () => void
+}) {
   const [title, setTitle] = useState(bookmark.title)
   const [bold, setBold] = useState(bookmark.bold)
   const [italic, setItalic] = useState(bookmark.italic)
@@ -191,7 +199,8 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
         setTree(t)
         setLoadError(null)
         const st = useBookmarkUi.getState().byDoc[doc.id]
-        if (!st?.initialized) setBookmarkUi(doc.id, { expanded: new Set(initiallyOpen(t)), initialized: true })
+        if (!st?.initialized)
+          setBookmarkUi(doc.id, { expanded: new Set(initiallyOpen(t)), initialized: true })
       })
       .catch((err) => {
         if (alive) setLoadError(err instanceof Error ? err.message : String(err))
@@ -218,7 +227,9 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
       }
       const r = vp.getBoundingClientRect()
       const hit = view.hitTest(r.left + r.width / 2, r.top + Math.min(r.height * 0.25, 220))
-      const next = hit ? { page: hit.pageIndex, y: hit.point[1] } : { page: doc.state.currentPage, y: Infinity }
+      const next = hit
+        ? { page: hit.pageIndex, y: hit.point[1] }
+        : { page: doc.state.currentPage, y: Infinity }
       setReading((prev) => (prev.page === next.page && Math.abs(prev.y - next.y) < 2 ? prev : next))
     }
     const onScroll = () => {
@@ -251,7 +262,10 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
   }, [hasList])
   const visibleRows = useMemo(() => {
     const first = Math.max(0, Math.floor((viewport.top - LIST_PADDING) / BOOKMARK_ROW_HEIGHT) - 15)
-    const last = Math.min(rows.length - 1, Math.ceil((viewport.top + viewport.height) / BOOKMARK_ROW_HEIGHT) + 15)
+    const last = Math.min(
+      rows.length - 1,
+      Math.ceil((viewport.top + viewport.height) / BOOKMARK_ROW_HEIGHT) + 15
+    )
     const set = new Set<number>()
     for (let i = first; i <= last; i++) set.add(i)
     for (const id of [ui.selected, ui.editing]) {
@@ -270,7 +284,8 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
     if (i === undefined || !el) return
     const top = LIST_PADDING + i * BOOKMARK_ROW_HEIGHT
     if (top < el.scrollTop) el.scrollTop = top - 4
-    else if (top + BOOKMARK_ROW_HEIGHT > el.scrollTop + el.clientHeight) el.scrollTop = top + BOOKMARK_ROW_HEIGHT - el.clientHeight + 4
+    else if (top + BOOKMARK_ROW_HEIGHT > el.scrollTop + el.clientHeight)
+      el.scrollTop = top + BOOKMARK_ROW_HEIGHT - el.clientHeight + 4
   }, [ui.editing, ui.selected, rowIndex])
 
   // When a new bookmark is being renamed but sits inside a collapsed parent, open the parents.
@@ -280,7 +295,8 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
     if (chain.length) setBookmarkUi(doc.id, (s) => ({ expanded: new Set([...s.expanded, ...chain]) }))
   }, [tree, ui.editing, rowIndex, doc.id])
 
-  const set = (patch: Partial<BookmarkUiState> | ((s: BookmarkUiState) => Partial<BookmarkUiState>)) => setBookmarkUi(doc.id, patch)
+  const set = (patch: Partial<BookmarkUiState> | ((s: BookmarkUiState) => Partial<BookmarkUiState>)) =>
+    setBookmarkUi(doc.id, patch)
 
   const toggle = (id: number, open?: boolean) =>
     set((s) => {
@@ -320,7 +336,8 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
     const b = locate(tree, id)?.bookmark
     try {
       await navOps(doc).deleteBookmarks([id])
-      const next = i !== undefined ? (rows[i + 1 + countVisibleDescendants(rows, i)] ?? rows[i - 1]) : undefined
+      const next =
+        i !== undefined ? (rows[i + 1 + countVisibleDescendants(rows, i)] ?? rows[i - 1]) : undefined
       set({ selected: next ? next.bookmark.id : null })
       const extra = b && b.children.length ? ' and the bookmarks under it' : ''
       undoToast(doc, `Deleted “${b?.title ?? 'bookmark'}”${extra}`)
@@ -356,24 +373,50 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
     ]
     if (b) {
       items.push(
-        { id: 'child', label: 'New Child Bookmark', run: () => void addBookmarkForCurrentView(doc, { asChildOf: b.id }) },
+        {
+          id: 'child',
+          label: 'New Child Bookmark',
+          run: () => void addBookmarkForCurrentView(doc, { asChildOf: b.id })
+        },
         { id: 'sep1', label: '', separator: true },
-        { id: 'rename', label: 'Rename', icon: Pencil, shortcut: 'F2', run: () => set({ selected: b.id, editing: b.id }) },
+        {
+          id: 'rename',
+          label: 'Rename',
+          icon: Pencil,
+          shortcut: 'F2',
+          run: () => set({ selected: b.id, editing: b.id })
+        },
         { id: 'dest', label: 'Set Destination', icon: Crosshair, run: () => void setDestination(b) },
         {
           id: 'props',
           label: 'Properties…',
           icon: Settings2,
-          run: () => void openDialog((close) => <BookmarkPropertiesDialog doc={doc} bookmark={b} close={() => close()} />)
+          run: () =>
+            void openDialog((close) => (
+              <BookmarkPropertiesDialog doc={doc} bookmark={b} close={() => close()} />
+            ))
         },
         { id: 'sep2', label: '', separator: true },
-        { id: 'delete', label: 'Delete', icon: Trash2, shortcut: 'Del', danger: true, run: () => void remove(b.id) }
+        {
+          id: 'delete',
+          label: 'Delete',
+          icon: Trash2,
+          shortcut: 'Del',
+          danger: true,
+          run: () => void remove(b.id)
+        }
       )
     }
     items.push(
       { id: 'sep3', label: '', separator: true },
       { id: 'expand', label: 'Expand All', icon: ChevronsUpDown, disabled: !canExpand, run: expandAll },
-      { id: 'collapse', label: 'Collapse All', icon: ChevronsDownUp, disabled: !canCollapse, run: collapseAll }
+      {
+        id: 'collapse',
+        label: 'Collapse All',
+        icon: ChevronsDownUp,
+        disabled: !canCollapse,
+        run: collapseAll
+      }
     )
     return items
   }
@@ -441,7 +484,11 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
         if (e.key === 'F10' && !e.shiftKey) return
         e.preventDefault()
         const r = listRef.current!.getBoundingClientRect()
-        openMenu(row?.bookmark ?? null, r.left + 40, r.top + LIST_PADDING + Math.max(0, i) * BOOKMARK_ROW_HEIGHT - listRef.current!.scrollTop + 24)
+        openMenu(
+          row?.bookmark ?? null,
+          r.left + 40,
+          r.top + LIST_PADDING + Math.max(0, i) * BOOKMARK_ROW_HEIGHT - listRef.current!.scrollTop + 24
+        )
         break
       }
     }
@@ -541,14 +588,19 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
   // Drop indicator geometry.
   let indicator: { top: number; left: number; inside: boolean } | null = null
   if (drop && drop.valid) {
-    if (drop.row < 0) indicator = { top: LIST_PADDING + rows.length * BOOKMARK_ROW_HEIGHT, left: 8, inside: false }
+    if (drop.row < 0)
+      indicator = { top: LIST_PADDING + rows.length * BOOKMARK_ROW_HEIGHT, left: 8, inside: false }
     else {
       const r = rows[drop.row]
       const top = LIST_PADDING + drop.row * BOOKMARK_ROW_HEIGHT
       if (drop.position === 'inside') indicator = { top, left: 0, inside: true }
       else {
         const depth = drop.position === 'after' && r.expanded ? r.depth + 1 : r.depth
-        indicator = { top: drop.position === 'before' ? top : top + BOOKMARK_ROW_HEIGHT, left: 8 + depth * INDENT + 18, inside: false }
+        indicator = {
+          top: drop.position === 'before' ? top : top + BOOKMARK_ROW_HEIGHT,
+          left: 8 + depth * INDENT + 18,
+          inside: false
+        }
       }
     }
   }
@@ -571,7 +623,12 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
           onClick={() => selected !== null && void remove(selected)}
         />
         <IconButton icon={ChevronsUpDown} label="Expand all" disabled={!canExpand} onClick={expandAll} />
-        <IconButton icon={ChevronsDownUp} label="Collapse all" disabled={!canCollapse} onClick={collapseAll} />
+        <IconButton
+          icon={ChevronsDownUp}
+          label="Collapse all"
+          disabled={!canCollapse}
+          onClick={collapseAll}
+        />
         <span className="fc-navigation-toolbar-spacer" />
         <DropdownMenu
           align="right"
@@ -604,9 +661,12 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
           tabIndex={0}
           aria-activedescendant={selected !== null ? `fc-navigation-bm-${doc.id}-${selected}` : undefined}
           onKeyDown={onKeyDown}
-          onScroll={(e) => setViewport({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}
+          onScroll={(e) =>
+            setViewport({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })
+          }
           onFocus={(e) => {
-            if (e.target === listRef.current && selected === null && rows.length && currentId !== null) set({ selected: currentId })
+            if (e.target === listRef.current && selected === null && rows.length && currentId !== null)
+              set({ selected: currentId })
           }}
           onContextMenu={(e) => {
             if (e.target === listRef.current) {
@@ -615,13 +675,19 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
             }
           }}
         >
-          <div className="fc-navigation-tree-content" style={{ height: rows.length * BOOKMARK_ROW_HEIGHT + LIST_PADDING * 2 + 24 }}>
+          <div
+            className="fc-navigation-tree-content"
+            style={{ height: rows.length * BOOKMARK_ROW_HEIGHT + LIST_PADDING * 2 + 24 }}
+          >
             {visibleRows.map((i) => {
               const r = rows[i]
               const b = r.bookmark
               const isSel = b.id === selected
               const editing = ui.editing === b.id
-              const style: React.CSSProperties = { top: LIST_PADDING + i * BOOKMARK_ROW_HEIGHT, paddingLeft: 4 + r.depth * INDENT }
+              const style: React.CSSProperties = {
+                top: LIST_PADDING + i * BOOKMARK_ROW_HEIGHT,
+                paddingLeft: 4 + r.depth * INDENT
+              }
               const titleStyle: React.CSSProperties & Record<string, string> = {}
               if (b.color) titleStyle['--fc-navigation-bm-color'] = b.color
               return (
@@ -637,7 +703,13 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
                     drop?.draggedId === b.id ? 'is-dragged' : ''
                   } ${indicator?.inside && drop?.row === i ? 'is-drop-inside' : ''}`}
                   style={style}
-                  title={b.dest ? `${b.title} — page ${b.dest.page + 1}` : b.uri ? `${b.title} — ${b.uri}` : b.title}
+                  title={
+                    b.dest
+                      ? `${b.title} — page ${b.dest.page + 1}`
+                      : b.uri
+                        ? `${b.title} — ${b.uri}`
+                        : b.title
+                  }
                   onPointerDown={(e) => startDrag(e, b)}
                   onClick={() => {
                     if (suppressClick.current || editing) return
@@ -675,7 +747,11 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
                   ) : (
                     <span
                       className={`fc-navigation-bm-title ${b.color ? 'has-color' : ''}`}
-                      style={{ ...titleStyle, fontWeight: b.bold ? 700 : undefined, fontStyle: b.italic ? 'italic' : undefined }}
+                      style={{
+                        ...titleStyle,
+                        fontWeight: b.bold ? 700 : undefined,
+                        fontStyle: b.italic ? 'italic' : undefined
+                      }}
                     >
                       {b.title || 'Untitled'}
                     </span>
@@ -684,13 +760,21 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
               )
             })}
             {indicator && !indicator.inside && (
-              <div className="fc-navigation-drop-line" style={{ top: indicator.top - 1, left: indicator.left }} aria-hidden="true" />
+              <div
+                className="fc-navigation-drop-line"
+                style={{ top: indicator.top - 1, left: indicator.left }}
+                aria-hidden="true"
+              />
             )}
           </div>
         </div>
       )}
       {drop && dragged && (
-        <div className="fc-navigation-drag-ghost" style={{ left: drop.x + 14, top: drop.y + 10 }} aria-hidden="true">
+        <div
+          className="fc-navigation-drag-ghost"
+          style={{ left: drop.x + 14, top: drop.y + 10 }}
+          aria-hidden="true"
+        >
           {dragged.title}
         </div>
       )}

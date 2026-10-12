@@ -52,7 +52,14 @@ export function SearchPanel({ doc }: { doc: DocumentModel }) {
     let alive = true
     const missing = pagesNeeded.filter((p) => !texts.has(p))
     if (!missing.length) return
-    void Promise.all(missing.map((p) => doc.pageText(p).then((t) => [p, t] as const).catch(() => null))).then((loaded) => {
+    void Promise.all(
+      missing.map((p) =>
+        doc
+          .pageText(p)
+          .then((t) => [p, t] as const)
+          .catch(() => null)
+      )
+    ).then((loaded) => {
       if (!alive) return
       setTexts((prev) => {
         const next = new Map(prev)
@@ -98,7 +105,9 @@ export function SearchPanel({ doc }: { doc: DocumentModel }) {
 
   const moveFocus = (e: React.KeyboardEvent) => {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-    const buttons = [...(resultsRef.current?.querySelectorAll<HTMLButtonElement>('.fc-navigation-result') ?? [])]
+    const buttons = [
+      ...(resultsRef.current?.querySelectorAll<HTMLButtonElement>('.fc-navigation-result') ?? [])
+    ]
     const i = buttons.indexOf(document.activeElement as HTMLButtonElement)
     const next = buttons[e.key === 'ArrowDown' ? i + 1 : i - 1]
     if (next) {
@@ -168,7 +177,13 @@ export function SearchPanel({ doc }: { doc: DocumentModel }) {
                 Searching… page {Math.min(info.pageCount, search.pagesSearched + 1)} of {info.pageCount}
                 {total ? ` · ${total} found` : ''}
               </span>
-              <div className="fc-navigation-progress" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+              <div
+                className="fc-navigation-progress"
+                role="progressbar"
+                aria-valuenow={Math.round(progress * 100)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+              >
                 <div style={{ width: `${Math.round(progress * 100)}%` }} />
               </div>
             </>
@@ -181,7 +196,12 @@ export function SearchPanel({ doc }: { doc: DocumentModel }) {
           )}
         </div>
       )}
-      <div className="fc-navigation-results" ref={resultsRef} onKeyDown={moveFocus} aria-label="Search results">
+      <div
+        className="fc-navigation-results"
+        ref={resultsRef}
+        onKeyDown={moveFocus}
+        aria-label="Search results"
+      >
         {groups.map((g) => {
           const t = texts.get(g.page)
           const label = info.pages[g.page]?.label ?? String(g.page + 1)
@@ -193,7 +213,11 @@ export function SearchPanel({ doc }: { doc: DocumentModel }) {
               </div>
               {g.items.map(({ hit, index }) => {
                 const c = t
-                  ? tidyContext(hitContext(t, hit, CONTEXT), hit.start > CONTEXT, hit.end + CONTEXT < t.text.length)
+                  ? tidyContext(
+                      hitContext(t, hit, CONTEXT),
+                      hit.start > CONTEXT,
+                      hit.end + CONTEXT < t.text.length
+                    )
                   : null
                 return (
                   <button
@@ -205,9 +229,19 @@ export function SearchPanel({ doc }: { doc: DocumentModel }) {
                   >
                     {c ? (
                       <>
-                        {c.before && <span className="fc-navigation-result-ctx">{hit.start > CONTEXT ? '…' : ''}{c.before}</span>}
+                        {c.before && (
+                          <span className="fc-navigation-result-ctx">
+                            {hit.start > CONTEXT ? '…' : ''}
+                            {c.before}
+                          </span>
+                        )}
                         <mark>{c.match}</mark>
-                        {c.after && <span className="fc-navigation-result-ctx">{c.after}{t && hit.end + CONTEXT < t.text.length ? '…' : ''}</span>}
+                        {c.after && (
+                          <span className="fc-navigation-result-ctx">
+                            {c.after}
+                            {t && hit.end + CONTEXT < t.text.length ? '…' : ''}
+                          </span>
+                        )}
                       </>
                     ) : (
                       <mark>{search.query}</mark>

@@ -50,7 +50,9 @@ export function describePages(indices: number[]): string {
 
 /** File-name friendly page part: "page 3", "pages 2-4". */
 export function pagesFileSuffix(indices: number[]): string {
-  return describePages(indices).replace('–', '-').replace(/,? and /, ', ')
+  return describePages(indices)
+    .replace('–', '-')
+    .replace(/,? and /, ', ')
 }
 
 export interface ThumbLayout {
@@ -108,7 +110,12 @@ export function dropIndexAt(layout: ThumbLayout, y: number): number {
 }
 
 /** Visible item range [first, last] for a scroll window, with overscan in px. */
-export function visibleRange(layout: ThumbLayout, top: number, height: number, overscan = 300): [number, number] {
+export function visibleRange(
+  layout: ThumbLayout,
+  top: number,
+  height: number,
+  overscan = 300
+): [number, number] {
   const n = layout.tops.length
   if (!n) return [0, -1]
   const first = itemAt(layout, Math.max(0, top - overscan))
@@ -183,14 +190,25 @@ export function pdfVersionLabel(version: string): string {
   return notes[version] ? `${version} (${notes[version]})` : version
 }
 
-export const STANDARD_INFO_KEYS = ['Title', 'Author', 'Subject', 'Keywords', 'Creator', 'Producer', 'CreationDate', 'ModDate', 'Trapped']
+export const STANDARD_INFO_KEYS = [
+  'Title',
+  'Author',
+  'Subject',
+  'Keywords',
+  'Creator',
+  'Producer',
+  'CreationDate',
+  'ModDate',
+  'Trapped'
+]
 
 /** Why a custom document property name is not allowed, or null when it is fine. */
 export function customKeyError(key: string): string | null {
   const k = key.trim()
   if (!k) return 'Enter a name.'
   if (!/^[A-Za-z0-9_.\-+:]{1,127}$/.test(k)) return 'Use letters, digits and . _ - + : only (no spaces).'
-  if (STANDARD_INFO_KEYS.includes(k)) return `“${k}” is a standard property. Change it on the Description tab.`
+  if (STANDARD_INFO_KEYS.includes(k))
+    return `“${k}” is a standard property. Change it on the Description tab.`
   return null
 }
 
@@ -227,7 +245,11 @@ export function mimeTypeFor(name: string): string {
 }
 
 /** Trims search-result context to whole words: "pter 1 Hello" -> "1 Hello". */
-export function tidyContext(c: { before: string; match: string; after: string }, cutBefore: boolean, cutAfter: boolean) {
+export function tidyContext(
+  c: { before: string; match: string; after: string },
+  cutBefore: boolean,
+  cutAfter: boolean
+) {
   let before = c.before
   let after = c.after
   if (cutBefore) {

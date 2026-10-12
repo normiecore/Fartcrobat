@@ -17,8 +17,23 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import { navOps, refreshInfo } from './actions'
-import type { DocumentPropertiesData, FontInfo, InitialLayout, InitialMagnification, InitialView, NavigationTab, PropertiesPatch } from './types'
-import { customKeyError, formatBytes, formatDate, formatPageList, formatPageSize, pdfVersionLabel } from './util'
+import type {
+  DocumentPropertiesData,
+  FontInfo,
+  InitialLayout,
+  InitialMagnification,
+  InitialView,
+  NavigationTab,
+  PropertiesPatch
+} from './types'
+import {
+  customKeyError,
+  formatBytes,
+  formatDate,
+  formatPageList,
+  formatPageSize,
+  pdfVersionLabel
+} from './util'
 
 type Tab = 'description' | 'security' | 'fonts' | 'initial' | 'custom'
 
@@ -84,7 +99,12 @@ function DescriptionTab({
       {multiline ? (
         <TextArea aria-label={label} rows={2} value={meta[k]} onChange={(e) => setMeta(k, e.target.value)} />
       ) : (
-        <TextInput aria-label={label} value={meta[k]} onChange={(e) => setMeta(k, e.target.value)} data-autofocus={k === 'title' ? true : undefined} />
+        <TextInput
+          aria-label={label}
+          value={meta[k]}
+          onChange={(e) => setMeta(k, e.target.value)}
+          data-autofocus={k === 'title' ? true : undefined}
+        />
       )}
     </Row>
   )
@@ -106,9 +126,15 @@ function DescriptionTab({
       <h4 className="fc-navigation-props-heading">Advanced</h4>
       <div className="fc-navigation-props-grid">
         <Row label="PDF Producer">{m.producer || '—'}</Row>
-        <Row label="PDF Version">{info.converted ? `${pdfVersionLabel(info.version)}, converted from ${info.format}` : pdfVersionLabel(info.version)}</Row>
+        <Row label="PDF Version">
+          {info.converted
+            ? `${pdfVersionLabel(info.version)}, converted from ${info.format}`
+            : pdfVersionLabel(info.version)}
+        </Row>
         <Row label="Location">{filePath ? dirname(filePath) : 'Not saved yet'}</Row>
-        <Row label="File Size">{stat === undefined ? '…' : stat ? formatBytes(stat.size, true) : 'Not saved yet'}</Row>
+        <Row label="File Size">
+          {stat === undefined ? '…' : stat ? formatBytes(stat.size, true) : 'Not saved yet'}
+        </Row>
         <Row label="Page Size">{page ? formatPageSize(page.width, page.height, units) : '—'}</Row>
         <Row label="Number of Pages">{info.pageCount}</Row>
         <Row label="Tagged PDF">{props ? (props.tagged ? 'Yes' : 'No') : '…'}</Row>
@@ -144,7 +170,13 @@ function SecurityTab({ doc, close }: { doc: DocumentModel; close: () => void }) 
     ['Creation of Template Pages', allowed(p.edit && p.assemble)]
   ]
   const encrypted = !!info.encryption
-  const change = encrypted ? (registry.commands.has('protect.removeSecurity') ? 'protect.removeSecurity' : null) : registry.commands.has('protect.encrypt') ? 'protect.encrypt' : null
+  const change = encrypted
+    ? registry.commands.has('protect.removeSecurity')
+      ? 'protect.removeSecurity'
+      : null
+    : registry.commands.has('protect.encrypt')
+      ? 'protect.encrypt'
+      : null
   return (
     <div className="fc-navigation-props-tab">
       <div className="fc-navigation-props-grid">
@@ -168,13 +200,16 @@ function SecurityTab({ doc, close }: { doc: DocumentModel; close: () => void }) 
       <div className="fc-navigation-props-grid fc-navigation-props-perms">
         {rows.map(([label, value]) => (
           <Row key={label} label={label}>
-            <span className={value === 'Not Allowed' ? 'fc-navigation-denied' : 'fc-navigation-allowed'}>{value}</span>
+            <span className={value === 'Not Allowed' ? 'fc-navigation-denied' : 'fc-navigation-allowed'}>
+              {value}
+            </span>
           </Row>
         ))}
       </div>
       {encrypted && (
         <p className="fc-navigation-hint">
-          These restrictions are set by the document's author. Fartcrobat respects them where the PDF format requires it.
+          These restrictions are set by the document's author. Fartcrobat respects them where the PDF format
+          requires it.
         </p>
       )}
     </div>
@@ -201,7 +236,8 @@ function FontsTab({ doc }: { doc: DocumentModel }) {
     if (c && c.key === cacheKey) return
     let alive = true
     const merged = new Map<string, FontInfo>()
-    const sorted = () => [...merged.values()].sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
+    const sorted = () =>
+      [...merged.values()].sort((a, b) => a.name.localeCompare(b.name) || a.type.localeCompare(b.type))
     ;(async () => {
       for (let from = 0; from < pageCount && alive; from += FONT_CHUNK) {
         const chunk = await navOps(doc).fonts(from, Math.min(pageCount, from + FONT_CHUNK))
@@ -232,7 +268,11 @@ function FontsTab({ doc }: { doc: DocumentModel }) {
             : `Scanning page ${scanned + 1} of ${pageCount}…`}
       </div>
       {!done && !error && (
-        <div className="fc-navigation-progress" role="progressbar" aria-valuenow={Math.round((scanned / Math.max(1, pageCount)) * 100)}>
+        <div
+          className="fc-navigation-progress"
+          role="progressbar"
+          aria-valuenow={Math.round((scanned / Math.max(1, pageCount)) * 100)}
+        >
           <div style={{ width: `${(scanned / Math.max(1, pageCount)) * 100}%` }} />
         </div>
       )}
@@ -246,13 +286,16 @@ function FontsTab({ doc }: { doc: DocumentModel }) {
               </span>
             </div>
             <div className="fc-navigation-font-meta">
-              Type: {f.type} · Encoding: {f.encoding} · {f.pages.length === 1 ? 'Page' : 'Pages'} {formatPageList(f.pages)}
+              Type: {f.type} · Encoding: {f.encoding} · {f.pages.length === 1 ? 'Page' : 'Pages'}{' '}
+              {formatPageList(f.pages)}
             </div>
           </li>
         ))}
       </ul>
       {done && fonts.some((f) => !f.embedded) && (
-        <p className="fc-navigation-hint">Fonts that are not embedded are replaced with similar fonts on screen and when printing.</p>
+        <p className="fc-navigation-hint">
+          Fonts that are not embedded are replaced with similar fonts on screen and when printing.
+        </p>
       )}
     </div>
   )
@@ -288,7 +331,15 @@ const MAGNIFICATIONS: { value: string; label: string }[] = [
   ...[0.25, 0.5, 0.75, 1.25, 1.5, 2, 4].map((z) => ({ value: String(z), label: `${z * 100}%` }))
 ]
 
-function InitialViewTab({ view, setView, pageCount }: { view: InitialView; setView: (v: InitialView) => void; pageCount: number }) {
+function InitialViewTab({
+  view,
+  setView,
+  pageCount
+}: {
+  view: InitialView
+  setView: (v: InitialView) => void
+  pageCount: number
+}) {
   const mag = typeof view.magnification === 'number' ? String(view.magnification) : view.magnification
   const magOptions = MAGNIFICATIONS.some((o) => o.value === mag)
     ? MAGNIFICATIONS
@@ -298,17 +349,32 @@ function InitialViewTab({ view, setView, pageCount }: { view: InitialView; setVi
       <h4 className="fc-navigation-props-heading">Layout and Magnification</h4>
       <div className="fc-navigation-props-grid">
         <Row label="Navigation tab">
-          <Select<NavigationTab> aria-label="Navigation tab" value={view.navigationTab} options={NAV_TABS} onChange={(v) => setView({ ...view, navigationTab: v })} />
+          <Select<NavigationTab>
+            aria-label="Navigation tab"
+            value={view.navigationTab}
+            options={NAV_TABS}
+            onChange={(v) => setView({ ...view, navigationTab: v })}
+          />
         </Row>
         <Row label="Page layout">
-          <Select<InitialLayout> aria-label="Page layout" value={view.pageLayout} options={LAYOUTS} onChange={(v) => setView({ ...view, pageLayout: v })} />
+          <Select<InitialLayout>
+            aria-label="Page layout"
+            value={view.pageLayout}
+            options={LAYOUTS}
+            onChange={(v) => setView({ ...view, pageLayout: v })}
+          />
         </Row>
         <Row label="Magnification">
           <Select<string>
             aria-label="Magnification"
             value={mag}
             options={magOptions}
-            onChange={(v) => setView({ ...view, magnification: (/^[a-z-]+$/.test(v) ? v : parseFloat(v)) as InitialMagnification })}
+            onChange={(v) =>
+              setView({
+                ...view,
+                magnification: (/^[a-z-]+$/.test(v) ? v : parseFloat(v)) as InitialMagnification
+              })
+            }
           />
         </Row>
         <Row label="Open to page">
@@ -318,7 +384,9 @@ function InitialViewTab({ view, setView, pageCount }: { view: InitialView; setVi
               value={view.openToPage + 1}
               min={1}
               max={pageCount}
-              onChange={(v) => setView({ ...view, openToPage: Math.max(0, Math.min(pageCount - 1, Math.round(v) - 1)) })}
+              onChange={(v) =>
+                setView({ ...view, openToPage: Math.max(0, Math.min(pageCount - 1, Math.round(v) - 1)) })
+              }
             />
             <span className="shell-muted">of {pageCount}</span>
           </span>
@@ -329,14 +397,22 @@ function InitialViewTab({ view, setView, pageCount }: { view: InitialView; setVi
           This document runs a script when it opens. Changing the page or magnification replaces that script.
         </p>
       )}
-      <p className="fc-navigation-hint">These settings are saved in the document and apply whenever it is opened.</p>
+      <p className="fc-navigation-hint">
+        These settings are saved in the document and apply whenever it is opened.
+      </p>
     </div>
   )
 }
 
 // ---- Custom ----------------------------------------------------------------------------------------
 
-function CustomTab({ entries, setEntries }: { entries: { key: string; value: string }[]; setEntries: (e: { key: string; value: string }[]) => void }) {
+function CustomTab({
+  entries,
+  setEntries
+}: {
+  entries: { key: string; value: string }[]
+  setEntries: (e: { key: string; value: string }[]) => void
+}) {
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
@@ -347,7 +423,9 @@ function CustomTab({ entries, setEntries }: { entries: { key: string; value: str
     setTouched(true)
     if (error) return
     const key = name.trim()
-    setEntries(exists ? entries.map((e) => (e.key === key ? { key, value } : e)) : [...entries, { key, value }])
+    setEntries(
+      exists ? entries.map((e) => (e.key === key ? { key, value } : e)) : [...entries, { key, value }]
+    )
     setSelected(key)
     setTouched(false)
   }
@@ -448,7 +526,15 @@ function sameView(a: InitialView, b: InitialView, k: keyof InitialView) {
   return a[k] === b[k]
 }
 
-export function PropertiesDialog({ doc, close, initialTab = 'description' }: { doc: DocumentModel; close: () => void; initialTab?: Tab }) {
+export function PropertiesDialog({
+  doc,
+  close,
+  initialTab = 'description'
+}: {
+  doc: DocumentModel
+  close: () => void
+  initialTab?: Tab
+}) {
   const info = useDocState(doc, (s) => s.info)
   const [tab, setTab] = useState<Tab>(initialTab)
   const [props, setProps] = useState<DocumentPropertiesData | null>(null)
@@ -488,7 +574,8 @@ export function PropertiesDialog({ doc, close, initialTab = 'description' }: { d
     if (props && view) {
       const iv: NonNullable<PropertiesPatch['initialView']> = {}
       const keys: (keyof InitialView)[] = ['navigationTab', 'pageLayout', 'magnification', 'openToPage']
-      for (const k of keys) if (!sameView(view, props.initialView, k)) (iv as Record<string, unknown>)[k] = view[k]
+      for (const k of keys)
+        if (!sameView(view, props.initialView, k)) (iv as Record<string, unknown>)[k] = view[k]
       if (Object.keys(iv).length) out.initialView = iv
     }
     if (props && custom && JSON.stringify(custom) !== JSON.stringify(props.custom)) out.custom = custom
@@ -536,7 +623,12 @@ export function PropertiesDialog({ doc, close, initialTab = 'description' }: { d
         </>
       }
     >
-      <div className="fc-navigation-tabs" role="tablist" aria-label="Document properties" onKeyDown={onTabKey}>
+      <div
+        className="fc-navigation-tabs"
+        role="tablist"
+        aria-label="Document properties"
+        onKeyDown={onTabKey}
+      >
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -556,18 +648,35 @@ export function PropertiesDialog({ doc, close, initialTab = 'description' }: { d
           </button>
         ))}
       </div>
-      <div className="fc-navigation-tabpanel" role="tabpanel" id={`fc-navigation-tabpanel-${tab}`} aria-labelledby={`fc-navigation-tab-${tab}`}>
+      <div
+        className="fc-navigation-tabpanel"
+        role="tabpanel"
+        id={`fc-navigation-tabpanel-${tab}`}
+        aria-labelledby={`fc-navigation-tab-${tab}`}
+      >
         {tab === 'description' && (
-          <DescriptionTab doc={doc} meta={meta} setMeta={(k, v) => setMetaState((m) => ({ ...m, [k]: v }))} props={props} />
+          <DescriptionTab
+            doc={doc}
+            meta={meta}
+            setMeta={(k, v) => setMetaState((m) => ({ ...m, [k]: v }))}
+            props={props}
+          />
         )}
         {tab === 'security' && <SecurityTab doc={doc} close={close} />}
         {tab === 'fonts' && <FontsTab doc={doc} />}
         {tab === 'initial' &&
-          (view ? <InitialViewTab view={view} setView={setView} pageCount={info.pageCount} /> : <div className="fc-navigation-loading">Loading…</div>)}
+          (view ? (
+            <InitialViewTab view={view} setView={setView} pageCount={info.pageCount} />
+          ) : (
+            <div className="fc-navigation-loading">Loading…</div>
+          ))}
         {tab === 'custom' &&
-          (custom ? <CustomTab entries={custom} setEntries={setCustom} /> : <div className="fc-navigation-loading">Loading…</div>)}
+          (custom ? (
+            <CustomTab entries={custom} setEntries={setCustom} />
+          ) : (
+            <div className="fc-navigation-loading">Loading…</div>
+          ))}
       </div>
     </Dialog>
   )
 }
-

@@ -167,7 +167,10 @@ function isInside(root: PDFObject, ancestorId: number, nodeId: number): boolean 
   return false
 }
 
-function resolveUri(s: Session, uri: string | undefined | null): { dest: BookmarkDest | null; uri: string | null } {
+function resolveUri(
+  s: Session,
+  uri: string | undefined | null
+): { dest: BookmarkDest | null; uri: string | null } {
   if (!uri) return { dest: null, uri: null }
   if (!uri.startsWith('#')) return { dest: null, uri }
   try {
@@ -415,7 +418,17 @@ function listLayers(s: Session): LayerInfo[] {
 
 // ==== document properties ============================================================================
 
-const STANDARD_INFO_KEYS = new Set(['Title', 'Author', 'Subject', 'Keywords', 'Creator', 'Producer', 'CreationDate', 'ModDate', 'Trapped'])
+const STANDARD_INFO_KEYS = new Set([
+  'Title',
+  'Author',
+  'Subject',
+  'Keywords',
+  'Creator',
+  'Producer',
+  'CreationDate',
+  'ModDate',
+  'Trapped'
+])
 
 const PAGE_MODES: Record<string, NavigationTab> = {
   UseNone: 'page',
@@ -527,7 +540,8 @@ function magnificationFrom(type: string, zoom: number): InitialMagnification {
 function readInitialView(s: Session): InitialView {
   const cat = catalog(s.pdf)
   let mode = readName(cat.get('PageMode')) ?? 'UseNone'
-  if (mode === 'FullScreen') mode = readName(cat.get('ViewerPreferences').get('NonFullScreenPageMode')) ?? 'UseNone'
+  if (mode === 'FullScreen')
+    mode = readName(cat.get('ViewerPreferences').get('NonFullScreenPageMode')) ?? 'UseNone'
   const layout = readName(cat.get('PageLayout'))
   const open = readOpenAction(s)
   const prefs = cat.get('ViewerPreferences')
@@ -794,7 +808,8 @@ function scanFonts(s: Session, from: number, to: number): FontInfo[] {
         const normal = ap.get('N')
         if (isNull(normal)) continue
         if (normal.isStream()) walkResourceFonts(normal.get('Resources'), add, seen)
-        else if (normal.resolve().isDictionary()) normal.forEach((st) => walkResourceFonts(st.get('Resources'), add, seen))
+        else if (normal.resolve().isDictionary())
+          normal.forEach((st) => walkResourceFonts(st.get('Resources'), add, seen))
       }
     }
     s.progress((p - from + 1) / Math.max(1, end - from), `Page ${p + 1} of ${count}`)
@@ -813,20 +828,23 @@ export default defineOps('navigation', {
   },
 
   /** Adds a bookmark under `parentId` (null = top level) at `index` (-1 = last). Returns its id. */
-  addBookmark: mutation('Add Bookmark', (s, parentId: number | null, index: number, title: string, target: BookmarkTarget): number => {
-    const root = ensureOutlineRoot(s)
-    const parent = parentId === null ? root : requireBookmark(root, parentId).node
-    const kids = childrenOf(parent)
-    const item = s.pdf.addObject(s.pdf.newDictionary())
-    item.put('Title', s.pdf.newString(cleanTitle(title)))
-    item.put('Dest', makeDest(s, target))
-    const at = index < 0 || index > kids.length ? kids.length : index
-    kids.splice(at, 0, item)
-    writeChildren(s, parent, kids)
-    recount(root)
-    s.documentChanged()
-    return item.asIndirect()
-  }),
+  addBookmark: mutation(
+    'Add Bookmark',
+    (s, parentId: number | null, index: number, title: string, target: BookmarkTarget): number => {
+      const root = ensureOutlineRoot(s)
+      const parent = parentId === null ? root : requireBookmark(root, parentId).node
+      const kids = childrenOf(parent)
+      const item = s.pdf.addObject(s.pdf.newDictionary())
+      item.put('Title', s.pdf.newString(cleanTitle(title)))
+      item.put('Dest', makeDest(s, target))
+      const at = index < 0 || index > kids.length ? kids.length : index
+      kids.splice(at, 0, item)
+      writeChildren(s, parent, kids)
+      recount(root)
+      s.documentChanged()
+      return item.asIndirect()
+    }
+  ),
 
   renameBookmark: mutation('Rename Bookmark', (s, id: number, title: string) => {
     const root = outlineRoot(s)
@@ -941,7 +959,12 @@ export default defineOps('navigation', {
   /** Embeds a file (Attachments > Add file). Returns the key it was stored under. */
   addAttachment: mutation(
     'Add Attachment',
-    (s, fileName: string, data: Uint8Array, opts: { mimeType?: string; description?: string; modified?: string } = {}): string => {
+    (
+      s,
+      fileName: string,
+      data: Uint8Array,
+      opts: { mimeType?: string; description?: string; modified?: string } = {}
+    ): string => {
       const existing = new Set([
         ...Object.keys(s.pdf.getEmbeddedFiles()),
         ...listEmbeddedFiles(s).map((f) => f.fileName)
@@ -997,7 +1020,8 @@ export default defineOps('navigation', {
   setLayerVisible(s, index: number, visible: boolean): LayerInfo[] {
     initialLayerStates(s)
     const n = s.pdf.countLayers()
-    if (!Number.isInteger(index) || index < 0 || index >= n) throw new EngineError('This layer no longer exists', 'NO_LAYER')
+    if (!Number.isInteger(index) || index < 0 || index >= n)
+      throw new EngineError('This layer no longer exists', 'NO_LAYER')
     s.pdf.setLayerVisible(index, visible)
     s.touchAll()
     return listLayers(s)

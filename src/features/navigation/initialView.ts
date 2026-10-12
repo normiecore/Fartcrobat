@@ -31,11 +31,16 @@ async function waitForView(doc: DocumentModel, timeout = 4000): Promise<boolean>
 export async function applyInitialView(doc: DocumentModel) {
   const props = await navOps(doc).properties()
   const iv = props.initialView
-  const isDefault = iv.navigationTab === 'page' && iv.pageLayout === 'default' && iv.magnification === 'default' && iv.openToPage === 0
+  const isDefault =
+    iv.navigationTab === 'page' &&
+    iv.pageLayout === 'default' &&
+    iv.magnification === 'default' &&
+    iv.openToPage === 0
   if (isDefault || doc.isClosed) return
 
   const panel = PANELS[iv.navigationTab]
-  if (panel && registry.rightPanels.some((p) => p.id === panel) && useApp.getState().activeDocId === doc.id) openRightPanel(panel)
+  if (panel && registry.rightPanels.some((p) => p.id === panel) && useApp.getState().activeDocId === doc.id)
+    openRightPanel(panel)
 
   if (iv.pageLayout !== 'default') {
     const l = LAYOUTS[iv.pageLayout]

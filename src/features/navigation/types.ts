@@ -90,7 +90,8 @@ export type InitialLayout =
   | 'two-up-cover'
   | 'two-up-continuous-cover'
 
-export type InitialMagnification = 'default' | 'actual-size' | 'fit-page' | 'fit-width' | 'fit-height' | 'fit-visible' | number
+export type InitialMagnification =
+  'default' | 'actual-size' | 'fit-page' | 'fit-width' | 'fit-height' | 'fit-visible' | number
 
 export interface InitialView {
   navigationTab: NavigationTab

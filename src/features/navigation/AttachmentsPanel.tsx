@@ -36,9 +36,50 @@ import { formatBytes, formatDate, mimeTypeFor } from './util'
 
 /** File types that could run code: never opened straight from a PDF (Acrobat blocks them too). */
 const BLOCKED = new Set([
-  'exe', 'com', 'bat', 'cmd', 'msi', 'msp', 'scr', 'pif', 'cpl', 'dll', 'js', 'jse', 'vbs', 'vbe', 'wsf', 'wsh', 'ps1',
-  'psm1', 'sh', 'bash', 'zsh', 'command', 'app', 'jar', 'lnk', 'reg', 'hta', 'appimage', 'deb', 'rpm', 'run', 'py',
-  'pl', 'rb', 'url', 'desktop', 'iso', 'dmg', 'pkg', 'scpt', 'workflow', 'docm', 'xlsm', 'pptm'
+  'exe',
+  'com',
+  'bat',
+  'cmd',
+  'msi',
+  'msp',
+  'scr',
+  'pif',
+  'cpl',
+  'dll',
+  'js',
+  'jse',
+  'vbs',
+  'vbe',
+  'wsf',
+  'wsh',
+  'ps1',
+  'psm1',
+  'sh',
+  'bash',
+  'zsh',
+  'command',
+  'app',
+  'jar',
+  'lnk',
+  'reg',
+  'hta',
+  'appimage',
+  'deb',
+  'rpm',
+  'run',
+  'py',
+  'pl',
+  'rb',
+  'url',
+  'desktop',
+  'iso',
+  'dmg',
+  'pkg',
+  'scpt',
+  'workflow',
+  'docm',
+  'xlsm',
+  'pptm'
 ])
 
 type Selected =
@@ -50,7 +91,8 @@ function iconFor(name: string) {
   const ext = (/\.([a-z0-9]+)$/i.exec(name)?.[1] ?? '').toLowerCase()
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tif', 'tiff', 'svg'].includes(ext)) return FileImage
   if (['csv', 'xls', 'xlsx', 'ods'].includes(ext)) return FileSpreadsheet
-  if (['txt', 'md', 'pdf', 'doc', 'docx', 'rtf', 'odt', 'html', 'htm', 'xml', 'json'].includes(ext)) return FileText
+  if (['txt', 'md', 'pdf', 'doc', 'docx', 'rtf', 'odt', 'html', 'htm', 'xml', 'json'].includes(ext))
+    return FileText
   return FileIcon
 }
 
@@ -89,12 +131,17 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
   )
 
   const dataOf = (sel: NonNullable<Selected>): Promise<Uint8Array> =>
-    sel.kind === 'file' ? navOps(doc).attachmentData(sel.key) : navOps(doc).annotationFileData(sel.page, sel.id)
+    sel.kind === 'file'
+      ? navOps(doc).attachmentData(sel.key)
+      : navOps(doc).annotationFileData(sel.page, sel.id)
 
   const open = async (sel: NonNullable<Selected>) => {
     const name = nameOf(sel)
     if (BLOCKED.has(extensionOf(name))) {
-      toast(`For your safety, “${name}” can't be opened from the PDF. Use Save As to keep a copy.`, { kind: 'warning', timeout: 7000 })
+      toast(`For your safety, “${name}” can't be opened from the PDF. Use Save As to keep a copy.`, {
+        kind: 'warning',
+        timeout: 7000
+      })
       return
     }
     const answer = await ask({
@@ -126,7 +173,10 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
     try {
       const bytes = await dataOf(sel)
       const ext = extensionOf(name)
-      const filters = [...(ext ? [{ name: `${ext.toUpperCase()} files`, extensions: [ext] }] : []), { name: 'All files', extensions: ['*'] }]
+      const filters = [
+        ...(ext ? [{ name: `${ext.toUpperCase()} files`, extensions: [ext] }] : []),
+        { name: 'All files', extensions: ['*'] }
+      ]
       const path = await saveBytesAs(bytes, name, filters, 'Save Attachment')
       if (path) toast(`Saved ${basename(path)}`, { kind: 'success' })
     } catch (err) {
@@ -186,7 +236,12 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
     if (sel.kind !== 'file') return
     const file = list?.files.find((f) => f.key === sel.key)
     if (!file) return
-    const v = await prompt({ title: 'Edit Description', label: `Description of ${file.fileName}`, initial: file.description, okLabel: 'Save' })
+    const v = await prompt({
+      title: 'Edit Description',
+      label: `Description of ${file.fileName}`,
+      initial: file.description,
+      okLabel: 'Save'
+    })
     if (v === null || v.trim() === file.description) return
     try {
       await navOps(doc).setAttachmentDescription(sel.key, v)
@@ -207,7 +262,13 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
       ? [
           { id: 'desc', label: 'Edit Description…', icon: Pencil, run: () => void editDescription(sel) },
           { id: 'sep', label: '', separator: true },
-          { id: 'delete', label: 'Delete Attachment', icon: Trash2, danger: true, run: () => void remove(sel) }
+          {
+            id: 'delete',
+            label: 'Delete Attachment',
+            icon: Trash2,
+            danger: true,
+            run: () => void remove(sel)
+          }
         ]
       : [{ id: 'goto', label: `Show on Page ${sel.page + 1}`, run: () => showAnnotation(sel) }])
   ]
@@ -239,7 +300,8 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
         void remove(sel)
       } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault()
-        const sib = e.key === 'ArrowDown' ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling
+        const sib =
+          e.key === 'ArrowDown' ? e.currentTarget.nextElementSibling : e.currentTarget.previousElementSibling
         if (sib instanceof HTMLElement && sib.classList.contains('fc-navigation-att-row')) sib.focus()
       } else if (e.key === 'ContextMenu' || (e.key === 'F10' && e.shiftKey)) {
         e.preventDefault()
@@ -279,15 +341,30 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
     >
       <div className="fc-navigation-toolbar" role="toolbar" aria-label="Attachment actions">
         <IconButton icon={Plus} label="Add file…" onClick={() => void addFiles()} />
-        <IconButton icon={FolderOpen} label="Open attachment" disabled={!selected} onClick={() => selected && void open(selected)} />
-        <IconButton icon={Download} label="Save attachment…" disabled={!selected} onClick={() => selected && void saveAs(selected)} />
+        <IconButton
+          icon={FolderOpen}
+          label="Open attachment"
+          disabled={!selected}
+          onClick={() => selected && void open(selected)}
+        />
+        <IconButton
+          icon={Download}
+          label="Save attachment…"
+          disabled={!selected}
+          onClick={() => selected && void saveAs(selected)}
+        />
         <IconButton
           icon={Pencil}
           label="Edit description…"
           disabled={selected?.kind !== 'file'}
           onClick={() => selected && void editDescription(selected)}
         />
-        <IconButton icon={Trash2} label="Delete attachment" disabled={selected?.kind !== 'file'} onClick={() => selected && void remove(selected)} />
+        <IconButton
+          icon={Trash2}
+          label="Delete attachment"
+          disabled={selected?.kind !== 'file'}
+          onClick={() => selected && void remove(selected)}
+        />
       </div>
       {error ? (
         <EmptyState icon={Paperclip} title="Attachments could not be read">
@@ -338,7 +415,9 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
                   <div className="fc-navigation-att-meta">
                     <MessageSquare size={11} /> Page {a.page + 1} · {formatBytes(a.size)}
                   </div>
-                  {a.description && a.description !== a.fileName && <div className="fc-navigation-att-desc">{a.description}</div>}
+                  {a.description && a.description !== a.fileName && (
+                    <div className="fc-navigation-att-desc">{a.description}</div>
+                  )}
                 </div>
               </div>
             )

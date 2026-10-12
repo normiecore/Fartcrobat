@@ -19,9 +19,16 @@ import {
   type ContextMenuItem,
   type DocumentModel
 } from '@renderer/sdk'
-import { pageOps, undoToast } from './actions'
+import { infoChanged, pageOps, undoToast } from './actions'
 import { loadNavSettings, setThumbSize, useNavSettings, type ThumbSize } from './state'
-import { describePages, dropIndexAt, pagesFileSuffix, thumbLayout, visibleRange, type ThumbLayout } from './util'
+import {
+  describePages,
+  dropIndexAt,
+  pagesFileSuffix,
+  thumbLayout,
+  visibleRange,
+  type ThumbLayout
+} from './util'
 
 /** Thumbnail widths in CSS px for small / medium / large. */
 export const THUMB_WIDTHS = [92, 140, 210]
@@ -89,7 +96,9 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
   const layout: ThumbLayout = useMemo(() => thumbLayout(info.pages, width), [info.pages, width])
   const scrollRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState({ top: 0, height: 600 })
-  const [selectedIds, setSelectedIds] = useState<number[]>(() => [info.pages[current]?.id].filter((v) => v !== undefined))
+  const [selectedIds, setSelectedIds] = useState<number[]>(() =>
+    [info.pages[current]?.id].filter((v) => v !== undefined)
+  )
   const [active, setActive] = useState(current)
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
@@ -168,9 +177,9 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
 
   const insertAfter = async (index: number) => {
     try {
+      const before = doc.state.info
       await pageOps(doc).insertBlank(index + 1)
-      const id = doc.state.info.pages[index + 1]?.id
-      if (id !== undefined) setSelectedIds([id])
+      await infoChanged(doc, before)
       doc.view?.goToPage(index + 1)
     } catch (err) {
       showError(err, 'Could not insert a page')
@@ -195,10 +204,25 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
   const menuFor = (indices: number[]): ContextMenuItem[] => {
     const what = indices.length > 1 ? 'Pages' : 'Page'
     return [
-      { id: 'insert', label: 'Insert Blank Page After', icon: FilePlus2, run: () => void insertAfter(indices[indices.length - 1]) },
+      {
+        id: 'insert',
+        label: 'Insert Blank Page After',
+        icon: FilePlus2,
+        run: () => void insertAfter(indices[indices.length - 1])
+      },
       { id: 'sep1', label: '', separator: true },
-      { id: 'rotate-cw', label: `Rotate ${what} Clockwise`, icon: RotateCw, run: () => void rotate(indices, 90) },
-      { id: 'rotate-ccw', label: `Rotate ${what} Counterclockwise`, icon: RotateCcw, run: () => void rotate(indices, -90) },
+      {
+        id: 'rotate-cw',
+        label: `Rotate ${what} Clockwise`,
+        icon: RotateCw,
+        run: () => void rotate(indices, 90)
+      },
+      {
+        id: 'rotate-ccw',
+        label: `Rotate ${what} Counterclockwise`,
+        icon: RotateCcw,
+        run: () => void rotate(indices, -90)
+      },
       { id: 'sep2', label: '', separator: true },
       { id: 'extract', label: `Extract ${what}…`, icon: FileOutput, run: () => void extract(indices) },
       {
@@ -370,10 +394,22 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
         .filter((i): i is number => i !== undefined)
         .sort((a, b) => a - b)
       const contiguousNoop =
-        indices.every((v, i) => i === 0 || v === indices[i - 1] + 1) && d.drop >= indices[0] && d.drop <= indices[indices.length - 1] + 1
+        indices.every((v, i) => i === 0 || v === indices[i - 1] + 1) &&
+        d.drop >= indices[0] &&
+        d.drop <= indices[indices.length - 1] + 1
       if (!indices.length || contiguousNoop) return
+      const before = doc.state.info
       void pageOps(doc)
         .move(indices, d.drop)
+        .then(async () => {
+          // follow the moved pages so they stay selected and in view
+          await infoChanged(doc, before)
+          const pages = doc.state.info.pages
+          const ids = d.ids.filter((id) => pages.some((p) => p.id === id))
+          const first = pages.findIndex((p) => p.id === ids[0])
+          if (first >= 0) doc.view?.goToPage(first)
+          if (ids.length > 1) setSelectedIds(ids)
+        })
         .catch((err) => showError(err, 'Could not move pages'))
     }
     const up = () => finish(true)
@@ -400,11 +436,20 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
   return (
     <div className="fc-navigation-panel fc-navigation-thumbs">
       <div className="fc-navigation-toolbar" role="toolbar" aria-label="Page thumbnail actions">
-        <IconButton icon={FilePlus2} label="Insert blank page after" onClick={() => void insertAfter(ops[ops.length - 1])} />
+        <IconButton
+          icon={FilePlus2}
+          label="Insert blank page after"
+          onClick={() => void insertAfter(ops[ops.length - 1])}
+        />
         <IconButton icon={RotateCcw} label="Rotate counterclockwise" onClick={() => void rotate(ops, -90)} />
         <IconButton icon={RotateCw} label="Rotate clockwise" onClick={() => void rotate(ops, 90)} />
         <IconButton icon={FileOutput} label="Extract pages…" onClick={() => void extract(ops)} />
-        <IconButton icon={Trash2} label="Delete pages" disabled={ops.length >= n} onClick={() => void remove(ops)} />
+        <IconButton
+          icon={Trash2}
+          label="Delete pages"
+          disabled={ops.length >= n}
+          onClick={() => void remove(ops)}
+        />
         <span className="fc-navigation-toolbar-note" aria-live="polite">
           {selected.length > 1 ? `${selected.length} selected` : ''}
         </span>
@@ -460,7 +505,11 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
         </div>
       </div>
       {drag && (
-        <div className="fc-navigation-drag-ghost" style={{ left: drag.x + 14, top: drag.y + 10 }} aria-hidden="true">
+        <div
+          className="fc-navigation-drag-ghost"
+          style={{ left: drag.x + 14, top: drag.y + 10 }}
+          aria-hidden="true"
+        >
           {drag.ids.length > 1 ? `${drag.ids.length} pages` : `Page ${(idToIndex.get(drag.ids[0]) ?? 0) + 1}`}
         </div>
       )}

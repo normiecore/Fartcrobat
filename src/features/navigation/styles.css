@@ -702,7 +702,8 @@
 .fc-navigation-readbar {
   position: fixed;
   left: 50%;
-  bottom: 22px;
+  /* below the document toolbar, clear of the toasts at the bottom */
+  top: calc(var(--topbar-h) + var(--doctoolbar-h) + 12px);
   transform: translateX(-50%);
   z-index: 800;
   display: flex;

@@ -9,21 +9,26 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `test-results
 /** Calls an engine op of the active document. */
 async function engine<T = unknown>(page: Page, ns: string, op: string, ...args: unknown[]): Promise<T> {
   return page.evaluate(
-    ({ ns, op, args }) => (window as any).__fartcrobat.getActiveDoc().ops(ns)[op](...args),
+    ({ ns, op, args }) => {
+      const ops = (window as any).__fartcrobat.getActiveDoc().ops(ns)
+      return ops[op](...args)
+    },
     { ns, op, args }
   ) as Promise<T>
 }
 
 async function outlineTitles(page: Page): Promise<unknown[]> {
   const tree = await engine<any[]>(page, 'navigation', 'outline')
-  const map = (list: any[]): unknown[] => list.map((b) => (b.children.length ? [b.title, map(b.children)] : b.title))
+  const map = (list: any[]): unknown[] =>
+    list.map((b) => (b.children.length ? [b.title, map(b.children)] : b.title))
   return map(tree)
 }
 
 async function pageTexts(page: Page): Promise<string[]> {
   const n = (await activeDocState(page))!.pageCount
   const out: string[] = []
-  for (let i = 0; i < n; i++) out.push(((await engine<string>(page, 'text', 'plain', i)) ?? '').split('\n')[0])
+  for (let i = 0; i < n; i++)
+    out.push(((await engine<string>(page, 'text', 'plain', i)) ?? '').split('\n')[0])
   return out
 }
 
@@ -43,7 +48,9 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     await page.getByRole('button', { name: 'Page Thumbnails', exact: true }).click()
     const thumbs = page.locator('.fc-navigation-thumb')
     await expect(thumbs.first()).toBeVisible()
-    await expect.poll(() => page.locator('.fc-navigation-thumb-canvas.is-ready').count()).toBeGreaterThanOrEqual(3)
+    await expect
+      .poll(() => page.locator('.fc-navigation-thumb-canvas.is-ready').count())
+      .toBeGreaterThanOrEqual(3)
     await shot(page, 'thumbnails')
 
     // click page 3
@@ -61,7 +68,9 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     // thumbnail size
     const before = (await page.locator('.fc-navigation-thumb-canvas').first().boundingBox())!.width
     await page.locator('.fc-navigation-footer input[type=range]').fill('2')
-    await expect.poll(async () => (await page.locator('.fc-navigation-thumb-canvas').first().boundingBox())!.width).toBeGreaterThan(before + 30)
+    await expect
+      .poll(async () => (await page.locator('.fc-navigation-thumb-canvas').first().boundingBox())!.width)
+      .toBeGreaterThan(before + 30)
     await shot(page, 'thumbnails-large')
     await page.locator('.fc-navigation-footer input[type=range]').fill('0')
 
@@ -78,22 +87,36 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     await expect(page.locator('.fc-navigation-drop-line')).toBeVisible()
     await shot(page, 'thumbnails-drag')
     await page.mouse.up()
-    await expect.poll(() => pageTexts(page)).toEqual(['Chapter 5', 'Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4'])
+    await expect
+      .poll(() => pageTexts(page))
+      .toEqual(['Chapter 5', 'Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4'])
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Move Page')
+    // the view follows the moved page
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(0)
+    await expect(page.locator('.fc-navigation-thumb[data-page-index="0"]')).toHaveAttribute(
+      'aria-selected',
+      'true'
+    )
     await page.keyboard.press('Control+z')
-    await expect.poll(() => pageTexts(page)).toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'Chapter 5'])
+    await expect
+      .poll(() => pageTexts(page))
+      .toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'Chapter 5'])
 
     // context menu: rotate page 2, then insert a blank page after it
     await page.locator('.fc-navigation-thumb[data-page-index="1"]').click({ button: 'right' })
     await shot(page, 'thumbnails-menu')
     await page.getByRole('menuitem', { name: 'Rotate Page Clockwise' }).click()
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[1].rotation))
+      .poll(() =>
+        page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[1].rotation)
+      )
       .toBe(90)
     await page.locator('.fc-navigation-thumb[data-page-index="1"]').click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Insert Blank Page After' }).click()
     await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(6)
-    await expect.poll(() => page.locator('.fc-navigation-thumb-canvas.is-ready').count()).toBeGreaterThanOrEqual(3)
+    await expect
+      .poll(() => page.locator('.fc-navigation-thumb-canvas.is-ready').count())
+      .toBeGreaterThanOrEqual(3)
     await shot(page, 'thumbnails-rotated')
 
     // delete the blank page with the keyboard, then undo everything
@@ -135,7 +158,9 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     await shot(page, 'bookmarks-new')
     await input.fill('My notes')
     await input.press('Enter')
-    await expect.poll(() => outlineTitles(page)).toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'My notes', 'Chapter 5'])
+    await expect
+      .poll(() => outlineTitles(page))
+      .toEqual(['Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'My notes', 'Chapter 5'])
     expect((await activeDocState(page))?.dirty).toBe(true)
 
     // rename with F2
@@ -151,14 +176,27 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
       const d = (window as any).__fartcrobat.getActiveDoc()
       return d.pageText(0).then((t: any) => {
         const s = t.text.indexOf('The quick brown fox')
-        d.setSelection({ kind: 'text', ranges: [{ page: 0, start: s, end: s + 'The quick brown fox'.length }] })
+        d.setSelection({
+          kind: 'text',
+          ranges: [{ page: 0, start: s, end: s + 'The quick brown fox'.length }]
+        })
       })
     })
     await page.keyboard.press('Control+b')
     await expect(page.getByLabel('Bookmark name')).toHaveValue('The quick brown fox')
     await page.keyboard.press('Enter')
     // new bookmarks go in reading order: page 1 → right after Chapter 1
-    await expect.poll(() => outlineTitles(page)).toEqual(['Chapter 1', 'The quick brown fox', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'Reading notes', 'Chapter 5'])
+    await expect
+      .poll(() => outlineTitles(page))
+      .toEqual([
+        'Chapter 1',
+        'The quick brown fox',
+        'Chapter 2',
+        'Chapter 3',
+        'Chapter 4',
+        'Reading notes',
+        'Chapter 5'
+      ])
 
     // drag "Reading notes" onto "Chapter 1" to nest it
     const src = page.getByRole('treeitem', { name: /Reading notes/ })
@@ -172,14 +210,16 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     await expect(dst).toHaveClass(/is-drop-inside/)
     await shot(page, 'bookmarks-drag')
     await page.mouse.up()
-    await expect.poll(() => outlineTitles(page)).toEqual([
-      ['Chapter 1', ['Reading notes']],
-      'The quick brown fox',
-      'Chapter 2',
-      'Chapter 3',
-      'Chapter 4',
-      'Chapter 5'
-    ])
+    await expect
+      .poll(() => outlineTitles(page))
+      .toEqual([
+        ['Chapter 1', ['Reading notes']],
+        'The quick brown fox',
+        'Chapter 2',
+        'Chapter 3',
+        'Chapter 4',
+        'Chapter 5'
+      ])
     await expect(page.getByRole('treeitem', { name: /Reading notes/ })).toHaveAttribute('aria-level', '2')
 
     // un-nest: drag it above Chapter 2
@@ -191,15 +231,17 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     await page.mouse.move(t2.x + 60, t2.y + 3, { steps: 6 })
     await expect(page.locator('.fc-navigation-drop-line')).toBeVisible()
     await page.mouse.up()
-    await expect.poll(() => outlineTitles(page)).toEqual([
-      'Chapter 1',
-      'The quick brown fox',
-      'Reading notes',
-      'Chapter 2',
-      'Chapter 3',
-      'Chapter 4',
-      'Chapter 5'
-    ])
+    await expect
+      .poll(() => outlineTitles(page))
+      .toEqual([
+        'Chapter 1',
+        'The quick brown fox',
+        'Reading notes',
+        'Chapter 2',
+        'Chapter 3',
+        'Chapter 4',
+        'Chapter 5'
+      ])
 
     // delete with the keyboard, then undo
     await page.getByRole('treeitem', { name: /Reading notes/ }).click()
@@ -238,7 +280,12 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     expect(added.dest.y).toBeGreaterThan(220)
     expect(added.dest.y).toBeLessThan(290)
     // ordered by position: after the bookmarks at the top of page 1
-    expect(tree.map((b) => b.title).slice(0, 4)).toEqual(['Chapter 1', 'The quick brown fox', 'Invoice block', 'Reading notes'])
+    expect(tree.map((b) => b.title).slice(0, 4)).toEqual([
+      'Chapter 1',
+      'The quick brown fox',
+      'Invoice block',
+      'Reading notes'
+    ])
 
     // collapse/expand all and context menu
     await page.getByRole('treeitem', { name: /Chapter 3/ }).click({ button: 'right' })
@@ -257,7 +304,9 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     await props.getByRole('button', { name: 'OK' }).click()
     await expect(props).toBeHidden()
     await expect
-      .poll(async () => (await engine<any[]>(page, 'navigation', 'outline')).find((b) => b.title === 'Chapter 2'))
+      .poll(async () =>
+        (await engine<any[]>(page, 'navigation', 'outline')).find((b) => b.title === 'Chapter 2')
+      )
       .toMatchObject({ bold: true, color: '#f44336' })
     await shot(page, 'bookmarks-dark')
   } finally {
@@ -299,7 +348,9 @@ test('document properties: description, fonts, security, initial view, custom; u
     await dialog.getByRole('button', { name: 'OK' }).click()
     await expect(dialog).toBeHidden()
 
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author)).toBe('Ada Lovelace')
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author))
+      .toBe('Ada Lovelace')
     const props = await engine<any>(page, 'navigation', 'properties')
     expect(props.initialView.navigationTab).toBe('bookmarks')
     expect(props.initialView.openToPage).toBe(2)
@@ -307,12 +358,17 @@ test('document properties: description, fonts, security, initial view, custom; u
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Change Document Properties')
 
     await page.keyboard.press('Control+z')
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author)).toBe('Fartcrobat Tests')
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author))
+      .toBe('Fartcrobat Tests')
     expect((await engine<any>(page, 'navigation', 'properties')).custom).toEqual([])
 
     // encrypted document: the Security tab lists the restrictions
     await setTheme(page, 'dark')
-    const opening = page.evaluate((p) => (window as any).__fartcrobat.openPaths([p]), fixturePath('encrypted.pdf'))
+    const opening = page.evaluate(
+      (p) => (window as any).__fartcrobat.openPaths([p]),
+      fixturePath('encrypted.pdf')
+    )
     await page.getByLabel('Password').fill('secret')
     await page.keyboard.press('Enter')
     await opening
@@ -349,7 +405,9 @@ test('advanced search finds all results grouped by page', async () => {
     await expect.poll(async () => (await activeDocState(page))?.search.hits).toBe(5)
     await page.locator('.fc-navigation-result').nth(3).click()
     await expect.poll(async () => (await activeDocState(page))?.search.active).toBe(3)
-    await expect(page.locator('.viewer-page[data-page-index="3"] .viewer-search-hit.is-active')).toBeInViewport()
+    await expect(
+      page.locator('.viewer-page[data-page-index="3"] .viewer-search-hit.is-active')
+    ).toBeInViewport()
     await expect(page.locator('.fc-navigation-result').nth(3)).toHaveClass(/is-active/)
     await shot(page, 'search')
 
@@ -405,6 +463,20 @@ test('attachments, layers and the initial view', async () => {
     await expect.poll(() => existsSync(target)).toBe(true)
     expect(readFileSync(target, 'utf8')).toBe('name,amount\nalpha,1\nbeta,2\n')
 
+    // Open (stub the OS "open with default app")
+    await app.evaluate(({ shell }) => {
+      ;(globalThis as any).__opened = null
+      shell.openPath = (async (p: string) => {
+        ;(globalThis as any).__opened = p
+        return ''
+      }) as any
+    })
+    await page.locator('.fc-navigation-att-row', { hasText: 'data.csv' }).dblclick()
+    await page.getByRole('button', { name: 'Open', exact: true }).click()
+    await expect.poll(() => app.evaluate(() => (globalThis as any).__opened)).toMatch(/data\.csv$/)
+    const opened = await app.evaluate(() => (globalThis as any).__opened as string)
+    expect(readFileSync(opened, 'utf8')).toBe('name,amount\nalpha,1\nbeta,2\n')
+
     // delete scan.png, undo
     await page.locator('.fc-navigation-att-row', { hasText: 'scan.png' }).click()
     await page.getByRole('button', { name: 'Delete attachment' }).click()
@@ -423,7 +495,10 @@ test('attachments, layers and the initial view', async () => {
     const notes = page.getByRole('button', { name: 'Show layer Reviewer notes' })
     await expect(notes).toHaveAttribute('aria-pressed', 'false')
     await notes.click()
-    await expect(page.getByRole('button', { name: 'Hide layer Reviewer notes' })).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.getByRole('button', { name: 'Hide layer Reviewer notes' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
     await page.waitForTimeout(400)
     await shot(page, 'layers')
     expect((await activeDocState(page))?.dirty).toBe(false)
@@ -437,7 +512,9 @@ test('attachments, layers and the initial view', async () => {
     await expect(page.locator('.shell-rightpanel', { hasText: 'Bookmarks' })).toBeVisible()
     await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
-    expect(await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.layout)).toBe('two-page-continuous')
+    expect(await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.layout)).toBe(
+      'two-page-continuous'
+    )
     await expect(page.getByRole('treeitem', { name: /Introduction/ })).toBeVisible()
     await expect(page.getByRole('treeitem', { name: /Background/ })).toHaveClass(/is-current/)
     await shot(page, 'initial-view')
@@ -483,9 +560,84 @@ test('read out loud and the View menu entries', async () => {
     await runCommand(page, 'app.preferences')
     await page.getByRole('button', { name: 'Reading' }).click()
     await expect(page.getByText('Read Out Loud', { exact: true })).toBeVisible()
-    if (voices === 0) await expect(page.locator('.fc-navigation-reading-prefs .fc-navigation-warn')).toBeVisible()
+    if (voices === 0)
+      await expect(page.locator('.fc-navigation-reading-prefs .fc-navigation-warn')).toBeVisible()
     else await expect(page.locator('.fc-navigation-reading-prefs select option')).toHaveCount(voices + 1)
     await shot(page, 'reading-prefs')
+    await page.getByRole('button', { name: 'Done' }).click()
+
+    // With a (simulated) voice: read to the end, advancing pages; pause, resume and stop.
+    await page.evaluate(() => {
+      const spoken: string[] = []
+      let paused = false
+      let pending: (() => void) | null = null
+      const timers = new Set<ReturnType<typeof setTimeout>>()
+      const current = new Set<SpeechSynthesisUtterance>()
+      const fake = {
+        getVoices: () => [
+          { voiceURI: 'test-voice', name: 'Test Voice', lang: 'en-US', default: true, localService: true }
+        ],
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        speak(u: SpeechSynthesisUtterance) {
+          spoken.push(u.text)
+          current.add(u)
+          const t = setTimeout(() => {
+            timers.delete(t)
+            const end = () => {
+              current.delete(u)
+              u.onend?.(new Event('end') as SpeechSynthesisEvent)
+            }
+            if (paused) pending = end
+            else end()
+          }, 60)
+          timers.add(t)
+        },
+        pause() {
+          paused = true
+        },
+        resume() {
+          paused = false
+          const p = pending
+          pending = null
+          p?.()
+        },
+        cancel() {
+          for (const t of timers) clearTimeout(t)
+          timers.clear()
+          pending = null
+          for (const u of current) u.onerror?.({ error: 'canceled' } as SpeechSynthesisErrorEvent)
+          current.clear()
+        }
+      }
+      Object.defineProperty(window, 'speechSynthesis', { value: fake, configurable: true })
+      ;(window as any).__spoken = spoken
+    })
+    await runCommand(page, 'nav.first')
+    await page.keyboard.press('Control+Shift+b')
+    await expect(page.locator('.fc-navigation-readbar')).toContainText('of 5')
+    await shot(page, 'read-out-loud-bar')
+    await expect.poll(async () => (await activeDocState(page))?.currentPage, { timeout: 20000 }).toBe(4)
+    await expect(page.locator('.fc-navigation-readbar')).toHaveCount(0, { timeout: 20000 })
+    const spoken = (await page.evaluate(() => (window as any).__spoken)) as string[]
+    const all = spoken.join(' ')
+    for (let i = 1; i <= 5; i++) expect(all).toContain(`Chapter ${i}`)
+    expect(all.indexOf('Chapter 1')).toBeLessThan(all.indexOf('Chapter 5'))
+
+    // this page only, with pause / resume / stop
+    await runCommand(page, 'nav.first')
+    await page.evaluate(() => ((window as any).__spoken.length = 0))
+    await page.keyboard.press('Control+Shift+v')
+    await expect(page.locator('.fc-navigation-readbar')).toContainText('Reading page 1')
+    await page.keyboard.press('Control+Shift+c')
+    await expect(page.locator('.fc-navigation-readbar')).toContainText('Paused')
+    await page.keyboard.press('Control+Shift+c')
+    await expect(page.locator('.fc-navigation-readbar')).toContainText('Reading')
+    await page.keyboard.press('Control+Shift+e')
+    await expect(page.locator('.fc-navigation-readbar')).toHaveCount(0)
+    const once = (await page.evaluate(() => (window as any).__spoken)) as string[]
+    expect(once.join(' ')).not.toContain('Chapter 2')
+    expect((await activeDocState(page))?.currentPage).toBe(0)
   } finally {
     await app.close()
   }

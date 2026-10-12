@@ -12,7 +12,12 @@ export interface BookmarkUiState {
   editing: number | null
 }
 
-const emptyBookmarkUi = (): BookmarkUiState => ({ expanded: new Set(), initialized: false, selected: null, editing: null })
+const emptyBookmarkUi = (): BookmarkUiState => ({
+  expanded: new Set(),
+  initialized: false,
+  selected: null,
+  editing: null
+})
 
 export const useBookmarkUi = create<{ byDoc: Record<string, BookmarkUiState> }>(() => ({ byDoc: {} }))
 
@@ -20,7 +25,10 @@ export function bookmarkUi(docId: string): BookmarkUiState {
   return useBookmarkUi.getState().byDoc[docId] ?? emptyBookmarkUi()
 }
 
-export function setBookmarkUi(docId: string, patch: Partial<BookmarkUiState> | ((s: BookmarkUiState) => Partial<BookmarkUiState>)) {
+export function setBookmarkUi(
+  docId: string,
+  patch: Partial<BookmarkUiState> | ((s: BookmarkUiState) => Partial<BookmarkUiState>)
+) {
   useBookmarkUi.setState((st) => {
     const cur = st.byDoc[docId] ?? emptyBookmarkUi()
     const p = typeof patch === 'function' ? patch(cur) : patch
@@ -48,7 +56,11 @@ interface NavSettings {
   reading: ReadingSettings
 }
 
-export const useNavSettings = create<NavSettings>(() => ({ loaded: false, thumbSize: 1, reading: { ...DEFAULT_READING } }))
+export const useNavSettings = create<NavSettings>(() => ({
+  loaded: false,
+  thumbSize: 1,
+  reading: { ...DEFAULT_READING }
+}))
 
 let loading: Promise<void> | null = null
 
@@ -76,13 +88,17 @@ export function loadNavSettings(): Promise<void> {
 
 export function setThumbSize(size: ThumbSize) {
   useNavSettings.setState({ thumbSize: size })
-  void invoke('store:set', 'navigation:thumbSize', size).catch((err) => showError(err, 'Could not save the thumbnail size'))
+  void invoke('store:set', 'navigation:thumbSize', size).catch((err) =>
+    showError(err, 'Could not save the thumbnail size')
+  )
 }
 
 export function setReadingSettings(patch: Partial<ReadingSettings>) {
   const reading = { ...useNavSettings.getState().reading, ...patch }
   useNavSettings.setState({ reading })
-  void invoke('store:set', 'navigation:reading', reading).catch((err) => showError(err, 'Could not save reading settings'))
+  void invoke('store:set', 'navigation:reading', reading).catch((err) =>
+    showError(err, 'Could not save reading settings')
+  )
 }
 
 // ---- search panel focus request -----------------------------------------------------------------------

@@ -56,7 +56,10 @@ export function currentViewTarget(doc: DocumentModel): BookmarkTarget {
 }
 
 /** Ctrl+B: adds a bookmark for the current view, named from the selected text, and starts renaming it. */
-export async function addBookmarkForCurrentView(doc: DocumentModel, opts: { asChildOf?: number; target?: BookmarkTarget } = {}) {
+export async function addBookmarkForCurrentView(
+  doc: DocumentModel,
+  opts: { asChildOf?: number; target?: BookmarkTarget } = {}
+) {
   try {
     openRightPanel('bookmarks')
     const ops = navOps(doc)
@@ -108,6 +111,26 @@ export async function refreshInfo(doc: DocumentModel) {
   } catch (err) {
     console.warn('Could not refresh document info', err)
   }
+}
+
+/** Resolves once the document info differs from `before` (it is refetched after structural changes). */
+export function infoChanged(
+  doc: DocumentModel,
+  before: DocumentModel['state']['info'],
+  timeout = 3000
+): Promise<void> {
+  if (doc.state.info !== before) return Promise.resolve()
+  return new Promise((resolve) => {
+    const timer = setTimeout(done, timeout)
+    const unsub = doc.store.subscribe((s) => {
+      if (s.info !== before) done()
+    })
+    function done() {
+      clearTimeout(timer)
+      unsub()
+      resolve()
+    }
+  })
 }
 
 export function bookmarkCount(tree: Bookmark[]): number {

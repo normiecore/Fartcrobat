@@ -52,8 +52,8 @@ export function LayersPanel({ doc }: { doc: DocumentModel }) {
     return (
       <div className="fc-navigation-panel">
         <EmptyState icon={Layers} title="No layers">
-          This document has no layers. Layers (optional content) are used in drawings and maps to show or hide parts of a
-          page.
+          This document has no layers. Layers (optional content) are used in drawings and maps to show or hide
+          parts of a page.
         </EmptyState>
       </div>
     )
@@ -61,7 +61,13 @@ export function LayersPanel({ doc }: { doc: DocumentModel }) {
   return (
     <div className="fc-navigation-panel fc-navigation-layers">
       <div className="fc-navigation-toolbar" role="toolbar" aria-label="Layer actions">
-        <Button size="sm" variant="quiet" icon={RotateCcw} disabled={!changed || busy} onClick={() => void run(() => navOps(doc).resetLayers())}>
+        <Button
+          size="sm"
+          variant="quiet"
+          icon={RotateCcw}
+          disabled={!changed || busy}
+          onClick={() => void run(() => navOps(doc).resetLayers())}
+        >
           Reset to initial visibility
         </Button>
       </div>

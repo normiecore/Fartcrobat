@@ -24,7 +24,13 @@ import {
 } from '@renderer/sdk'
 import { scheduleMenuUpdate } from '@renderer/app/commands'
 import './styles.css'
-import { addBookmarkForCurrentView, rememberNavPanel, showPanel, toggleNavigationPanes, NAV_PANELS } from './actions'
+import {
+  addBookmarkForCurrentView,
+  rememberNavPanel,
+  showPanel,
+  toggleNavigationPanes,
+  NAV_PANELS
+} from './actions'
 import { AttachmentsPanel } from './AttachmentsPanel'
 import { BookmarksPanel } from './BookmarksPanel'
 import { applyInitialView } from './initialView'
@@ -66,7 +72,16 @@ const commands: CommandDefinition[] = [
     label: 'Document Properties…',
     icon: Info,
     shortcut: 'Mod+D',
-    keywords: ['metadata', 'info', 'title', 'author', 'fonts', 'security', 'initial view', 'custom properties'],
+    keywords: [
+      'metadata',
+      'info',
+      'title',
+      'author',
+      'fonts',
+      'security',
+      'initial view',
+      'custom properties'
+    ],
     run: (ctx) => openDocumentProperties(doc(ctx))
   },
   {
@@ -98,10 +113,34 @@ const commands: CommandDefinition[] = [
     checked: () => (NAV_PANELS as readonly string[]).includes(useApp.getState().rightPanelId ?? ''),
     run: () => toggleNavigationPanes()
   },
-  { id: 'view.showHide.thumbnails', label: 'Page Thumbnails', icon: GalleryVerticalEnd, checked: panelOpen('thumbnails'), run: () => togglePanel('thumbnails') },
-  { id: 'view.showHide.bookmarks', label: 'Bookmarks', icon: Bookmark, checked: panelOpen('bookmarks'), run: () => togglePanel('bookmarks') },
-  { id: 'view.showHide.attachments', label: 'Attachments', icon: Paperclip, checked: panelOpen('attachments'), run: () => togglePanel('attachments') },
-  { id: 'view.showHide.layers', label: 'Layers', icon: Layers, checked: panelOpen('layers'), run: () => togglePanel('layers') },
+  {
+    id: 'view.showHide.thumbnails',
+    label: 'Page Thumbnails',
+    icon: GalleryVerticalEnd,
+    checked: panelOpen('thumbnails'),
+    run: () => togglePanel('thumbnails')
+  },
+  {
+    id: 'view.showHide.bookmarks',
+    label: 'Bookmarks',
+    icon: Bookmark,
+    checked: panelOpen('bookmarks'),
+    run: () => togglePanel('bookmarks')
+  },
+  {
+    id: 'view.showHide.attachments',
+    label: 'Attachments',
+    icon: Paperclip,
+    checked: panelOpen('attachments'),
+    run: () => togglePanel('attachments')
+  },
+  {
+    id: 'view.showHide.layers',
+    label: 'Layers',
+    icon: Layers,
+    checked: panelOpen('layers'),
+    run: () => togglePanel('layers')
+  },
 
   // ---- View > Read Out Loud
   {
@@ -112,7 +151,7 @@ const commands: CommandDefinition[] = [
     keywords: ['speech', 'text to speech', 'tts', 'speak', 'accessibility'],
     run: async () => {
       if (useReadAloud.getState().active) deactivateReadOutLoud()
-      else await activateReadOutLoud()
+      else await activateReadOutLoud({ hint: true })
     }
   },
   {
@@ -155,11 +194,21 @@ const menus: MenuContribution[] = [
   { menu: 'edit', group: 'find', command: 'search.advanced', order: 310 },
   { menu: 'document', group: 'bookmarks', command: 'nav.addBookmark', order: 600 },
   ...['navigationPanes', 'thumbnails', 'bookmarks', 'attachments', 'layers'].map(
-    (id, i): MenuContribution => ({ menu: 'view', group: 'showhide', command: `view.showHide.${id}`, order: 450 + i, submenu: 'Show/Hide' })
+    (id, i): MenuContribution => ({
+      menu: 'view',
+      group: 'showhide',
+      command: `view.showHide.${id}`,
+      order: 450 + i,
+      submenu: 'Show/Hide'
+    })
   ),
-  ...['activate', 'page', 'toEnd', 'pause', 'stop'].map(
-    (id, i): MenuContribution => ({ menu: 'view', group: 'readOutLoud', command: `view.readOutLoud.${id}`, order: 600 + i, submenu: 'Read Out Loud' })
-  )
+  ...['activate', 'page', 'toEnd', 'pause', 'stop'].map((id, i): MenuContribution => ({
+    menu: 'view',
+    group: 'readOutLoud',
+    command: `view.readOutLoud.${id}`,
+    order: 600 + i,
+    submenu: 'Read Out Loud'
+  }))
 ]
 
 /** Always mounted: the Read Out Loud status bar and the "last navigation pane" tracker. */
@@ -177,7 +226,9 @@ function NavigationGlobal() {
         const open = new Set(s.docs.map((d) => d.id))
         const byDoc = useBookmarkUi.getState().byDoc
         if (Object.keys(byDoc).some((id) => !open.has(id))) {
-          useBookmarkUi.setState({ byDoc: Object.fromEntries(Object.entries(byDoc).filter(([id]) => open.has(id))) })
+          useBookmarkUi.setState({
+            byDoc: Object.fromEntries(Object.entries(byDoc).filter(([id]) => open.has(id)))
+          })
         }
       }
     })
@@ -190,14 +241,32 @@ export default defineFeature({
   commands,
   menus,
   rightPanels: [
-    { id: 'thumbnails', label: 'Page Thumbnails', icon: GalleryVerticalEnd, order: 10, component: keyed(ThumbnailsPanel) },
+    {
+      id: 'thumbnails',
+      label: 'Page Thumbnails',
+      icon: GalleryVerticalEnd,
+      order: 10,
+      component: keyed(ThumbnailsPanel)
+    },
     { id: 'bookmarks', label: 'Bookmarks', icon: Bookmark, order: 20, component: keyed(BookmarksPanel) },
-    { id: 'attachments', label: 'Attachments', icon: Paperclip, order: 60, component: keyed(AttachmentsPanel) },
+    {
+      id: 'attachments',
+      label: 'Attachments',
+      icon: Paperclip,
+      order: 60,
+      component: keyed(AttachmentsPanel)
+    },
     { id: 'layers', label: 'Layers', icon: Layers, order: 70, component: keyed(LayersPanel) },
     { id: 'search', label: 'Advanced Search', icon: FileSearch, order: 80, component: keyed(SearchPanel) }
   ],
   textSelectionActions: [
-    { id: 'navigation.addBookmark', label: 'Add Bookmark', icon: BookmarkPlus, order: 90, run: (d) => addBookmarkForCurrentView(d) }
+    {
+      id: 'navigation.addBookmark',
+      label: 'Add Bookmark',
+      icon: BookmarkPlus,
+      order: 90,
+      run: (d) => addBookmarkForCurrentView(d)
+    }
   ],
   pageContextMenu: [
     {
@@ -218,7 +287,13 @@ export default defineFeature({
               }
             })
         },
-        { id: 'navigation-properties', label: 'Document Properties…', icon: Info, shortcut: displayShortcut('Mod+D'), run: () => openDocumentProperties(d) }
+        {
+          id: 'navigation-properties',
+          label: 'Document Properties…',
+          icon: Info,
+          shortcut: displayShortcut('Mod+D'),
+          run: () => openDocumentProperties(d)
+        }
       ]
     }
   ],
