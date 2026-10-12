@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
@@ -10,6 +10,9 @@ import type formOps from '@engine/ops/forms'
 import type sigOps from '@features/digital-signatures/engine'
 import { createSelfSignedId, validateNewId } from '@features/digital-signatures/lib/digitalId'
 import { parseDigitalId, WrongPasswordError, type ParsedDigitalId } from '@features/digital-signatures/lib/pkcs12'
+import * as mupdf from 'mupdf'
+import { derLength } from '@features/digital-signatures/lib/cms'
+import { certificateToPem } from '@features/digital-signatures/lib/digitalId'
 import { readRevisions } from '@features/digital-signatures/lib/pdfbytes'
 import { parseCertificate } from '@features/digital-signatures/lib/x509'
 import { signatureStatus } from '@features/digital-signatures/status'
@@ -350,7 +353,8 @@ print('ok', v['/SubFilter'])
     const br = m.slice(1).map(Number)
     const data = Buffer.concat([Buffer.from(bytes.subarray(br[0], br[0] + br[1])), Buffer.from(bytes.subarray(br[2], br[2] + br[3]))])
     const hex = Buffer.from(bytes.subarray(br[1] + 1, br[2] - 1)).toString('latin1')
-    const cms = Buffer.from(hex.replace(/(00)+$/, ''), 'hex')
+    const padded = new Uint8Array(Buffer.from(hex, 'hex'))
+    const cms = Buffer.from(padded.subarray(0, derLength(padded)))
     writeFileSync(join(TMP, 'content.bin'), data)
     writeFileSync(join(TMP, 'sig.der'), cms)
     const res = spawnSync('openssl', ['cms', '-verify', '-binary', '-noverify', '-inform', 'DER', '-in', join(TMP, 'sig.der'), '-content', join(TMP, 'content.bin'), '-out', '/dev/null'])
@@ -364,4 +368,144 @@ print('ok', v['/SubFilter'])
     expect(out).toContain('Signature #2')
     expect(out.match(/Signature Validation: Signature is Valid\./g)?.length).toBe(2)
   })
+})
+
+describe('more documents', () => {
+  it('signs a file that uses object and cross-reference streams, and lists later changes', async () => {
+    const src = new mupdf.PDFDocument(fixture('text.pdf'))
+    const buf = src.saveToBuffer('garbage,compress,objstms')
+    const compact = buf.asUint8Array().slice()
+    buf.destroy()
+    src.destroy()
+    expect(Buffer.from(compact).toString('latin1')).toContain('/ObjStm')
+    const e = await openBytes(compact, 'objstm.pdf')
+    const { bytes } = await e.sig.sign(request(rsaId))
+    const r = (await validateBytes(bytes)).signatures[0]
+    expect(r.integrity && r.signatureValid && r.coversWholeFile).toBe(true)
+    const e2 = await openBytes(bytes)
+    await e2.ops<typeof annotOps>('annots').create(0, { type: 'Square', rect: [40, 40, 90, 90] })
+    const later = await e2.doc.save({})
+    const r2 = (await validateBytes(later)).signatures[0]
+    expect(r2.integrity).toBe(true)
+    expect(r2.changesUnknown).toBe(false)
+    expect(r2.changes.find((c) => c.category === 'annotation')?.description).toMatch(/^Page 1: 1 comment added/)
+    const file = join(TMP, 'objstm-signed.pdf')
+    writeFileSync(file, later)
+    if (hasTool('pdfsig', ['-v'])) {
+      expect(spawnSync('pdfsig', [file]).stdout.toString()).toContain('Signature Validation: Signature is Valid.')
+    }
+  })
+
+  it('signs the empty signature field of the fixture, keeping its name and position', async () => {
+    const e = await openFixture('digital-signatures/unsigned-field.pdf')
+    const sig = e.ops<typeof sigOps>('digital-signatures')
+    const [field] = await sig.fields()
+    expect(field).toMatchObject({ name: 'Approver', page: 0, signed: false, invisible: false })
+    expect(field.rect.map(Math.round)).toEqual([340, 640, 560, 700])
+    const { bytes, fieldName } = await sig.sign(request(ecId, { target: { kind: 'field', name: 'Approver' } }))
+    expect(fieldName).toBe('Approver')
+    const report = await validateBytes(bytes)
+    expect(report.unsigned).toHaveLength(0)
+    expect(report.signatures[0]).toMatchObject({ fieldName: 'Approver', integrity: true, signatureValid: true, signedVersion: 1 })
+    expect(report.signatures[0].rect.map(Math.round)).toEqual([340, 640, 560, 700])
+  })
+
+  it('draws the saved handwritten signature image in the appearance', async () => {
+    // A 4x2 opaque dark-blue PNG made by MuPDF.
+    const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 40, 20], false)
+    pix.clear(30)
+    const png = pix.asPNG().slice()
+    pix.destroy()
+    const e = await openFixture('text.pdf')
+    const sig = e.ops<typeof sigOps>('digital-signatures')
+    const content = appearance('Jane Doe')
+    content.options = { ...content.options, graphic: 'image', image: png }
+    const preview = await sig.previewAppearance(content, 240, 80, 1)
+    const img = new mupdf.Image(preview)
+    const pm = img.toPixmap()
+    // Left half has the dark image, right half black text on transparent background.
+    const px = pm.getPixels()
+    const n = pm.getNumberOfComponents()
+    const at = (x: number, y: number) => Array.from(px.subarray(y * pm.getStride() + x * n, y * pm.getStride() + x * n + n))
+    expect(at(55, 40)[0]).toBeLessThan(60)
+    expect(at(55, 40)[2]).toBeLessThan(60)
+    const { bytes } = await sig.sign(request(rsaId, { appearance: content }))
+    expect(Buffer.from(bytes).toString('latin1')).toContain('/FcImg')
+    expect((await validateBytes(bytes)).signatures[0].integrity).toBe(true)
+  })
+
+  it.skipIf(!hasTool('openssl', ['version']))('validates a CMS signature made by OpenSSL', async () => {
+    // Our placeholder and byte range, but the CMS comes from `openssl cms -sign` (other attribute set).
+    const e = await openFixture('text.pdf')
+    const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+    const text = Buffer.from(bytes).toString('latin1')
+    const br = /\/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]/.exec(text)!.slice(1).map(Number)
+    const data = Buffer.concat([Buffer.from(bytes.subarray(br[0], br[0] + br[1])), Buffer.from(bytes.subarray(br[2], br[2] + br[3]))])
+    const dir = mkdtempSync(join(TMP, 'ossl-'))
+    writeFileSync(join(dir, 'data.bin'), data)
+    writeFileSync(join(dir, 'cert.pem'), certificateToPem(rsaId.chain[0]))
+    const keyPem = `-----BEGIN PRIVATE KEY-----\n${Buffer.from(rsaId.pkcs8).toString('base64').match(/.{1,64}/g)!.join('\n')}\n-----END PRIVATE KEY-----\n`
+    writeFileSync(join(dir, 'key.pem'), keyPem)
+    execFileSync('openssl', [
+      'cms', '-sign', '-binary', '-in', join(dir, 'data.bin'), '-signer', join(dir, 'cert.pem'), '-inkey', join(dir, 'key.pem'),
+      '-md', 'sha256', '-outform', 'DER', '-out', join(dir, 'sig.der')
+    ], { stdio: 'ignore' })
+    const cms = new Uint8Array(readFileSync(join(dir, 'sig.der')))
+    const out = bytes.slice()
+    const hex = Buffer.from(cms).toString('hex').toUpperCase()
+    expect(hex.length).toBeLessThan(br[2] - br[1] - 2)
+    out.set(Buffer.from(hex.padEnd(br[2] - br[1] - 2, '0'), 'latin1'), br[1] + 1)
+    const r = (await validateBytes(out)).signatures[0]
+    expect(r.problems).toEqual([])
+    expect(r.integrity).toBe(true)
+    expect(r.signatureValid).toBe(true)
+    expect(r.signerName).toBe('Jane Doe')
+    // And a wrong signature value is caught.
+    const broken = out.slice()
+    const last = br[1] + 1 + hex.length - 4
+    broken[last] = broken[last] === 0x30 ? 0x31 : 0x30
+    const rb = (await validateBytes(broken)).signatures[0]
+    expect(rb.signatureValid).toBe(false)
+    expect(signatureStatus(rb, new Set()).level).toBe('invalid')
+  })
+})
+
+describe.skipIf(!hasTool('openssl', ['version']))('Digital ID files made by other software', () => {
+  const dir = mkdtempSync(join(TMP, 'p12-'))
+  const run = (args: string[]) => execFileSync('openssl', args, { cwd: dir, stdio: 'ignore' })
+  beforeAll(() => {
+    run(['req', '-x509', '-newkey', 'rsa:2048', '-keyout', 'key.pem', '-out', 'cert.pem', '-days', '30', '-nodes', '-subj', '/CN=Olga Openssl/O=Interop Ltd/C=DE'])
+    run(['pkcs12', '-export', '-inkey', 'key.pem', '-in', 'cert.pem', '-out', 'modern.p12', '-passout', 'pass:pw123456', '-name', 'Olga'])
+    try {
+      run(['pkcs12', '-export', '-legacy', '-inkey', 'key.pem', '-in', 'cert.pem', '-out', 'legacy.p12', '-passout', 'pass:pw123456'])
+    } catch {
+      // OpenSSL without the legacy provider: skip that variant.
+    }
+    run(['ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', 'ec.pem'])
+    run(['req', '-x509', '-key', 'ec.pem', '-out', 'eccert.pem', '-days', '30', '-subj', '/CN=Eve EC'])
+    run(['pkcs12', '-export', '-inkey', 'ec.pem', '-in', 'eccert.pem', '-out', 'ec.p12', '-passout', 'pass:pw123456'])
+  })
+
+  for (const [file, name] of [
+    ['modern.p12', 'Olga Openssl'],
+    ['legacy.p12', 'Olga Openssl'],
+    ['ec.p12', 'Eve EC']
+  ] as const) {
+    it(`opens ${file} and signs with it`, async () => {
+      let bytes: Uint8Array
+      try {
+        bytes = new Uint8Array(readFileSync(join(dir, file)))
+      } catch {
+        return // variant not available on this machine
+      }
+      expect(() => parseDigitalId(bytes, 'wrong-password')).toThrow(WrongPasswordError)
+      const id = parseDigitalId(bytes, 'pw123456')
+      expect(id.signer.subject.attrs.find((a) => a.short === 'CN')?.value).toBe(name)
+      const e = await openFixture('text.pdf')
+      const signed = await e.ops<typeof sigOps>('digital-signatures').sign(request(id))
+      const r = (await validateBytes(signed.bytes)).signatures[0]
+      expect(r.integrity && r.signatureValid).toBe(true)
+      expect(r.signerName).toBe(name)
+    })
+  }
 })

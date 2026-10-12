@@ -37,31 +37,51 @@ export function sigOps(doc: DocumentModel) {
 
 function setDoc(docId: string, patch: Partial<DocSignatures>) {
   useSigStore.setState((s) => ({
-    byDoc: { ...s.byDoc, [docId]: { report: null, running: false, error: null, ...s.byDoc[docId], ...patch } }
+    byDoc: { ...s.byDoc, [docId]: { ...(s.byDoc[docId] ?? EMPTY), ...patch } }
   }))
 }
 
-const pending = new Map<string, Promise<ValidationReport | null>>()
+interface Inflight {
+  promise: Promise<ValidationReport | null>
+  /** Asked again while running: the document may have changed, so validate once more. */
+  again: boolean
+}
 
-/** Validates every signature of the document (results are kept per document). */
+const inflight = new Map<string, Inflight>()
+
+/**
+ * Validates every signature of the document (results are kept per document). Calls made while a
+ * validation runs are coalesced into one more run, so the stored report always reflects the
+ * latest state of the document.
+ */
 export function validateDocument(doc: DocumentModel): Promise<ValidationReport | null> {
-  const running = pending.get(doc.id)
-  if (running) return running
+  const running = inflight.get(doc.id)
+  if (running) {
+    running.again = true
+    return running.promise
+  }
+  const entry: Inflight = { promise: Promise.resolve(null), again: false }
   setDoc(doc.id, { running: true })
-  const p = (async () => {
+  entry.promise = (async () => {
+    let report: ValidationReport | null = null
     try {
-      const report = await sigOps(doc).validate()
-      if (!doc.isClosed) setDoc(doc.id, { report, running: false, error: null })
+      do {
+        entry.again = false
+        try {
+          report = await sigOps(doc).validate()
+          if (!doc.isClosed && !entry.again) setDoc(doc.id, { report, running: false, error: null })
+        } catch (err) {
+          report = null
+          if (!doc.isClosed && !entry.again) setDoc(doc.id, { running: false, error: err instanceof Error ? err.message : String(err) })
+        }
+      } while (entry.again && !doc.isClosed)
       return report
-    } catch (err) {
-      if (!doc.isClosed) setDoc(doc.id, { running: false, error: err instanceof Error ? err.message : String(err) })
-      return null
     } finally {
-      pending.delete(doc.id)
+      inflight.delete(doc.id)
     }
   })()
-  pending.set(doc.id, p)
-  return p
+  inflight.set(doc.id, entry)
+  return entry.promise
 }
 
 export function forgetDocument(docId: string) {

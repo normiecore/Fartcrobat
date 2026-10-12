@@ -59,6 +59,7 @@ function emptyReport(f: SigField, v: PDFObject): SignatureReport {
     signatureAlgorithm: '',
     revision: 0,
     revisionCount: 0,
+    signedVersion: 0,
     byteRange: readByteRange(v),
     revisionEnd: 0,
     coversWholeFile: false,
@@ -266,6 +267,7 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
     }
   }
   signatures.sort((a, b) => (a.revisionEnd || Infinity) - (b.revisionEnd || Infinity))
+  signatures.forEach((r, i) => (r.signedVersion = i + 1))
   const certSig = signatures.find((x) => x.kind === 'certification')
   const locked = signatures.some((x) => x.lock?.permission === 1)
   return {

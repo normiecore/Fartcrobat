@@ -8,6 +8,7 @@ import { idStatus, recordCertificate, unlockDigitalId } from './ids'
 import { importDigitalIdFlow, openCreateIdDialog } from './IdDialogs'
 import { DEFAULT_PREFS, loadSavedSignatureImage, loadSignPrefs, REASONS, saveSignPrefs, type SignPrefs } from './prefs'
 import { sigOps, useSigStore } from './store'
+import { FieldGroup } from './FieldGroup'
 import { formatDate } from './format'
 
 export interface SignDialogResult {
@@ -134,6 +135,13 @@ export function SignDialog({
   }, [])
 
   const rec = ids.find((r) => r.id === selectedId) ?? null
+  // Once the remembered ID is picked, the password is the only thing left to type.
+  const focusedOnce = useRef(false)
+  useEffect(() => {
+    if (!prefs || !rec || focusedOnce.current) return
+    focusedOnce.current = true
+    passwordRef.current?.focus()
+  }, [prefs, rec])
   const dn = useMemo(() => {
     if (!rec) return ''
     try {
@@ -237,7 +245,7 @@ export function SignDialog({
                 takes a few seconds.
               </p>
               <div className="fc-digital-signatures-row">
-                <Button variant="accent" icon={Plus} onClick={() => void addId('create')}>
+                <Button variant="accent" icon={Plus} data-autofocus onClick={() => void addId('create')}>
                   Create a Digital ID
                 </Button>
                 <Button icon={FolderInput} onClick={() => void addId('import')}>
@@ -324,7 +332,7 @@ export function SignDialog({
               <div className="fc-digital-signatures-previewwrap">
                 <AppearancePreview doc={doc} content={content} size={size} />
               </div>
-              <Field label="Show on the left">
+              <FieldGroup label="Show on the left">
                 <Segmented<AppearanceOptions['graphic']>
                   value={appearance.graphic}
                   onChange={(g) => setAppearance((a) => ({ ...a, graphic: g }))}
@@ -334,7 +342,7 @@ export function SignDialog({
                     { value: 'none', label: 'Nothing' }
                   ]}
                 />
-              </Field>
+              </FieldGroup>
               {!savedImage && (
                 <p className="shell-muted fc-digital-signatures-small">
                   Tip: save a handwritten signature in Fill &amp; Sign to show it here.

@@ -114,6 +114,8 @@ export async function startSigning(doc: DocumentModel, opts: StartSigningOptions
       useApp.setState({ recent })
     } catch {}
     await loadTrusted()
+    // Show the message bar again for the freshly signed file, even if it was hidden before.
+    useSigStore.setState((s) => ({ barHidden: { ...s.barHidden, [doc.id]: false } }))
     await validateDocument(doc)
     openRightPanel('signatures')
     toast(`${opts.mode === 'certify' ? 'Certified' : 'Signed'} and saved as ${basename(target)}`, { kind: 'success' })

@@ -87,16 +87,6 @@ export function DigitalIdsSettings() {
         <Button icon={FolderInput} onClick={() => void add('import')}>
           Import ID File…
         </Button>
-        <span className="fc-digital-signatures-spacer" />
-        <Button icon={ScrollText} disabled={!rec} onClick={() => void showCert()}>
-          Certificate Details
-        </Button>
-        <Button icon={Download} disabled={!rec} onClick={() => void exportCert()}>
-          Export Certificate…
-        </Button>
-        <Button icon={Trash2} variant="quiet" disabled={!rec} onClick={() => void remove()}>
-          Remove ID
-        </Button>
       </div>
       {ids.length === 0 ? (
         <div className="fc-digital-signatures-emptyids">
@@ -146,6 +136,20 @@ export function DigitalIdsSettings() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+      {ids.length > 0 && (
+        <div className="fc-digital-signatures-row" aria-label="Selected Digital ID">
+          <Button size="sm" icon={ScrollText} disabled={!rec} onClick={() => void showCert()}>
+            Certificate Details
+          </Button>
+          <Button size="sm" icon={Download} disabled={!rec} onClick={() => void exportCert()}>
+            Export Certificate…
+          </Button>
+          <Button size="sm" icon={Trash2} variant="quiet" disabled={!rec} onClick={() => void remove()}>
+            Remove ID
+          </Button>
+          {!rec && <span className="shell-muted fc-digital-signatures-small">Select an ID to see, export or remove it.</span>}
         </div>
       )}
       <h4 className="fc-digital-signatures-h4">Trusted certificates</h4>

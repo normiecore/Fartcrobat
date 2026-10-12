@@ -15,6 +15,7 @@ import { validateNewId } from '../lib/digitalId'
 import { WrongPasswordError } from '../lib/pkcs12'
 import type { DigitalIdRecord } from '../types'
 import { COUNTRIES, defaultCountry } from './countries'
+import { FieldGroup } from './FieldGroup'
 import { createDigitalId, importDigitalId } from './ids'
 
 export interface IdResult {
@@ -119,7 +120,7 @@ function CreateIdDialog({ onDone }: { onDone: (r?: IdResult) => void }) {
           />
         </Field>
       </div>
-      <Field label="Key algorithm" hint={keyType === 'RSA' ? 'Works with every PDF reader.' : 'Smaller and faster; needs a recent PDF reader.'}>
+      <FieldGroup label="Key algorithm" hint={keyType === 'RSA' ? 'Works with every PDF reader.' : 'Smaller and faster; needs a recent PDF reader.'}>
         <Segmented<'RSA' | 'EC'>
           value={keyType}
           onChange={setKeyType}
@@ -128,7 +129,7 @@ function CreateIdDialog({ onDone }: { onDone: (r?: IdResult) => void }) {
             { value: 'EC', label: 'ECDSA P-256' }
           ]}
         />
-      </Field>
+      </FieldGroup>
       <div className="fc-digital-signatures-grid2">
         <Field label="Password">
           <TextInput type="password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Password" autoComplete="new-password" />

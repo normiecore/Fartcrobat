@@ -18,7 +18,7 @@ import { SignatureFieldLayer } from './ui/FieldLayer'
 import { startSigning } from './ui/flow'
 import { SignatureMessageBar } from './ui/MessageBar'
 import { SignaturesPanel, signatureMenuItems } from './ui/SignaturesPanel'
-import { forgetDocument, loadIds, loadTrusted, useSigStore } from './ui/store'
+import { forgetDocument, loadIds, loadTrusted, sigOps, useSigStore } from './ui/store'
 import './styles.css'
 
 interface SignFieldEvent {
@@ -38,9 +38,18 @@ function SignatureGlobals() {
       const d = ((e as CustomEvent).detail ?? {}) as SignFieldEvent
       const app = useApp.getState()
       const doc = app.docs.find((x) => x.id === d.docId) ?? app.docs.find((x) => x.id === app.activeDocId)
-      if (!doc || !d.fieldName) return
+      if (!doc || (!d.fieldName && d.fieldId === undefined)) return
       if (app.activeDocId !== doc.id) useApp.setState({ activeDocId: doc.id })
-      void startSigning(doc, { mode: 'sign', target: { kind: 'field', name: d.fieldName } }).catch((err) => showError(err))
+      void (async () => {
+        let name = d.fieldName
+        if (!name) {
+          // Only the widget id was given: look the field up.
+          const fields = await sigOps(doc).fields()
+          name = fields.find((f) => f.widgetId === d.fieldId)?.name
+          if (!name) throw new Error('That signature field no longer exists.')
+        }
+        await startSigning(doc, { mode: 'sign', target: { kind: 'field', name } })
+      })().catch((err) => showError(err, 'Could not start signing'))
     }
     window.addEventListener('fartcrobat:sign-field', onSignField)
     const unsub = useApp.subscribe((s, prev) => {

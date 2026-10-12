@@ -1,5 +1,5 @@
 /** Actions on existing signatures (panel, context menu, commands). */
-import { confirm, openNewDocument, openRightPanel, showError, stripExtension, toast, type DocumentModel } from '@renderer/sdk'
+import { confirm, openBytes, openRightPanel, showError, stripExtension, toast, type DocumentModel } from '@renderer/sdk'
 import { signatureStatus } from '../status'
 import type { SignatureReport } from '../types'
 import { sigOps, trustedSet, validateDocument } from './store'
@@ -8,7 +8,13 @@ import { sigOps, trustedSet, validateDocument } from './store'
 export async function viewSignedVersion(doc: DocumentModel, r: SignatureReport) {
   try {
     const bytes = await sigOps(doc).revisionBytes(r.revisionEnd)
-    await openNewDocument(bytes, `${stripExtension(doc.state.title)} (signed version${r.revision ? `, rev. ${r.revision}` : ''}).pdf`)
+    // A read-only view of an earlier revision: nothing to save unless the user edits it.
+    const name = `${stripExtension(doc.state.title)} (signed version${r.signedVersion ? `, rev. ${r.signedVersion}` : ''}).pdf`
+    const opened = await openBytes(bytes, name, { filePath: null, dirty: false })
+    if (opened) {
+      openRightPanel('signatures')
+      toast(`Showing the document as it was when ${r.signerName} signed it.`)
+    }
   } catch (err) {
     showError(err, 'Could not open the signed version')
   }

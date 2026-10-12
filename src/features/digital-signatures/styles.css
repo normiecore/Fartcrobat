@@ -268,8 +268,13 @@ button.fc-digital-signatures-entry-toggle:hover {
 }
 .fc-digital-signatures-grid2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 12px;
+}
+.fc-digital-signatures-grid2 .ui-input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .fc-digital-signatures-intro {
   margin: 0 0 14px;
@@ -375,7 +380,13 @@ button.fc-digital-signatures-entry-toggle:hover {
   font-size: var(--fs-sm);
   color: var(--text-muted);
 }
+.fc-digital-signatures-signdialog .ui-input:disabled {
+  opacity: 0.55;
+  background: var(--bg-sunken);
+  cursor: not-allowed;
+}
 .fc-digital-signatures-noid {
+  margin-bottom: 12px;
   padding: 12px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);

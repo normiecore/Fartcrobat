@@ -87,17 +87,38 @@ export function CertificateBoxLayer({ doc, pageIndex, geometry }: PageLayerProps
   )
 }
 
+/**
+ * Keyboard alternative to dragging: a standard-size box in the bottom-right corner of the current
+ * page (where Acrobat users usually sign).
+ */
+export function placeStandardBox(doc: DocumentModel) {
+  const pageIndex = Math.max(0, Math.min(doc.pageCount - 1, doc.state.currentPage))
+  const p = doc.info.pages[pageIndex]
+  const margin = Math.min(36, p.width * 0.06, p.height * 0.06)
+  const w = Math.min(DEFAULT_BOX.w, p.width - 2 * margin)
+  const h = Math.min(DEFAULT_BOX.h, p.height - 2 * margin)
+  // Keep clear of the page footer (page numbers usually sit in the bottom margin).
+  const bottom = p.height - 2 * margin
+  const right = p.width - margin
+  const rect: Rect = [right - w, bottom - h, right, bottom]
+  const { mode, permission } = useSigStore.getState().boxMode
+  setTool('select')
+  doc.view?.scrollToRect(pageIndex, rect, { center: true })
+  void startSigning(doc, { mode, permission, target: { kind: 'new', page: pageIndex, rect } })
+}
+
 /** Contextual toolbar while the box tool is active. */
-export function CertificateBoxToolbar() {
+export function CertificateBoxToolbar({ doc }: { doc: DocumentModel }) {
   const mode = useSigStore((s) => s.boxMode.mode)
   return (
     <div className="fc-digital-signatures-toolbar">
       <PenTool size={16} />
       <span>
-        {mode === 'certify'
-          ? 'Drag a rectangle where the certification signature should appear.'
-          : 'Drag a rectangle where your signature should appear, or click for a standard size.'}
+        {mode === 'certify' ? 'Drag a box where the certification signature goes, or click.' : 'Drag a box where your signature goes, or click.'}
       </span>
+      <Button size="sm" variant="quiet" title="Put a standard-size signature box at the bottom right of the current page" onClick={() => placeStandardBox(doc)}>
+        Place at bottom of page
+      </Button>
       <Button size="sm" onClick={() => setTool('select')}>
         Cancel
       </Button>
@@ -190,8 +211,13 @@ export function CertificatePanel({ doc }: { doc: DocumentModel | null }) {
           </p>
         )}
       </Section>
-      {locked && <p className="fc-digital-signatures-note">This document is locked by a signature and cannot be signed again.</p>}
-      {certified && !locked && <p className="fc-digital-signatures-note">This document is certified. Only the changes the certifier allowed keep the certification valid.</p>}
+      {certified === 1 ? (
+        <p className="fc-digital-signatures-note">This document is certified and the certifier allowed no changes, so it cannot be signed again.</p>
+      ) : locked ? (
+        <p className="fc-digital-signatures-note">This document is locked by a signature and cannot be signed again.</p>
+      ) : certified ? (
+        <p className="fc-digital-signatures-note">This document is certified. Only the changes the certifier allowed keep the certification valid.</p>
+      ) : null}
     </ToolPanelFrame>
   )
 }

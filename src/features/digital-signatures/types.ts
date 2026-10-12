@@ -163,8 +163,11 @@ export interface SignatureReport {
   subFilter: string
   digestAlgorithm: string
   signatureAlgorithm: string
+  /** File revision (1 = the original file) that this signature completed. */
   revision: number
   revisionCount: number
+  /** Acrobat's "Rev. N": position of this signature among the document's signatures (1-based). */
+  signedVersion: number
   byteRange: number[]
   /** Offset just after the signed revision. */
   revisionEnd: number

@@ -46,7 +46,7 @@ function SignatureEntry({ doc, r, locked }: { doc: DocumentModel; r: SignatureRe
           <StatusIcon level={st.level} />
           <span className="fc-digital-signatures-entry-text">
             <span className="fc-digital-signatures-entry-title">
-              {r.revision ? `Rev. ${r.revision}: ` : ''}
+              {r.signedVersion ? `Rev. ${r.signedVersion}: ` : ''}
               {verb} {r.signerName}
             </span>
             <span className="fc-digital-signatures-entry-status">{st.title}</span>

@@ -240,7 +240,9 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
         {r.fieldName}
         {r.invisible ? ' (invisible)' : ` on page ${r.page + 1}`}
       </Row>
-      <Row label="Revision">{r.revision ? `${r.revision} of ${r.revisionCount}` : null}</Row>
+      <Row label="Signed version">
+        {r.signedVersion ? `Rev. ${r.signedVersion}${r.revision ? ` (file revision ${r.revision} of ${r.revisionCount})` : ''}` : null}
+      </Row>
       {r.kind === 'certification' && <Row label="Allowed changes">{permissionText(r.permission)}</Row>}
       {r.lock && <Row label="Lock">{r.lock.permission === 1 ? 'Document locked after signing' : `Locks ${r.lock.action === 'All' ? 'all fields' : r.lock.fields.join(', ')}`}</Row>}
       <Row label="Signature format">{r.subFilter}</Row>
