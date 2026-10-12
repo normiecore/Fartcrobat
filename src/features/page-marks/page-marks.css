@@ -1,0 +1,449 @@
+/* page-marks: headers & footers, watermarks, backgrounds, Bates numbering, crop */
+
+.fc-page-marks-dialog .ui-dialog-body {
+  padding-top: 4px;
+}
+
+.fc-page-marks-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .fc-page-marks-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.fc-page-marks-form {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fc-page-marks-group {
+  margin: 0;
+  padding: 8px 12px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fc-page-marks-group > legend {
+  padding: 0 6px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fc-page-marks-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fc-page-marks-row-label {
+  min-width: 84px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fc-page-marks-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.fc-page-marks-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fc-page-marks-mini {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.fc-page-marks-margins {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.fc-page-marks-margins .ui-input-number {
+  width: 84px;
+}
+
+.fc-page-marks-font {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fc-page-marks-font .ui-select {
+  min-width: 190px;
+}
+
+.fc-page-marks-toggles {
+  display: inline-flex;
+  gap: 2px;
+  padding: 1px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.fc-page-marks-toggle {
+  min-width: 28px;
+  height: 28px;
+}
+
+.fc-page-marks-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fc-page-marks-range-from {
+  margin-left: 8px;
+}
+
+.fc-page-marks-error {
+  flex-basis: 100%;
+}
+
+.fc-page-marks-hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.fc-page-marks-hint code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
+.fc-page-marks-warning {
+  font-size: var(--fs-sm);
+  color: var(--warning);
+}
+
+.fc-page-marks-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.fc-page-marks-presets .ui-select {
+  min-width: 200px;
+}
+
+.fc-page-marks-slots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 10px;
+}
+
+.fc-page-marks-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.fc-page-marks-slot .ui-textarea {
+  min-height: 46px;
+  font-family: var(--font);
+  font-weight: 400;
+  color: var(--text);
+  resize: vertical;
+}
+
+.fc-page-marks-insert {
+  display: flex;
+  align-items: center;
+  gap: 8px 24px;
+  flex-wrap: wrap;
+}
+
+.fc-page-marks-insert-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.fc-page-marks-insert-item .fc-page-marks-row-label {
+  min-width: 0;
+}
+
+.fc-page-marks-insert-item .ui-select {
+  min-width: 130px;
+}
+
+.fc-page-marks-source {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fc-page-marks-source .ui-textarea {
+  min-height: 52px;
+  font-size: 15px;
+}
+
+.fc-page-marks-file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fc-page-marks-filename {
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.fc-page-marks-visibility {
+  display: flex;
+  gap: 4px 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.fc-page-marks-visibility .fc-page-marks-hint,
+.fc-page-marks-visibility .ui-field-error {
+  flex-basis: 100%;
+}
+
+.fc-page-marks-bates {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.fc-page-marks-bates input[type='text'] {
+  width: 130px;
+}
+
+.fc-page-marks-slotpicker {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 150px));
+  gap: 6px;
+}
+
+.fc-page-marks-slotbtn {
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  font-size: var(--fs-sm);
+}
+
+.fc-page-marks-slotbtn:hover {
+  background: var(--bg-hover);
+}
+
+.fc-page-marks-slotbtn.is-active {
+  background: var(--bg-active);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.fc-page-marks-disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.fc-page-marks-footer-hint {
+  margin-right: auto;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  align-self: center;
+}
+
+.ui-btn.fc-page-marks-footer-left {
+  margin-right: auto;
+}
+
+/* ---- preview ---- */
+
+.fc-page-marks-preview {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-lg);
+  background: var(--doc-bg);
+  min-width: 300px;
+}
+
+.fc-page-marks-preview-title {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fc-page-marks-preview-title .ui-check {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.fc-page-marks-preview-frame {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 1px;
+}
+
+.fc-page-marks-preview-canvas {
+  display: block;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+}
+
+.fc-page-marks-preview-note {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  max-width: 90%;
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: rgba(30, 30, 30, 0.82);
+  color: #fff;
+  font-size: var(--fs-sm);
+  text-align: center;
+  pointer-events: none;
+}
+
+.fc-page-marks-preview-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+}
+
+.fc-page-marks-preview-nav .ui-input-number {
+  height: 26px;
+}
+
+.fc-page-marks-preview-size {
+  font-size: var(--fs-sm);
+  color: var(--text);
+  min-height: 1.2em;
+}
+
+.fc-page-marks-boxes-overlay {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.fc-page-marks-legend {
+  display: flex;
+  gap: 10px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+
+.fc-page-marks-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  margin-right: 4px;
+  vertical-align: middle;
+  border-top: 2px dashed;
+}
+
+/* ---- crop tool ---- */
+
+.fc-page-marks-crop-layer {
+  cursor: crosshair;
+  touch-action: none;
+  z-index: 5;
+}
+
+.fc-page-marks-crop-rect {
+  position: absolute;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.42);
+  pointer-events: none;
+}
+
+.fc-page-marks-crop-size {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  margin-top: 6px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+
+.fc-page-marks-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+}
+
+.fc-page-marks-toolbar-hint {
+  color: var(--text-muted);
+  margin-right: 4px;
+}
+
+.fc-page-marks-panel .ui-section {
+  margin: 4px 0 10px;
+}
