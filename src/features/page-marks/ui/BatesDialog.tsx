@@ -133,13 +133,28 @@ export function BatesDialog({
             <CharsetWarning texts={[s.prefix, s.suffix]} />
           </Group>
           <Group title="Position">
-            <div className="fc-page-marks-slotpicker" role="radiogroup" aria-label="Position on the page">
+            <div
+              className="fc-page-marks-slotpicker"
+              role="radiogroup"
+              aria-label="Position on the page"
+              onKeyDown={(e) => {
+                // Arrow keys move around the 3 x 2 grid of positions, like a radio group.
+                const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: 3, ArrowUp: -3 }[e.key]
+                if (!step) return
+                e.preventDefault()
+                const next = SLOTS[(SLOTS.indexOf(s.slot) + step + SLOTS.length) % SLOTS.length]
+                set({ slot: next })
+                e.currentTarget.querySelector<HTMLElement>(`[data-slot="${next}"]`)?.focus()
+              }}
+            >
               {SLOTS.map((slot: Slot) => (
                 <button
                   key={slot}
                   type="button"
                   role="radio"
+                  data-slot={slot}
                   aria-checked={s.slot === slot}
+                  tabIndex={s.slot === slot ? 0 : -1}
                   className={`fc-page-marks-slotbtn ${s.slot === slot ? 'is-active' : ''}`}
                   onClick={() => set({ slot })}
                 >
