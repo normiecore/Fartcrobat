@@ -5,7 +5,7 @@ import type { Point, Rect } from '@shared/geometry'
 import { useDocState, usePageVersion, type DocumentModel } from '../../document/DocumentModel'
 import { caretAt, isOverText, lineAt, rangeRects, wordAt, type PageText, type TextRange } from '../../document/textModel'
 import { registry, type ContextMenuItem } from '../../app/registry'
-import { showContextMenu } from '../../app/ui-services'
+import { showContextMenu, toast } from '../../app/ui-services'
 import { invoke } from '../../platform'
 import type { PageGeometry } from '../geometry'
 import { getLoadedText, loadText } from './textSync'
@@ -44,6 +44,10 @@ function rangesBetween(doc: DocumentModel, a: Caret, b: Caret): TextRange[] {
 }
 
 export async function copySelection(doc: DocumentModel) {
+  if (doc.state.info.permissions.copy === false) {
+    toast('Copying is not allowed: the author of this document restricted copying of its content.', { kind: 'warning' })
+    return
+  }
   const text = await doc.selectedText()
   if (text) await invoke('clipboard:writeText', text)
 }
