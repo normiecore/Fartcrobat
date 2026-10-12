@@ -1,0 +1,314 @@
+/* edit-images-links: image editing, Add Image tool, link tool and link borders */
+
+.fc-edit-images-links-layer,
+.fc-edit-images-links-borders {
+  pointer-events: none;
+}
+
+/* ---- images in "Edit text & images" ---------------------------------------------------- */
+.fc-edit-images-links-hit {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  outline: 1px dashed rgba(20, 115, 230, 0.45);
+  outline-offset: -1px;
+}
+.fc-edit-images-links-hit.is-hover,
+.fc-edit-images-links-hit:focus-visible {
+  outline: 2px solid rgba(20, 115, 230, 0.85);
+  background: rgba(20, 115, 230, 0.06);
+  box-shadow: none;
+}
+
+.fc-edit-images-links-frame {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  border: 1.5px solid #1473e6;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+  outline: none;
+  transform-origin: center center;
+  z-index: 5;
+}
+.fc-edit-images-links-frame.is-busy {
+  border-style: dashed;
+}
+.fc-edit-images-links-frame.is-cropping {
+  border-color: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+.fc-edit-images-links-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.88;
+  pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+}
+.fc-edit-images-links-origin {
+  position: absolute;
+  border: 1px dashed rgba(20, 115, 230, 0.8);
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+
+.fc-edit-images-links-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border: 1.5px solid #1473e6;
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 2;
+}
+.fc-edit-images-links-rotate-stem {
+  position: absolute;
+  left: 50%;
+  top: -22px;
+  height: 22px;
+  width: 0;
+  border-left: 1.5px solid #1473e6;
+  pointer-events: none;
+}
+.fc-edit-images-links-rotate {
+  position: absolute;
+  left: 50%;
+  top: -30px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #1473e6;
+  cursor: grab;
+  pointer-events: auto;
+}
+.fc-edit-images-links-rotate:active {
+  cursor: grabbing;
+}
+.fc-edit-images-links-angle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.fc-edit-images-links-crop-bounds {
+  position: absolute;
+  border: 1px dashed rgba(20, 115, 230, 0.7);
+  background: rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+.fc-edit-images-links-crop {
+  position: absolute;
+  border: 2px solid #1473e6;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+  z-index: 6;
+}
+
+.fc-edit-images-links-toolbar {
+  position: absolute;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  cursor: default;
+  white-space: nowrap;
+}
+.fc-edit-images-links-toolbar .ui-icon-btn {
+  width: 30px;
+  height: 30px;
+}
+.fc-edit-images-links-toolbar-label {
+  padding: 0 8px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-edit-images-links-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+/* ---- Add Image tool --------------------------------------------------------------------- */
+.fc-edit-images-links-addlayer {
+  cursor: crosshair;
+}
+.fc-edit-images-links-ghost {
+  position: absolute;
+  pointer-events: none;
+  outline: 1px dashed #1473e6;
+}
+.fc-edit-images-links-ghost img {
+  width: 100%;
+  height: 100%;
+  opacity: 0.6;
+  display: block;
+}
+.fc-edit-images-links-ghost.is-drawing img {
+  opacity: 0.8;
+}
+
+/* ---- contextual option bars ------------------------------------------------------------- */
+.fc-edit-images-links-optbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+  font-size: var(--fs-sm);
+}
+.fc-edit-images-links-optbar > svg {
+  flex: none;
+  color: var(--accent-text);
+}
+.fc-edit-images-links-optbar > span {
+  min-width: 0;
+}
+.fc-edit-images-links-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 520px;
+}
+.fc-edit-images-links-spacer {
+  flex: 1;
+}
+
+/* ---- link tool -------------------------------------------------------------------------- */
+.fc-edit-images-links-linklayer {
+  cursor: crosshair;
+}
+.fc-edit-images-links-link {
+  position: absolute;
+  border: 1px solid #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+  cursor: move;
+  outline: none;
+}
+.fc-edit-images-links-link:hover,
+.fc-edit-images-links-link:focus-visible {
+  border-color: #1473e6;
+  background: rgba(20, 115, 230, 0.08);
+}
+.fc-edit-images-links-link.is-selected {
+  border: 1.5px solid #1473e6;
+  background: rgba(20, 115, 230, 0.12);
+}
+.fc-edit-images-links-drawn {
+  position: absolute;
+  border: 1px dashed #1473e6;
+  background: rgba(20, 115, 230, 0.1);
+  pointer-events: none;
+}
+
+/* ---- link borders (visible link rectangles) ---------------------------------------------- */
+.fc-edit-images-links-border {
+  position: absolute;
+  pointer-events: none;
+}
+.fc-edit-images-links-border.is-clickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.fc-edit-images-links-border.is-clickable:hover {
+  outline: 1px dashed rgba(20, 115, 230, 0.6);
+}
+
+/* ---- dialogs ---------------------------------------------------------------------------- */
+.fc-edit-images-links-section {
+  margin-bottom: 14px;
+}
+.fc-edit-images-links-section h4 {
+  margin: 0 0 8px;
+  font-size: var(--fs);
+  font-weight: 600;
+}
+.fc-edit-images-links-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+  align-items: end;
+}
+.fc-edit-images-links-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fc-edit-images-links-indent {
+  margin-left: 24px;
+  margin-bottom: 4px;
+}
+.fc-edit-images-links-indent .ui-input {
+  width: 100%;
+}
+.fc-edit-images-links-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fc-edit-images-links-row .ui-input-number {
+  width: 76px;
+}
+.fc-edit-images-links-row .ui-input:not(.ui-input-number) {
+  flex: 1;
+}
+.fc-edit-images-links-muted {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  margin: 0 0 10px;
+}
+.fc-edit-images-links-hint {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-edit-images-links-footer-left {
+  margin-right: auto;
+  color: var(--danger);
+}
+.fc-edit-images-links-props .ui-check {
+  margin-top: 10px;
+}
+
+.fc-edit-images-links-gotoview {
+  position: fixed;
+  top: 108px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px 10px 14px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+}
+.fc-edit-images-links-gotoview > svg {
+  color: var(--accent-text);
+}
+.fc-edit-images-links-gotoview .fc-edit-images-links-muted {
+  margin: 2px 0 0;
+}
