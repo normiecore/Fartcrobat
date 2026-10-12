@@ -1,14 +1,43 @@
-import { FilePenLine, TextCursorInput, Trash, Type } from 'lucide-react'
-import { defineFeature, getActiveDoc, openToolGroup, setTool, useApp, type CommandContext } from '@renderer/sdk'
+import { FilePenLine, Pencil, TextCursorInput, Trash, Type } from 'lucide-react'
+import {
+  defineFeature,
+  getActiveDoc,
+  getLoadedText,
+  isOverText,
+  openToolGroup,
+  rangeRects,
+  setTool,
+  showError,
+  useApp,
+  type CommandContext,
+  type DocumentModel,
+  type Selection
+} from '@renderer/sdk'
 import { EditLayer } from './EditLayer'
 import { EditPanel, EditToolbar } from './EditPanel'
 import { EditTextGlobal } from './Global'
-import { activeSession, commitSession, deleteBox } from './store'
+import { activeSession, commitSession, deleteBox, editTextAt } from './store'
 import './edit-text.css'
 
 function openEdit(tool: 'edit.content' | 'edit.addText') {
   if (useApp.getState().toolGroupId !== 'edit') openToolGroup('edit')
   if (getActiveDoc()) setTool(tool)
+}
+
+/** "Edit text" on the floating bar of selected text: opens the paragraph with that text selected. */
+async function editSelection(doc: DocumentModel, sel: Extract<Selection, { kind: 'text' }>) {
+  const range = sel.ranges[0]
+  if (!range) return
+  try {
+    const t = await doc.pageText(range.page)
+    const rects = rangeRects(t, range.start, Math.min(range.end, t.text.length))
+    if (!rects.length) return
+    const r = rects[0]
+    const text = sel.ranges.length === 1 ? t.text.slice(range.start, range.end) : undefined
+    await editTextAt(doc, range.page, [(r[0] + r[2]) / 2, (r[1] + r[3]) / 2], text)
+  } catch (err) {
+    showError(err, 'Could not edit this text')
+  }
 }
 
 /** True when keyboard focus is not in a text field or the text editor. */
@@ -100,9 +129,23 @@ export default defineFeature({
     }
   ],
   menus: [
+    { menu: 'edit', group: 'editpdf', command: 'editText.editContent', order: 400 },
+    { menu: 'edit', group: 'editpdf', command: 'editText.addText', order: 401 },
     { menu: 'tools', group: 'edit', command: 'editText.open', order: 20 },
     { menu: 'tools', group: 'edit', command: 'editText.editContent', order: 21 },
     { menu: 'tools', group: 'edit', command: 'editText.addText', order: 22 }
+  ],
+  textSelectionActions: [{ id: 'edit-text', label: 'Edit text', icon: Pencil, order: 60, run: (doc, sel) => editSelection(doc, sel) }],
+  pageContextMenu: [
+    {
+      id: 'edit-text',
+      order: 20,
+      items: ({ doc, pageIndex, point }) => {
+        const t = getLoadedText(doc, pageIndex)
+        if (!t || !isOverText(t, point)) return []
+        return [{ id: 'edit-text', label: 'Edit Text', icon: Pencil, run: () => void editTextAt(doc, pageIndex, point) }]
+      }
+    }
   ],
   globals: [EditTextGlobal]
 })

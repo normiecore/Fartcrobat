@@ -38,7 +38,7 @@ function Cover({ session, geometry, onReady }: { session: EditSession; geometry:
     const timer = window.setTimeout(() => {
       doc
         .ops<typeof editOps>('edit-text')
-        .preview(page, block.quads, {
+        .preview(page, { start: block.start, end: block.end, check: block.text }, block.quads, {
           scale: geometry.scale * dpr,
           rotate: geometry.rotation,
           clip: [r.left * dpr, r.top * dpr, (r.left + r.width) * dpr, (r.top + r.height) * dpr],
@@ -143,6 +143,16 @@ function EditorFrame({ session: s, geometry, visible }: { session: EditSession; 
       setSelectionOffsets(root, state.selection.start, state.selection.end)
     }
   }, [s.id, s.renderToken, scale])
+
+  // asked to take the focus back (e.g. after Esc in a formatting field)
+  useEffect(() => {
+    const root = rootRef.current
+    const state = useEditText.getState().session
+    if (!root || !state || state.id !== s.id || state.focusToken === lastFocus.current) return
+    lastFocus.current = state.focusToken
+    root.focus({ preventScroll: true })
+    setSelectionOffsets(root, state.selection.start, state.selection.end)
+  }, [s.id, s.focusToken])
 
   // keep the selection in the store (formatting applies to it)
   useEffect(() => {

@@ -4,7 +4,7 @@
  */
 import { create } from 'zustand'
 import type { Point } from '@shared/geometry'
-import { getActiveDoc, invoke, setTool, showError, toast, useApp, type DocumentModel } from '@renderer/sdk'
+import { getActiveDoc, invoke, openToolGroup, setTool, showError, toast, useApp, type DocumentModel } from '@renderer/sdk'
 import type editOps from './engine'
 import {
   applyStyle as applyStyleToRuns,
@@ -143,9 +143,11 @@ function start(
   page: number,
   block: TextBlockInfo | null,
   init: { frame: Frame; wrap: boolean; align: Align; lineSpacing: number; ascent: number; runs: Run[]; fonts: FontChoice[] },
-  caret: Point | null
+  caret: Point | null,
+  selection?: Sel
 ) {
   const runs = normalizeRuns(init.runs)
+  const len = runsLength(runs)
   const s: EditSession = {
     id: ++ids,
     doc,
@@ -155,7 +157,7 @@ function start(
     runs,
     initialKey: '',
     caret,
-    selection: { start: runsLength(runs), end: runsLength(runs) },
+    selection: selection ? { start: Math.min(selection.start, len), end: Math.min(selection.end, len) } : { start: len, end: len },
     renderToken: 1,
     focusToken: 1,
     status: 'editing',
@@ -170,8 +172,18 @@ function start(
     toast('Some characters in this text cannot be read from the file, so they may change when you edit it.', { kind: 'warning', timeout: 6000 })
 }
 
-/** Opens the editor on a paragraph. When another edit is open it is saved first. */
-export async function beginEdit(doc: DocumentModel, page: number, block: TextBlockInfo, caret: Point | null, pagePoint: Point | null) {
+/**
+ * Opens the editor on a paragraph. When another edit is open it is saved first. `caret` is a
+ * screen point to put the caret at; `selection` selects characters of the paragraph instead.
+ */
+export async function beginEdit(
+  doc: DocumentModel,
+  page: number,
+  block: TextBlockInfo,
+  caret: Point | null,
+  pagePoint: Point | null,
+  selection?: Sel
+) {
   const hadSession = !!useEditText.getState().session || !!committing
   await commitSession()
   let target: TextBlockInfo | null = block
@@ -187,11 +199,62 @@ export async function beginEdit(doc: DocumentModel, page: number, block: TextBlo
   }
   if (!target || useEditText.getState().session) return
   const { frame, wrap, align, lineSpacing, ascent, runs, fonts } = target
-  start(doc, page, target, { frame, wrap, align, lineSpacing, ascent, runs, fonts }, caret)
+  start(doc, page, target, { frame, wrap, align, lineSpacing, ascent, runs, fonts }, caret, selection)
+}
+
+/** Character range of `needle` inside `text`, ignoring differences in white space. */
+export function locateText(text: string, needle: string): Sel | null {
+  const norm = (str: string) => {
+    let out = ''
+    const map: number[] = []
+    let space = false
+    for (let i = 0; i < str.length; i++) {
+      if (/\s/.test(str[i])) {
+        if (space || !out) continue
+        out += ' '
+        map.push(i)
+        space = true
+      } else {
+        out += str[i]
+        map.push(i)
+        space = false
+      }
+    }
+    return { out, map }
+  }
+  const h = norm(text)
+  const n = norm(needle).out.trim()
+  if (!n) return null
+  const at = h.out.indexOf(n)
+  if (at < 0) return null
+  return { start: h.map[at], end: h.map[at + n.length - 1] + 1 }
+}
+
+/**
+ * Switches to "Edit text & images" and opens the paragraph at a page point (from the page
+ * context menu or the selected-text toolbar), optionally selecting some of its text.
+ */
+export async function editTextAt(doc: DocumentModel, page: number, point: Point, selectText?: string) {
+  if (useApp.getState().toolGroupId !== 'edit') openToolGroup('edit')
+  if (useApp.getState().toolId !== 'edit.content') setTool('edit.content')
+  let blocks: TextBlockInfo[]
+  try {
+    blocks = await loadBlocks(doc, page)
+  } catch (err) {
+    showError(err, 'Could not read the text on this page')
+    return
+  }
+  const block = blockAt(blocks, point)
+  if (!block) {
+    toast('There is no editable text there. Click any outlined text to edit it.')
+    return
+  }
+  const sel = selectText ? (locateText(block.text, selectText) ?? undefined) : undefined
+  await beginEdit(doc, page, block, null, null, sel)
 }
 
 /** Starts a new, empty text box (Add Text). */
-export async function beginNewText(doc: DocumentModel, page: number, origin: Point, width: number | null) {
+export async function beginNewText(doc: DocumentModel, page: number, origin: Point, width: number | null, dir: Point = [1, 0]) {
   await commitSession()
   if (useEditText.getState().session) return
   const d = useEditText.getState().defaults
@@ -200,7 +263,7 @@ export async function beginNewText(doc: DocumentModel, page: number, origin: Poi
     page,
     null,
     {
-      frame: { origin, dir: [1, 0], width: width ?? 0 },
+      frame: { origin, dir, width: width ?? 0 },
       wrap: width !== null,
       align: d.align,
       lineSpacing: d.lineSpacing,
@@ -335,6 +398,11 @@ export function editorChanged(runs: Run[], selection: Sel) {
 function markDirty(doc: DocumentModel) {
   // unsaved typing counts as a change (e.g. for "Save changes?" when closing)
   if (!doc.state.dirty) doc.set({ dirty: true })
+}
+
+/** Gives the keyboard focus back to the text being edited (keeping its selection). */
+export function focusEditor() {
+  patchSession((cur) => ({ focusToken: cur.focusToken + 1 }))
 }
 
 export function setSelection(selection: Sel) {

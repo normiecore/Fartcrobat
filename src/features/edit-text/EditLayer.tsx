@@ -50,10 +50,28 @@ async function deleteBlock(doc: DocumentModel, page: number, b: TextBlockInfo) {
   }
 }
 
+function unit(d: Point): Point {
+  const l = Math.hypot(d[0], d[1]) || 1
+  return [d[0] / l, d[1] / l]
+}
+
+/** CSS placement of a paragraph's outline, turned with its text (rotated text gets a rotated box). */
+function boxStyle(block: TextBlockInfo, geometry: PageLayerProps['geometry'], pad: number): React.CSSProperties {
+  const d = unit(block.frame.dir)
+  const o = geometry.toCss(block.frame.origin)
+  const p1 = geometry.toCss([block.frame.origin[0] + d[0], block.frame.origin[1] + d[1]])
+  const angle = Math.atan2(p1[1] - o[1], p1[0] - o[0])
+  return {
+    left: o[0],
+    top: o[1],
+    width: block.frame.width * geometry.scale + 2 * pad,
+    height: block.height * geometry.scale + 2 * pad,
+    transform: `rotate(${angle}rad) translate(${-pad}px, ${-pad}px)`
+  }
+}
+
 function BlockBox({ doc, page, block, geometry }: { doc: DocumentModel; page: number; block: TextBlockInfo; geometry: PageLayerProps['geometry'] }) {
   const ref = useRef<HTMLDivElement>(null)
-  const r = geometry.rectToCss(block.bbox)
-  const pad = 2
   const open = (caret: Point | null, pagePoint: Point | null) => void beginEdit(doc, page, block, caret, pagePoint)
   const label = block.text.replace(/\s+/g, ' ').trim()
   return (
@@ -64,7 +82,7 @@ function BlockBox({ doc, page, block, geometry }: { doc: DocumentModel; page: nu
       tabIndex={0}
       aria-label={`Edit text: ${label.length > 60 ? label.slice(0, 57) + '…' : label}`}
       title="Click to edit this text"
-      style={{ left: r.left - pad, top: r.top - pad, width: r.width + 2 * pad, height: r.height + 2 * pad }}
+      style={boxStyle(block, geometry, 2)}
       onPointerDown={(e) => {
         if (e.button !== 0) return
         e.preventDefault()
@@ -76,6 +94,10 @@ function BlockBox({ doc, page, block, geometry }: { doc: DocumentModel; page: nu
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           open(null, null)
+        } else if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault()
+          e.stopPropagation()
+          void deleteBlock(doc, page, block)
         }
       }}
       onContextMenu={(e) => {
@@ -90,12 +112,14 @@ function BlockBox({ doc, page, block, geometry }: { doc: DocumentModel; page: nu
             run: () => void invoke('clipboard:writeText', block.text).catch((err) => showError(err, 'Could not copy'))
           },
           { id: 'sep', label: '', separator: true },
-          { id: 'delete', label: 'Delete Text Box', icon: Trash, danger: true, run: () => void deleteBlock(doc, page, block) }
+          { id: 'delete', label: 'Delete Text Box', icon: Trash, shortcut: 'Del', danger: true, run: () => void deleteBlock(doc, page, block) }
         ])
       }}
     />
   )
 }
+
+const area = (b: TextBlockInfo) => b.frame.width * b.height
 
 /** Tool layer for "Edit text & images" and "Add text". */
 export function EditLayer({ doc, pageIndex, geometry }: PageLayerProps) {
@@ -135,19 +159,15 @@ export function EditLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     setDrag(null)
     if (!g || g.skip) return
     const b = local(e)
-    const p0 = geometry.toPage([Math.min(g.a[0], b[0]), Math.min(g.a[1], b[1])])
+    // new text reads left to right on screen, also in a rotated view
+    const z = geometry.toPage([0, 0])
+    const r = geometry.toPage([1, 0])
+    const dir = unit([r[0] - z[0], r[1] - z[1]])
     const wide = Math.abs(b[0] - g.a[0]) > 8
-    let width: number | null = null
-    let origin = geometry.toPage(g.a)
-    if (wide) {
-      // dragged a box: its width wraps the text (measured along the page's x axis)
-      const p1 = geometry.toPage([Math.max(g.a[0], b[0]), Math.max(g.a[1], b[1])])
-      const xs = [p0[0], p1[0]]
-      const ys = [p0[1], p1[1]]
-      origin = [Math.min(...xs), Math.min(...ys)]
-      width = Math.max(12, Math.abs(p1[0] - p0[0]))
-    }
-    void beginNewText(doc, pageIndex, origin, width)
+    // a click puts the top-left corner of the text there; a drag sets the width that text wraps to
+    const origin = geometry.toPage(wide ? [Math.min(g.a[0], b[0]), Math.min(g.a[1], b[1])] : g.a)
+    const width = wide ? Math.max(12, Math.abs(b[0] - g.a[0]) / geometry.scale) : null
+    void beginNewText(doc, pageIndex, origin, width, dir)
   }
 
   return (
@@ -160,9 +180,13 @@ export function EditLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       onPointerUp={onPointerUp}
     >
       {contentMode &&
-        blocks?.map((b) =>
-          mine?.block && mine.block.id === b.id ? null : <BlockBox key={b.id} doc={doc} page={pageIndex} block={b} geometry={geometry} />
-        )}
+        blocks &&
+        // larger boxes first, so a small box inside or across a big one stays clickable
+        [...blocks]
+          .sort((a, b) => area(b) - area(a))
+          .map((b) =>
+            mine?.block && mine.block.id === b.id ? null : <BlockBox key={b.id} doc={doc} page={pageIndex} block={b} geometry={geometry} />
+          )}
       {drag && Math.abs(drag.b[0] - drag.a[0]) > 8 && (
         <div
           className="fc-edit-text-marquee"

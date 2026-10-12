@@ -2,7 +2,7 @@
  * Engine operations of Edit Text (namespace 'edit-text'):
  *
  *   analyze(page)                -> the editable paragraphs of a page
- *   preview(page, quads, render) -> a page render with the given text left out (shown under the editor)
+ *   preview(page, source, ...)   -> a page render with a paragraph left out (shown under the editor)
  *   commit(page, edit)           -> one undoable step: remove the original glyphs, write the new text
  */
 import type * as MuPDF from 'mupdf'
@@ -102,7 +102,10 @@ function insideQuad(p: Point, q: Quad): boolean {
   return true
 }
 
-function filterText(m: Session['mupdf'], text: MuPDF.Text, ctm: Matrix, quads: Quad[]): MuPDF.Text | null {
+/** Decides whether a glyph is left out, from its origin and the centre of its box (page space). */
+type HideGlyph = (origin: Point, center: Point) => boolean
+
+function filterText(m: Session['mupdf'], text: MuPDF.Text, ctm: Matrix, hide: HideGlyph): MuPDF.Text | null {
   const out = new m.Text()
   let kept = 0
   let dropped = 0
@@ -114,7 +117,7 @@ function filterText(m: Session['mupdf'], text: MuPDF.Text, ctm: Matrix, quads: Q
         if (gid >= 0) adv = font.advanceGlyph(gid, wmode)
       } catch {}
       const c: Point = [t[4] + t[0] * adv * 0.5 + t[2] * 0.3, t[5] + t[1] * adv * 0.5 + t[3] * 0.3]
-      if (quads.some((q) => insideQuad(c, q))) {
+      if (hide([t[4], t[5]], c)) {
         dropped++
         return
       }
@@ -135,10 +138,10 @@ function filterText(m: Session['mupdf'], text: MuPDF.Text, ctm: Matrix, quads: Q
 
 const col = (c: number[]) => c as unknown as MuPDF.Color
 
-/** A device that forwards everything to `target` but leaves out glyphs inside `quads`. */
-function filteringDevice(m: Session['mupdf'], target: MuPDF.Device, quads: Quad[]): MuPDF.Device {
+/** A device that forwards everything to `target` but leaves out some glyphs. */
+function filteringDevice(m: Session['mupdf'], target: MuPDF.Device, hide: HideGlyph): MuPDF.Device {
   const withText = (text: MuPDF.Text, ctm: Matrix, draw: (t: MuPDF.Text) => void) => {
-    const f = filterText(m, text, ctm, quads)
+    const f = filterText(m, text, ctm, hide)
     if (f) draw(f)
     if (f && f !== text) f.destroy()
     release(text)
@@ -179,7 +182,7 @@ function filteringDevice(m: Session['mupdf'], target: MuPDF.Device, quads: Quad[
   })
 }
 
-function renderWithout(s: Session, pageIndex: number, quads: Quad[], opts: RenderOptions) {
+function renderWithout(s: Session, pageIndex: number, hide: HideGlyph, opts: RenderOptions) {
   const m = s.mupdf
   const page = s.page(pageIndex)
   const { ctm, bbox } = viewMatrix(s, pageIndex, opts.scale, opts.rotate ?? 0)
@@ -199,7 +202,7 @@ function renderWithout(s: Session, pageIndex: number, quads: Quad[], opts: Rende
   const pix = new m.Pixmap(m.ColorSpace.DeviceRGB, region, true)
   pix.clear(255)
   const draw = new m.DrawDevice(ctm, pix)
-  const filter = filteringDevice(m, draw, quads)
+  const filter = filteringDevice(m, draw, hide)
   try {
     page.runPageContents(filter, m.Matrix.identity)
     filter.close()
@@ -469,7 +472,46 @@ function originIndex(chars: { ox: number; oy: number }[]) {
   }
 }
 
-const glyphKey = (g: ObservedGlyph) => `${g.fontName}|${g.gid}|${Math.round(g.m[4] * 20)}|${Math.round(g.m[5] * 20)}`
+/**
+ * Matches glyphs drawn before and after a removal. Positions are compared with a tolerance:
+ * rewriting a content stream can change the last digits of glyph positions.
+ */
+class GlyphPool {
+  private grid = new Map<string, ObservedGlyph[]>()
+
+  constructor(glyphs: ObservedGlyph[]) {
+    for (const g of glyphs) {
+      const k = `${Math.round(g.m[4])}:${Math.round(g.m[5])}`
+      const arr = this.grid.get(k)
+      if (arr) arr.push(g)
+      else this.grid.set(k, [g])
+    }
+  }
+
+  /** Removes and returns a glyph like `g` (same font and glyph, same place), if there is one. */
+  take(g: ObservedGlyph, tol = 0.05): boolean {
+    const gx = Math.round(g.m[4])
+    const gy = Math.round(g.m[5])
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const arr = this.grid.get(`${gx + dx}:${gy + dy}`)
+        if (!arr) continue
+        const i = arr.findIndex(
+          (o) =>
+            o.gid === g.gid &&
+            o.fontName === g.fontName &&
+            Math.abs(o.m[4] - g.m[4]) <= tol &&
+            Math.abs(o.m[5] - g.m[5]) <= tol
+        )
+        if (i >= 0) {
+          arr.splice(i, 1)
+          return true
+        }
+      }
+    }
+    return false
+  }
+}
 
 /** Thin bands through the middle of each line: they touch every glyph of the line, not its neighbours. */
 function removalBands(block: AnalyzedBlock): Quad[] {
@@ -531,16 +573,10 @@ function removeBlock(s: Session, pageIndex: number, block: AnalyzedBlock, before
     removeTextUnder(s, pageIndex, glyphQuads(block, leftovers))
     after = observeGlyphs(s, pageIndex)
   }
-  const remaining = new Map<string, number>()
-  for (const g of after) remaining.set(glyphKey(g), (remaining.get(glyphKey(g)) ?? 0) + 1)
+  const remaining = new GlyphPool(after)
   const lost: ObservedGlyph[] = []
   for (const g of before) {
-    const k = glyphKey(g)
-    const c = remaining.get(k) ?? 0
-    if (c > 0) {
-      remaining.set(k, c - 1)
-      continue
-    }
+    if (remaining.take(g)) continue
     if (g.kind === 'other' || isBlockGlyph(g.m[4], g.m[5])) continue
     lost.push(g)
   }
@@ -683,9 +719,23 @@ export default defineOps('edit-text', {
     return analyzePage(s, pageIndex).blocks.map((b) => b.info)
   },
 
-  /** Renders part of a page with the glyphs inside `quads` left out. */
-  async preview(s, pageIndex: number, quads: Quad[], opts: RenderOptions) {
-    const { pix, region } = renderWithout(s, pageIndex, quads, opts)
+  /**
+   * Renders part of a page without the glyphs of a paragraph (exactly those a commit removes, so
+   * a watermark or other text crossing it stays visible). When the paragraph cannot be found any
+   * more, glyphs whose centre lies inside `quads` are left out instead.
+   */
+  async preview(s, pageIndex: number, source: { start: number; end: number; check: string } | null, quads: Quad[], opts: RenderOptions) {
+    let hide: HideGlyph = (_o, c) => quads.some((q) => insideQuad(c, q))
+    if (source) {
+      const block = analyzePage(s, pageIndex).blocks.find(
+        (b) => b.info.start === source.start && b.info.end === source.end && b.info.text === source.check
+      )
+      if (block) {
+        const isBlockGlyph = originIndex(block.chars)
+        hide = (o) => isBlockGlyph(o[0], o[1])
+      }
+    }
+    const { pix, region } = renderWithout(s, pageIndex, hide, opts)
     try {
       return await toResult(new Uint8ClampedArray(pix.getPixels()), region)
     } finally {

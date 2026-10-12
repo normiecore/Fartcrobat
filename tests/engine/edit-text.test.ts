@@ -191,6 +191,42 @@ describe('edit-text: committing edits', () => {
     expect((await saved.ops<typeof textOps>('text').page(0)).text).toContain('Café crème brûlée')
   })
 
+  it('edits a word-processor export: keeps its fonts, styles and the text order of neighbours', async () => {
+    const e = await openFixture('edit-text/office-report.pdf')
+    const { edit, text } = tools(e)
+    const blocks = await edit.analyze(0)
+    const heading = blocks.find((b) => b.text === 'Annual Report 2025')!
+    expect(heading.runs[0]).toMatchObject({ bold: true, size: 14, color: '#365f91' })
+    expect(heading.fonts[0]).toMatchObject({ label: 'Carlito-Bold', cls: 'sans' })
+    const para = blocks.find((b) => b.text.startsWith('This report'))!
+    expect(para.runs.map((r) => [r.text.slice(0, 12), r.bold])).toEqual([
+      ['This report ', false],
+      ['Revenue grew', true],
+      [' while costs', false]
+    ])
+    const runs = para.runs.map((r) => ({ ...r, text: r.text.replace('activities', 'main activities and results') }))
+    let res = await edit.commit(0, editOf(para, runs))
+    expect(res.fallbackFonts).toEqual([])
+    // the heading sits right above the paragraph: editing it must not disturb the new paragraph
+    const h2 = (await edit.analyze(0)).find((b) => b.text === 'Annual Report 2025')!
+    res = await edit.commit(0, editOf(h2, 'Annual Report 2026 – Draft'))
+    // the subset font lacks some of the new characters: a bold sans standard font replaces it
+    expect(res.fallbackFonts).toEqual(['Carlito-Bold'])
+    const t = await text.page(0)
+    const lines = t.lines.map((l) => t.text.slice(l.start, l.end).trim())
+    expect(lines).toContain('Annual Report 2026 – Draft')
+    expect(lines.filter((l) => l.length < 3)).toEqual([])
+    expect(lines.join(' ')).toContain(
+      'This report summarises the main activities and results of the year. Revenue grew by 12 percent while costs remained flat'
+    )
+    const at = t.text.indexOf('Annual Report 2026')
+    const span = t.spans.find((sp) => sp.start <= at && sp.end > at)!
+    expect(span.font).toBe('Helvetica-Bold')
+    expect(span.color).toBe(0x365f91)
+    const p2 = t.text.indexOf('Revenue grew')
+    expect(t.spans.find((sp) => sp.start <= p2 && sp.end > p2)!.font).toMatch(/Caladea-Bold/)
+  })
+
   it('writes characters outside Latin-1 (Greek, Cyrillic, CJK) with matching fonts', async () => {
     const e = await openFixture('text.pdf')
     const { edit, text } = tools(e)
@@ -330,6 +366,8 @@ describe('edit-text: committing edits', () => {
   })
 })
 
+const src = (b: TextBlockInfo) => ({ start: b.start, end: b.end, check: b.text })
+
 describe('edit-text: preview', () => {
   it('renders the page with the edited block left out', async () => {
     const e = await openFixture('text.pdf')
@@ -347,12 +385,33 @@ describe('edit-text: preview', () => {
       return n
     }
     const normal = await render.page(0, { scale: 2, clip })
-    const preview = await edit.preview(0, heading.quads, { scale: 2, clip })
+    const preview = await edit.preview(0, src(heading), heading.quads, { scale: 2, clip })
     expect(dark(normal.pixels!)).toBeGreaterThan(100)
     expect(dark(preview.pixels!)).toBe(0)
     // text outside the block is still drawn
     const hello = await block(e, 0, 'Hello')
     const clip2: [number, number, number, number] = [hello.bbox[0] * 2, hello.bbox[1] * 2, hello.bbox[2] * 2, hello.bbox[3] * 2]
-    expect(dark((await edit.preview(0, heading.quads, { scale: 2, clip: clip2 })).pixels!)).toBeGreaterThan(100)
+    expect(dark((await edit.preview(0, src(heading), heading.quads, { scale: 2, clip: clip2 })).pixels!)).toBeGreaterThan(100)
+    // without a (current) paragraph, the glyphs inside the quads are left out
+    expect(dark((await edit.preview(0, null, heading.quads, { scale: 2, clip })).pixels!)).toBe(0)
   })
+
+  it('keeps other text crossing the paragraph (a watermark) visible', async () => {
+    const e = await openFixture('edit-text/layout.pdf')
+    const { edit, render } = tools(e)
+    const b = await block(e, 0, 'Watermarked')
+    const clip: [number, number, number, number] = [b.bbox[0] * 2, b.bbox[1] * 2, b.bbox[2] * 2, b.bbox[3] * 2]
+    const count = (px: Uint8ClampedArray, test: (r: number, g: number, bl: number) => boolean) => {
+      let n = 0
+      for (let k = 0; k < px.length; k += 4) if (test(px[k], px[k + 1], px[k + 2])) n++
+      return n
+    }
+    const black = (r: number, g: number, bl: number) => r < 90 && g < 90 && bl < 90
+    const red = (r: number, g: number, bl: number) => r > 150 && g < 100 && bl < 100
+    const normal = (await render.page(0, { scale: 2, clip })).pixels!
+    const preview = (await edit.preview(0, src(b), b.quads, { scale: 2, clip })).pixels!
+    expect(count(normal, black)).toBeGreaterThan(200)
+    expect(count(preview, black)).toBeLessThan(count(normal, black) * 0.05)
+    expect(count(preview, red)).toBeGreaterThan(count(normal, red) * 0.9)
+})
 })

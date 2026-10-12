@@ -126,13 +126,19 @@ export function stripSubset(name: string): string {
   return name.replace(/^[A-Z]{6}\+/, '')
 }
 
-/** Guesses the kind of a font from its name and MuPDF flags. */
+const MONO = /courier|mono|consol|menlo|typewriter|code|fixed|inconsolata|cousine/i
+const SANS =
+  /sans|arial|arimo|helvet|verdana|tahoma|calibri|carlito|segoe|gothic|grotesk|inter\b|roboto|lato|ubuntu|cantarell|trebuchet|franklin|futura|avenir|myriad|frutiger|univers|lucida ?grande|montserrat|poppins|raleway|nunito|oswald|candara|corbel|aptos|selawik|bahnschrift|frank ?ruhl|geneva|optima|century ?gothic/i
+const SERIF =
+  /times|serif|roman|georgia|garamond|cambria|caladea|palatino|minion|book|baskerville|caslon|didot|tinos|charter|constantia|century|bodoni|merriweather|playfair|perpetua|rockwell|sabon|utopia|lora\b|crimson|goudy|bembo|plantin|cochin|hoefler|charis|gentium|literata|stix|cmr\d|lmroman/i
+
+/** Guesses the kind of a font from its name and MuPDF flags (names are more reliable than flags). */
 export function classifyFont(name: string, flags: { serif?: boolean; mono?: boolean } = {}): FontClass {
   const n = stripSubset(name)
-  if (flags.mono || /courier|mono|consol|menlo|typewriter|code|fixed/i.test(n)) return 'mono'
-  if (/sans|arial|helvet|verdana|tahoma|calibri|segoe|gothic|grotesk|inter\b|roboto|open ?sans|lato/i.test(n)) return 'sans'
-  if (flags.serif || /times|serif|roman|georgia|garamond|cambria|palatino|minion|book|baskerville|caslon|didot/i.test(n)) return 'serif'
-  return 'sans'
+  if (flags.mono || MONO.test(n)) return 'mono'
+  if (SANS.test(n)) return 'sans'
+  if (SERIF.test(n)) return 'serif'
+  return flags.serif ? 'serif' : 'sans'
 }
 
 export function familyForClass(cls: FontClass): StandardFamily {

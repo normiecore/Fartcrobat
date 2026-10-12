@@ -1,8 +1,11 @@
-"""Fixtures for the edit-text feature tests (requires reportlab).
+"""Fixtures for the edit-text feature tests (requires reportlab, python-docx and LibreOffice).
 
 Run: python3 tests/fixtures/edit-text/make_fixtures.py   (outputs are committed next to this file)
 """
 import os
+import shutil
+import subprocess
+import tempfile
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_RIGHT
@@ -118,7 +121,31 @@ def layout_cases():
     c.save()
 
 
+def office_report():
+    """A word-processor export: embedded subset TrueType fonts (Carlito/Caladea) with mixed styles."""
+    from docx import Document
+
+    tmp = tempfile.mkdtemp()
+    try:
+        d = Document()
+        d.add_heading('Annual Report 2025', level=1)
+        p = d.add_paragraph('This report summarises the activities of the year. ')
+        r = p.add_run('Revenue grew by 12 percent')
+        r.bold = True
+        p.add_run(' while costs remained flat, which let the team invest in new tools and training for every '
+                  'department in the company.')
+        d.add_paragraph('Second paragraph with a café, naïve résumé and “smart quotes” — dash.')
+        src = os.path.join(tmp, 'office-report.docx')
+        d.save(src)
+        subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', tmp, src], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        shutil.copy(os.path.join(tmp, 'office-report.pdf'), os.path.join(OUT, 'office-report.pdf'))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == '__main__':
+    office_report()
     subset_font()
     rotated()
     layout_cases()

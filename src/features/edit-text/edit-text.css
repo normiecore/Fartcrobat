@@ -10,6 +10,7 @@
 /* outlines of every editable paragraph */
 .fc-edit-text-box {
   position: absolute;
+  transform-origin: 0 0;
   pointer-events: auto;
   cursor: text;
   border: 1px solid rgba(20, 115, 230, 0.35);
@@ -187,4 +188,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.fc-edit-text-row-chevron {
+  flex: none;
+  color: var(--text-muted);
 }

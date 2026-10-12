@@ -1,5 +1,5 @@
 /** CSS fonts that approximate PDF fonts in the in-place editor. */
-import { classifyFont, isOrigFont, STANDARD_FAMILIES, type FontChoice, type FontClass, type StandardFamily } from './model'
+import { classifyFont, isOrigFont, STANDARD_FAMILIES, stripSubset, type FontChoice, type FontClass, type StandardFamily } from './model'
 
 const STACKS: Record<FontClass, string> = {
   sans: 'Helvetica, Arial, "Liberation Sans", "Nimbus Sans", "Nimbus Sans L", "DejaVu Sans", sans-serif',
@@ -23,7 +23,20 @@ const TOKEN = 'fc-font-'
  */
 export function cssFamily(key: string, fonts: FontChoice[]): string {
   const cls = fontClassOf(key, fonts)
-  return `"${TOKEN}${encodeURIComponent(key)}", ${STACKS[cls]}`
+  const own = isOrigFont(key) ? localFamilies(key.slice(5)) : []
+  return [`"${TOKEN}${encodeURIComponent(key)}"`, ...own.map((f) => `"${f}"`), STACKS[cls]].join(', ')
+}
+
+/**
+ * Family names to try for a PDF font name, so the editor shows the real typeface when it is
+ * installed: "ABCDEF+TimesNewRomanPS-BoldMT" -> "TimesNewRomanPS", "Times New Roman".
+ */
+export function localFamilies(pdfName: string): string[] {
+  let base = stripSubset(pdfName).split(/[-,]/)[0]
+  base = base.replace(/(PSMT|PS|MT)$/, '')
+  if (!base || /[^A-Za-z0-9 ]/.test(base)) return []
+  const spaced = base.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d)/g, '$1 $2')
+  return [...new Set([base, spaced])]
 }
 
 export function fontClassOf(key: string, fonts: FontChoice[]): FontClass {

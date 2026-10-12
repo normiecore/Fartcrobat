@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { Check, Trash } from 'lucide-react'
 import { IconButton, toast, useApp } from '@renderer/sdk'
 import { MiniFormat } from './FormatControls'
-import { cancelSession, commitSession, deleteBox, dropSession, loadDefaults, undoLocal, redoLocal, useEditText } from './store'
+import { cancelSession, commitSession, deleteBox, dropSession, focusEditor, loadDefaults, undoLocal, redoLocal, useEditText } from './store'
 
 const KEEP = '[data-fc-edit-text-frame], [data-fc-edit-text-keep], .ui-dialog-backdrop, .ui-floating, .ui-popover, .ui-popover-scrim'
 
@@ -106,6 +106,13 @@ export function EditTextGlobal() {
       if (!s || s.status !== 'editing') return
       const target = e.target instanceof Element ? e.target : null
       if (target?.closest('[data-fc-edit-text-editor]') || useApp.getState().dialogs.length) return
+      if (e.key === 'Escape' && isTyping(target) && target?.closest('[data-fc-edit-text-keep]')) {
+        // Esc in a formatting field goes back to the text (and must not leave the Edit tool);
+        // the field's own handler still runs and puts its value back
+        e.preventDefault()
+        window.setTimeout(focusEditor, 0)
+        return
+      }
       const mod = navigator.platform.includes('Mac') ? e.metaKey : e.ctrlKey
       if (e.key === 'Escape' && !isTyping(target)) {
         e.preventDefault()
