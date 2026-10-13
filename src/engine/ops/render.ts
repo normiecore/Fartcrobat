@@ -67,7 +67,9 @@ export function renderToPixmap(s: Session, pageIndex: number, opts: RenderOption
   }
   const cs = opts.gray ? m.ColorSpace.DeviceGray : m.ColorSpace.DeviceRGB
   const pix = new m.Pixmap(cs, region, !opts.opaque)
-  pix.clear(opts.transparent && !opts.opaque ? 0 : 255)
+  // clear() with no value is transparent; clear(0) would be opaque black.
+  if (opts.transparent && !opts.opaque) pix.clear()
+  else pix.clear(255)
   const hidden: { setHiddenForEditing(v: boolean): void }[] = []
   if (opts.hide?.length) {
     const ids = new Set(opts.hide)
@@ -164,7 +166,7 @@ export default defineOps('render', {
       Math.max(1, Math.ceil((rect[3] - rect[1]) * scale))
     ]
     const pix = new m.Pixmap(m.ColorSpace.DeviceRGB, region, true)
-    pix.clear(0)
+    pix.clear()
     const dev = new m.DrawDevice(ctm, pix)
     try {
       annot.run(dev, m.Matrix.identity)

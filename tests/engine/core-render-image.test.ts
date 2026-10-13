@@ -19,3 +19,17 @@ describe('render.image', () => {
     }
   })
 })
+
+describe('render.page', () => {
+  it('renders on a transparent background when asked, white otherwise', async () => {
+    const e = await openFixture('text.pdf')
+    const render = e.ops<typeof renderOps>('render')
+    // The top-left corner of the page is blank.
+    const corner = async (transparent: boolean) => {
+      const r = await render.page(0, { scale: 0.25, transparent, clip: [0, 0, 4, 4] })
+      return [...r.pixels!.slice(0, 4)]
+    }
+    expect(await corner(true)).toEqual([0, 0, 0, 0])
+    expect(await corner(false)).toEqual([255, 255, 255, 255])
+  })
+})
