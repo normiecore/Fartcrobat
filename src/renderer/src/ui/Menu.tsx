@@ -1,6 +1,39 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Check, ChevronRight } from 'lucide-react'
 import type { ContextMenuItem } from '../app/registry'
+
+/** Open popups, innermost last, each with the number of dialogs that were open when it opened. */
+const popups: { close: () => void; dialogs: number }[] = []
+const openDialogs = () => document.querySelectorAll('.ui-dialog[aria-modal="true"]').length
+
+/**
+ * Escape closes the innermost open popup (a menu with its submenus, a colour picker...) and does
+ * nothing else. main.tsx registers this before any other key listener: one added when the popup
+ * opens would run after the features' own Escape handling, which may already have left the tool.
+ * A dialog opened over the popup keeps its Escape.
+ */
+export function handlePopupEscape(e: KeyboardEvent) {
+  const top = popups[popups.length - 1]
+  if (e.key !== 'Escape' || !top || openDialogs() > top.dialogs) return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+  top.close()
+}
+
+/** While `open`, Escape closes this popup (see handlePopupEscape). */
+export function usePopupEscape(open: boolean, onClose: () => void) {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useLayoutEffect(() => {
+    if (!open) return
+    const entry = { close: () => onCloseRef.current(), dialogs: openDialogs() }
+    popups.push(entry)
+    return () => {
+      const i = popups.indexOf(entry)
+      if (i >= 0) popups.splice(i, 1)
+    }
+  }, [open])
+}
 
 /** A vertical menu list (used by context menus and dropdowns). */
 export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose: () => void }) {
@@ -97,17 +130,8 @@ export function FloatingAt({ x, y, children, onClose }: { x: number; y: number; 
     if (ny + r.height > window.innerHeight - 4) ny = Math.max(4, y - r.height)
     setPos({ x: nx, y: ny })
   }, [x, y])
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      // Closing the menu is all Escape does: not also leave Full Screen or reset the tool.
-      e.preventDefault()
-      e.stopPropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose])
+  // Closing the menu is all Escape does: not also leave Full Screen or reset the tool.
+  usePopupEscape(true, onClose)
   return (
     <>
       <div className="ui-popover-scrim" onMouseDown={onClose} onContextMenu={(e) => (e.preventDefault(), onClose())} />

@@ -157,6 +157,12 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     // 1. a text field drawn by dragging, named in Acrobat's inline name box
     await scrollTo(page, 0, 480)
     await page.getByRole('button', { name: 'Add text field' }).first().click()
+    // Escape closes the toolbar's menu and keeps the field tool
+    await page.getByRole('button', { name: 'More form options' }).click()
+    await expect(page.locator('.ui-menu')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.ui-menu')).toHaveCount(0)
+    expect(await page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('form.text')
     await dragOnPage(page, 0, [72, 560], [272, 584])
     const nameBox = page.getByRole('textbox', { name: 'Field name' })
     await expect(nameBox).toBeVisible()

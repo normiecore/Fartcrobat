@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePopupEscape } from './Menu'
 
 export const ANNOTATION_COLORS = [
   '#FFEB3B', '#FFC107', '#FF9800', '#F44336', '#E91E63', '#9C27B0', '#3F51B5', '#2196F3',
@@ -65,6 +66,7 @@ export function ColorButton({
   title?: string
 }) {
   const [open, setOpen] = useState(false)
+  usePopupEscape(open, () => setOpen(false))
   return (
     <span className="ui-color-button-wrap">
       <button

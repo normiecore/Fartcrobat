@@ -325,6 +325,12 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     await page.locator('.prefs-nav button', { hasText: 'Redaction' }).click()
     await expect(page.locator('.fc-redact-settings')).toBeVisible()
     await shot(page, 'dark-settings')
+    // Escape closes a colour popover, not the dialog it is in
+    await page.getByRole('button', { name: 'Redacted area fill colour' }).click()
+    await expect(page.locator('.fc-redact-settings .ui-popover')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.ui-popover')).toHaveCount(0)
+    await expect(page.locator('.fc-redact-settings')).toBeVisible()
     await page.getByRole('button', { name: 'Done' }).click()
   } finally {
     await app.close()

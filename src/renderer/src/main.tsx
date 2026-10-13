@@ -13,6 +13,7 @@ import { reportOpenFiles } from './app/windowState'
 import { invoke, onMainEvent } from './platform'
 import { authorName, coreFeature } from './core/coreFeature'
 import { AppShell } from './shell/AppShell'
+import { handlePopupEscape } from './ui/Menu'
 
 loadFeatures([coreFeature])
 
@@ -38,6 +39,8 @@ async function boot() {
     }
   })
 
+  // Escape that closes a popup does nothing else: registered first, before every feature's listener.
+  window.addEventListener('keydown', handlePopupEscape, true)
   // Keyboard shortcuts and the temporary hand tool (hold Space).
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && !e.repeat) {

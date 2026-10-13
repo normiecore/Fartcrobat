@@ -121,6 +121,8 @@ content; the open password is reused, a new one is asked for),
 UI kit: `Button`, `IconButton`, `Dialog`, `Field`, `TextInput`, `NumberInput`, `TextArea`, `Select`,
 `Checkbox`, `Radio`, `Slider`, `Segmented`, `ColorPicker`, `ColorButton`, `PanelFrame`,
 `ToolPanelFrame`, `ToolRow`, `Section`, `EmptyState`, `MenuList`, `DropdownMenu`.
+Escape closes the innermost of the kit's popups and nothing else sees that key press; give a popover
+of your own the same behaviour with `usePopupEscape(open, close)`.
 Icons come from `lucide-react`.
 
 ### Engine: `engine.ts`
