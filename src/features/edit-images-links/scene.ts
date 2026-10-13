@@ -40,7 +40,28 @@ export interface StreamModel {
   /** Clip at the root at the end of the stream. */
   endRootClip: Rect | null
   initialClip: Rect | null
+  /** Page models: the page's content streams (edits write the editable ones back as one stream). */
+  parts?: ContentPart[]
 }
+
+/**
+ * A stream of the page's /Contents. Page marks (headers, footers, watermarks, backgrounds and
+ * Bates numbers added by Add header, watermark or background) are separate streams tagged in
+ * their stream dictionary, and the page's own content is wrapped between two tagged streams
+ * (`q`, optionally with a shrink `cm`, and `Q`). Marks are not content the user edits here, and
+ * edits must leave those streams and their tags exactly as they are so the marks can still be
+ * updated or removed.
+ */
+export interface ContentPart {
+  ref: PDFObject
+  role: 'content' | 'mark' | 'wrapBegin' | 'wrapEnd'
+  /** Marks drawn behind the page content (backgrounds, watermarks set to appear behind). */
+  behind: boolean
+}
+
+const MARK_KEY = 'FartcrobatMark'
+const WRAP_KEY = 'FartcrobatWrap'
+const BEHIND_KEY = 'FartcrobatBehind'
 
 export interface ImageOcc {
   index: number
@@ -92,19 +113,79 @@ function readStreamBytes(o: PDFObject): Uint8Array {
   return safe(() => o.readStream().asUint8Array().slice(), new Uint8Array(0))
 }
 
-/** The concatenated page content (all /Contents streams). */
-export function pageContentBytes(s: Session, page: number): Uint8Array {
+function contentParts(s: Session, page: number): ContentPart[] {
   const obj = s.page(page).getObject()
-  const contents = obj.get('Contents')
-  if (isNullObj(contents)) return new Uint8Array(0)
-  const c = contents.resolve()
-  if (c.isArray()) {
-    const parts: Uint8Array[] = []
-    for (let i = 0; i < c.length; i++) parts.push(readStreamBytes(c.get(i)))
-    return concatStreams(parts)
+  const contents = safe(() => obj.get('Contents'), null)
+  if (isNullObj(contents)) return []
+  const c = contents!.resolve()
+  const refs: PDFObject[] = []
+  if (c.isArray()) for (let i = 0; i < c.length; i++) refs.push(c.get(i))
+  else refs.push(contents!)
+  return refs.map((ref) => {
+    const isStream = safe(() => ref.isStream(), false)
+    const name = (key: string) =>
+      isStream
+        ? safe(() => {
+            const v = ref.get(key)
+            return v.isName() ? v.asName() : null
+          }, null)
+        : null
+    if (name(MARK_KEY)) return { ref, role: 'mark', behind: safe(() => ref.get(BEHIND_KEY).asBoolean(), false) }
+    const wrap = name(WRAP_KEY)
+    if (wrap === 'Begin') return { ref, role: 'wrapBegin', behind: false }
+    if (wrap === 'End') return { ref, role: 'wrapEnd', behind: false }
+    return { ref, role: 'content', behind: false }
+  })
+}
+
+/** The page's own content: its content streams (without page marks), concatenated. */
+export function pageContent(s: Session, page: number): { bytes: Uint8Array; parts: ContentPart[]; wrap: Matrix } {
+  const parts = contentParts(s, page)
+  const bytes = concatStreams(parts.filter((p) => p.role === 'content').map((p) => readStreamBytes(p.ref)))
+  // the wrapper of page marks may shrink the page content to make room for headers and footers
+  let wrap: Matrix = [...IDENTITY] as Matrix
+  const begin = parts.find((p) => p.role === 'wrapBegin')
+  if (begin) {
+    for (const o of parseContent(readStreamBytes(begin.ref))) {
+      if (o.op === 'cm' && o.args.length >= 6) wrap = multiplyMatrix(o.args.slice(-6).map((x) => opNum(x)) as Matrix, wrap)
+    }
   }
-  if (c.isStream() || contents.isStream()) return readStreamBytes(contents)
-  return new Uint8Array(0)
+  return { bytes: parts.some((p) => p.role === 'content') ? bytes : new Uint8Array(0), parts, wrap }
+}
+
+/**
+ * Replaces the page's own content streams by `stream`, keeping page marks and their wrapper as
+ * they are (new content goes inside the wrapper, or between marks behind and in front of it).
+ */
+export function setPageContent(s: Session, page: number, parts: ContentPart[], stream: PDFObject) {
+  const pageObj = s.page(page).getObject()
+  if (parts.every((p) => p.role === 'content')) {
+    pageObj.put('Contents', stream)
+    return
+  }
+  const list: PDFObject[] = []
+  let placed = false
+  if (!parts.some((p) => p.role === 'content')) {
+    const afterWrap = parts.findIndex((p) => p.role === 'wrapBegin') + 1
+    const front = parts.findIndex((p) => p.role === 'mark' && !p.behind)
+    const at = afterWrap > 0 ? afterWrap : front >= 0 ? front : parts.length
+    parts.forEach((p, i) => {
+      if (i === at) list.push(stream)
+      list.push(p.ref)
+    })
+    if (at >= parts.length) list.push(stream)
+  } else {
+    for (const p of parts) {
+      if (p.role !== 'content') list.push(p.ref)
+      else if (!placed) {
+        list.push(stream)
+        placed = true
+      }
+    }
+  }
+  const arr = s.pdf.newArray()
+  for (const r of list) arr.push(r)
+  pageObj.put('Contents', arr)
 }
 
 export function pageResources(s: Session, page: number): PDFObject | null {
@@ -430,20 +511,22 @@ function interpret(
   return m
 }
 
-/** Builds the scene of a page: every image draw in paint order. */
+/** Builds the scene of a page: every image draw in paint order (page marks are left out). */
 export function buildScene(s: Session, page: number): Scene {
   const bounds = s.pageBounds(page)
   const userToPage = s.userToPage(page)
   const ctx: Ctx = { s, images: [], visiting: new Set(), formDepth: 0 }
+  const content = pageContent(s, page)
   const pageModel = interpret(ctx, {
     kind: 'page',
-    bytes: pageContentBytes(s, page),
-    base: userToPage,
+    bytes: content.bytes,
+    base: multiplyMatrix(content.wrap, userToPage),
     resources: pageResources(s, page),
     form: null,
     parent: null,
     locPrefix: [],
-    initialClip: bounds
+    initialClip: bounds,
+    parts: content.parts
   })
   return { page, pageModel, images: ctx.images, userToPage, bounds }
 }

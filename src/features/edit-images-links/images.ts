@@ -16,6 +16,7 @@ import {
   pageSpaceOf,
   rootItemOf,
   rootItems,
+  setPageContent,
   type ImageOcc,
   type Scene,
   type StreamModel
@@ -226,8 +227,7 @@ function commit(
       const xo = pageXObjects(s, page)
       for (const a of adds) xo.put(a.name, a.ref)
     }
-    const pageObj = s.page(page).getObject()
-    pageObj.put('Contents', s.pdf.addStream(result.bytes, s.pdf.newDictionary()))
+    setPageContent(s, page, model.parts ?? [], s.pdf.addStream(result.bytes, s.pdf.newDictionary()))
     return result
   }
   const result = applySplices(model.bytes, splices)
@@ -520,12 +520,13 @@ export function addImage(s: Session, page: number, bytes: Uint8Array, rect: Rect
   const name = uniqueName([pageXObjects(s, page)], 'FcIm')
   const [x0, y0, x1, y1] = rect
   const mPage: Matrix = [x1 - x0, 0, 0, -(y1 - y0), x0, y1]
-  const mUser = multiplyMatrix(mPage, invertMatrix(scene.userToPage))
+  // page space -> the content stream's own space (user space, or inside the page marks' wrapper)
+  const mStream = multiplyMatrix(mPage, invertMatrix(m.base))
   const clean =
     m.endDepth === 0 &&
     isIdentity(m.endRootCtm) &&
     (!m.endRootClip || area(intersect(scene.bounds, m.endRootClip)) >= area(scene.bounds) * 0.999)
-  const draw = `\nq ${fmtMatrix(mUser)} cm /${name} Do Q\n`
+  const draw = `\nq ${fmtMatrix(mStream)} cm /${name} Do Q\n`
   const len = m.bytes.length
   const splices: Splice[] = clean
     ? [{ start: len, end: len, parts: [draw] }]

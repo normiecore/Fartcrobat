@@ -6,6 +6,8 @@ import type navOps from '@engine/ops/nav'
 import type textOps from '@engine/ops/text'
 import type renderOps from '@engine/ops/render'
 import type ops from '@features/edit-images-links/engine'
+import type marksOps from '@features/page-marks/engine'
+import { defaultBackground, defaultHeaderFooter } from '@features/page-marks/shared'
 import type { PageImage } from '@features/edit-images-links/engine'
 import { applySplices, parseContent } from '@features/edit-images-links/content'
 import { declaredDpi } from '@features/edit-images-links/images'
@@ -372,6 +374,49 @@ describe('images: editing', () => {
     expect(((await o.images(4)) as PageImage[]).length).toBe(1)
     const rt = await roundTrip(e)
     expect(((await rt.ops<typeof ops>('edit-images-links').images(4)) as PageImage[]).length).toBe(1)
+  })
+
+  it('leaves page marks alone: headers, watermarks and backgrounds stay tagged and removable', async () => {
+    const { e, o } = await setup()
+    const marks = e.ops<typeof marksOps>('page-marks')
+    const hf = defaultHeaderFooter()
+    // "shrink" scales the page content down inside a wrapper to make room for the header
+    await marks.apply({ ...hf, shrink: true, text: { ...hf.text, headerCenter: 'CONFIDENTIAL' } }, { mode: 'add' })
+    const src = await marks.loadSource(bytesOf('stamp.jpg'), 'stamp.jpg')
+    const bg = defaultBackground()
+    await marks.apply({ ...bg, source: { kind: 'file', fileName: 'stamp.jpg', page: 1, scale: 100, sourceId: src.id } }, { mode: 'add' })
+    const listed = async () => (await marks.list()).groups.map((g) => [g.type, g.pages.includes(0)])
+    expect(await listed()).toEqual([
+      ['HeaderFooter', true],
+      ['Background', true]
+    ])
+    // the background picture is not offered for editing: only the page's own two images are
+    const imgs = (await o.images(0)) as PageImage[]
+    expect(imgs.map((i) => i.xref)).toEqual([9, 10])
+    const [chart, photo] = imgs
+    const moved: PageImage = await o.transformImage(0, refOf(chart), T(20, 0), 'move')
+    expect(moved.bbox[0]).toBeCloseTo(chart.bbox[0] + 20, 1)
+    const added: PageImage = await o.addImage(0, bytesOf('stamp.jpg'), [100, 600, 164, 664])
+    expect(added.bbox).toEqual([100, 600, 164, 664].map((v) => expect.closeTo(v, 1)))
+    await o.arrangeImage(0, refOf(added), 'back')
+    // what the user sees is where the engine says the images are (inside the shrunk content)
+    expect(isWhite(await regionColor(e, 0, [moved.bbox[0] + 30, moved.bbox[1] + 70, moved.bbox[0] + 40, moved.bbox[1] + 80]))).toBe(false)
+    expect(isWhite(await regionColor(e, 0, [110, 610, 150, 650]))).toBe(false)
+    // the marks are still recognised on the edited page, and can be removed from it
+    expect(await listed()).toEqual([
+      ['HeaderFooter', true],
+      ['Background', true]
+    ])
+    expect(await text(e, 0)).toContain('CONFIDENTIAL')
+    await marks.remove('HeaderFooter')
+    await marks.remove('Background')
+    expect(await text(e, 0)).not.toContain('CONFIDENTIAL')
+    const after = (await o.images(0)) as PageImage[]
+    expect(after.length).toBe(3)
+    // without the shrink the edited images keep their place on the unshrunk page
+    expect(after.find((i) => i.xref === photo.xref)!.bbox).toEqual(
+      ((await (await openFixture(FIX)).ops<typeof ops>('edit-images-links').images(0)) as PageImage[])[1].bbox
+    )
   })
 
   it('reads declared resolution from PNG and JPEG headers', () => {

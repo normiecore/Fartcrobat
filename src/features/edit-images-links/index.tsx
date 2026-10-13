@@ -141,13 +141,17 @@ const commands: CommandDefinition[] = [
   imageCommand('edit.image.sendToBack', 'Send to Back', ArrowDownToLine, (d, p, i) => arrangeImage(d, p, i, 'back'), ['Mod+Shift+[', 'Mod+Shift+{'])
 ]
 
+// Tools: next to "Edit a PDF" / "Edit Text & Images" / "Add Text" (edit-text's group), with the
+// link commands in a Link submenu like Acrobat's Edit PDF > Link. Edit: an Image submenu after
+// edit-text's "Edit Text & Images" and "Add Text".
 const menus: MenuContribution[] = [
-  ...['edit.image.add', 'edit.link.tool', 'edit.autoLinks', 'edit.removeAllLinks'].map((command, i) => ({
+  { menu: 'tools', group: 'edit', command: 'edit.image.add', order: 23 },
+  ...['edit.link.tool', 'edit.autoLinks', 'edit.removeAllLinks'].map((command, i) => ({
     menu: 'tools' as const,
-    group: 'editpdf',
+    group: 'edit',
     command,
-    order: 200 + i,
-    submenu: 'Edit PDF'
+    order: 24 + i,
+    submenu: 'Link'
   })),
   ...[
     'edit.image.rotateCW',
@@ -164,7 +168,7 @@ const menus: MenuContribution[] = [
     'edit.image.copy',
     'edit.image.saveAs',
     'edit.deleteImage'
-  ].map((command, i) => ({ menu: 'edit' as const, group: 'image', command, order: 400 + i, submenu: 'Image' }))
+  ].map((command, i) => ({ menu: 'edit' as const, group: 'editpdf', command, order: 410 + i, submenu: 'Image' }))
 ]
 
 /** Clears image/link selections and transient modes when their tool is no longer active. */
