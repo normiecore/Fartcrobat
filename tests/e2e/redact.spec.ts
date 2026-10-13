@@ -192,9 +192,12 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     await expect(page.locator('.fc-redact-mark-row', { hasText: 'lazy dog' })).toBeVisible()
     // marks are annotations: with the Select tool a click selects one (comments), a right-click
     // offers the redaction menu
-    await page.mouse.click(w.x, w.y)
+    // (the tool's contextual bar is gone, so the page moved up: measure again)
+    const ch2 = await textRect(page, 0, 'Chapter')
+    const w2 = await clientPoint(page, 0, (ch2[0] + ch2[2]) / 2, (ch2[1] + ch2[3]) / 2)
+    await page.mouse.click(w2.x, w2.y)
     await expect(page.locator('.fc-redact-mark-row.is-selected')).toContainText('Chapter')
-    await page.mouse.click(w.x, w.y, { button: 'right' })
+    await page.mouse.click(w2.x, w2.y, { button: 'right' })
     await expect(page.locator('.ui-menu')).toContainText('Apply Redaction…')
     await expect(page.locator('.ui-menu')).toContainText('Delete Mark')
     await shot(page, 'select-tool-menu')
@@ -353,6 +356,25 @@ test('redact: remove hidden information on its own, from the Tools menu command'
     // undo brings everything back
     await runCommand(page, 'edit.undo')
     await expect.poll(async () => (await pageText(page, 0)).includes('INVISIBLE')).toBe(true)
+
+    // content left outside the crop box of a cropped page
+    await openFile(page, fixturePath('redact/cropped.pdf'))
+    await waitForRender(page)
+    await startCommand(page, 'redact.sanitize')
+    const crop = page.locator('.ui-dialog', { hasText: 'Remove hidden information' })
+    const cropped = crop.locator('.fc-redact-hidden-item', { hasText: 'Cropped content' })
+    await expect(cropped).toContainText('1 page')
+    await expect(cropped.locator('input[type=checkbox]')).toBeChecked()
+    await crop.locator('.fc-redact-hidden-list').evaluate((el) => (el.scrollTop = el.scrollHeight))
+    await shot(page, 'sanitize-cropped')
+    await crop.getByRole('button', { name: 'Remove' }).click()
+    await expect(crop).toContainText('Hidden information was removed.')
+    await expect(crop.locator('.fc-redact-done-list')).toContainText('Cropped content')
+    await crop.locator('.ui-dialog-footer').getByRole('button', { name: 'Close' }).click()
+    await expect
+      .poll(async () => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[0].mediaBox))
+      .toEqual([100, 100, 512, 692])
+    expect(await pageText(page, 0)).toContain('Visible text inside')
   } finally {
     await app.close()
   }
