@@ -8,6 +8,7 @@ import type formOps from '@engine/ops/forms'
 import {
   alertDialog,
   followExternalLink,
+  registerActiveEditor,
   registry,
   runCommand,
   showError,
@@ -23,6 +24,12 @@ import { formsSettings } from './settings'
 export interface ControlHandle {
   focus(): void
   element: HTMLElement | null
+}
+
+/** The focused control's "commit what you have" hook. */
+interface FieldEditor {
+  id: number
+  flush: () => void
 }
 
 /** Field types the user can type into or pick values for. */
@@ -48,16 +55,35 @@ export class FormController {
   readonly controls = new Map<number, ControlHandle>()
   /** Widget to focus as soon as its page is mounted (Tab onto a page that was not rendered yet). */
   pendingFocus: number | null = null
-  /** The focused control's "commit what you have" hook (used before saving). */
-  activeEditor: { id: number; flush: () => void } | null = null
   /** Tab order (widget ids) of the last snapshot, for synchronous Tab handling. */
   tabOrder: number[] = []
   fieldsById = new Map<number, FieldInfo>()
   /** Widget details of the pages loaded so far. */
   readonly extras = new Map<number, WidgetExtra>()
   private loadErrorShown = false
+  private editor: FieldEditor | null = null
+  private unregisterEditor: (() => void) | null = null
 
   constructor(readonly doc: DocumentModel) {}
+
+  /**
+   * The focused control's hook. Commands, Save and Close flush the form first (see
+   * registerActiveEditor), also while the commit of a field just left is being written.
+   */
+  get activeEditor(): FieldEditor | null {
+    return this.editor
+  }
+
+  set activeEditor(editor: FieldEditor | null) {
+    this.editor = editor
+    if (editor) this.unregisterEditor ??= registerActiveEditor({ commit: () => this.flush() })
+    else if (this.unregisterEditor) {
+      // leaving a field queues its commit right after this
+      const unregister = this.unregisterEditor
+      this.unregisterEditor = null
+      void Promise.resolve().then(() => this.queue).then(unregister)
+    }
+  }
 
   get fill() {
     return this.doc.ops<typeof fillOps>('forms-fill')
@@ -191,7 +217,7 @@ export class FormController {
     return run
   }
 
-  /** Commits the focused field and waits for every pending edit (called before saving). */
+  /** Commits the focused field and waits for every pending edit (called before commands and saving). */
   async flush() {
     try {
       this.activeEditor?.flush()

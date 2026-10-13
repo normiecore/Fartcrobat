@@ -124,6 +124,7 @@ export default defineFeature({
       icon: Trash,
       shortcut: ['Delete', 'Backspace'],
       hidden: true,
+      keepEditing: true,
       enabled: (ctx: CommandContext) => {
         const s = activeSession()
         return !!ctx.doc && !!s && s.status === 'editing' && focusIsFree()

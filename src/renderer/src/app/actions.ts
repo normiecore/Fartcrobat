@@ -4,6 +4,7 @@ import { DocumentModel } from '../document/DocumentModel'
 import { EngineClient } from '../engine/EngineClient'
 import { basename, invoke, OPEN_FILTERS, PDF_FILTER, platform, readFile, stripExtension, writeFile } from '../platform'
 import { ask, confirm, prompt } from '../ui/dialogs'
+import { commitActiveEditors, hasActiveEditors } from './commands'
 import { registry } from './registry'
 import { getActiveDoc, useApp } from './store'
 import { showError, toast, withProgress } from './ui-services'
@@ -198,6 +199,7 @@ export async function saveDocument(
   doc: DocumentModel,
   opts: { saveAs?: boolean; saveOptions?: SaveOptions } = {}
 ): Promise<boolean> {
+  if (hasActiveEditors()) await commitActiveEditors()
   let path = doc.state.filePath
   if (!path || opts.saveAs) {
     const suggested = path ?? doc.state.title
@@ -327,6 +329,7 @@ async function settleUnsaved(doc: DocumentModel): Promise<boolean> {
 
 /** Closes a tab, asking to save unsaved changes. Returns false if the user cancelled. */
 export async function closeDocument(doc: DocumentModel): Promise<boolean> {
+  if (hasActiveEditors()) await commitActiveEditors()
   if (!(await settleUnsaved(doc))) return false
   await removeDocument(doc)
   return true
@@ -397,6 +400,7 @@ export function answerCloseRequest(): Promise<void> {
   closeRequest = (async () => {
     let ok = true
     try {
+      if (hasActiveEditors()) await commitActiveEditors()
       // Every unsaved tab, in tab order (also tabs opened while the questions were showing).
       const settled = new Set<DocumentModel>()
       for (;;) {

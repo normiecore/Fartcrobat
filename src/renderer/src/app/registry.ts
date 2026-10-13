@@ -31,6 +31,11 @@ export interface CommandDefinition {
   keywords?: string[]
   /** Hide from "Find text or tools". */
   hidden?: boolean
+  /**
+   * Runs without first committing what is being edited in place (see registerActiveEditor), for
+   * commands that act on that editor itself.
+   */
+  keepEditing?: boolean
 }
 
 export interface MenuContribution {
