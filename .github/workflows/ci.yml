@@ -4,6 +4,8 @@ on:
   push:
     branches: ['**']
   pull_request:
+  # Run it by hand from the Actions tab.
+  workflow_dispatch:
 
 # A newer push to the same branch replaces the run still in progress.
 concurrency:
