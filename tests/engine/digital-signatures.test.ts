@@ -24,10 +24,11 @@ import { fixture, openFixture } from './helpers'
 const TMP = mkdtempSync(join(tmpdir(), 'fc-digsig-'))
 const PASSWORD = 'correct horse'
 
+/** Whether `cmd args` runs and exits cleanly (a python3 whose module is missing exits with 1). */
 function hasTool(cmd: string, args: string[] = ['-v']): boolean {
   try {
     const r = spawnSync(cmd, args, { stdio: 'ignore' })
-    return r.status !== null && !r.error
+    return r.status === 0 && !r.error
   } catch {
     return false
   }
