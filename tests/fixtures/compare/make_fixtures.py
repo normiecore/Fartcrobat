@@ -1,6 +1,6 @@
-"""Generates the multi-page fixtures for the Compare Files feature.
+"""Generates the multi-page fixtures for the Compare Files feature (requires reportlab and Pillow).
 
-    python3 tests/fixtures/compare/make_fixtures.py
+    python3 tests/fixtures/compare/make_fixtures.py [contract] [long]   (outputs are committed next to this file)
 
 contract-old.pdf (5 pages): Introduction, Terms, Appendix A, Appendix B, Obsolete notes
 contract-new.pdf (5 pages): Introduction (edited), Terms, Schedule C (added), Appendix B,
@@ -9,9 +9,15 @@ contract-new.pdf (5 pages): Introduction (edited), Terms, Schedule C (added), Ap
 Changes on page 1: "Beta" -> "Gamma" (replaced), "of the invoice date" (inserted),
 "Late payments incur a fee of 2%." (deleted), "total fee" in bold (formatting), the logo
 image changes colour (image) and the blue bar becomes green (graphics).
+
+long-old.pdf (150 pages) and long-new.pdf (150 pages), for the long-document test (progress,
+cancel, page ranges): every page is "Section i" with 30 paragraphs. In the new one paragraph 3
+of every 10th section says "version 2" instead of "version 1", section 40 is gone and a page
+"Additional terms" follows section 100. Written with invariant=1 so the bytes are reproducible.
 """
 import io
 import os
+import sys
 
 from PIL import Image, ImageDraw
 from reportlab.lib.pagesizes import letter
@@ -124,7 +130,33 @@ def make(name, new):
     c.save()
 
 
+def make_long(name, new):
+    c = canvas.Canvas(os.path.join(OUT, name), pagesize=letter, invariant=1)
+    for i in range(1, 151):
+        if new and i == 40:
+            continue
+        c.setFont('Helvetica-Bold', 16)
+        c.drawString(72, 720, f'Section {i}')
+        c.setFont('Helvetica', 11)
+        for k in range(30):
+            v = 2 if (new and i % 10 == 0 and k == 3) else 1
+            c.drawString(72, 690 - k * 18, f'Paragraph {k} of section {i} describes clause {i * 31 + k} in version {v}.')
+        c.showPage()
+        if new and i == 100:
+            c.setFont('Helvetica-Bold', 16)
+            c.drawString(72, 720, 'Additional terms')
+            c.setFont('Helvetica', 11)
+            c.drawString(72, 690, 'These terms were added in the new edition of the contract.')
+            c.showPage()
+    c.save()
+
+
 if __name__ == '__main__':
-    make('contract-old.pdf', False)
-    make('contract-new.pdf', True)
+    which = set(sys.argv[1:]) or {'contract', 'long'}
+    if 'contract' in which:
+        make('contract-old.pdf', False)
+        make('contract-new.pdf', True)
+    if 'long' in which:
+        make_long('long-old.pdf', False)
+        make_long('long-new.pdf', True)
     print('written to', OUT)
