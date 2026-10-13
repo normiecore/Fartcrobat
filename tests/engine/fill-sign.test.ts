@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import type annotOps from '@engine/ops/annots'
+import type formOps from '@engine/ops/forms'
 import type pageOps from '@engine/ops/pages'
 import type renderOps from '@engine/ops/render'
 import type fillSignOps from '@features/fill-sign/engine'
 import {
   DEFAULT_TEXT_SIZE,
+  FIELD_SIGNATURE_MAX_HEIGHT,
   FIRST_BASELINE,
+  fitInto,
   LINE_HEIGHT,
   lineWidthFor,
   markDimensions,
+  rectContains,
   stepSize,
   textTopLeft,
   type FillSignItem
@@ -457,5 +461,38 @@ describe('fill-sign engine', () => {
     }
     // the row just below the lowest dark pixel row is the baseline
     expect((lowestH + 1) / scale).toBeCloseTo(40 * FIRST_BASELINE, 0)
+  })
+
+  it('fits a signature into a signature field, centred, and leaves the field unsigned', async () => {
+    // pure geometry first: a wide image in a field keeps its proportions and is centred
+    const box: [number, number, number, number] = [140, 332, 380, 382]
+    const r = fitInto(420, 120, box, 0.08, FIELD_SIGNATURE_MAX_HEIGHT)
+    expect((r[2] - r[0]) / (r[3] - r[1])).toBeCloseTo(420 / 120, 6)
+    expect((r[0] + r[2]) / 2).toBeCloseTo(260, 6)
+    expect((r[1] + r[3]) / 2).toBeCloseTo(357, 6)
+    expect(r[3] - r[1]).toBeCloseTo(50 - 2 * 4, 6) // the height decides, minus a 4pt margin
+    // a very tall field does not make a huge signature
+    const tall = fitInto(420, 120, [0, 0, 600, 400], 0.08, FIELD_SIGNATURE_MAX_HEIGHT)
+    expect(tall[3] - tall[1]).toBeCloseTo(FIELD_SIGNATURE_MAX_HEIGHT, 6)
+    // a narrow field: the width decides
+    const narrow = fitInto(420, 120, [0, 0, 60, 100], 0)
+    expect(narrow[2] - narrow[0]).toBeCloseTo(60, 6)
+    expect(rectContains(box, [140, 332])).toBe(true)
+    expect(rectContains(box, [139, 340])).toBe(false)
+    expect(rectContains(box, [139, 340], 2)).toBe(true)
+
+    const e = await openFixture('fill-sign/agreement.pdf')
+    const forms = e.ops<typeof formOps>('forms')
+    const [field] = await forms.list(0)
+    expect(field).toMatchObject({ type: 'signature', signed: false })
+    expect(field.rect.map(Math.round)).toEqual(box)
+    const sig = await ops(e).fs.addSignature(0, r, PNG(), 'signature')
+    expect(sig.rect[0]).toBeCloseTo(r[0], 2)
+    expect(sig.rect[3]).toBeCloseTo(r[3], 2)
+    expect(await inkInside(e, 0, sig.rect)).toBeGreaterThan(0.03)
+    const again = await roundTrip(e)
+    const [still] = await again.ops<typeof formOps>('forms').list(0)
+    expect(still).toMatchObject({ type: 'signature', signed: false, name: 'Signature' })
+    expect((await again.ops<typeof fillSignOps>('fill-sign').list(0)).map((i: FillSignItem) => i.kind)).toEqual(['signature'])
   })
 })

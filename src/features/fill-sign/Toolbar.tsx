@@ -77,12 +77,14 @@ export function FillSignToolbar({ doc }: { doc: DocumentModel }) {
         icon={PenLine}
         className="fc-fill-sign-signbtn"
         aria-haspopup="menu"
+        aria-label="Sign yourself"
+        title="Add your signature or initials"
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect()
           openSignMenu({ x: r.left, y: r.bottom + 4 })
         }}
       >
-        Sign yourself
+        <span className="fc-fill-sign-signbtn-label">Sign yourself</span>
         <ChevronDown size={14} />
       </Button>
       <span className="shell-sep" />
@@ -143,6 +145,7 @@ export function FillSignToolbar({ doc }: { doc: DocumentModel }) {
       <Button
         size="sm"
         variant="quiet"
+        className="fc-fill-sign-close"
         title="Close Fill & Sign"
         onClick={() => (useApp.getState().toolGroupId === 'fillsign' ? openToolGroup(null) : setTool('select'))}
       >
@@ -160,18 +163,22 @@ export function PlaceToolbar({ doc }: { doc: DocumentModel }) {
   return (
     <div className="fc-fill-sign-toolbar" role="group" aria-label={`Place ${noun}`}>
       <img className="fc-fill-sign-place-thumb" src={placing.image.dataUrl} alt={`Your ${noun}`} />
-      <span>Click where you want your {noun}. Press Esc to cancel.</span>
+      <span className="fc-fill-sign-place-text" title={`Click where you want your ${noun}. Press Esc to cancel.`}>
+        Click where you want your {noun}. Press Esc to cancel.
+      </span>
       <span className="fc-fill-sign-spacer" />
       <Button
         size="sm"
         icon={Crosshair}
+        aria-label="Place in the middle of the page"
+        title="Place in the middle of the page"
         onClick={() => {
           const page = doc.state.currentPage
           const pg = doc.state.info.pages[page]
           if (pg) void placeSignature(doc, page, [pg.width / 2, pg.height / 2])
         }}
       >
-        Place in the middle of the page
+        Place in the middle<span className="fc-fill-sign-place-long"> of the page</span>
       </Button>
       <Button size="sm" variant="quiet" icon={X} onClick={() => cancelPlacing()}>
         Cancel

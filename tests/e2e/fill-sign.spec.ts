@@ -473,3 +473,115 @@ test('Fill & Sign: panel, draw and image signatures, preferences, dark theme', a
     await app.close()
   }
 })
+
+test('Fill & Sign: printed form, signature field, narrow window', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('fill-sign/agreement.pdf'))
+    await waitForRender(page)
+    await runCommand(page, 'view.fitPage')
+    await settle(page)
+
+    // ---- Type on the "Full name" blank and tick a printed box ---------------------------------
+    await page.locator('.shell-quicktool[aria-label="Add text"]').click()
+    await clickAt(page, 0, [145, 146])
+    await expect(page.locator('.fc-fill-sign-textarea')).toBeFocused()
+    await page.keyboard.type('Jane Doe')
+    await page.keyboard.press('Tab')
+    await expect.poll(async () => (await items(page)).map((i) => i.text)).toEqual(['Jane Doe'])
+    await page.locator('.fc-fill-sign-toolbar').getByRole('button', { name: 'Check mark' }).click()
+    // the "Wednesday" box is drawn at x 270-281, y 214-225 (page space)
+    await clickAt(page, 0, [275.5, 219.5])
+    await expect.poll(async () => (await items(page)).map((i) => i.kind)).toEqual(['text', 'check'])
+    const tick = (await items(page))[1]
+    expect((tick.rect[0] + tick.rect[2]) / 2).toBeCloseTo(275.5, 0)
+    expect((tick.rect[1] + tick.rect[3]) / 2).toBeCloseTo(219.5, 0)
+
+    // ---- Click the signature field: no certificate signing here, so "Fill & Sign instead" ----
+    const hasForms = await page.evaluate(() => {
+      const r = (window as any).__fartcrobat.registry
+      return r.features.some((f: any) => f.id === 'forms-fill') && !r.features.some((f: any) => f.id === 'digital-signatures')
+    })
+    // field rectangle in page space (the PDF has it at 140,410 - 380,460 on a 792pt page)
+    const field: [number, number, number, number] = [140, 332, 380, 382]
+    if (hasForms) {
+      await page.locator('[data-field-name="Signature"]').click()
+      await page.getByRole('button', { name: 'Fill & Sign instead' }).click()
+      const menu = page.getByRole('menu', { name: 'Sign yourself' })
+      await expect(menu).toBeVisible()
+      await expect(menu.getByRole('note')).toContainText('signature field you clicked')
+      // the menu opens under the Sign yourself button of the Fill & Sign pane
+      const big = (await page.locator('.fc-fill-sign-bigbtn').boundingBox())!
+      const mb = (await menu.boundingBox())!
+      expect(Math.abs(mb.y - (big.y + big.height + 4))).toBeLessThan(3)
+      await page.screenshot({ path: 'test-results/fill-sign-field-menu.png' })
+      await menu.getByRole('menuitem', { name: 'Add signature' }).click()
+      const dialog = page.getByRole('dialog')
+      await dialog.getByLabel('Your name').fill('Jane Doe')
+      await dialog.getByRole('button', { name: 'Done' }).click()
+      // no placing step: it goes straight into the field, as large as fits, centred
+      await expect.poll(async () => (await items(page)).map((i) => i.kind)).toEqual(['text', 'check', 'signature'])
+      const sig = (await items(page))[2]
+      expect(sig.rect[0]).toBeGreaterThanOrEqual(field[0])
+      expect(sig.rect[2]).toBeLessThanOrEqual(field[2])
+      expect(sig.rect[1]).toBeGreaterThanOrEqual(field[1])
+      expect(sig.rect[3]).toBeLessThanOrEqual(field[3])
+      expect((sig.rect[0] + sig.rect[2]) / 2).toBeCloseTo((field[0] + field[2]) / 2, 0)
+      expect((sig.rect[1] + sig.rect[3]) / 2).toBeCloseTo((field[1] + field[3]) / 2, 0)
+      expect(sig.rect[3] - sig.rect[1]).toBeGreaterThan(36) // fills the field, bigger than a loose signature
+      expect((await activeDocState(page))?.journal.undoLabel).toBe('Add Signature')
+      await settle(page)
+      await page.screenshot({ path: 'test-results/fill-sign-field-signed.png' })
+
+      // the signature stays selectable on top of the field, and Delete removes it
+      await page.locator('.fc-fill-sign-bigbtn').focus() // move focus away from the item
+      await runCommand(page, 'tools.select')
+      const sb = await clientRect(page, 0, sig.rect)
+      await page.mouse.click(sb.x + sb.width / 2, sb.y + sb.height / 2)
+      await expect.poll(async () => (await activeDocState(page))?.selection).toMatchObject({ kind: 'custom', data: { id: sig.id } })
+      await expect(page.locator('.fc-fill-sign-minibar')).toBeVisible()
+      await page.keyboard.press('Delete')
+      await expect.poll(async () => (await items(page)).map((i) => i.kind)).toEqual(['text', 'check'])
+    }
+
+    // ---- Placing a signature snaps it into an empty signature field --------------------------
+    if (hasForms) {
+      await runCommand(page, 'fillsign.placeSignature') // the one saved above
+    } else {
+      // (not awaited: the command resolves when the dialog closes)
+      await page.evaluate(() => void (window as any).__fartcrobat.runCommand('fillsign.addSignature'))
+      const dialog = page.getByRole('dialog')
+      await dialog.getByLabel('Your name').fill('Jane Doe')
+      await dialog.getByRole('button', { name: 'Done' }).click()
+    }
+    await expect.poll(async () => toolId(page)).toBe('fillsign.place')
+    const fb = await clientRect(page, 0, field)
+    await page.mouse.move(fb.x + 12, fb.y + 8)
+    await page.mouse.move(fb.x + 20, fb.y + 10)
+    const ghost = page.locator('.fc-fill-sign-ghost-signature.is-in-field')
+    await expect(ghost).toBeVisible()
+    const gb = (await ghost.boundingBox())!
+    expect(gb.x).toBeGreaterThanOrEqual(fb.x - 0.5)
+    expect(gb.x + gb.width).toBeLessThanOrEqual(fb.x + fb.width + 0.5)
+    expect(Math.abs(gb.x + gb.width / 2 - (fb.x + fb.width / 2))).toBeLessThan(1.5)
+    await expect(page.locator('.fc-fill-sign-place-field')).toBeVisible()
+    await page.screenshot({ path: 'test-results/fill-sign-field-snap.png' })
+    await page.mouse.click(fb.x + 20, fb.y + 10)
+    await expect.poll(async () => (await items(page)).map((i) => i.kind)).toEqual(['text', 'check', 'signature'])
+    const snapped = (await items(page))[2]
+    expect((snapped.rect[0] + snapped.rect[2]) / 2).toBeCloseTo((field[0] + field[2]) / 2, 0)
+    expect((snapped.rect[1] + snapped.rect[3]) / 2).toBeCloseTo((field[1] + field[3]) / 2, 0)
+
+    // ---- A narrow window: the Fill & Sign bar still fits without scrolling -------------------
+    await runCommand(page, 'fillsign.tool.text')
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1000, 760))
+    await settle(page, 600)
+    const fits = await page.locator('.shell-tooloptions').evaluate((el) => el.scrollWidth <= el.clientWidth + 1)
+    expect(fits).toBe(true)
+    // the Sign yourself button keeps its name when only its icon shows
+    await expect(page.locator('.fc-fill-sign-toolbar').getByRole('button', { name: 'Sign yourself' })).toBeVisible()
+    await page.screenshot({ path: 'test-results/fill-sign-narrow.png' })
+  } finally {
+    await app.close()
+  }
+})

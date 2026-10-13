@@ -3,6 +3,8 @@ import { getActiveDoc, openToolGroup, prompt, registry, setTool, showError, toas
 import {
   clampRectToPage,
   clampSpacing,
+  FIELD_SIGNATURE_MAX_HEIGHT,
+  fitInto,
   formatToday,
   INITIALS_HEIGHT,
   isDraftId,
@@ -31,7 +33,8 @@ import {
   useFillSign,
   type EditingState,
   type SelectedItem,
-  type SignatureImage
+  type SignatureImage,
+  type SignFieldTarget
 } from './state'
 import { commitActiveEditor, flushEditor } from './TextEditor'
 
@@ -336,14 +339,27 @@ export function naturalSize(kind: SignatureKind, image: SignatureImage, pageWidt
   return [w, h]
 }
 
-/** Makes the signature follow the pointer; the next click on a page places it. */
-export function startPlacing(kind: SignatureKind, image: SignatureImage) {
+/** Where a signature put into a signature field goes: as large as fits, centred in the field. */
+export function fieldPlacement(image: SignatureImage, field: Rect): Rect {
+  return fitInto(image.width, image.height, field, 0.08, FIELD_SIGNATURE_MAX_HEIGHT)
+}
+
+/**
+ * Makes the signature follow the pointer; the next click on a page places it. With a signature
+ * field target (the user clicked that field), it goes straight into the field instead.
+ */
+export function startPlacing(kind: SignatureKind, image: SignatureImage, target?: SignFieldTarget | null) {
   const doc = getActiveDoc()
   if (!doc) {
     toast('Open a PDF first to sign it.')
     return
   }
   void commitActiveEditor()
+  if (target && target.docId === doc.id && doc.state.info.pages[target.page]) {
+    useFillSign.setState({ placing: null, menu: null })
+    void placeInto(doc, target.page, fieldPlacement(image, target.rect), kind, image)
+    return
+  }
   const current = useApp.getState().toolId
   useFillSign.setState({
     placing: { kind, image, returnTool: current === PLACE_TOOL ? 'select' : current },
@@ -353,21 +369,38 @@ export function startPlacing(kind: SignatureKind, image: SignatureImage) {
   setTool(PLACE_TOOL)
 }
 
-export async function placeSignature(doc: DocumentModel, page: number, center: Point) {
+/** Adds a signature or initials image in `rect` (page space) and selects it. */
+async function placeInto(doc: DocumentModel, page: number, rect: Rect, kind: SignatureKind, image: SignatureImage) {
+  try {
+    const item = await fsOps(doc).addSignature(page, rect, dataUrlToBytes(image.dataUrl), kind)
+    selectItem(doc, page, item.id, item.kind)
+    return item
+  } catch (err) {
+    showError(err, `Could not place your ${kind === 'signature' ? 'signature' : 'initials'}`)
+    return null
+  }
+}
+
+/**
+ * Places the signature being placed, centred on `center` at its natural size, or in `rect` when
+ * given (e.g. fitted into a signature field). Then goes back to the tool used before.
+ */
+export async function placeSignature(doc: DocumentModel, page: number, center: Point, rect?: Rect) {
   const placing = useFillSign.getState().placing
   if (!placing) return
   const pg = doc.state.info.pages[page]
   if (!pg) return
-  const [w, h] = naturalSize(placing.kind, placing.image, pg.width)
-  const rect = clampRectToPage(rectAround(center, w, h), pg.width, pg.height)
-  try {
-    const item = await fsOps(doc).addSignature(page, rect, dataUrlToBytes(placing.image.dataUrl), placing.kind)
-    useFillSign.setState({ placing: null })
-    setTool(placing.returnTool)
-    selectItem(doc, page, item.id, item.kind)
-  } catch (err) {
-    showError(err, `Could not place your ${placing.kind === 'signature' ? 'signature' : 'initials'}`)
+  let box = rect
+  if (!box) {
+    const [w, h] = naturalSize(placing.kind, placing.image, pg.width)
+    box = clampRectToPage(rectAround(center, w, h), pg.width, pg.height)
   }
+  const item = await placeInto(doc, page, box, placing.kind, placing.image)
+  if (!item) return
+  useFillSign.setState({ placing: null })
+  setTool(placing.returnTool)
+  // the tool change may clear the selection: select the new item again
+  selectItem(doc, page, item.id, item.kind)
 }
 
 export function cancelPlacing() {
@@ -375,4 +408,3 @@ export function cancelPlacing() {
   useFillSign.setState({ placing: null })
   if (useApp.getState().toolId === PLACE_TOOL) setTool(placing?.returnTool ?? 'select')
 }
-

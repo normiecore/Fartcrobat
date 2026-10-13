@@ -1,10 +1,21 @@
 """Generates the Fill & Sign test fixtures.
 
 Run: python3 tests/fixtures/fill-sign/make_fixtures.py
+
+signature.png        a transparent scribble (a cleaned-up signature)
+signature-photo.jpg  a "photo" of a signature on grey paper (image import)
+half.png             left half solid, right half transparent (upright placement checks)
+agreement.pdf        a printed (non-interactive) form with blanks and boxes to fill in, plus one
+                     unsigned interactive signature field
 """
+import io
 from pathlib import Path
 
 from PIL import Image, ImageDraw
+from pypdf import PdfReader, PdfWriter
+from pypdf.generic import ArrayObject, DictionaryObject, FloatObject, NameObject, NumberObject, TextStringObject
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
 
 HERE = Path(__file__).resolve().parent
 
@@ -34,7 +45,55 @@ def half_png():
     im.save(HERE / "half.png")
 
 
+def agreement_pdf():
+    """A flat volunteer agreement: blanks and boxes drawn on the page, and a signature field."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=letter)
+    c.setTitle("Volunteer agreement")
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(72, 720, "Volunteer agreement")
+    c.setFont("Helvetica", 11)
+    c.drawString(72, 690, "Please fill in this form, sign it and hand it in at the front desk.")
+    c.setLineWidth(0.8)
+    c.drawString(72, 640, "Full name:")
+    c.line(140, 637, 400, 637)
+    c.drawString(72, 610, "Date:")
+    c.line(140, 607, 260, 607)
+    c.drawString(72, 570, "Available on:")
+    for i, day in enumerate(["Monday", "Wednesday", "Saturday"]):
+        x = 160 + i * 110
+        c.rect(x, 567, 11, 11)
+        c.drawString(x + 18, 569, day)
+    c.drawString(72, 520, "I have read and agree to the volunteer rules.")
+    c.rect(340, 517, 11, 11)
+    c.drawString(72, 430, "Signature:")
+    c.drawString(72, 360, "Initials:")
+    c.line(140, 357, 220, 357)
+    c.showPage()
+    c.save()
+
+    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(buf.getvalue())))
+    page = writer.pages[0]
+    sig = DictionaryObject({
+        NameObject("/Type"): NameObject("/Annot"),
+        NameObject("/Subtype"): NameObject("/Widget"),
+        NameObject("/FT"): NameObject("/Sig"),
+        NameObject("/T"): TextStringObject("Signature"),
+        NameObject("/TU"): TextStringObject("Sign here"),
+        NameObject("/F"): NumberObject(4),
+        NameObject("/Rect"): ArrayObject([FloatObject(140), FloatObject(410), FloatObject(380), FloatObject(460)]),
+        NameObject("/MK"): DictionaryObject({NameObject("/BC"): ArrayObject([FloatObject(0.5), FloatObject(0.5), FloatObject(0.5)])}),
+        NameObject("/P"): page.indirect_reference,
+    })
+    ref = writer._add_object(sig)
+    page[NameObject("/Annots")] = ArrayObject([ref])
+    writer._root_object[NameObject("/AcroForm")] = DictionaryObject({NameObject("/Fields"): ArrayObject([ref])})
+    with open(HERE / "agreement.pdf", "wb") as f:
+        writer.write(f)
+
+
 if __name__ == "__main__":
     signature_png()
     signature_photo()
     half_png()
+    agreement_pdf()

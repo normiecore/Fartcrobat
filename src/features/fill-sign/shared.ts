@@ -42,6 +42,8 @@ export function clampSpacing(spacing: number, size: number): number {
 /** Natural height of a placed signature (0.5 in) and of initials. */
 export const SIGNATURE_HEIGHT = 36
 export const INITIALS_HEIGHT = 30
+/** A signature put into a signature field fills it, but is never taller than this (1 in). */
+export const FIELD_SIGNATURE_MAX_HEIGHT = 72
 
 export const DEFAULT_COLOR = '#000000'
 /** Colours offered in the Fill & Sign toolbar (Acrobat offers a similar short list). */
@@ -202,6 +204,31 @@ export function rectCenter(r: Rect): Point {
 export function scaleRect(r: Rect, factor: number): Rect {
   const c = rectCenter(r)
   return rectAround(c, (r[2] - r[0]) * factor, (r[3] - r[1]) * factor)
+}
+
+/**
+ * The largest rect with the proportions w:h that fits inside `box` less a margin (a fraction of
+ * the box's smaller side), no taller than `maxHeight`, centred in the box. Used to put a
+ * signature into a signature field.
+ */
+export function fitInto(w: number, h: number, box: Rect, margin = 0.08, maxHeight = Infinity): Rect {
+  const bw = Math.abs(box[2] - box[0])
+  const bh = Math.abs(box[3] - box[1])
+  const m = Math.min(bw, bh) * margin
+  const availW = Math.max(1, bw - 2 * m)
+  const availH = Math.max(1, Math.min(bh - 2 * m, maxHeight))
+  const s = Math.min(availW / Math.max(1e-6, w), availH / Math.max(1e-6, h))
+  return rectAround(rectCenter(box), w * s, h * s)
+}
+
+/** Whether a page-space point lies inside a rect (with an optional tolerance). */
+export function rectContains(r: Rect, p: Point, tolerance = 0): boolean {
+  return (
+    p[0] >= Math.min(r[0], r[2]) - tolerance &&
+    p[0] <= Math.max(r[0], r[2]) + tolerance &&
+    p[1] >= Math.min(r[1], r[3]) - tolerance &&
+    p[1] <= Math.max(r[1], r[3]) + tolerance
+  )
 }
 
 /** Moves a rect (keeping its size) so it lies inside the page, as far as possible. */

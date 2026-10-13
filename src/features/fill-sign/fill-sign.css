@@ -12,8 +12,10 @@
 .fc-fill-sign-layer.is-creating.is-date {
   cursor: text;
 }
+/* Items stay reachable when they sit on a form field (the form field layer is stacked above). */
 .fc-fill-sign-item {
   position: absolute;
+  z-index: 1;
   pointer-events: auto;
   cursor: move;
   border-radius: 2px;
@@ -31,6 +33,7 @@
 }
 .fc-fill-sign-frame {
   position: absolute;
+  z-index: 1;
   pointer-events: none;
   border: 1.5px solid var(--accent);
   border-radius: 3px;
@@ -40,6 +43,7 @@
 }
 .fc-fill-sign-handle {
   position: absolute;
+  z-index: 2;
   width: 12px;
   height: 12px;
   margin: -6px 0 0 -6px;
@@ -59,6 +63,7 @@
 }
 .fc-fill-sign-preview {
   position: absolute;
+  z-index: 1;
   pointer-events: none;
   transform-origin: 0 0;
 }
@@ -85,6 +90,18 @@
   outline: 1px dashed var(--accent);
   outline-offset: 2px;
   user-select: none;
+}
+.fc-fill-sign-ghost-signature.is-in-field {
+  opacity: 0.9;
+  outline-color: transparent;
+}
+/* A signature field the signature snaps into while it is being placed. */
+.fc-fill-sign-place-field {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  background: rgba(20, 115, 230, 0.08);
 }
 
 /* ---- inline text editor ---- */
@@ -186,6 +203,8 @@
   gap: 2px;
   flex: 1;
   min-width: 0;
+  container-type: inline-size;
+  container-name: fc-fill-sign-bar;
 }
 .fc-fill-sign-toolbar > :not(.fc-fill-sign-hint):not(.fc-fill-sign-spacer) {
   flex-shrink: 0;
@@ -233,6 +252,36 @@
 }
 .fc-fill-sign-spacer {
   flex: 1;
+}
+.fc-fill-sign-place-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.fc-fill-sign-toolbar > .fc-fill-sign-place-text {
+  flex-shrink: 1;
+}
+/* Narrow windows (or a side panel open): keep every control reachable without scrolling. */
+@container fc-fill-sign-bar (max-width: 780px) {
+  .fc-fill-sign-hint {
+    display: none;
+  }
+}
+@container fc-fill-sign-bar (max-width: 660px) {
+  .fc-fill-sign-signbtn-label,
+  .fc-fill-sign-place-long {
+    display: none;
+  }
+}
+@container fc-fill-sign-bar (max-width: 560px) {
+  .fc-fill-sign-size,
+  .fc-fill-sign-close {
+    display: none;
+  }
+  .fc-fill-sign-toolbar > .shell-sep {
+    margin: 0 2px;
+  }
 }
 .fc-fill-sign-place-thumb {
   height: 26px;
@@ -382,6 +431,21 @@
 }
 .fc-fill-sign-menu .ui-menu-item:focus-visible {
   background: var(--bg-active);
+}
+.fc-fill-sign-menu-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-active);
+  color: var(--accent-text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.fc-fill-sign-menu-target svg {
+  flex-shrink: 0;
 }
 
 /* ---- create signature dialog ---- */

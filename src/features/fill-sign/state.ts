@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Point } from '@shared/geometry'
+import type { Point, Rect } from '@shared/geometry'
 import { getActiveDoc, invoke, setHiddenAnnotations, showError, type DocumentModel } from '@renderer/sdk'
 import { DEFAULT_COLOR, DEFAULT_TEXT_SIZE, SELECTION_TYPE, clampSize, type FillSignItem, type FillSignKind, type SignatureKind } from './shared'
 import type ops from './engine'
@@ -39,6 +39,18 @@ export interface PlacingState {
   returnTool: string
 }
 
+/**
+ * An unsigned signature field the user clicked ('fartcrobat:sign-field' from forms-fill) when no
+ * certificate signing is available: the signature or initials chosen next go into that field.
+ */
+export interface SignFieldTarget {
+  docId: string
+  page: number
+  /** Field rectangle in page space. */
+  rect: Rect
+  fieldName: string
+}
+
 interface FillSignState {
   loaded: boolean
   signature: SignatureImage | null
@@ -49,8 +61,8 @@ interface FillSignState {
   color: string
   editing: EditingState | null
   placing: PlacingState | null
-  /** The "Sign yourself" menu, open at a screen position. */
-  menu: { x: number; y: number } | null
+  /** The "Sign yourself" menu, open at a screen position (for a signature field, if any). */
+  menu: { x: number; y: number; target: SignFieldTarget | null } | null
   /** Pointer position over a page while a mark tool is active (for the hover preview). */
   hover: { docId: string; page: number; point: Point } | null
 }
