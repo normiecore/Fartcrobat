@@ -192,8 +192,8 @@ export function tokenize(src: string): ContentOp[] {
   return ops
 }
 
-const PAINT = new Set(['f', 'F', 'f*', 'B', 'B*', 'b', 'b*', 'S', 's'])
-const SHOW_TEXT = new Set(['Tj', 'TJ', "'", '"'])
+export const PAINT = new Set(['f', 'F', 'f*', 'B', 'B*', 'b', 'b*', 'S', 's'])
+export const SHOW_TEXT = new Set(['Tj', 'TJ', "'", '"'])
 
 /** Tag that replaces /OC on blocks whose content was neutralised. */
 export const NEUTRALISED_TAG = '/FcHiddenLayer'
@@ -292,6 +292,91 @@ export function filterHiddenLayers(src: string, ctx: HiddenFilterContext): Filte
   }
   out += src.slice(last)
   return { out, removed, hiddenText, visibleForms }
+}
+
+/** Top-level entries of a dictionary written in content stream syntax ("<< /Key value ... >>"). */
+export function dictEntries(text: string): { key: string; start: number; end: number }[] {
+  const out: { key: string; start: number; end: number }[] = []
+  if (!text.startsWith('<<')) return out
+  const n = text.length
+  let i = 2
+  for (;;) {
+    i = skipWsAndComments(text, i)
+    if (i >= n || (text[i] === '>' && text[i + 1] === '>')) break
+    if (text[i] !== '/') {
+      // malformed: skip the stray object
+      const next = skipObject(text, i)
+      i = next > i ? next : i + 1
+      continue
+    }
+    const start = i
+    const keyEnd = skipObject(text, i)
+    const valueStart = skipWsAndComments(text, keyEnd)
+    const end = valueStart < n && !(text[valueStart] === '>' && text[valueStart + 1] === '>') ? skipObject(text, valueStart) : valueStart
+    out.push({ key: decodeName(text.slice(start + 1, keyEnd)), start, end: Math.max(end, keyEnd) })
+    i = Math.max(end, keyEnd, i + 1)
+  }
+  return out
+}
+
+/** The dictionary text without the given top-level keys. */
+export function removeDictKeys(text: string, keys: Set<string>): string {
+  let out = ''
+  let last = 0
+  for (const e of dictEntries(text)) {
+    if (!keys.has(e.key)) continue
+    out += text.slice(last, e.start)
+    last = e.end
+  }
+  return out + text.slice(last)
+}
+
+/** The bytes (one char per byte) of a literal "(...)" or hex "<...>" string token. */
+export function decodeString(token: string): string {
+  if (token.startsWith('<')) {
+    const hex = token.slice(1, -1).replace(/[^0-9a-fA-F]/g, '')
+    let out = ''
+    for (let i = 0; i < hex.length; i += 2) out += String.fromCharCode(parseInt((hex[i] + (hex[i + 1] ?? '0')), 16))
+    return out
+  }
+  const body = token.slice(1, token.endsWith(')') ? -1 : undefined)
+  let out = ''
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i]
+    if (c !== '\\') {
+      out += c
+      continue
+    }
+    const d = body[++i]
+    if (d === undefined) break
+    const simple: Record<string, string> = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', '(': '(', ')': ')', '\\': '\\' }
+    if (simple[d] !== undefined) out += simple[d]
+    else if (d >= '0' && d <= '7') {
+      let oct = d
+      while (oct.length < 3 && body[i + 1] >= '0' && body[i + 1] <= '7') oct += body[++i]
+      out += String.fromCharCode(parseInt(oct, 8) & 0xff)
+    } else if (d === '\r') {
+      if (body[i + 1] === '\n') i++
+    } else if (d !== '\n') out += d
+  }
+  return out
+}
+
+/** Decoded bytes of every string in an operand (a string, a hex string or a TJ array). */
+export function operandStrings(o: Operand): string {
+  if (o.kind === 'string' || o.kind === 'hex') return decodeString(o.text)
+  if (o.kind !== 'array') return ''
+  let out = ''
+  const src = o.text
+  let i = 1
+  while (i < src.length) {
+    i = skipWsAndComments(src, i)
+    if (i >= src.length || src[i] === ']') break
+    const end = skipObject(src, i)
+    if (src[i] === '(' || (src[i] === '<' && src[i + 1] !== '<')) out += decodeString(src.slice(i, end))
+    i = end > i ? end : i + 1
+  }
+  return out
 }
 
 /** Decodes PDF name escapes (#xx). */

@@ -15,6 +15,12 @@ hidden information that "Remove hidden information" must find and remove:
   - document JavaScript (names tree), an /OpenAction script, a page /AA script and a link with a script
   - a link to an external web page and a link to another page (kept)
   - text covered by an opaque black rectangle drawn on top of it (a fake redaction)
+
+cropped.pdf has a page whose crop box hides text, a drawing, part of an image and a link (as left
+by cropping pages), and an uncropped page.
+
+tagged.pdf is a tagged page whose structure tree and marked content repeat what the page shows
+(/ActualText, /Alt, /E), with an embedded page thumbnail: redacting must not leave that text behind.
 """
 import os
 
@@ -146,7 +152,62 @@ def rotated():
     w.write(os.path.join(OUT, 'rotated.pdf'), 1, 6)
 
 
+def tagged():
+    """Marked content and structure elements carrying replacement text, an image figure and a thumbnail."""
+    w = Writer()
+    w.obj(1, '<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 20 0 R /MarkInfo << /Marked true >> >>')
+    w.obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+    w.obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /StructParents 0 /Thumb 7 0 R'
+             ' /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> /Properties << /MC0 << /ActualText (RESOURCESECRET) >> >> >> >>')
+    w.stream(4, '\n'.join([
+        '/P <</MCID 0>> BDC BT /F1 18 Tf 72 720 Td (Tagged document) Tj ET EMC',
+        '/Span <</MCID 1 /ActualText (Name: John Doe SSN 123-45-6789)>> BDC BT /F1 12 Tf 72 690 Td (Name: John Doe SSN 123-45-6789) Tj ET EMC',
+        '/Figure <</MCID 2>> BDC q 100 0 0 50 72 600 cm /Im1 Do Q EMC',
+        '/Span <</MCID 3 /ActualText (KEEPACTUAL)>> BDC BT /F1 12 Tf 72 560 Td (Keep this line) Tj ET EMC',
+        '/Span /MC0 BDC BT /F1 12 Tf 72 520 Td (Resource text) Tj ET EMC',
+    ]))
+    w.obj(5, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>')
+    w.stream(6, bytes([0x20] * 64), '/Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8')
+    w.stream(7, b'THUMBNAILDATA' * 3, '/Width 13 /Height 3 /ColorSpace /DeviceGray /BitsPerComponent 8')
+    w.obj(20, '<< /Type /StructTreeRoot /K 21 0 R /ParentTree 26 0 R >>')
+    w.obj(21, '<< /Type /StructElem /S /Document /P 20 0 R /Pg 3 0 R /K [22 0 R 23 0 R 24 0 R 25 0 R] /Alt (DOCUMENTSUMMARY) >>')
+    w.obj(22, '<< /Type /StructElem /S /P /P 21 0 R /K 0 >>')
+    w.obj(23, '<< /Type /StructElem /S /Span /P 21 0 R /K 1 /E (EXPANSIONSECRET) >>')
+    w.obj(24, '<< /Type /StructElem /S /Figure /P 21 0 R /K << /Type /MCR /MCID 2 /Pg 3 0 R >> /Alt (Photo of the SECRET badge) >>')
+    w.obj(25, '<< /Type /StructElem /S /Span /P 21 0 R /K [3] /Alt (Keep this alt) >>')
+    w.obj(26, '<< /Nums [0 [22 0 R 23 0 R 24 0 R 25 0 R]] >>')
+    w.obj(10, '<< /Title (Tagged) >>')
+    w.write(os.path.join(OUT, 'tagged.pdf'), 1, 10)
+
+
+def cropped():
+    """Content outside the crop box of page 1 (left over from cropping); page 2 is not cropped."""
+    w = Writer()
+    w.obj(1, '<< /Type /Catalog /Pages 2 0 R >>')
+    w.obj(2, '<< /Type /Pages /Kids [3 0 R 9 0 R] /Count 2 >>')
+    w.obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /CropBox [100 100 512 692] /Contents 4 0 R'
+             ' /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >> /Annots [7 0 R 8 0 R] >>')
+    w.stream(4, '\n'.join([
+        'BT /F1 12 Tf 120 650 Td (Visible text inside) Tj ET',
+        'BT /F1 12 Tf 20 750 Td (CROPPEDSECRET outside) Tj ET',
+        'BT /F1 12 Tf 30 400 Td (EDGE text straddles the crop box) Tj ET',
+        'q 1 0 0 rg 20 20 50 50 re f Q',
+        'q 0 0 1 rg 200 300 100 100 re f Q',
+        'q 200 0 0 100 300 50 cm /Im1 Do Q',
+    ]))
+    w.obj(5, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>')
+    w.stream(6, bytes([0x20] * 64), '/Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8')
+    w.obj(7, '<< /Type /Annot /Subtype /Link /Rect [20 740 200 760] /Border [0 0 0] /A << /S /URI /URI (https://outside.example) >> >>')
+    w.obj(8, '<< /Type /Annot /Subtype /Link /Rect [120 640 300 660] /Border [0 0 0] /A << /S /URI /URI (https://inside.example) >> >>')
+    w.obj(9, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 5 0 R >> >> >>')
+    w.stream(10, 'BT /F1 12 Tf 20 750 Td (Page two corner text stays) Tj ET')
+    w.obj(11, '<< /Title (Cropped) >>')
+    w.write(os.path.join(OUT, 'cropped.pdf'), 1, 11)
+
+
 if __name__ == '__main__':
     hidden_info()
     rotated()
+    tagged()
+    cropped()
     print('fixtures written to', OUT)

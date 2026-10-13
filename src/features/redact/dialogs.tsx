@@ -123,6 +123,7 @@ const UNITS: Record<HiddenItemId, [string, string]> = {
   hiddenText: ['character', 'characters'],
   hiddenLayers: ['layer', 'layers'],
   searchIndex: ['index', 'indexes'],
+  croppedContent: ['page', 'pages'],
   javascript: ['script', 'scripts'],
   externalLinks: ['link', 'links'],
   overlapping: ['character', 'characters']

@@ -13,6 +13,7 @@ import type { ApplyReport, HiddenScan, MarkInfo, MarkSpec, RedactionProps, Sanit
 import { markAreas, markInfo, pageMarks, pagesWithMarks, setMarkKind, writeProps } from './worker/marks'
 import { appendContent, areasFor, overlayContent, type OverlayArea } from './worker/overlay'
 import { sanitize, scanHidden } from './worker/hidden'
+import { cleanRedactedPage, cleanStructureTree, snapshotPage } from './worker/tagged'
 
 /** MuPDF redaction methods (see PDFPage.REDACT_*). */
 const IMAGE_PIXELS = 2
@@ -27,19 +28,13 @@ function safe<T>(fn: () => T, fallback: T): T {
   }
 }
 
-function isEncrypted(s: Session): boolean {
-  const e = safe(() => s.pdf.getMetaData('encryption') ?? '', '')
-  return !!e && e !== 'None'
-}
-
 /**
- * From now on every save of this session rewrites the whole file and drops unused objects, so the
- * removed content cannot survive in an incremental update or as an orphaned object.
+ * From now on every save of this session rewrites the whole file, drops unused objects and cleans
+ * the content streams, so removed content cannot survive in an incremental update or as an
+ * orphaned object. (Encrypted documents keep their encryption: the core writes them from a copy.)
  */
 export function requireCleanSave(s: Session) {
-  const opts: SaveOptions = isEncrypted(s)
-    ? { mode: 'full', garbage: 'collect' }
-    : { mode: 'full', garbage: 'deduplicate', clean: true, sanitize: true }
+  const opts: SaveOptions = { mode: 'full', garbage: 'deduplicate', clean: true, sanitize: true }
   s.state.set(REQUIRED_SAVE_OPTIONS, opts)
 }
 
@@ -113,14 +108,23 @@ function withoutNested(areas: OverlayArea[]): OverlayArea[] {
   return areas.filter((a, i) => !areas.some((b, j) => j !== i && size(b.rect) > size(a.rect) && inside(a.rect, b.rect)))
 }
 
-function applyOnPage(s: Session, pageIndex: number, ids: Set<number> | null): { marks: number; annots: number; fields: number } {
+interface PageResult {
+  marks: number
+  annots: number
+  fields: number
+  /** MCIDs of the page whose content changed (for the structure tree). */
+  changedMcids: Set<number> | 'all'
+}
+
+function applyOnPage(s: Session, pageIndex: number, ids: Set<number> | null): PageResult {
   const all = pageMarks(s, pageIndex)
   const chosen = all.filter((m) => !ids || ids.has(s.annotationId(m.annot, pageIndex, m.position)))
-  if (!chosen.length) return { marks: 0, annots: 0, fields: 0 }
+  if (!chosen.length) return { marks: 0, annots: 0, fields: 0, changedMcids: new Set() }
   const infos = chosen.map((m) => markInfo(s, m.annot, pageIndex, m.position))
   const areas = infos.flatMap((i) => markAreas(i))
   const annots = removeAnnotationsIn(s, pageIndex, areas)
   const fields = removeFieldsIn(s, pageIndex, areas)
+  const tagged = snapshotPage(s, pageIndex)
   const page = s.page(pageIndex)
   if (chosen.length === all.length) {
     page.applyRedactions(false, IMAGE_PIXELS, LINE_ART_IF_COVERED, TEXT_REMOVE)
@@ -134,12 +138,17 @@ function applyOnPage(s: Session, pageIndex: number, ids: Set<number> | null): { 
       next.annot.applyRedaction(0, IMAGE_PIXELS, LINE_ART_IF_COVERED, TEXT_REMOVE)
     }
   }
+  // tagged text standing in for the removed content (/ActualText, /Alt...) goes too
+  const changedMcids = cleanRedactedPage(s, pageIndex, tagged)
+  // an embedded page thumbnail still shows the page as it was
+  const pageObj = s.pdf.findPage(pageIndex)
+  if (!isNull(pageObj.get('Thumb'))) pageObj.delete('Thumb')
   const overlay = withoutNested(infos.flatMap((i) => areasFor(i.quads, i.rect, i.props)))
   if (overlay.some((a) => a.props.fillColor || a.props.overlay !== 'none')) {
     appendContent(s, pageIndex, overlayContent(s, pageIndex, overlay))
   }
   s.touch(pageIndex)
-  return { marks: chosen.length, annots, fields }
+  return { marks: chosen.length, annots, fields, changedMcids }
 }
 
 export default defineOps('redact', {
@@ -210,6 +219,7 @@ export default defineOps('redact', {
     const idSet = ids && ids.length ? new Set(ids) : null
     const pages = pagesWithMarks(s)
     const report: ApplyReport = { marks: 0, pages: [], removedAnnotations: 0, removedFields: 0 }
+    const changed = new Map<number, Set<number> | 'all'>()
     pages.forEach((p, k) => {
       const r = applyOnPage(s, p, idSet)
       if (r.marks) {
@@ -217,10 +227,12 @@ export default defineOps('redact', {
         report.pages.push(p)
         report.removedAnnotations += r.annots
         report.removedFields += r.fields
+        changed.set(s.pdf.findPage(p).asIndirect(), r.changedMcids)
       }
       s.progress((k + 1) / pages.length, `Applying redactions on page ${p + 1}…`)
     })
     if (!report.marks) throw new EngineError('There are no redaction marks to apply', 'NO_MARKS')
+    cleanStructureTree(s, changed)
     s.invalidatePages()
     s.documentChanged()
     requireCleanSave(s)

@@ -152,7 +152,13 @@ function MainPanel({ doc }: { doc: DocumentModel }) {
   const selection = useDocState(doc, (s) => s.selection)
   const pageLabels = useDocState(doc, (s) => s.info.pages)
   const labels = useMarkLabels(doc, marks)
-  const selectedIds = selection.kind === 'custom' && selection.type === SELECTION_TYPE ? ((selection.data as MarkSelectionData).ids ?? []) : []
+  // marks selected with the redaction tool, or as annotations with the Select tool (comments)
+  const selectedIds =
+    selection.kind === 'custom' && selection.type === SELECTION_TYPE
+      ? ((selection.data as MarkSelectionData).ids ?? [])
+      : selection.kind === 'annotations'
+        ? selection.ids
+        : []
   const selected = new Set(selectedIds)
   const byPage = useMemo(() => {
     const m = new Map<number, MarkInfo[]>()

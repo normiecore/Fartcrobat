@@ -5,8 +5,8 @@
  */
 import type { Matrix, Quad, Rect } from '@shared/geometry'
 import { transformPoint } from '@shared/geometry'
-import type { Session } from '@engine/session'
-import { isNull, readName } from '@engine/util/pdf'
+import type { PDFObject, Session } from '@engine/session'
+import { isNull, pageBoxes, readName, readRect } from '@engine/util/pdf'
 
 export interface Glyph {
   /** Unicode character (for reports and matching). */
@@ -242,9 +242,9 @@ export function glyphKey(gl: Glyph): string {
 }
 
 /** Link annotation references of a page (MuPDF's redaction removes links it overlaps). */
-function linkRefs(s: Session, pageIndex: number): unknown[] {
+function linkRefs(s: Session, pageIndex: number): PDFObject[] {
   const annots = s.pdf.findPage(pageIndex).get('Annots')
-  const out: unknown[] = []
+  const out: PDFObject[] = []
   if (isNull(annots)) return out
   const arr = annots.resolve()
   if (!arr.isArray()) return out
@@ -256,21 +256,15 @@ function linkRefs(s: Session, pageIndex: number): unknown[] {
 }
 
 /**
- * Removes the glyphs whose core quads are given, using a temporary Redact annotation that only
- * removes text (images and drawings stay). Links on the page are kept.
+ * Runs `fn` (which applies redactions on the page) and puts back the links MuPDF's redaction
+ * filter dropped, except those for which `keep` returns false.
  */
-export function removeGlyphs(s: Session, pageIndex: number, quads: Quad[]): number {
-  if (!quads.length) return 0
+function keepingLinks(s: Session, pageIndex: number, fn: () => void, keep: (link: PDFObject) => boolean = () => true) {
   const links = linkRefs(s, pageIndex)
-  const page = s.page(pageIndex)
-  const annot = page.createAnnotation('Redact')
-  annot.setQuadPoints(quads)
-  annot.update()
-  // black boxes off, images untouched, line art untouched, text removed
-  annot.applyRedaction(0, 0, 0, 0)
-  // restore any link the redaction filter dropped
+  fn()
   const pageObj = s.pdf.findPage(pageIndex)
-  if (links.length) {
+  const wanted = links.filter((l) => l.isIndirect() && keep(l))
+  if (wanted.length) {
     let annots = pageObj.get('Annots')
     if (isNull(annots)) {
       pageObj.put('Annots', s.pdf.newArray())
@@ -282,10 +276,127 @@ export function removeGlyphs(s: Session, pageIndex: number, quads: Quad[]): numb
       const o = arr.get(i)
       if (o.isIndirect()) present.add(o.asIndirect())
     }
-    for (const l of links as { isIndirect(): boolean; asIndirect(): number }[]) {
-      if (l.isIndirect() && !present.has(l.asIndirect())) arr.push(l)
-    }
+    for (const l of wanted) if (!present.has(l.asIndirect())) arr.push(l)
   }
   s.invalidatePages()
+}
+
+/**
+ * Removes the glyphs whose core quads are given, using a temporary Redact annotation that only
+ * removes text (images and drawings stay). Links on the page are kept.
+ */
+export function removeGlyphs(s: Session, pageIndex: number, quads: Quad[]): number {
+  if (!quads.length) return 0
+  keepingLinks(s, pageIndex, () => {
+    const annot = s.page(pageIndex).createAnnotation('Redact')
+    annot.setQuadPoints(quads)
+    annot.update()
+    // black boxes off, images untouched, line art untouched, text removed
+    annot.applyRedaction(0, 0, 0, 0)
+  })
   return quads.length
+}
+
+// ---- content outside the crop box --------------------------------------------------------------
+
+export interface OutsideContent {
+  /** Glyphs whose centre lies outside the visible page area. */
+  glyphs: Glyph[]
+  /** Paths and images reaching outside the visible page area. */
+  graphics: number
+}
+
+function rectOutside(r: Rect, visible: Rect, tol = 0.5): boolean {
+  return r[0] < visible[0] - tol || r[1] < visible[1] - tol || r[2] > visible[2] + tol || r[3] > visible[3] + tol
+}
+
+/** Whether the page's crop box hides part of its media box. */
+export function isCropped(s: Session, pageIndex: number): boolean {
+  const page = s.page(pageIndex)
+  const visible = page.getBounds() as Rect
+  const media = page.getBounds('MediaBox') as Rect
+  return rectOutside(media, visible)
+}
+
+/** What a cropped page draws outside its visible area (page space). */
+export function contentOutside(s: Session, pageIndex: number): OutsideContent {
+  const m = s.mupdf
+  const page = s.page(pageIndex)
+  const visible = page.getBounds() as Rect
+  const g = collectPageGlyphs(s, pageIndex)
+  const glyphs = [...g.visible, ...g.invisible].filter((gl) => {
+    const b = quadBounds(gl.box)
+    const cx = (b[0] + b[2]) / 2
+    const cy = (b[1] + b[3]) / 2
+    return cx < visible[0] || cx > visible[2] || cy < visible[1] || cy > visible[3]
+  })
+  let graphics = 0
+  type Bounded = { getBounds(stroke: unknown, ctm: Matrix): Rect }
+  const check = (r: Rect | null) => {
+    if (r && r.every(Number.isFinite) && rectOutside(r, visible)) graphics++
+  }
+  const imageRect = (ctm: Matrix): Rect => {
+    const pts = [transformPoint([0, 0], ctm), transformPoint([1, 0], ctm), transformPoint([0, 1], ctm), transformPoint([1, 1], ctm)]
+    return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))]
+  }
+  const dev = new m.Device({
+    fillPath: (path: unknown, _eo: boolean, ctm: Matrix) => check((path as Bounded).getBounds(null, ctm)),
+    strokePath: (path: unknown, stroke: unknown, ctm: Matrix) => check((path as Bounded).getBounds(stroke, ctm)),
+    fillImage: (_image: unknown, ctm: Matrix) => check(imageRect(ctm)),
+    fillImageMask: (_image: unknown, ctm: Matrix) => check(imageRect(ctm))
+  } as any)
+  try {
+    page.runPageContents(dev, m.Matrix.identity)
+    dev.close()
+  } finally {
+    dev.destroy()
+  }
+  return { glyphs, graphics }
+}
+
+/**
+ * Removes what a cropped page draws outside its visible area, then makes the crop permanent
+ * (media box = crop box). Glyphs go one by one; image pixels and drawings outside the crop box are
+ * removed with redactions over the hidden margins. Links on the visible page are kept.
+ */
+export function removeOutside(s: Session, pageIndex: number, found: OutsideContent) {
+  if (found.glyphs.length) removeGlyphs(s, pageIndex, found.glyphs.map((gl) => gl.core))
+  const page = s.page(pageIndex)
+  const visible = page.getBounds() as Rect
+  const media = page.getBounds('MediaBox') as Rect
+  const strips: Rect[] = [
+    [media[0], media[1], media[2], visible[1]],
+    [media[0], visible[3], media[2], media[3]],
+    [media[0], media[1], visible[0], media[3]],
+    [visible[2], media[1], media[2], media[3]]
+  ].filter((r) => r[2] - r[0] > 0.5 && r[3] - r[1] > 0.5) as Rect[]
+  if (found.graphics && strips.length) {
+    keepingLinks(
+      s,
+      pageIndex,
+      () => {
+        for (const r of strips) {
+          const annot = s.page(pageIndex).createAnnotation('Redact')
+          annot.setRect(r)
+          annot.update()
+          // black boxes off, covered image pixels and drawings removed, text untouched
+          annot.applyRedaction(0, 2, 1, 1)
+        }
+      },
+      (link) => {
+        const r = readRect(link.resolve().get('Rect'), [0, 0, 0, 0])
+        // link rectangles are in user space: keep the ones the visible page still shows
+        const crop = pageBoxes(s.pdf, pageIndex).cropBox
+        return r[0] < crop[2] && r[2] > crop[0] && r[1] < crop[3] && r[3] > crop[1]
+      }
+    )
+  }
+  // the crop becomes permanent: nothing outside it is left to show
+  const pageObj = s.pdf.findPage(pageIndex)
+  const crop = pageBoxes(s.pdf, pageIndex).cropBox
+  const box = s.pdf.newArray()
+  for (const v of crop) box.push(v)
+  pageObj.put('MediaBox', box)
+  pageObj.put('CropBox', box)
+  s.invalidatePages()
 }

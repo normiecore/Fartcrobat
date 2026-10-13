@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { filterHiddenLayers, tokenize } from '@features/redact/worker/contentFilter'
+import { decodeString, filterHiddenLayers, operandStrings, removeDictKeys, tokenize } from '@features/redact/worker/contentFilter'
+import { markedSequences } from '@features/redact/worker/tagged'
 import { layoutOverlay, textWidthEm, toWinAnsi } from '@features/redact/worker/overlay'
 import { DEFAULT_PROPS } from '@features/redact/shared'
 import type redactOps from '@features/redact/engine'
@@ -48,6 +49,36 @@ describe('redact: content stream filter', () => {
   it('restores the text render mode that was in force', () => {
     const r = filterHiddenLayers('2 Tr q 1 Tr /OC /h BDC BT (a) Tj ET EMC Q', ctx(['h']))
     expect(r.out).toContain('3 Tr (a) Tj 1 Tr')
+  })
+})
+
+describe('redact: marked content', () => {
+  it('decodes strings and edits property lists', () => {
+    expect(decodeString('(a\\(b\\)\\\\ \\101\\n)')).toBe('a(b)\\ A\n')
+    expect(decodeString('<4142 43>')).toBe('ABC')
+    expect(operandStrings({ kind: 'array', text: '[(Hel) -20 <6C> 5 (o)]' })).toBe('Hello')
+    const d = '<< /MCID 3 /ActualText (secret \\) text) /Lang (en) /Alt <414243> >>'
+    expect(removeDictKeys(d, new Set(['ActualText', 'Alt']))).toBe('<< /MCID 3  /Lang (en)  >>')
+  })
+
+  it('lists marked-content sequences with what they draw', () => {
+    const src = [
+      '/P <</MCID 0>> BDC BT (Hello) Tj [(Wor) 10 (ld)] TJ ET EMC',
+      '/Span <</MCID 1 /ActualText (x)>> BDC /Im1 Do 0 0 5 5 re f EMC',
+      '/Artifact BMC (skip) Tj EMC',
+      '/Span /MC0 BDC /Outer <</MCID 2>> BDC (in) Tj EMC (out) Tj EMC'
+    ].join('\n')
+    const seqs = markedSequences(src, { xobject: (n) => (n === 'Im1' ? '42' : n), property: () => null })
+    expect(seqs.map((q) => [q.mcid, q.hasReplacement, q.resource])).toEqual([
+      [0, false, null],
+      [1, true, null],
+      [null, false, 'MC0'],
+      [2, false, null]
+    ])
+    expect(seqs[0].signature).toBe('HelloWorld\u0000')
+    expect(seqs[1].signature).toBe('\u0000D42;P')
+    expect(seqs[2].signature).toBe('inout\u0000')
+    expect(seqs[3].signature).toBe('in\u0000')
   })
 })
 

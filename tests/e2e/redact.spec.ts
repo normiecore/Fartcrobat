@@ -117,7 +117,8 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     await expect.poll(async () => (await marks(page)).length).toBe(5)
     await expect(page.locator('.fc-redact-mark-row')).toHaveCount(5)
     await expect(page.locator('.fc-redact-mark-row').first()).toContainText('billing0@example.com')
-    await expect(page.locator('.fc-redact-bar')).toContainText('5 redaction marks')
+    await expect(page.locator('.fc-redact-bar')).toContainText('5 redaction marks on all 5 pages')
+    await shot(page, 'message-bar')
 
     // ---- Redact text & images tool: drag across text on page 1
     await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
@@ -189,6 +190,17 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     await page.locator('.viewer-selection-toolbar button[title="Mark for redaction"]').click()
     await expect.poll(async () => (await marks(page)).length).toBe(9)
     await expect(page.locator('.fc-redact-mark-row', { hasText: 'lazy dog' })).toBeVisible()
+    // marks are annotations: with the Select tool a click selects one (comments), a right-click
+    // offers the redaction menu
+    await page.mouse.click(w.x, w.y)
+    await expect(page.locator('.fc-redact-mark-row.is-selected')).toContainText('Chapter')
+    await page.mouse.click(w.x, w.y, { button: 'right' })
+    await expect(page.locator('.ui-menu')).toContainText('Apply Redaction…')
+    await expect(page.locator('.ui-menu')).toContainText('Delete Mark')
+    await shot(page, 'select-tool-menu')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.ui-menu')).toHaveCount(0)
+    expect((await marks(page)).length).toBe(9)
     // keyboard: focus the row in the panel and press Delete
     await page.locator('.fc-redact-mark-row', { hasText: 'lazy dog' }).focus()
     await page.keyboard.press('Delete')

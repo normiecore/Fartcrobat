@@ -78,37 +78,46 @@
 }
 
 /* ---- message bar ---- */
+.shell-docarea > .fc-redact-bar {
+  order: 1;
+}
+.shell-docarea:has(> .fc-redact-bar) > .shell-viewer-wrap {
+  order: 2;
+}
 .fc-redact-bar {
-  position: absolute;
-  left: 50%;
-  top: 12px;
-  transform: translateX(-50%);
-  z-index: 55;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  min-height: 40px;
+  padding: 4px 6px 4px 12px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-elev));
+  border-bottom: 1px solid color-mix(in srgb, var(--danger) 30%, var(--border));
+  color: var(--text);
+  font-size: var(--fs);
+}
+.fc-redact-bar-main {
+  flex: 1 1 260px;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  width: max-content;
-  max-width: calc(100% - 140px);
-  padding: 6px 6px 6px 12px;
-  background: var(--bg-elev);
-  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
-  border-left: 4px solid var(--danger);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
-  animation: fadein 0.15s ease-out;
 }
-/* keep clear of the find bar (top right) */
-.shell-findbar ~ .fc-redact-bar {
-  top: 64px;
+.fc-redact-bar-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .fc-redact-bar-icon {
   color: var(--danger);
   flex-shrink: 0;
 }
 .fc-redact-bar-text {
-  font-size: var(--fs-sm);
-  line-height: 1.35;
   min-width: 0;
+  line-height: 1.35;
 }
 
 /* ---- panel ---- */

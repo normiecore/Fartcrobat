@@ -296,6 +296,50 @@ describe('redact: marks and apply', () => {
   })
 })
 
+describe('redact: content repeated elsewhere in the file', () => {
+  it('removes tagged replacement text and the page thumbnail of redacted content, keeping the rest', async () => {
+    const e = await openFixture('redact/tagged.pdf')
+    const redact = e.ops<Redact>('redact')
+    // the /ActualText of the span repeats the SSN, the figure's /Alt describes the image
+    await redact.mark([{ page: 0, kind: 'text', quads: await quadsOf(e, 0, '123-45-6789') }], props())
+    await redact.mark([{ page: 0, kind: 'area', rect: [60, 130, 200, 200] }], props())
+    await redact.mark([{ page: 0, kind: 'area', rect: [60, 255, 200, 280] }], props())
+    await redact.apply()
+    const text = (await pageText(e, 0)).text
+    expect(text).toContain('Name: John Doe SSN')
+    expect(text).not.toContain('6789')
+    expect(text).not.toContain('RESOURCESECRET')
+    // untouched marked content keeps its replacement text
+    expect(text).toContain('KEEPACTUAL')
+    const saved = await e.doc.save({})
+    for (const secret of ['123-45-6789', 'RESOURCESECRET', 'EXPANSIONSECRET', 'SECRET badge', 'DOCUMENTSUMMARY', 'THUMBNAILDATA']) {
+      expect([secret, fileContains(saved, secret)]).toEqual([secret, false])
+    }
+    expect(fileContains(saved, 'KEEPACTUAL')).toBe(true)
+    expect(fileContains(saved, 'Keep this alt')).toBe(true)
+    // undo restores all of it
+    await e.doc.undo()
+    expect((await pageText(e, 0)).text).toContain('RESOURCESECRET')
+  })
+
+  it('redacts an encrypted document and keeps its encryption', async () => {
+    const e = await openFixture('encrypted.pdf', 'secret')
+    const redact = e.ops<Redact>('redact')
+    await redact.mark([{ page: 0, kind: 'text', quads: await quadsOf(e, 0, 'password') }], props())
+    await redact.apply()
+    const saved = await e.doc.save({})
+    expect(Buffer.from(saved).toString('latin1')).toContain('/Encrypt')
+    const again = await createLocalEngine()
+    const doc = again.ops<typeof docOps>('doc')
+    expect((await doc.open(saved, { fileName: 'r.pdf' })).ok).toBe(false)
+    expect((await doc.open(saved, { fileName: 'r.pdf', password: 'secret' })).ok).toBe(true)
+    expect((await again.ops<typeof textOps>('text').page(0)).text).not.toContain('password')
+    const plain = await doc.save({ decrypt: true })
+    expect(fileContains(plain, 'password')).toBe(false)
+    expect(fileContains(plain, 'This document is protected')).toBe(true)
+  })
+})
+
 describe('redact: remove hidden information', () => {
   it('finds every kind of hidden information', async () => {
     const e = await openFixture('redact/hidden-info.pdf')
@@ -370,6 +414,39 @@ describe('redact: remove hidden information', () => {
     const scan = await redact.scanHidden()
     expect(scan.attachments.count).toBe(2)
     expect(scan.externalLinks.count).toBe(1)
+  })
+
+  it('removes content hidden outside the crop box and makes the crop permanent', async () => {
+    const e = await openFixture('redact/cropped.pdf')
+    const redact = e.ops<Redact>('redact')
+    const scan = await redact.scanHidden()
+    expect(scan.croppedContent).toMatchObject({ count: 1, details: ['Page 1'] })
+    // the image straddles the bottom edge of the crop box: its visible part is dark
+    expect((await pixel(e, 0, 300, 570))[0]).toBeLessThan(60)
+    const before = (await e.ops<typeof renderOps>('render').page(0, { scale: 1 })).pixels!
+
+    const report = await redact.sanitize({ items: ['croppedContent'] })
+    expect(report.removed).toEqual([{ id: 'croppedContent', count: 1 }])
+    expect((await redact.scanHidden()).croppedContent.count).toBe(0)
+    const info = await e.doc.info()
+    expect(info.pages[0].mediaBox).toEqual([100, 100, 512, 692])
+    expect(info.pages[1].mediaBox).toEqual([0, 0, 612, 792])
+    // the visible page looks the same
+    const after = (await e.ops<typeof renderOps>('render').page(0, { scale: 1 })).pixels!
+    expect(after.length).toBe(before.length)
+    let diff = 0
+    for (let i = 0; i < before.length; i += 4) if (Math.abs(before[i] - after[i]) > 40) diff++
+    expect(diff / (before.length / 4)).toBeLessThan(0.002)
+    const links = await e.ops<typeof navOps>('nav').links(0)
+    expect(links.map((l) => l.uri)).toEqual(['https://inside.example'])
+
+    const saved = await e.doc.save({})
+    for (const secret of ['CROPPEDSECRET', 'EDGE', 'outside.example', '1 0 0 rg']) expect([secret, fileContains(saved, secret)]).toEqual([secret, false])
+    for (const kept of ['Visible text inside', 'the crop box', '0 0 1 rg', 'inside.example', 'Page two corner text stays']) {
+      expect([kept, fileContains(saved, kept)]).toEqual([kept, true])
+    }
+    await e.doc.undo()
+    expect((await e.doc.info()).pages[0].mediaBox).toEqual([0, 0, 612, 792])
   })
 
   it('removes form fields entirely when asked', async () => {

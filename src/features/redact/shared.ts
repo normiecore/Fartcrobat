@@ -156,6 +156,7 @@ export type HiddenItemId =
   | 'hiddenText'
   | 'hiddenLayers'
   | 'searchIndex'
+  | 'croppedContent'
   | 'javascript'
   | 'externalLinks'
   | 'overlapping'
@@ -194,6 +195,11 @@ export const HIDDEN_ITEMS: { id: HiddenItemId; label: string; description: strin
   },
   { id: 'hiddenLayers', label: 'Hidden layers', description: 'Layers that are switched off and everything drawn on them.' },
   { id: 'searchIndex', label: 'Embedded search index', description: 'A full-text index stored inside the file.' },
+  {
+    id: 'croppedContent',
+    label: 'Cropped content',
+    description: 'Text, images and drawings outside the visible page area, left over from cropping pages. The crop becomes permanent.'
+  },
   { id: 'javascript', label: 'JavaScript and actions', description: 'Scripts that run when the document, a page or a field is used.' },
   { id: 'externalLinks', label: 'Links to outside the document', description: 'Web links, links to other files and form submit actions.' },
   {

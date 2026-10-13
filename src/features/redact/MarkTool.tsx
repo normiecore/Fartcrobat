@@ -79,7 +79,8 @@ export function markAt(marks: MarkInfo[], page: number, p: Point, pad = 1.5): Ma
   return null
 }
 
-function markMenu(doc: DocumentModel, mark: MarkInfo): ContextMenuItem[] {
+/** Menu of a redaction mark (the selected marks when it is one of them). */
+export function markMenu(doc: DocumentModel, mark: MarkInfo): ContextMenuItem[] {
   const ids = selectedMarkIds(doc).includes(mark.id) ? selectedMarkIds(doc) : [mark.id]
   const n = ids.length
   return [

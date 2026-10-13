@@ -8,7 +8,7 @@ import type { PDFObject, Session } from '@engine/session'
 import { isNull, parsePdfDate, readName, readString, walkFields } from '@engine/util/pdf'
 import type { HiddenItem, HiddenItemId, HiddenScan, SanitizeOptions, SanitizeReport } from '../shared'
 import { binaryToBytes, bytesToBinary, decodeName, filterHiddenLayers } from './contentFilter'
-import { collectPageGlyphs, coveredGlyphs, glyphKey, removeGlyphs } from './glyphs'
+import { collectPageGlyphs, contentOutside, coveredGlyphs, glyphKey, isCropped, removeGlyphs, removeOutside } from './glyphs'
 
 function safe<T>(fn: () => T, fallback: T): T {
   try {
@@ -654,6 +654,28 @@ function hiddenLayersItem(s: Session, dry: boolean): HiddenItem {
   return { id: 'hiddenLayers', count: hidden.size, details }
 }
 
+// ---- content outside the crop box ---------------------------------------------------------------
+
+function croppedItem(s: Session, dry: boolean, report: (f: number) => void): HiddenItem {
+  const pages: number[] = []
+  const n = s.pageCount()
+  for (let p = 0; p < n; p++) {
+    if (isCropped(s, p)) {
+      const found = contentOutside(s, p)
+      if (found.glyphs.some((g) => g.ch.trim()) || found.graphics) {
+        pages.push(p)
+        if (!dry) removeOutside(s, p, found)
+      }
+    }
+    report((p + 1) / n)
+  }
+  const shown = pages.slice(0, 12).map((p) => String(p + 1))
+  const details = pages.length
+    ? [`${pages.length === 1 ? 'Page' : 'Pages'} ${shown.join(', ')}${pages.length > shown.length ? ` and ${pages.length - shown.length} more` : ''}`]
+    : []
+  return { id: 'croppedContent', count: pages.length, details }
+}
+
 function glyphText(glyphs: { ch: string }[]): string {
   const t = glyphs.map((g) => g.ch).join('').replace(/\s+/g, ' ').trim()
   return t.length > 60 ? t.slice(0, 57) + '…' : t
@@ -701,6 +723,7 @@ export function scanHidden(s: Session): HiddenScan {
     hiddenText: text.hiddenText,
     hiddenLayers: hiddenLayersItem(s, true),
     searchIndex: searchIndexItem(s, true),
+    croppedContent: croppedItem(s, true, (f) => s.progress(0.8 + f * 0.15, 'Looking for cropped content…')),
     javascript: javascriptItem(s, true),
     externalLinks: externalLinksItem(s, true),
     overlapping: text.overlapping
@@ -717,6 +740,7 @@ export function sanitize(s: Session, opts: SanitizeOptions): SanitizeReport {
     if (it.count) removed.push({ id: it.id, count: it.count })
   }
   if (want.has('hiddenLayers')) add(hiddenLayersItem(s, false))
+  if (want.has('croppedContent')) add(croppedItem(s, false, (f) => s.progress(0.3 + f * 0.05, 'Removing cropped content…')))
   if (want.has('hiddenText') || want.has('overlapping')) {
     const t = textItems(s, { hiddenText: want.has('hiddenText'), overlapping: want.has('overlapping') }, false, (f) =>
       s.progress(0.33 + f * 0.5, 'Removing hidden text…')
