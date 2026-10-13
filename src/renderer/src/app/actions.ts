@@ -376,18 +376,52 @@ export function closeAllDocuments(): Promise<boolean> {
   return closingAll
 }
 
-let quitting: Promise<void> | null = null
+/**
+ * Quits the app (File > Exit, Cmd+Q). The main process asks every window, one at a time, about
+ * its unsaved documents (see answerCloseRequest) and quits once all of them agreed.
+ */
+export async function quitApp() {
+  await invoke('app:quit')
+}
 
-/** Closes every document (asking about unsaved ones) and then the window. */
-export function quitApp(): Promise<void> {
-  quitting ??= (async () => {
+let closeRequest: Promise<void> | null = null
+
+/**
+ * Answers the main process asking whether this window may close (closing the window, quitting).
+ * Unsaved documents are asked about first, one by one; only when none was cancelled are the
+ * tabs closed, so cancelling leaves every tab open. Repeated requests while the questions are
+ * on screen share the same answer instead of stacking dialogs.
+ */
+export function answerCloseRequest(): Promise<void> {
+  if (closeRequest) return closeRequest
+  closeRequest = (async () => {
+    let ok = true
     try {
-      if (await closeAllDocuments()) await invoke('app:quitConfirmed')
-    } finally {
-      quitting = null
+      // Every unsaved tab, in tab order (also tabs opened while the questions were showing).
+      const settled = new Set<DocumentModel>()
+      for (;;) {
+        const next = useApp.getState().docs.find((d) => d.state.dirty && !settled.has(d))
+        if (!next) break
+        if (!(await settleUnsaved(next))) {
+          ok = false
+          break
+        }
+        settled.add(next)
+      }
+      if (ok) for (const doc of [...useApp.getState().docs]) await removeDocument(doc)
+    } catch (err) {
+      ok = false
+      showError(err, 'Could not close the window')
     }
-  })()
-  return quitting
+    try {
+      await invoke(ok ? 'app:quitConfirmed' : 'app:quitCancelled')
+    } catch (err) {
+      showError(err)
+    }
+  })().finally(() => {
+    closeRequest = null
+  })
+  return closeRequest
 }
 
 // ---- UI state -------------------------------------------------------------------------------

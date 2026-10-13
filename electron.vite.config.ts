@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 const alias = {
@@ -11,19 +11,21 @@ const alias = {
 }
 
 export default defineConfig({
+  // The installers ship no node_modules (electron-builder.yml), so the main and preload bundles
+  // must contain every package they import: only Electron and Node's built-ins stay external.
   main: {
-    plugins: [externalizeDepsPlugin()],
     resolve: { alias },
     build: {
+      externalizeDeps: false,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/main/index.ts') }
       }
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     resolve: { alias },
     build: {
+      externalizeDeps: false,
       rollupOptions: {
         input: { index: resolve(__dirname, 'src/preload/index.ts') },
         output: { format: 'cjs', entryFileNames: '[name].cjs' }

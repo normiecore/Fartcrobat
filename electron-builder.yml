@@ -10,27 +10,30 @@ files:
   - resources/**
   - package.json
   - '!**/*.map'
-  # The renderer and main bundles contain all code; runtime node_modules are not needed.
+  # The renderer, preload and main bundles contain all code (electron.vite.config.ts bundles
+  # every dependency; only Electron and Node built-ins are external), so node_modules is not needed.
   - '!node_modules/**'
 asar: true
 asarUnpack:
   - resources/**
 publish: null
-fileAssociations:
-  - ext: pdf
-    name: PDF Document
-    description: PDF Document
-    mimeType: application/pdf
-    role: Editor
-    rank: Default
-    icon: pdf-document
+# File associations are per platform: on Windows the name is the registry ProgId, which must be
+# unique to Fartcrobat (src/main/util/systemDefaults.ts WINDOWS_PROG_ID checks it to tell whether
+# Fartcrobat is the default PDF app); on macOS it is the document type's display name.
 win:
+  fileAssociations:
+    - ext: pdf
+      name: Fartcrobat.Document
+      description: PDF Document
+      icon: pdf-document
   target:
     - target: nsis
       arch: [x64, arm64]
   icon: build/icon.ico
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
 nsis:
+  # build/installer.nsh registers Fartcrobat under Default apps (RegisteredApplications).
+  include: build/installer.nsh
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
@@ -41,6 +44,14 @@ nsis:
   runAfterFinish: true
   deleteAppDataOnUninstall: false
 mac:
+  fileAssociations:
+    - ext: pdf
+      name: PDF Document
+      description: PDF Document
+      mimeType: application/pdf
+      role: Editor
+      rank: Default
+      icon: pdf-document
   target:
     - target: dmg
       arch: [x64, arm64]
@@ -49,8 +60,10 @@ mac:
   category: public.app-category.productivity
   icon: build/icon.png
   darkModeSupport: true
-  # Unsigned builds by default. Set CSC_LINK / APPLE_ID etc. in CI to sign and notarize.
-  identity: null
+  # Ad-hoc signed by default ("-"): unsigned apps that electron-builder modified are reported as
+  # "damaged" on Apple Silicon, while ad-hoc signed ones get the normal "Open Anyway" path. The
+  # release workflow signs with a real Developer ID when the CSC_LINK secret is set.
+  identity: '-'
   hardenedRuntime: false
   extendInfo:
     NSHumanReadableCopyright: Fartcrobat is free software under the GNU AGPL v3 or later.
