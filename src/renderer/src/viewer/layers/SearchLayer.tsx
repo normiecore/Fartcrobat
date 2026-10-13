@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useDocState, usePageVersion, type DocumentModel } from '../../document/DocumentModel'
 import { rangeRects, type PageText } from '../../document/textModel'
 import type { PageGeometry } from '../geometry'
-import { loadText } from './textSync'
+import { tryLoadText } from './textSync'
 
 export function SearchLayer({ doc, pageIndex, geometry }: { doc: DocumentModel; pageIndex: number; geometry: PageGeometry }) {
   const search = useDocState(doc, (s) => s.search)
@@ -13,7 +13,7 @@ export function SearchLayer({ doc, pageIndex, geometry }: { doc: DocumentModel; 
   useEffect(() => {
     if (!has) return
     let alive = true
-    void loadText(doc, pageIndex).then((t) => alive && setText(t))
+    void tryLoadText(doc, pageIndex).then((t) => alive && t && setText(t))
     return () => {
       alive = false
     }

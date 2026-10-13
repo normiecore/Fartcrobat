@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  loadText,
   rangeRects,
   registry,
   showContextMenu,
+  tryLoadText,
   useApp,
   useDocState,
   usePageVersion,
@@ -101,7 +101,7 @@ export function MarksLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   useEffect(() => {
     if (!needText) return
     let alive = true
-    void loadText(doc, pageIndex).then((t) => alive && setText(t))
+    void tryLoadText(doc, pageIndex).then((t) => alive && t && setText(t))
     return () => {
       alive = false
     }

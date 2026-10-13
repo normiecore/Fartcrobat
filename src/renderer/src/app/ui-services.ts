@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { isDocumentClosedError } from '../engine/EngineClient'
 import { useApp, type ToastEntry } from './store'
 import type { ContextMenuItem } from './registry'
 
@@ -46,6 +47,8 @@ export function dismissToast(id: number) {
 }
 
 export function showError(err: unknown, prefix?: string) {
+  // Work still running when the user closed its document fails with this: nothing to tell them.
+  if (isDocumentClosedError(err)) return
   const msg = err instanceof Error ? err.message : String(err)
   console.error(prefix ?? 'Error', err)
   toast(prefix ? `${prefix}: ${msg}` : msg, { kind: 'error' })

@@ -8,7 +8,7 @@ import { registry, type ContextMenuItem } from '../../app/registry'
 import { showContextMenu, toast } from '../../app/ui-services'
 import { invoke } from '../../platform'
 import type { PageGeometry } from '../geometry'
-import { getLoadedText, loadText } from './textSync'
+import { getLoadedText, tryLoadText } from './textSync'
 
 interface Caret {
   page: number
@@ -143,7 +143,7 @@ export function TextSelectionLayer({
 
   const ensureText = () => {
     if (text && getLoadedText(doc, pageIndex)) return
-    void loadText(doc, pageIndex).then((t) => setText(t))
+    void tryLoadText(doc, pageIndex).then((t) => t && setText(t))
   }
 
   useEffect(() => {
@@ -172,7 +172,8 @@ export function TextSelectionLayer({
         startClient: [e.clientX, e.clientY],
         moved: false
       })
-      if (!t) void loadText(doc, pageIndex).then((tt) => {
+      if (!t) void tryLoadText(doc, pageIndex).then((tt) => {
+        if (!tt) return
         setText(tt)
         if (drag && !drag.anchor) drag.anchor = { page: pageIndex, index: Math.max(0, caretAt(tt, p)) }
       })
@@ -225,7 +226,7 @@ export function TextSelectionLayer({
     if (!hit) return
     const t = getLoadedText(doc, hit.pageIndex)
     if (!t) {
-      void loadText(doc, hit.pageIndex)
+      void tryLoadText(doc, hit.pageIndex)
       return
     }
     let focus: Caret = { page: hit.pageIndex, index: Math.max(0, caretAt(t, hit.point)) }

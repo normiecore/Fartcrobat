@@ -8,10 +8,10 @@ import {
   caretAt,
   getLoadedText,
   isOverText,
-  loadText,
   rangeRects,
   registry,
   showContextMenu,
+  tryLoadText,
   usePageVersion,
   wordAt,
   type ContextMenuItem,
@@ -107,7 +107,7 @@ export function MarkLayer({ doc, pageIndex, geometry }: PageLayerProps) {
 
   useEffect(() => {
     let alive = true
-    void loadText(doc, pageIndex).then((t) => alive && setText(t))
+    void tryLoadText(doc, pageIndex).then((t) => alive && t && setText(t))
     return () => {
       alive = false
     }
@@ -180,7 +180,7 @@ export function MarkLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       const hit = doc.view?.hitTest(e.clientX, e.clientY)
       if (hit) {
         const t = getLoadedText(doc, hit.pageIndex)
-        if (!t) void loadText(doc, hit.pageIndex)
+        if (!t) void tryLoadText(doc, hit.pageIndex)
         else {
           d.focus = { page: hit.pageIndex, index: Math.max(0, caretAt(t, hit.point)) }
           useDragPreview.setState({ docId: doc.id, ranges: rangesBetween(doc, d.anchor, d.focus), area: null })

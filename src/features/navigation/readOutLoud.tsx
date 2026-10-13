@@ -172,7 +172,7 @@ export async function readAloud(doc: DocumentModel, mode: 'page' | 'end') {
       )
     }
   } catch (err) {
-    if (my === token)
+    if (my === token && !doc.isClosed)
       toast(err instanceof Error ? err.message : String(err), { kind: 'error', timeout: 10000 })
   } finally {
     if (my === token) useReadAloud.setState({ status: 'idle' })
