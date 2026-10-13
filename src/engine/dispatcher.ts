@@ -37,12 +37,22 @@ export class Dispatcher {
     return [...this.methods.keys()].sort()
   }
 
-  call(method: string, args: unknown[], progress?: (fraction: number, message?: string) => void): Promise<DispatchResult> {
+  /**
+   * `actor` names who asked for the call when it was not the person at the keyboard (an AI agent):
+   * undo steps it creates are labelled "<actor>: <label>".
+   */
+  call(
+    method: string,
+    args: unknown[],
+    progress?: (fraction: number, message?: string) => void,
+    actor?: string | null
+  ): Promise<DispatchResult> {
     const run = async (): Promise<DispatchResult> => {
       const fn = this.methods.get(method)
       if (!fn) throw new EngineError(`Unknown engine op ${method}`, 'UNKNOWN_OP')
       const s = this.session
       s.setProgressSink(progress ?? null)
+      s.actor = actor || null
       try {
         const label = mutationLabel(fn, args)
         let value: unknown
@@ -60,6 +70,7 @@ export class Dispatcher {
         return { result: value, transfer, changes }
       } finally {
         s.setProgressSink(null)
+        s.actor = null
       }
     }
     const p = this.queue.then(run, run)

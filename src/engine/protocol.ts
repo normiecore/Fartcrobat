@@ -1,6 +1,7 @@
 import type { ChangeSet } from '@shared/types'
 
-export type EngineRequest = { kind: 'call'; id: number; method: string; args: unknown[] }
+/** `actor`: set when an AI agent made the call; its undo steps are labelled "<actor>: <label>". */
+export type EngineRequest = { kind: 'call'; id: number; method: string; args: unknown[]; actor?: string }
 
 export type EngineMessage =
   | { kind: 'ready'; methods: string[] }
