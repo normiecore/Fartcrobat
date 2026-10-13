@@ -54,6 +54,25 @@ export function spreadIndexOf(rows: number[][], page: number): number {
   )
 }
 
+const isTwoUp = (mode: PageLayoutMode) => mode === 'two-page' || mode === 'two-page-continuous'
+const isContinuous = (mode: PageLayoutMode) => mode === 'continuous' || mode === 'two-page-continuous'
+
+/** A lone cover page sits on the right half of a spread, like Acrobat. */
+function isRightHalfCover(row: number[], pageCount: number, mode: PageLayoutMode, cover: boolean): boolean {
+  return isTwoUp(mode) && cover && row.length === 1 && row[0] === 0 && pageCount > 1
+}
+
+/**
+ * Width and height a row needs, given the CSS size of each page. In two-page layouts a lone page
+ * (the cover, or the last page of an odd count) is half a spread, so fit zooms stay the same from
+ * spread to spread and the right-half cover never overflows.
+ */
+function rowExtent(row: number[], sizes: { w: number; h: number }[], pageCount: number, mode: PageLayoutMode): { w: number; h: number } {
+  const h = Math.max(...row.map((i) => sizes[i].h))
+  if (isTwoUp(mode) && row.length === 1 && pageCount > 1) return { w: 2 * sizes[row[0]].w + PAGE_GAP, h }
+  return { w: row.reduce((acc, i) => acc + sizes[i].w, 0) + PAGE_GAP * (row.length - 1), h }
+}
+
 export function computeLayout(
   pages: PageInfo[],
   opts: {
@@ -66,26 +85,25 @@ export function computeLayout(
   }
 ): ViewLayout {
   const rows = spreads(pages.length, opts.mode, opts.cover)
-  const continuous = opts.mode === 'continuous' || opts.mode === 'two-page-continuous'
-  const shownRows = continuous ? rows : [rows[spreadIndexOf(rows, opts.currentPage)] ?? []]
+  const shownRows = isContinuous(opts.mode) ? rows : [rows[spreadIndexOf(rows, opts.currentPage)] ?? []]
   const sizes = pages.map((p) => pageCssSize(p, opts.zoom, opts.rotation))
   let maxRowWidth = 0
   for (const row of shownRows) {
-    const w = row.reduce((acc, i) => acc + sizes[i].w, 0) + PAGE_GAP * (row.length - 1)
+    if (!row.length) continue
+    const w = isRightHalfCover(row, pages.length, opts.mode, opts.cover)
+      ? rowExtent(row, sizes, pages.length, opts.mode).w
+      : row.reduce((acc, i) => acc + sizes[i].w, 0) + PAGE_GAP * (row.length - 1)
     maxRowWidth = Math.max(maxRowWidth, w)
   }
   const width = Math.max(opts.containerWidth, maxRowWidth + VIEW_PADDING * 2)
   const slots: PageSlot[] = []
   let y = VIEW_PADDING
-  const two = opts.mode === 'two-page' || opts.mode === 'two-page-continuous'
   for (const row of shownRows) {
+    if (!row.length) continue
     const rowH = Math.max(...row.map((i) => sizes[i].h))
     const rowW = row.reduce((acc, i) => acc + sizes[i].w, 0) + PAGE_GAP * (row.length - 1)
     let x = (width - rowW) / 2
-    // A lone cover page sits on the right half of a spread, like Acrobat.
-    if (two && row.length === 1 && opts.cover && row[0] === 0 && pages.length > 1) {
-      x = width / 2 + PAGE_GAP / 2
-    }
+    if (isRightHalfCover(row, pages.length, opts.mode, opts.cover)) x = width / 2 + PAGE_GAP / 2
     for (const i of row) {
       slots[i] = { index: i, x, y: y + (rowH - sizes[i].h) / 2, width: sizes[i].w, height: sizes[i].h }
       x += sizes[i].w + PAGE_GAP
@@ -96,7 +114,13 @@ export function computeLayout(
   return { slots, width, height: y - PAGE_GAP + VIEW_PADDING, visibleIndices }
 }
 
-/** Zoom factor for a fit mode, given the viewport size. */
+/**
+ * Zoom factor for a fit mode, given the viewport size. Single Page and Two Page View fit the shown
+ * page or spread. Scrolling layouts fit the whole document (the widest row for Fit Width, every row
+ * for Fit Page), so the zoom never depends on the scroll position: with mixed page sizes, a zoom
+ * that followed the current page would move another page into view, which would change the zoom
+ * again.
+ */
 export function fitZoom(
   mode: ZoomMode,
   pages: PageInfo[],
@@ -106,15 +130,20 @@ export function fitZoom(
   if (mode === 'actual-size') return 1
   if (!pages.length) return 1
   const rows = spreads(pages.length, opts.layout, opts.cover)
-  const row = rows[spreadIndexOf(rows, opts.currentPage)] ?? [0]
-  const at100 = row.map((i) => pageCssSize(pages[i], 1, opts.rotation))
-  const rowW = at100.reduce((a, s) => a + s.w, 0) + PAGE_GAP * (row.length - 1)
-  const rowH = Math.max(...at100.map((s) => s.h))
+  const fitRows = isContinuous(opts.layout) ? rows : [rows[spreadIndexOf(rows, opts.currentPage)] ?? [0]]
+  const sizes: { w: number; h: number }[] = []
+  for (const row of fitRows) for (const i of row) sizes[i] = pageCssSize(pages[i], 1, opts.rotation)
   const availW = Math.max(100, opts.width - VIEW_PADDING * 2 - 16)
   const availH = Math.max(100, opts.height - VIEW_PADDING * 2)
-  const zw = availW / rowW
+  let zw = Infinity
+  let zp = Infinity
+  for (const row of fitRows) {
+    const { w, h } = rowExtent(row, sizes, pages.length, opts.layout)
+    zw = Math.min(zw, availW / w)
+    zp = Math.min(zp, availW / w, availH / h)
+  }
   if (mode === 'fit-width' || mode === 'fit-visible') return clampZoom(zw)
-  return clampZoom(Math.min(zw, availH / rowH))
+  return clampZoom(zp)
 }
 
 export const MIN_ZOOM = 0.08

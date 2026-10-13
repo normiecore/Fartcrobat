@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Copy } from 'lucide-react'
 import { create } from 'zustand'
 import type { Point, Rect } from '@shared/geometry'
-import { useDocState, usePageVersion, type DocumentModel } from '../../document/DocumentModel'
-import { caretAt, isOverText, lineAt, rangeRects, wordAt, type PageText, type TextRange } from '../../document/textModel'
+import { useDocState, usePageVersion, type DocumentModel, type Selection } from '../../document/DocumentModel'
+import { caretAt, charIndexAt, isOverText, lineAt, rangeRects, wordAt, type PageText, type TextRange } from '../../document/textModel'
 import { registry, type ContextMenuItem } from '../../app/registry'
 import { showContextMenu } from '../../app/ui-services'
 import { invoke } from '../../platform'
@@ -23,14 +23,67 @@ interface DragState {
   anchorRange?: { start: number; end: number }
 }
 
-let drag: DragState | null = null
-
 /** Where the floating selection toolbar appears. */
 export const useSelectionToolbar = create<{ docId: string | null; page: number; rect: Rect | null }>(() => ({
   docId: null,
   page: -1,
   rect: null
 }))
+
+/**
+ * The text drag in progress. It lives outside the page layers because a drag crosses pages, and
+ * the page it started on can be unmounted (virtualised away) mid-drag, taking its pointer capture
+ * with it: the window listeners below then still end the drag when the button is released.
+ */
+let drag: DragState | null = null
+
+/** The anchor (where it started) of the last selection made with the mouse, for Shift+click. */
+const selectionAnchors = new WeakMap<DocumentModel, { selection: Selection; anchor: Caret }>()
+
+function rememberAnchor(doc: DocumentModel, anchor: Caret) {
+  selectionAnchors.set(doc, { selection: doc.state.selection, anchor })
+}
+
+function anchorOfSelection(doc: DocumentModel): Caret | null {
+  const sel = doc.state.selection
+  if (sel.kind !== 'text' || !sel.ranges.length) return null
+  const known = selectionAnchors.get(doc)
+  if (known && known.selection === sel) return known.anchor
+  return { page: sel.ranges[0].page, index: sel.ranges[0].start }
+}
+
+const onWindowPointerUp = () => finishDrag()
+
+function beginDrag(state: DragState) {
+  if (!drag) {
+    window.addEventListener('pointerup', onWindowPointerUp)
+    window.addEventListener('pointercancel', onWindowPointerUp)
+    window.addEventListener('blur', onWindowPointerUp)
+  }
+  drag = state
+}
+
+/** Ends the drag: a plain click clears the selection, a drag shows the selection toolbar. */
+function finishDrag() {
+  const d = drag
+  drag = null
+  window.removeEventListener('pointerup', onWindowPointerUp)
+  window.removeEventListener('pointercancel', onWindowPointerUp)
+  window.removeEventListener('blur', onWindowPointerUp)
+  if (!d) return
+  const doc = d.doc
+  if (!d.moved) {
+    doc.clearSelection()
+    return
+  }
+  const sel = doc.state.selection
+  if (sel.kind === 'text' && sel.ranges.length) {
+    const last = sel.ranges[sel.ranges.length - 1]
+    const t = getLoadedText(doc, last.page)
+    const rects = t ? rangeRects(t, last.start, Math.min(last.end, t.text.length)) : []
+    if (rects.length) useSelectionToolbar.setState({ docId: doc.id, page: last.page, rect: rects[rects.length - 1] })
+  }
+}
 
 function rangesBetween(doc: DocumentModel, a: Caret, b: Caret): TextRange[] {
   const [s, e] = a.page < b.page || (a.page === b.page && a.index <= b.index) ? [a, b] : [b, a]
@@ -101,26 +154,20 @@ export function TextSelectionLayer({
     const t = getLoadedText(doc, pageIndex)
     const p = pagePoint(e)
     useSelectionToolbar.setState({ docId: null, rect: null })
-    if (e.detail >= 2 && t) {
-      const idx = Math.max(0, caretAt(t, p))
-      const r = e.detail === 2 ? wordAt(t, Math.min(idx, t.text.length - 1)) : lineAt(t, idx)
-      if (r) {
-        doc.setSelection({ kind: 'text', ranges: [{ page: pageIndex, start: r.start, end: r.end }] })
-        drag = { doc, anchor: { page: pageIndex, index: r.start }, startClient: [e.clientX, e.clientY], moved: true, anchorRange: r }
-        ref.current?.setPointerCapture(e.pointerId)
-      }
-      return
-    }
-    if (e.shiftKey && selection.kind === 'text' && selection.ranges.length && t) {
-      const first = selection.ranges[0]
-      drag = { doc, anchor: { page: first.page, index: first.start }, startClient: [e.clientX, e.clientY], moved: true }
+    const anchor = e.shiftKey && t ? anchorOfSelection(doc) : null
+    if (anchor && t) {
+      // Shift+click extends the selection from its anchor to the click, right away.
+      const focus: Caret = { page: pageIndex, index: Math.max(0, caretAt(t, p)) }
+      doc.setSelection({ kind: 'text', ranges: rangesBetween(doc, anchor, focus) })
+      rememberAnchor(doc, anchor)
+      beginDrag({ doc, anchor, startClient: [e.clientX, e.clientY], moved: true })
     } else {
-      drag = {
+      beginDrag({
         doc,
         anchor: t ? { page: pageIndex, index: Math.max(0, caretAt(t, p)) } : null,
         startClient: [e.clientX, e.clientY],
         moved: false
-      }
+      })
       if (!t) void loadText(doc, pageIndex).then((tt) => {
         setText(tt)
         if (drag && !drag.anchor) drag.anchor = { page: pageIndex, index: Math.max(0, caretAt(tt, p)) }
@@ -131,7 +178,30 @@ export function TextSelectionLayer({
     doc.view?.getViewportElement()?.focus({ preventScroll: true })
   }
 
+  // Double-click selects a word and triple-click a line. The click count comes from the mouse
+  // event: PointerEvent.detail is always 0 for pointerdown. This runs after onPointerDown.
+  const onMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0 || e.detail < 2) return
+    const t = getLoadedText(doc, pageIndex)
+    if (!t) return
+    // The character under the pointer, not the caret position next to it (which is the following
+    // character over the right half of a letter).
+    const idx = charIndexAt(t, pagePoint(e))
+    if (idx < 0) return
+    const r = e.detail === 2 ? wordAt(t, Math.min(idx, t.text.length - 1)) : lineAt(t, idx)
+    if (!r) return
+    doc.setSelection({ kind: 'text', ranges: [{ page: pageIndex, start: r.start, end: r.end }] })
+    const anchor = { page: pageIndex, index: r.start }
+    rememberAnchor(doc, anchor)
+    beginDrag({ doc, anchor, startClient: [e.clientX, e.clientY], moved: true, anchorRange: r })
+  }
+
   const onPointerMove = (e: React.PointerEvent) => {
+    if (drag && (e.buttons & 1) === 0) {
+      // The button was released where no layer saw it (e.g. after the page the drag started on
+      // was unmounted): the drag is over.
+      finishDrag()
+    }
     if (!drag || drag.doc !== doc) {
       // hover: show an I-beam over text
       const t = getLoadedText(doc, pageIndex)
@@ -158,16 +228,17 @@ export function TextSelectionLayer({
     let anchor = drag.anchor
     if (drag.anchorRange && focus.page === anchor.page) {
       // extend by whole words after a double-click
-      const w = wordAt(t, Math.min(focus.index, t.text.length - 1))
+      const w = wordAt(t, Math.min(Math.max(0, charIndexAt(t, hit.point)), t.text.length - 1))
       if (focus.index < drag.anchorRange.start) {
         anchor = { page: anchor.page, index: drag.anchorRange.end }
-        focus = { page: focus.page, index: w?.start ?? focus.index }
+        focus = { page: focus.page, index: Math.min(w?.start ?? focus.index, drag.anchorRange.start) }
       } else {
         anchor = { page: anchor.page, index: drag.anchorRange.start }
-        focus = { page: focus.page, index: w?.end ?? focus.index }
+        focus = { page: focus.page, index: Math.max(w?.end ?? focus.index, drag.anchorRange.end) }
       }
     }
     doc.setSelection({ kind: 'text', ranges: rangesBetween(doc, anchor, focus) })
+    rememberAnchor(doc, anchor)
     // auto-scroll near the viewport edges
     const vp = doc.view?.getViewportElement()
     if (vp) {
@@ -178,23 +249,10 @@ export function TextSelectionLayer({
   }
 
   const onPointerUp = (e: React.PointerEvent) => {
-    const d = drag
-    drag = null
     try {
       ref.current?.releasePointerCapture(e.pointerId)
     } catch {}
-    if (!d || d.doc !== doc) return
-    if (!d.moved) {
-      doc.clearSelection()
-      return
-    }
-    const sel = doc.state.selection
-    if (sel.kind === 'text' && sel.ranges.length) {
-      const last = sel.ranges[sel.ranges.length - 1]
-      const t = getLoadedText(doc, last.page)
-      const rects = t ? rangeRects(t, last.start, Math.min(last.end, t.text.length)) : []
-      if (rects.length) useSelectionToolbar.setState({ docId: doc.id, page: last.page, rect: rects[rects.length - 1] })
-    }
+    finishDrag()
   }
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -220,6 +278,7 @@ export function TextSelectionLayer({
       className="viewer-layer viewer-text-layer"
       style={{ pointerEvents: interactive ? 'auto' : 'none' }}
       onPointerDown={interactive ? onPointerDown : undefined}
+      onMouseDown={interactive ? onMouseDown : undefined}
       onPointerMove={interactive ? onPointerMove : undefined}
       onPointerUp={interactive ? onPointerUp : undefined}
       onPointerEnter={interactive ? ensureText : undefined}
