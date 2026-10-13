@@ -25,7 +25,7 @@ export { DocumentModel, useDocState, usePageVersion, type Selection, type DocSta
 export * from './document/textModel'
 export { PageGeometry, type CssRect } from './viewer/geometry'
 export { setHiddenAnnotations } from './viewer/hiddenAnnotations'
-export { getLoadedText, loadText } from './viewer/layers/textSync'
+export { getLoadedText, loadText, tryLoadText } from './viewer/layers/textSync'
 export { renderQueueFor, drawResult } from './viewer/renderQueue'
 export { ToolPanelFrame, AllToolsList } from './shell/LeftPane'
 export { openPreferences } from './core/dialogs'

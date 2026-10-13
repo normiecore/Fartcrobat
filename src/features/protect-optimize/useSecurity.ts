@@ -17,7 +17,7 @@ export function useSecurity(doc: DocumentModel): FullSecurityStatus | null {
       .then((st) => {
         if (alive) setStatus(st)
       })
-      .catch((err) => console.warn('[protect-optimize] could not read security', err))
+      .catch((err) => !doc.isClosed && console.warn('[protect-optimize] could not read security', err))
     return () => {
       alive = false
     }

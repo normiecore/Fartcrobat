@@ -20,3 +20,14 @@ export async function loadText(doc: DocumentModel, page: number): Promise<PageTe
   m.set(page, { version, text })
   return text
 }
+
+/**
+ * loadText for pointer handlers and effects that do not wait for it: gives null when the text
+ * could not be read, and says nothing when that is because the document was closed meanwhile.
+ */
+export function tryLoadText(doc: DocumentModel, page: number): Promise<PageText | null> {
+  return loadText(doc, page).catch((err) => {
+    if (!doc.isClosed) console.warn(`Could not read the text of page ${page + 1}`, err)
+    return null
+  })
+}

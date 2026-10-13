@@ -184,7 +184,7 @@ export function usePageMeasurements(doc: DocumentModel, page: number): Measureme
       .then((items) => {
         if (alive) setList({ key, items })
       })
-      .catch((err) => console.warn('Could not list measurements', err))
+      .catch((err) => !doc.isClosed && console.warn('Could not list measurements', err))
     return () => {
       alive = false
     }
@@ -210,7 +210,7 @@ export function useSnapTargets(doc: DocumentModel, page: number, enabled: boolea
       if (snapCache.size > 40) snapCache.delete(snapCache.keys().next().value!)
     }
     let alive = true
-    p.then((t) => alive && setTargets({ key, t })).catch((err) => console.warn('Snap points unavailable', err))
+    p.then((t) => alive && setTargets({ key, t })).catch((err) => !doc.isClosed && console.warn('Snap points unavailable', err))
     return () => {
       alive = false
     }

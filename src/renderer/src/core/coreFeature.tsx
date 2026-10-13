@@ -413,7 +413,10 @@ export function authorName(): string {
 export const coreFeature = defineFeature({
   id: 'core',
   onDocumentOpen: (d) => {
-    void d.ops<typeof import('@engine/ops/annots').default>('annots').setAuthor(authorName())
+    void d
+      .ops<typeof import('@engine/ops/annots').default>('annots')
+      .setAuthor(authorName())
+      .catch((err) => !d.isClosed && console.warn('Could not set the comment author', err))
   },
   commands,
   menus,

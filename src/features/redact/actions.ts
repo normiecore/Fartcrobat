@@ -149,7 +149,7 @@ async function reloadFromDisk(doc: DocumentModel) {
     doc.set({ info: res.info, selection: { kind: 'none' }, dirty: false })
     await doc.core.doc.markSaved(basename(path))
   } catch (err) {
-    console.error('Could not reload the redacted document', err)
+    if (!doc.isClosed) console.error('Could not reload the redacted document', err)
   }
 }
 

@@ -183,6 +183,7 @@ export class DocumentModel {
         if (this.closed) return
         this.set({ info })
       } catch (err) {
+        if (this.closed) return
         console.error('Could not refresh document info', err)
       }
     }
@@ -234,7 +235,7 @@ export class DocumentModel {
       // Engine replies arrive in order, so this is never older than the info already shown.
       this.set((s) => ({ info: { ...s.info, ...facts, pageCount: s.info.pageCount, pages: s.info.pages } }))
     } catch (err) {
-      console.error('Could not refresh document info', err)
+      if (!this.closed) console.error('Could not refresh document info', err)
     }
   }
 

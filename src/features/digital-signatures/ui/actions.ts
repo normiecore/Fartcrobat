@@ -29,7 +29,7 @@ export async function validateAll(doc: DocumentModel, opts: { openPanel?: boolea
   if (opts.openPanel) openRightPanel('signatures')
   const report = await validateDocument(doc)
   if (!report) {
-    toast('The signatures could not be validated.', { kind: 'error' })
+    if (!doc.isClosed) toast('The signatures could not be validated.', { kind: 'error' })
     return
   }
   if (!opts.announce) return

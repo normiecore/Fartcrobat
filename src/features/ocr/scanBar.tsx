@@ -42,7 +42,7 @@ export async function detectScannedDocument(doc: DocumentModel) {
     if (res.scanned && !doc.isClosed) useScanBar.setState((s) => ({ scanned: { ...s.scanned, [doc.id]: true } }))
   } catch (err) {
     // Detection is a convenience: a damaged page must not get in the way of opening the file.
-    console.warn('Scanned-document detection failed', err)
+    if (!doc.isClosed) console.warn('Scanned-document detection failed', err)
   }
 }
 
