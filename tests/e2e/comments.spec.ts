@@ -2,6 +2,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { copyFileSync, existsSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as mupdf from 'mupdf'
 import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRender } from './helpers'
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/comments-${name}.png` })
@@ -538,6 +539,61 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     await expect(page.locator('.fc-comments-panel .ui-empty')).toBeVisible()
     await page.keyboard.press('Control+z')
     await expect.poll(async () => (await op<any[]>(page, 'annots', 'listAll')).length).toBe(5)
+  } finally {
+    await app.close()
+  }
+})
+
+/** Runs a command the way the native menu bar does (no click on the page: the text keeps the focus). */
+async function menuCommand(app: ElectronApplication, id: string) {
+  await app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0].webContents.send('menu:command', c), id)
+}
+
+/** Texts of the comments on the first page of a PDF file on disk. */
+function savedComments(path: string): string[] {
+  const doc = mupdf.Document.openDocument(readFileSync(path), 'application/pdf') as mupdf.PDFDocument
+  try {
+    return (doc.loadPage(0) as mupdf.PDFPage).getAnnotations().map((a) => a.getContents())
+  } finally {
+    doc.destroy()
+  }
+}
+
+test('File > Save from the menu bar saves the comment text being typed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-comments-'))
+  const file = join(dir, 'review.pdf')
+  copyFileSync(fixturePath('text.pdf'), file)
+  const { app, page } = await launch()
+  try {
+    await openFile(page, file)
+    await waitForRender(page)
+    const ids = await page.evaluate(async () => {
+      const annots = (window as any).__fartcrobat.getActiveDoc().ops('annots')
+      const ft = await annots.create(0, { type: 'FreeText', rect: [300, 500, 480, 530], contents: '', fontSize: 14 })
+      const note = await annots.create(0, { type: 'Text', rect: [400, 120, 420, 140], contents: '', icon: 'Comment' })
+      return { ft: ft.id as number, note: note.id as number }
+    })
+    const edit = (id: number) =>
+      page.evaluate((i) => {
+        const d = (window as any).__fartcrobat.getActiveDoc()
+        window.dispatchEvent(new CustomEvent('fartcrobat:edit-annotation', { detail: { docId: d.id, id: i, page: 0 } }))
+      }, id)
+
+    // typing into a text box on the page
+    await edit(ids.ft)
+    await expect(page.locator('.fc-comments-inline-editor')).toBeFocused()
+    await page.keyboard.type('Typed straight onto the page')
+    await menuCommand(app, 'file.save')
+    await expect.poll(() => savedComments(file)).toContain('Typed straight onto the page')
+    await expect(page.locator('.fc-comments-inline-editor')).toHaveCount(0)
+
+    // typing into a sticky note's pop-up
+    await edit(ids.note)
+    await expect(page.locator('.fc-comments-popup textarea[aria-label="Comment text"]')).toBeFocused()
+    await page.keyboard.type('Typed into the pop-up note')
+    await menuCommand(app, 'file.save')
+    await expect.poll(() => savedComments(file)).toContain('Typed into the pop-up note')
+    await shot(page, 'saved-from-menu')
   } finally {
     await app.close()
   }

@@ -176,6 +176,8 @@ const commands: CommandDefinition[] = [
     icon: Trash2,
     requiresDocument: false,
     enabled: (ctx) => textFieldFocused() || !!commandForShortcut('Delete', 'edit.delete', ctx),
+    // what Delete removes may be the text box being edited itself
+    keepEditing: true,
     run: (ctx) => commandForShortcut('Delete', 'edit.delete', ctx)?.run(ctx)
   },
   {

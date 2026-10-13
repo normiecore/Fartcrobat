@@ -4,6 +4,7 @@
  */
 import type * as MuPDF from 'mupdf'
 import type { Session } from '@engine/session'
+import { walkStructuredText } from '@engine/util/stext'
 import { analyzeScans, eraseAreas, type HiddenLine } from './scan'
 import {
   clusterBoxes,
@@ -983,7 +984,7 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
   const list = page.toDisplayList(true)
   const stext = list.toStructuredText('preserve-whitespace,preserve-images')
   try {
-    stext.walk({
+    walkStructuredText(stext, {
       onImageBlock(bbox, transform, image) {
         const block = blockIndex++
         const b = bbox as Rect

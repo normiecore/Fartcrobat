@@ -202,6 +202,53 @@ test('fill form.pdf with the mouse and keyboard, save, reopen, clear and undo', 
   }
 })
 
+/** Runs a command the way the native menu bar does (no click on the page: the field keeps the focus). */
+async function menuCommand(app: ElectronApplication, id: string) {
+  await app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0].webContents.send('menu:command', c), id)
+}
+
+test('a value typed but not committed yet is written before Save or Rotate from the menu bar', async () => {
+  const { path } = tempCopy('form.pdf')
+  const { app, page } = await launch()
+  try {
+    await openFile(page, path)
+    await waitForRender(page)
+
+    // File > Save while typing in a field: the file has what was typed
+    await field(page, 'notes').click()
+    await page.keyboard.type('Saved from the menu')
+    await menuCommand(app, 'file.save')
+    await expect(page.locator('.toast', { hasText: 'Saved form.pdf' })).toBeVisible()
+    await runCommand(page, 'file.close')
+    await expect(page.locator('.home-title')).toBeVisible()
+    await openFile(page, path)
+    await waitForRender(page)
+    expect(await valueOf(page, 'notes')).toBe('Saved from the menu')
+
+    // Document > Rotate Pages…: the value is written before the page turns
+    await field(page, 'fullName').click()
+    await page.keyboard.type('Ada Lovelace')
+    await menuCommand(app, 'organize.rotatePages')
+    const dialog = page.locator('.ui-dialog').filter({ has: page.locator('h2', { hasText: 'Rotate Pages' }) })
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Rotate', exact: true }).click()
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[0].rotation))
+      .toBe(90)
+    expect(await valueOf(page, 'fullName')).toBe('Ada Lovelace')
+    await expect(field(page, 'fullName')).toHaveValue('Ada Lovelace')
+    await page.waitForTimeout(300)
+    await shot(page, '19-rotated-from-menu')
+    // two steps: undoing the rotation keeps the value
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Rotate Page')
+    await runCommand(page, 'edit.undo')
+    await expect.poll(async () => (await activeDocState(page))?.journal.undoLabel).toBe('Fill Form Field')
+    expect(await valueOf(page, 'fullName')).toBe('Ada Lovelace')
+  } finally {
+    await app.close()
+  }
+})
+
 test('calculations, formats, keystroke filters and validation (calc.pdf)', async () => {
   const { app, page } = await launch()
   try {

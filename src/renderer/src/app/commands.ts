@@ -30,11 +30,61 @@ export async function runCommand(id: string): Promise<boolean> {
   const ctx = commandContext()
   if (!isCommandEnabled(cmd, ctx)) return false
   try {
-    await cmd.run(ctx)
+    await execute(cmd, ctx)
   } catch (err) {
     showError(err)
   }
   return true
+}
+
+/** Runs a command once what is being edited in place is in the document. */
+async function execute(cmd: CommandDefinition, ctx: CommandContext) {
+  if (!cmd.keepEditing && hasActiveEditors()) await commitActiveEditors()
+  await cmd.run(ctx)
+}
+
+// ---- editing in place -----------------------------------------------------------------------
+
+/**
+ * Something edited in place whose changes are not in the document yet: the text box of Edit
+ * Text, the form field being typed in, the text of a comment.
+ */
+export interface ActiveEditor {
+  /** Writes what was typed into the document; resolves once it is there. */
+  commit: () => void | Promise<void>
+}
+
+const activeEditors = new Set<ActiveEditor>()
+
+/**
+ * Registers an open editor until the returned function is called. Commands, Save and Close
+ * commit it before they run, so they work on what was typed instead of changing the page
+ * underneath it.
+ */
+export function registerActiveEditor(editor: ActiveEditor): () => void {
+  activeEditors.add(editor)
+  return () => void activeEditors.delete(editor)
+}
+
+/**
+ * Whether an editor is open. Callers check it before awaiting commitActiveEditors, so that without
+ * one the operation still starts right away (in the same task).
+ */
+export function hasActiveEditors(): boolean {
+  return activeEditors.size > 0
+}
+
+/** Commits every open editor (see registerActiveEditor) and waits until they are done. */
+export async function commitActiveEditors(): Promise<void> {
+  await Promise.all(
+    [...activeEditors].map(async (editor) => {
+      try {
+        await editor.commit()
+      } catch (err) {
+        console.warn('Could not commit the text being edited', err)
+      }
+    })
+  )
 }
 
 // ---- shortcuts ------------------------------------------------------------------------------
@@ -177,7 +227,7 @@ export function handleShortcut(e: KeyboardEvent): boolean {
     if (!isCommandEnabled(cmd, ctx)) continue
     e.preventDefault()
     e.stopPropagation()
-    void Promise.resolve(cmd.run(ctx)).catch((err) => showError(err))
+    void execute(cmd, ctx).catch((err) => showError(err))
     return true
   }
   return false

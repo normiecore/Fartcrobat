@@ -1,6 +1,7 @@
 import type { Matrix, Point, Rect } from '@shared/geometry'
 import { defineOps, withTransfer } from '../define'
 import type { Session } from '../session'
+import { walkStructuredText } from '../util/stext'
 
 export const FONT_BOLD = 1
 export const FONT_ITALIC = 2
@@ -44,8 +45,9 @@ export interface ImageBlock {
 
 /**
  * The text of one page in reading order. `text` contains every character; a '\n' is inserted
- * after each line. `quads` holds 8 numbers per character of `text` (the quad of a synthetic
- * newline repeats the end of its line, with zero width).
+ * after each line. `quads` holds 8 numbers per UTF-16 unit of `text`, so string offsets index it
+ * directly: a character outside the BMP (emoji, CJK Extension B...) takes two units that both
+ * carry its quad. The quad of a synthetic newline repeats the end of its line, with zero width.
  */
 export interface PageText {
   pageIndex: number
@@ -114,7 +116,7 @@ export function extractPageText(s: Session, pageIndex: number, opts = 'preserve-
     return info
   }
 
-  stext.walk({
+  walkStructuredText(stext, {
     onImageBlock(bbox, transform, image) {
       images.push({
         bbox: bbox as Rect,
@@ -144,10 +146,12 @@ export function extractPageText(s: Session, pageIndex: number, opts = 'preserve-
         span = { start: idx, end: idx, font: info.name, size, color: col, flags: info.flags }
         spans.push(span)
       }
-      chars.push(c)
-      quads.push(...(quad as number[]))
+      for (let u = 0; u < c.length; u++) {
+        chars.push(c[u])
+        quads.push(...(quad as number[]))
+      }
       lastQuad = quad as number[]
-      span.end = idx + 1
+      span.end = chars.length
     },
     endLine() {
       const end = chars.length

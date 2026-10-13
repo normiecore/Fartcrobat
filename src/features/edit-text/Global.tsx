@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Trash } from 'lucide-react'
-import { IconButton, toast, useApp } from '@renderer/sdk'
+import { IconButton, registerActiveEditor, toast, useApp } from '@renderer/sdk'
 import { MiniFormat } from './FormatControls'
 import { closeFormattingPopover } from './popover'
 import {
@@ -155,7 +155,14 @@ export function EditTextGlobal() {
     }
   }, [sessionId])
 
-  // the page changed underneath the editor (not by our own save): close it
+  // commands (Rotate, Undo...), Save and Close write the edit first instead of changing the page
+  // underneath it
+  useEffect(() => {
+    if (sessionId === null) return
+    return registerActiveEditor({ commit: () => commitSession() })
+  }, [sessionId])
+
+  // the page changed underneath the editor anyway (not by our own save): close it
   useEffect(() => {
     const s = useEditText.getState().session
     if (!s) return

@@ -33,7 +33,12 @@ jobs:
       - name: Build installers
         # macOS builds are ad-hoc signed (electron-builder.yml) unless a Developer ID certificate
         # is provided in CSC_LINK: then an empty identity lets electron-builder find and use it.
-        run: npm run ${{ matrix.script }} -- ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK != '' && '-c.mac.identity=' || '' }}
+        # A missing secret arrives as an empty variable, which electron-builder takes as a
+        # certificate path ("... not a file"), so the signing variables are dropped when empty.
+        shell: bash
+        run: |
+          [ -n "$CSC_LINK" ] || unset CSC_LINK CSC_KEY_PASSWORD
+          npm run ${{ matrix.script }} -- --publish never ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK != '' && '-c.mac.identity=' || '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional code signing: add these secrets to sign installers.
