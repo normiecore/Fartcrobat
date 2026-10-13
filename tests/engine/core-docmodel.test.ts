@@ -69,6 +69,9 @@ class FakeEngine {
   facts: Omit<DocInfo, 'pages'> = docInfo('Original')
   /** Makes facts() wait for fail() or terminate(), like info() always does. */
   holdFacts = false
+  /** Methods called, in order. */
+  calls: string[] = []
+  private terminated = false
   private waiting = new Set<(err: Error) => void>()
   onChanges(l: (cs: ChangeSet) => void) {
     this.listeners.add(l)
@@ -79,6 +82,9 @@ class FakeEngine {
       {},
       {
         get: (_t, method) => () => {
+          // A terminated engine refuses every later call, like the real client.
+          if (this.terminated) return Promise.reject(new EngineCallError('Document is closed', 'CLOSED'))
+          this.calls.push(String(method))
           if (method === 'info') return this.wait<DocInfo>((resolve) => this.pendingInfo.push(resolve))
           if (method === 'facts') return this.holdFacts ? this.wait(() => {}) : Promise.resolve(this.facts)
           return Promise.resolve(null)
@@ -101,6 +107,7 @@ class FakeEngine {
     this.waiting.clear()
   }
   terminate() {
+    this.terminated = true
     this.fail(new EngineCallError('Document is closed', 'CLOSED'))
   }
 }
@@ -180,5 +187,16 @@ describe('DocumentModel change handling', () => {
     } finally {
       errors.mockRestore()
     }
+  })
+
+  it('ignores Undo and Redo once closed (from a toast that outlived its tab)', async () => {
+    const engine = new FakeEngine()
+    const doc = new DocumentModel(engine as unknown as EngineClient, docInfo('Original'), { title: 'a.pdf', filePath: '/a.pdf' })
+    await doc.undo()
+    await doc.redo()
+    expect(engine.calls.filter((c) => c === 'undo' || c === 'redo')).toEqual(['undo', 'redo'])
+    doc.close()
+    await expect(doc.undo()).resolves.toBeUndefined()
+    await expect(doc.redo()).resolves.toBeUndefined()
   })
 })

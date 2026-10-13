@@ -416,11 +416,14 @@ export class DocumentModel {
 
   // ---- history & saving -----------------------------------------------------------------
 
+  /** Undo and Redo do nothing once the document is closed (an Undo toast can outlive its tab). */
   async undo() {
+    if (this.isClosed) return
     await this.core.doc.undo()
   }
 
   async redo() {
+    if (this.isClosed) return
     await this.core.doc.redo()
   }
 
