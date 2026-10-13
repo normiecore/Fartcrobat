@@ -93,7 +93,7 @@ test('Export a PDF: Word, images to a folder, text from the menu, keyboard and d
     // Exporting again asks before replacing the images.
     await page.getByTestId('export-run').click()
     await expect(page.getByRole('heading', { name: 'Replace existing files?' })).toBeVisible({ timeout: 30000 })
-    await page.getByRole('button', { name: 'Replace' }).click()
+    await page.getByRole('button', { name: 'Replace', exact: true }).click()
     await expect(page.locator('.toast', { hasText: 'Saved 2 images' }).first()).toBeVisible()
 
     // ---- an invalid page range disables Export and says why
@@ -181,7 +181,7 @@ test('Export a PDF: Word, images to a folder, text from the menu, keyboard and d
     await expect(page.getByRole('heading', { name: 'Exporting isn’t allowed' })).toBeVisible()
     await page.waitForTimeout(400)
     await shot(page, 'restricted')
-    await page.getByRole('button', { name: 'OK' }).click()
+    await page.getByRole('button', { name: 'OK', exact: true }).click()
 
     // ---- a scanned page has no text: the panel says so
     await openPath(page, fixturePath('scanned.pdf'))
@@ -308,7 +308,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await setTheme(page, 'dark')
     await page.waitForTimeout(300)
     await shot(page, 'settings-convert-dark')
-    await page.getByRole('button', { name: 'Done' }).click()
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
     await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.open'))
     await page.getByRole('button', { name: /^Images/ }).click()
     await shot(page, 'images-dark')
