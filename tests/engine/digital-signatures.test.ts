@@ -4,9 +4,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { createLocalEngine } from '@engine/local'
+import { collectOpModules } from '@engine/registry'
 import type annotOps from '@engine/ops/annots'
 import type docOps from '@engine/ops/doc'
 import type formOps from '@engine/ops/forms'
+import type pageOps from '@engine/ops/pages'
 import type sigOps from '@features/digital-signatures/engine'
 import { createSelfSignedId, validateNewId } from '@features/digital-signatures/lib/digitalId'
 import { parseDigitalId, WrongPasswordError, type ParsedDigitalId } from '@features/digital-signatures/lib/pkcs12'
@@ -508,4 +510,78 @@ describe.skipIf(!hasTool('openssl', ['version']))('Digital ID files made by othe
       expect(r.signerName).toBe(name)
     })
   }
+})
+
+describe('rotated pages', () => {
+  for (const degrees of [90, 180, 270]) {
+    it(`signs a box drawn on a page rotated by ${degrees}°: same place, upright text`, async () => {
+      const e = await openFixture('text.pdf')
+      await e.ops<typeof pageOps>('pages').rotate([0], degrees)
+      const rotated = await openBytes(await e.doc.save({ mode: 'full' }))
+      const page = rotated.info.pages[0]
+      // A box near the bottom right of the page as the user sees it.
+      const rect: [number, number, number, number] = [page.width - 260, page.height - 110, page.width - 40, page.height - 40]
+      const { bytes } = await rotated.sig.sign(request(rsaId, { target: { kind: 'new', page: 0, rect } }))
+      const r = (await validateBytes(bytes)).signatures[0]
+      expect(r.integrity && r.signatureValid).toBe(true)
+      r.rect.forEach((v, i) => expect(v).toBeCloseTo(rect[i], 1))
+      // The appearance text reads left to right on screen, inside the box.
+      const doc = new mupdf.PDFDocument(bytes)
+      // A display list with annotations and widgets (page.toStructuredText leaves them out).
+      const st = JSON.parse(doc.loadPage(0).toDisplayList(true).toStructuredText('preserve-whitespace').asJSON()) as {
+        blocks: { lines?: { text: string; x: number; y: number; bbox: { x: number; y: number; w: number; h: number } }[] }[]
+      }
+      const line = st.blocks.flatMap((b) => b.lines ?? []).find((l) => l.text.includes('Digitally signed by'))
+      expect(line).toBeDefined()
+      // Horizontal: much wider than tall, baseline origin at the left edge.
+      expect(line!.bbox.w).toBeGreaterThan(line!.bbox.h * 4)
+      expect(Math.abs(line!.x - line!.bbox.x)).toBeLessThan(1)
+      expect(line!.bbox.x).toBeGreaterThan(rect[0] - 1)
+      expect(line!.bbox.y).toBeGreaterThan(rect[1] - 1)
+      expect(line!.bbox.x + line!.bbox.w).toBeLessThan(rect[2] + 1)
+      expect(line!.bbox.y + line!.bbox.h).toBeLessThan(rect[3] + 1)
+      doc.destroy()
+    })
+  }
+})
+
+describe('together with other features', () => {
+  const hasNamespace = (ns: string) => collectOpModules().some((m) => m.namespace === ns)
+
+  it.skipIf(!hasNamespace('prepare-form'))('signs a signature field just added with Prepare a form (not saved yet)', async () => {
+    const e = await openFixture('text.pdf')
+    const pf = e.ops<any>('prepare-form')
+    const made = await pf.create({ type: 'signature', page: 1, rect: [300, 640, 520, 700] })
+    expect(await e.doc.isDirty()).toBe(true)
+    const sig = e.ops<typeof sigOps>('digital-signatures')
+    const [field] = await sig.fields()
+    expect(field).toMatchObject({ name: made.name, page: 1, signed: false })
+    const { bytes, fieldName } = await sig.sign(request(rsaId, { target: { kind: 'field', name: made.name } }))
+    expect(fieldName).toBe(made.name)
+    // Signing leaves the open document (and its unsaved field) as it was.
+    expect(await e.doc.isDirty()).toBe(true)
+    expect((await sig.fields())[0].signed).toBe(false)
+    const report = await validateBytes(bytes)
+    expect(report.unsigned).toHaveLength(0)
+    expect(report.signatures[0]).toMatchObject({ fieldName: made.name, page: 1, integrity: true, signatureValid: true, coversWholeFile: true })
+    expect(report.signatures[0].rect.map(Math.round)).toEqual([300, 640, 520, 700])
+    // Prepare a form still sees the field, now signed.
+    const e2 = await openBytes(bytes)
+    const listed = await e2.ops<any>('prepare-form').listAll()
+    expect(listed.fields.find((f: { name: string }) => f.name === made.name)?.type).toBe('signature')
+  })
+
+  it('reports deleted pages after an approval signature as a change that needs attention', async () => {
+    const e = await openFixture('text.pdf')
+    const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+    const e2 = await openBytes(bytes)
+    await e2.ops<typeof pageOps>('pages').delete([4])
+    const later = await e2.doc.save({})
+    // The signed revision is still in the file, byte for byte.
+    expect(Buffer.from(later.subarray(0, bytes.length)).equals(Buffer.from(bytes))).toBe(true)
+    const r = (await validateBytes(later)).signatures[0]
+    expect(r.integrity && r.signatureValid).toBe(true)
+    expect(r.changes.some((c) => c.category === 'pages' && !c.allowed)).toBe(true)
+    expect(signatureStatus(r, new Set()).level).toBe('warning')
+  })
 })

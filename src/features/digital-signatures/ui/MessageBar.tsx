@@ -1,14 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
-import { Button, openRightPanel, useApp, useDocState, type DocumentModel } from '@renderer/sdk'
+import { Button, openRightPanel, useActiveDoc, useApp, useDocState, type DocumentModel } from '@renderer/sdk'
 import { overallStatus } from '../status'
 import { StatusIcon } from './StatusIcon'
 import { useDocSignatures, useSigStore, useTrustedSet, validateDocument } from './store'
 
 /**
- * Keeps the validation of the active document fresh: on open, after reloads and (debounced)
- * after document-level changes such as clearing a signature.
+ * Keeps the validation of a document fresh: on open, after reloads and (debounced) after
+ * document-level changes such as saving or clearing a signature.
  */
 function useAutoValidate(doc: DocumentModel) {
   const docVersion = useDocState(doc, (s) => s.docVersion)
@@ -22,12 +22,22 @@ function useAutoValidate(doc: DocumentModel) {
   }, [doc, docVersion, info])
 }
 
+function DocValidator({ doc }: { doc: DocumentModel }) {
+  useAutoValidate(doc)
+  return null
+}
+
+/** Always mounted: validates the active document (also in Read mode, where no toolbar shows). */
+export function ActiveDocValidator() {
+  const doc = useActiveDoc()
+  return doc ? <DocValidator key={doc.id} doc={doc} /> : null
+}
+
 /**
  * Acrobat's document message bar ("Signed and all signatures are valid."), shown as a full-width
  * row under the document toolbar. Rendered from a document-toolbar slot into the toolbar row.
  */
 export function SignatureMessageBar({ doc }: { doc: DocumentModel }) {
-  useAutoValidate(doc)
   const anchor = useRef<HTMLSpanElement>(null)
   const [host, setHost] = useState<HTMLElement | null>(null)
   const { report } = useDocSignatures(doc)

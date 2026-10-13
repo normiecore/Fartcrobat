@@ -288,25 +288,35 @@ test('sign an existing signature field, creating the Digital ID from the sign di
       (url) => (window as any).api.invoke('store:set', 'fill-sign:signature', { dataUrl: url }),
       'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64')
     )
-    // Unsigned field: the panel lists it, the page shows a clickable field.
+    // Unsigned field: the panel lists it, the page shows a clickable field. With forms-fill in the
+    // app, its field control handles the click and sends 'fartcrobat:sign-field'; without it, this
+    // feature draws the clickable field itself.
     await runCommand(page, 'sign.showSignaturesPanel')
     const rightPanel = page.locator('aside.shell-rightpanel[aria-label="Signatures"]')
     await expect(rightPanel.locator('.fc-digital-signatures-entry.is-unsigned')).toContainText('Approver')
-    const fieldEl = page.locator('.viewer-page[data-page-index="0"] .fc-digital-signatures-field.is-unsigned')
+    const fieldEl = page.locator(
+      '.viewer-page[data-page-index="0"] :is(.fc-digital-signatures-field.is-unsigned, .fc-forms-fill-signature:not(.is-signed))'
+    )
     await expect(fieldEl).toHaveCount(1)
     await fieldEl.hover()
     await expect(fieldEl).toContainText('Click to sign')
     await page.screenshot({ path: `${SHOTS}/digital-signatures-unsigned-field.png` })
+    const events: unknown[] = []
+    await page.exposeFunction('__dsigEvent', (d: unknown) => events.push(d))
+    await page.evaluate(() => window.addEventListener('fartcrobat:sign-field', (e) => (window as any).__dsigEvent((e as CustomEvent).detail)))
     await fieldEl.click()
     const dlg = dialog(page, 'Sign with a Digital ID')
     await expect(dlg).toBeVisible()
+    const formsFill = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'forms-fill'))
+    if (formsFill) await expect.poll(() => events).toEqual([expect.objectContaining({ fieldName: 'Approver', page: 0 })])
     await page.keyboard.press('Escape')
     await expect(dlg).toBeHidden()
 
-    // forms-fill asks to sign a field with a window event; the same dialog opens.
-    await page.evaluate(() => {
+    // The event may name the field only by its widget id; the same dialog opens.
+    await page.evaluate(async () => {
       const d = (window as any).__fartcrobat.getActiveDoc()
-      window.dispatchEvent(new CustomEvent('fartcrobat:sign-field', { detail: { docId: d.id, fieldName: 'Approver', page: 0 } }))
+      const [f] = await d.ops('digital-signatures').fields()
+      window.dispatchEvent(new CustomEvent('fartcrobat:sign-field', { detail: { docId: d.id, fieldId: f.widgetId, page: 0 } }))
     })
     await expect(dlg).toBeVisible()
     await expect(dlg.getByText("You don't have a Digital ID yet.")).toBeVisible()
@@ -419,13 +429,56 @@ test('certify a form with an invisible signature that allows form filling', asyn
     await expect(panel.getByRole('button', { name: /Certify \(visible signature\)/ })).toBeDisabled()
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}/digital-signatures-certified.png` })
+
+    // Filling in the form is allowed: fill a field (forms-fill) and save (an incremental update).
+    const hasFormsFill = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'forms-fill'))
+    if (hasFormsFill) {
+      const name = page.locator('.fc-forms-fill-layer [data-field-name="fullName"]').first()
+      await name.click()
+      await page.keyboard.type('Ada Lovelace')
+      await page.keyboard.press('Tab')
+      await expect.poll(async () => (await docInfo(page))?.dirty).toBe(true)
+      await expect(page.locator('.fc-digital-signatures-panel')).toContainText('This document has unsaved changes.')
+      await page.locator('.viewer-scroll').focus()
+      await page.keyboard.press('Control+s')
+      await expect.poll(async () => (await docInfo(page))?.dirty).toBe(false)
+      const saved = readFileSync(certifiedPath)
+      expect(saved.toString('latin1').match(/%%EOF/g)?.length).toBeGreaterThanOrEqual(3)
+      await entry.getByRole('button', { name: /Expand/ }).click()
+      await expect(entry).toContainText('Form field “fullName” was filled in or changed')
+      await expect(entry).toContainText("Certification is valid, but the signer's identity is unknown.")
+      await expect(entry.locator('.fc-digital-signatures-changes .is-allowed')).not.toHaveCount(0)
+      await expect(entry.locator('.fc-digital-signatures-changes .is-disallowed')).toHaveCount(0)
+      await expect(bar).toContainText('Signed and all signatures are valid')
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: `${SHOTS}/digital-signatures-certified-filled.png` })
+    }
+
+    // Commenting is not allowed by this certification: add a sticky note (markup-tools) and save.
+    const hasNote = await page.evaluate(() => (window as any).__fartcrobat.registry.tools.has('comment.note'))
+    if (hasNote) {
+      await runCommand(page, 'comment.note')
+      const pageEl = page.locator('.viewer-page[data-page-index="0"]')
+      const pb = (await pageEl.boundingBox())!
+      const z = (await docInfo(page))!.scale
+      await page.mouse.click(pb.x + 520 * z, pb.y + 120 * z)
+      await expect.poll(async () => (await docInfo(page))?.dirty).toBe(true)
+      await page.keyboard.press('Escape')
+      await runCommand(page, 'file.save')
+      await expect.poll(async () => (await docInfo(page))?.dirty).toBe(false)
+      await expect(bar).toContainText('At least one signature is invalid.')
+      await expect(entry).toContainText('Certification is invalid.')
+      await expect(entry.locator('.fc-digital-signatures-changes .is-disallowed')).toContainText('comment added')
+      await page.waitForTimeout(300)
+      await page.screenshot({ path: `${SHOTS}/digital-signatures-certified-commented.png` })
+    }
   } finally {
     await app.close()
   }
 })
 
 test('certify with a visible signature placed from the keyboard; no changes allowed', async () => {
-  const { app, page } = await launch()
+  const { app, page, userData } = await launch()
   const out = mkdtempSync(join(tmpdir(), 'fc-digsig-e2e-'))
   const certifiedPath = join(out, 'text_certified.pdf')
   try {
@@ -467,6 +520,34 @@ test('certify with a visible signature placed from the keyboard; no changes allo
     await field.scrollIntoViewIfNeeded()
     await page.waitForTimeout(300)
     await page.screenshot({ path: `${SHOTS}/digital-signatures-certified-visible.png` })
+
+    // Preferences > Digital IDs, keyboard only: export the public certificate, then remove the ID.
+    const cerPath = join(out, 'carl.cer')
+    await stubSaveDialog(app, cerPath)
+    await runCommand(page, 'sign.manageDigitalIds')
+    const prefs = dialog(page, 'Preferences')
+    const row = prefs.getByRole('row', { name: /Carl Certifier/ })
+    await row.focus()
+    await page.keyboard.press('Enter')
+    await expect(row).toHaveAttribute('aria-selected', 'true')
+    await prefs.getByRole('button', { name: 'Export Certificate…' }).click()
+    await expect.poll(() => existsSync(cerPath)).toBe(true)
+    try {
+      const subject = execFileSync('openssl', ['x509', '-inform', 'DER', '-in', cerPath, '-noout', '-subject'], { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+      expect(subject).toContain('Carl Certifier')
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+    }
+    expect(readdirSync(join(userData, 'digital-ids')).filter((f) => f.endsWith('.p12'))).toHaveLength(1)
+    await prefs.getByRole('button', { name: 'Remove ID' }).click()
+    const confirmRemove = dialog(page, 'Remove Digital ID?')
+    await expect(confirmRemove).toContainText('Documents you already signed stay valid.')
+    await confirmRemove.getByRole('button', { name: 'Remove ID' }).click()
+    await expect(prefs.getByText('No Digital IDs yet')).toBeVisible()
+    expect(readdirSync(join(userData, 'digital-ids')).filter((f) => f.endsWith('.p12'))).toHaveLength(0)
+    await prefs.getByRole('button', { name: 'Done' }).click()
+    // The certified file does not depend on the ID: it still validates.
+    await expect(page.locator('.fc-digital-signatures-bar')).toContainText('Certified by Carl Certifier.')
   } finally {
     await app.close()
   }

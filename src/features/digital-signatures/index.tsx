@@ -16,7 +16,7 @@ import { beginBox, BOX_TOOL, CertificateBoxLayer, CertificateBoxToolbar, Certifi
 import { DigitalIdsSettings } from './ui/DigitalIdsSettings'
 import { SignatureFieldLayer } from './ui/FieldLayer'
 import { startSigning } from './ui/flow'
-import { SignatureMessageBar } from './ui/MessageBar'
+import { ActiveDocValidator, SignatureMessageBar } from './ui/MessageBar'
 import { SignaturesPanel, signatureMenuItems } from './ui/SignaturesPanel'
 import { forgetDocument, loadIds, loadTrusted, sigOps, useSigStore } from './ui/store'
 import './styles.css'
@@ -186,5 +186,5 @@ export default defineFeature({
   pageContextMenu: [{ id: 'digital-signatures', order: 40, items: ({ doc, pageIndex, point }) => contextItems(doc, pageIndex, point) }],
   settings: [{ id: 'digital-ids', label: 'Digital IDs', order: 60, component: DigitalIdsSettings }],
   docToolbar: [{ id: 'digital-signatures-bar', order: 90, component: SignatureMessageBar }],
-  globals: [SignatureGlobals]
+  globals: [SignatureGlobals, ActiveDocValidator]
 })
