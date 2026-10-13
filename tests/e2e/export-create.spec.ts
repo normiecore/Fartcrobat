@@ -48,7 +48,7 @@ function pngSize(file: string) {
 
 const panel = (page: Page) => page.locator('.shell-leftpane')
 
-test('Export a PDF: Word, images to a folder, text from the menu, keyboard and dark theme', async () => {
+test('Export a PDF: Word, images to a folder, text from the menu, keyboard, a recognized scan and dark theme', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'fc-export-e2e-'))
   const src = join(dir, 'Report.pdf')
   copyFileSync(fixturePath('text.pdf'), src)
@@ -188,6 +188,22 @@ test('Export a PDF: Word, images to a folder, text from the menu, keyboard and d
     await expect.poll(() => activeDocState(page).then((s) => s?.title)).toBe('scanned.pdf')
     await expect(page.getByTestId('export-scan-note')).toContainText('scanned picture')
     await shot(page, 'scanned-note')
+
+    // ---- Recognize Text… from the note, then Word gets the recognized text, not the scan
+    await page.getByTestId('export-scan-note').getByRole('button', { name: 'Recognize Text…' }).click()
+    const recognize = page.locator('.ui-dialog', { has: page.locator('h2', { hasText: 'Recognize Text' }) })
+    await expect(recognize).toBeVisible()
+    await page.getByTestId('ocr-dialog-recognize').click()
+    await expect(page.locator('.toast').filter({ hasText: /Recognized \d+ words on 1 page/ })).toBeVisible({ timeout: 90000 })
+    await expect(page.getByTestId('export-scan-note')).toBeHidden()
+    await panel(page).getByRole('radio', { name: /Microsoft Word/ }).click()
+    const recognized = join(dir, 'scanned.docx')
+    await stubSaveDialog(app, recognized)
+    await page.getByTestId('export-run').click()
+    await expect(page.locator('.toast', { hasText: 'Exported “scanned.docx”' })).toBeVisible({ timeout: 30000 })
+    const scanDoc = await JSZip.loadAsync(readFileSync(recognized))
+    expect(await scanDoc.file('word/document.xml')!.async('string')).toContain('searchable and selectable')
+    expect(Object.keys(scanDoc.files).filter((f) => f.startsWith('word/media/') && !f.endsWith('/'))).toHaveLength(0)
 
     // ---- dark theme
     await setTheme(page, 'dark')
