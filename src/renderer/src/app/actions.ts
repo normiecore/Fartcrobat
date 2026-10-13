@@ -54,19 +54,20 @@ function askPassword(name: string, wrong: boolean | undefined): Promise<string |
 /**
  * Opens bytes as a new tab. Prompts for a password when needed. `filePath` is null for documents
  * that do not exist on disk yet (created, combined, converted); pass `dirty` for those so the
- * tab asks to be saved: the engine then reports them unsaved until they are. A file that cannot
- * be opened is reported with `onError` when given (agent access), else shown to the user.
+ * tab asks to be saved: the engine then reports them unsaved until they are. `password` is tried
+ * first (protected tool output); the tab keeps it for later reloads. A file that cannot be opened
+ * is reported with `onError` when given (agent access), else shown to the user.
  */
 export async function openBytes(
   bytes: Uint8Array,
   name: string,
-  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean; onError?: (err: unknown) => void } = {}
+  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean; password?: string; onError?: (err: unknown) => void } = {}
 ): Promise<DocumentModel | null> {
   const engine = new EngineClient()
   try {
     await engine.ready()
     const doc = engine.ops<typeof import('@engine/ops/doc').default>('doc')
-    let res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty })
+    let res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty, password: opts.password })
     while (!res.ok) {
       const pw = await askPassword(name, res.wrongPassword)
       if (pw === null) {
@@ -203,9 +204,12 @@ export async function openFileDialog() {
   if (paths.length) await openPaths(paths)
 }
 
-/** Creates a new untitled tab from PDF bytes produced by a tool (combine, create, convert...). */
-export async function openNewDocument(bytes: Uint8Array, name: string): Promise<DocumentModel | null> {
-  return openBytes(bytes, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', { filePath: null, dirty: true })
+/**
+ * Creates a new untitled tab from PDF bytes produced by a tool (combine, create, convert...).
+ * Pass the `password` of protected output so the person is not asked for it again.
+ */
+export async function openNewDocument(bytes: Uint8Array, name: string, opts: { password?: string } = {}): Promise<DocumentModel | null> {
+  return openBytes(bytes, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', { filePath: null, dirty: true, password: opts.password })
 }
 
 // ---- saving ---------------------------------------------------------------------------------

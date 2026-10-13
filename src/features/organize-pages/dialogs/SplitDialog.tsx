@@ -19,6 +19,7 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import { orgOps } from '../files'
+import { protectionNote } from '../protection'
 import { countLabel } from '../ranges'
 import {
   partFileNames,
@@ -148,11 +149,16 @@ function SplitDialog({ doc, close }: { doc: DocumentModel; close: () => void }) 
     if (!valid) return
     close()
     const written = await runSplit(doc, s, usable)
-    if (written)
-      toast(`Split into ${countLabel(written.length, 'file', 'files')} in ${s.folder}`, {
-        kind: 'success',
-        action: showFolderAction(s.folder)
-      })
+    if (!written) return
+    // The parts keep the document's protection (see docs/features/organize-pages.md).
+    const protection = await orgOps(doc)
+      .protection()
+      .catch(() => null)
+    const note = protection ? '. ' + protectionNote(protection, doc.state.title, 'They keep') : ''
+    toast(`Split into ${countLabel(written.length, 'file', 'files')} in ${s.folder}${note}`, {
+      kind: 'success',
+      action: showFolderAction(s.folder)
+    })
   }
   return (
     <Dialog

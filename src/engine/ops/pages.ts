@@ -4,6 +4,7 @@ import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, PDFObject, Session } from '../session'
 import { copyPages, removePageFields } from '../util/graft'
 import { catalog, isNull, pageRotation, readNumber } from '../util/pdf'
+import { protectBytes, sessionProtection } from '../util/protection'
 import { convertToPdf, OPENABLE_FORMATS } from './doc'
 
 function uniqueSorted(indices: number[], count: number): number[] {
@@ -234,11 +235,11 @@ export default defineOps('pages', {
     }
   ),
 
-  /** New PDF bytes containing the given pages (Extract, Split). */
+  /** New PDF bytes containing the given pages (Extract, Split), protected like the document. */
   extract(s, indices: number[]) {
     const list = uniqueSorted(indices, s.pageCount())
     if (!list.length) throw new EngineError('No pages selected', 'NO_PAGES')
-    const bytes = extractToBytes(s, list)
+    const bytes = protectBytes(s.mupdf, extractToBytes(s, list), sessionProtection(s))
     return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
   },
 

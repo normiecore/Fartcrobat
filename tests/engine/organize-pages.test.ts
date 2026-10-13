@@ -100,9 +100,13 @@ describe('organize-pages: combine', () => {
       { key: 'b', fileName: 'mixed-sizes.pdf', pages: [2] },
       { key: 'a', fileName: 'encrypted.pdf' }
     ])
-    const out = await openBytes(bytes)
-    expect(out.info.pageCount).toBe(1 + (ok.ok ? ok.pageCount : 0))
-    expect(out.info.encryption).toBeNull()
+    // The result keeps the protection of encrypted.pdf (more in derived-protection.test.ts).
+    const reopened = await (await createLocalEngine())
+      .ops<typeof docOps>('doc')
+      .open(bytes, { fileName: 'out.pdf', password: 'secret' })
+    if (!reopened.ok) throw new Error('needs password')
+    expect(reopened.info.pageCount).toBe(1 + (ok.ok ? ok.pageCount : 0))
+    expect(reopened.info.encryption).toContain('RC4')
     await o.closeScratch('a')
     await expect(o.combine([{ key: 'a', fileName: 'encrypted.pdf' }])).rejects.toThrow(/no longer open/)
   })
