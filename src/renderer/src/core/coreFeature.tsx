@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BookOpen,
   ChevronFirst,
+  ClipboardPaste,
   ChevronLast,
   Columns2,
   Copy,
@@ -16,9 +17,11 @@ import {
   RotateCcw,
   RotateCw,
   Save,
+  Scissors,
   Search,
   Settings,
   StretchHorizontal,
+  Trash2,
   Undo2,
   X,
   ZoomIn,
@@ -32,11 +35,12 @@ import {
   closeAllDocuments,
   closeDocument,
   openFileDialog,
-  openPaths,
   quitApp,
+  revertDocument,
   saveDocument,
   setTool
 } from '../app/actions'
+import { commandForShortcut, textFieldFocused } from '../app/editing'
 import { invoke, isMac } from '../platform'
 import { nextZoomStep, spreadIndexOf, spreads } from '../viewer/layout'
 import { copySelection } from '../viewer/layers/TextSelectionLayer'
@@ -96,12 +100,8 @@ const commands: CommandDefinition[] = [
     enabled: (ctx) => !!ctx.doc?.state.filePath && ctx.doc.state.dirty,
     run: async (ctx) => {
       const d = doc(ctx)
-      const path = d.state.filePath!
       if (!(await confirm({ title: 'Revert', message: `Discard all changes to “${d.state.title}” since it was last saved?`, confirmLabel: 'Revert', danger: true }))) return
-      d.set({ dirty: false })
-      d.engine.terminate()
-      useApp.setState((s) => ({ docs: s.docs.filter((x) => x.id !== d.id) }))
-      await openPaths([path])
+      await revertDocument(d)
     }
   },
   { id: 'file.close', label: 'Close', icon: X, shortcut: 'Mod+W', run: (ctx) => void closeDocument(doc(ctx)) },
@@ -112,36 +112,80 @@ const commands: CommandDefinition[] = [
     enabled: (ctx) => !!ctx.doc?.state.filePath,
     run: (ctx) => void invoke('shell:showItemInFolder', doc(ctx).state.filePath!)
   },
-  { id: 'file.newWindow', label: 'New Window', shortcut: 'Mod+Shift+N', requiresDocument: false, run: () => void invoke('window:new') },
+  // Acrobat has no shortcut for New Window; Shift+Ctrl/Cmd+N is Go to Page.
+  { id: 'file.newWindow', label: 'New Window', requiresDocument: false, run: () => void invoke('window:new') },
   { id: 'app.quit', label: isMac ? 'Quit Fartcrobat' : 'Exit', shortcut: 'Mod+Q', requiresDocument: false, run: () => quitApp() },
   { id: 'app.preferences', label: 'Preferences…', icon: Settings, shortcut: 'Mod+K', requiresDocument: false, run: () => openPreferences(), keywords: ['settings', 'options'] },
 
   // ---- Edit
+  // Chosen from the native menu while a text field (a comment, the find box, a dialog) has focus,
+  // Undo, Redo, Cut, Copy, Paste, Delete and Select All act on that text instead (see
+  // runMenuCommand), so they are enabled then. Cut, Copy, Paste and Delete otherwise run what
+  // their key would (e.g. the selected form fields or comment).
   {
     id: 'edit.undo',
-    label: (ctx) => (ctx.doc?.state.journal.undoLabel ? `Undo ${ctx.doc.state.journal.undoLabel}` : 'Undo'),
+    label: (ctx) => (!textFieldFocused() && ctx.doc?.state.journal.undoLabel ? `Undo ${ctx.doc.state.journal.undoLabel}` : 'Undo'),
     icon: Undo2,
     shortcut: 'Mod+Z',
-    enabled: (ctx) => !!ctx.doc?.state.journal.canUndo,
-    run: (ctx) => doc(ctx).undo()
+    requiresDocument: false,
+    enabled: (ctx) => textFieldFocused() || !!ctx.doc?.state.journal.canUndo,
+    run: (ctx) => ctx.doc?.undo()
   },
   {
     id: 'edit.redo',
-    label: (ctx) => (ctx.doc?.state.journal.redoLabel ? `Redo ${ctx.doc.state.journal.redoLabel}` : 'Redo'),
+    label: (ctx) => (!textFieldFocused() && ctx.doc?.state.journal.redoLabel ? `Redo ${ctx.doc.state.journal.redoLabel}` : 'Redo'),
     icon: Redo2,
     shortcut: 'Mod+Shift+Z',
-    enabled: (ctx) => !!ctx.doc?.state.journal.canRedo,
-    run: (ctx) => doc(ctx).redo()
+    requiresDocument: false,
+    enabled: (ctx) => textFieldFocused() || !!ctx.doc?.state.journal.canRedo,
+    run: (ctx) => ctx.doc?.redo()
+  },
+  {
+    id: 'edit.cut',
+    label: 'Cut',
+    icon: Scissors,
+    shortcut: 'Mod+X',
+    requiresDocument: false,
+    enabled: (ctx) => textFieldFocused() || !!commandForShortcut('Mod+X', 'edit.cut', ctx),
+    run: (ctx) => commandForShortcut('Mod+X', 'edit.cut', ctx)?.run(ctx)
   },
   {
     id: 'edit.copy',
     label: 'Copy',
     icon: Copy,
     shortcut: 'Mod+C',
-    enabled: (ctx) => ctx.doc?.state.selection.kind === 'text',
-    run: (ctx) => copySelection(doc(ctx))
+    requiresDocument: false,
+    enabled: (ctx) => textFieldFocused() || ctx.doc?.state.selection.kind === 'text' || !!commandForShortcut('Mod+C', 'edit.copy', ctx),
+    run: (ctx) => {
+      if (ctx.doc?.state.selection.kind === 'text') return copySelection(ctx.doc)
+      return commandForShortcut('Mod+C', 'edit.copy', ctx)?.run(ctx)
+    }
   },
-  { id: 'edit.selectAll', label: 'Select All', shortcut: 'Mod+A', run: (ctx) => selectAll(ctx) },
+  {
+    id: 'edit.paste',
+    label: 'Paste',
+    icon: ClipboardPaste,
+    shortcut: 'Mod+V',
+    requiresDocument: false,
+    enabled: (ctx) => textFieldFocused() || !!commandForShortcut('Mod+V', 'edit.paste', ctx),
+    run: (ctx) => commandForShortcut('Mod+V', 'edit.paste', ctx)?.run(ctx)
+  },
+  {
+    id: 'edit.delete',
+    label: 'Delete',
+    icon: Trash2,
+    requiresDocument: false,
+    enabled: (ctx) => textFieldFocused() || !!commandForShortcut('Delete', 'edit.delete', ctx),
+    run: (ctx) => commandForShortcut('Delete', 'edit.delete', ctx)?.run(ctx)
+  },
+  {
+    id: 'edit.selectAll',
+    label: 'Select All',
+    shortcut: 'Mod+A',
+    requiresDocument: false,
+    enabled: (ctx) => textFieldFocused() || !!ctx.doc,
+    run: (ctx) => (ctx.doc ? selectAll(ctx) : undefined)
+  },
   { id: 'edit.deselect', label: 'Deselect All', shortcut: 'Mod+Shift+A', run: (ctx) => doc(ctx).clearSelection() },
   {
     id: 'edit.find',
@@ -195,7 +239,7 @@ const commands: CommandDefinition[] = [
     run: async () => {
       const on = !(await invoke('window:isFullScreen'))
       await invoke('window:setFullScreen', on)
-      useApp.setState({ fullScreen: on, readMode: on })
+      useApp.setState({ fullScreen: on, readMode: on && !!getActiveDoc() })
     }
   },
   {
@@ -240,7 +284,7 @@ const commands: CommandDefinition[] = [
   {
     id: 'nav.goTo',
     label: 'Go to Page…',
-    shortcut: 'Mod+Shift+P',
+    shortcut: ['Mod+Shift+N', 'Mod+Shift+P'],
     run: async (ctx) => {
       const d = doc(ctx)
       const v = await prompt({
@@ -349,7 +393,7 @@ const menus: MenuContribution[] = [
   ...(isMac ? [] : m('file', 'prefs', ['app.preferences'], 950)),
   ...(isMac ? [] : m('file', 'quit', ['app.quit'], 999)),
   ...m('edit', 'history', ['edit.undo', 'edit.redo'], 0),
-  ...m('edit', 'clipboard', ['edit.copy', 'edit.selectAll', 'edit.deselect'], 100),
+  ...m('edit', 'clipboard', ['edit.cut', 'edit.copy', 'edit.paste', 'edit.delete', 'edit.selectAll', 'edit.deselect'], 100),
   ...m('edit', 'find', ['edit.find', 'edit.findNext', 'edit.findPrev'], 300),
   ...m('view', 'zoom', ['view.zoomIn', 'view.zoomOut', 'view.actualSize', 'view.fitPage', 'view.fitWidth', 'view.fitVisible'], 0, 'Zoom'),
   ...m('view', 'rotate', ['view.rotateCW', 'view.rotateCCW'], 100, 'Rotate View'),

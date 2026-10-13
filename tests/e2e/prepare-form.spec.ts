@@ -177,7 +177,7 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     await props.getByRole('radio', { name: 'Select Green by default' }).check()
     await page.waitForTimeout(200)
     await page.screenshot({ path: `${SHOTS}/prepare-form-properties-options.png` })
-    await props.getByRole('button', { name: 'OK' }).click()
+    await props.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(props).toBeHidden()
     await expect
       .poll(async () => (await byName(page, 'Dropdown1'))?.options.map((o) => o.label))
@@ -439,7 +439,7 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await props.getByRole('combobox', { name: 'Format category' }).selectOption('number')
     await expect(props.locator('.fc-prepare-form-example')).toContainText('1,234.56')
     await page.screenshot({ path: `${SHOTS}/prepare-form-format.png` })
-    await props.getByRole('button', { name: 'OK' }).click()
+    await props.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(props).toBeHidden()
     const scripts = await page.evaluate(async () => {
       const d = (window as any).__fartcrobat.getActiveDoc()

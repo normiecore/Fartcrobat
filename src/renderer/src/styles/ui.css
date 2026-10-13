@@ -277,6 +277,9 @@
   display: inline-flex;
   color: var(--text-muted);
 }
+.ui-menu-icon .ui-menu-check {
+  color: var(--accent-text);
+}
 .ui-menu-label {
   flex: 1;
 }
@@ -323,6 +326,9 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   user-select: none;
+}
+.ui-dialog:focus {
+  outline: none;
 }
 .ui-dialog-header {
   display: flex;

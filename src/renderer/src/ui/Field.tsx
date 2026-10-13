@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from 'react'
+import { useState, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 
 export function Field({ label, children, hint, inline }: { label: ReactNode; children: ReactNode; hint?: ReactNode; inline?: boolean }) {
   return (
@@ -14,28 +14,55 @@ export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input type="text" {...props} className={`ui-input ${props.className ?? ''}`} />
 }
 
+const numberText = (v: number) => (Number.isFinite(v) ? String(v) : '')
+
+/**
+ * Number field. While it has the focus it may be empty or hold a partial number; valid numbers
+ * are passed to onChange as they are typed, and leaving the field shows the value in effect
+ * (the last valid one, or what the owner made of it, e.g. clamped to a range).
+ */
 export function NumberInput({
   value,
   onChange,
   min,
   max,
   step = 1,
+  onFocus,
+  onBlur,
   ...rest
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
   value: number
   onChange: (v: number) => void
 }) {
+  const [draft, setDraft] = useState(() => numberText(value))
+  const [focused, setFocused] = useState(false)
+  const [shown, setShown] = useState(value)
+  if (!Object.is(shown, value)) {
+    // A new value from outside replaces the text, unless it is the number being typed.
+    setShown(value)
+    if (!focused && parseFloat(draft) !== value) setDraft(numberText(value))
+  }
   return (
     <input
       type="number"
       className="ui-input ui-input-number"
-      value={Number.isFinite(value) ? value : ''}
+      value={draft}
       min={min}
       max={max}
       step={step}
       onChange={(e) => {
+        setDraft(e.target.value)
         const v = parseFloat(e.target.value)
         if (!Number.isNaN(v)) onChange(v)
+      }}
+      onFocus={(e) => {
+        setFocused(true)
+        onFocus?.(e)
+      }}
+      onBlur={(e) => {
+        setFocused(false)
+        if (parseFloat(draft) !== value) setDraft(numberText(value))
+        onBlur?.(e)
       }}
       {...rest}
     />

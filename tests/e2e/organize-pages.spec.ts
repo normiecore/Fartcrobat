@@ -2,7 +2,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { existsSync, mkdtempSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { activeDocState, fixturePath, launch, openFile, waitForRender } from './helpers'
+import { activeDocState, fixturePath, launch, menuItem, openFile, waitForRender } from './helpers'
 
 /** Makes the native open dialog return `paths` without showing anything. */
 async function stubOpenDialog(app: ElectronApplication, paths: string[]) {
@@ -250,7 +250,7 @@ test('organize dialogs: rotate, page labels, insert from file, replace, split, c
     // Document menu > Organize Pages (through the app menu).
     await page.getByRole('button', { name: 'Menu' }).click()
     await page.getByRole('menuitem', { name: 'Document' }).hover()
-    await page.getByRole('menuitem', { name: 'Organize Pages' }).click()
+    await menuItem(page, 'Organize Pages').click()
     await waitForThumbs(page, 5)
 
     // Right-click > Duplicate Page.
@@ -318,7 +318,7 @@ test('organize dialogs: rotate, page labels, insert from file, replace, split, c
     dialog = page.getByRole('dialog')
     await expect(dialog).toContainText('“encrypted.pdf” is protected')
     await dialog.getByLabel('Password').fill('secret')
-    await dialog.getByRole('button', { name: 'OK' }).click()
+    await dialog.getByRole('button', { name: 'OK', exact: true }).click()
     dialog = page.getByRole('dialog')
     await expect(dialog).toContainText('Insert Pages')
     await expect(dialog).toContainText('encrypted.pdf')

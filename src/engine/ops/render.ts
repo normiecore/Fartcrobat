@@ -17,6 +17,10 @@ export interface RenderOptions {
   colorMode?: 'document' | 'dark' | 'high-contrast'
   /** Transparent background instead of white (used for overlays). */
   transparent?: boolean
+  /** Render straight into an opaque pixmap (no alpha channel), e.g. for JPEG output. */
+  opaque?: boolean
+  /** Render in DeviceGray instead of DeviceRGB. */
+  gray?: boolean
 }
 
 export interface RenderResult {
@@ -61,8 +65,9 @@ export function renderToPixmap(s: Session, pageIndex: number, opts: RenderOption
   if (w * h > MAX_RENDER_PIXELS) {
     throw new Error(`Render region too large (${w}x${h})`)
   }
-  const pix = new m.Pixmap(m.ColorSpace.DeviceRGB, region, true)
-  pix.clear(opts.transparent ? 0 : 255)
+  const cs = opts.gray ? m.ColorSpace.DeviceGray : m.ColorSpace.DeviceRGB
+  const pix = new m.Pixmap(cs, region, !opts.opaque)
+  pix.clear(opts.transparent && !opts.opaque ? 0 : 255)
   const hidden: { setHiddenForEditing(v: boolean): void }[] = []
   if (opts.hide?.length) {
     const ids = new Set(opts.hide)
@@ -119,20 +124,18 @@ export function encodePage(
     grayscale?: boolean
   }
 ): Uint8Array {
+  // Render opaque (and in gray when asked): MuPDF cannot drop an alpha channel when converting.
   const { pix } = renderToPixmap(s, pageIndex, {
     scale: opts.dpi / 72,
     annots: opts.annots,
-    widgets: opts.widgets
+    widgets: opts.widgets,
+    opaque: true,
+    gray: !!opts.grayscale
   })
-  let out = pix
   try {
-    // JPEG and grayscale output need an opaque pixmap.
-    const cs = opts.grayscale ? s.mupdf.ColorSpace.DeviceGray : s.mupdf.ColorSpace.DeviceRGB
-    out = pix.convertToColorSpace(cs, opts.format === 'png' && !opts.grayscale)
-    const data = opts.format === 'png' ? out.asPNG() : out.asJPEG(opts.quality ?? 90)
+    const data = opts.format === 'png' ? pix.asPNG() : pix.asJPEG(opts.quality ?? 90)
     return data.slice()
   } finally {
-    if (out !== pix) out.destroy()
     pix.destroy()
   }
 }

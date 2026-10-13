@@ -195,6 +195,15 @@ export function register(ctx: MainContext) {
 
 Channels must be named `feature:<feature-id>:<method>` (letters/digits only in the method); the
 preload rejects anything else. Call them from the UI with `invoke('feature:convert:office', path)`.
+The main and preload bundles include every package they import (installers ship no
+`node_modules`), so a `main.ts` may import pure-JS dependencies but nothing that loads files from
+its own package folder at runtime.
+
+Core channels worth knowing: `file:tempPath(name)` gives a path in a new private folder (only the
+user can read it; removed when the app quits) and `file:write` there marks the file as downloaded
+on Windows; `shell:openPath(path)` refuses programs and scripts (.exe, .js, .app, .desktop...) and
+returns the message to show; `file:saveDialog` asks before replacing a file whose extension it
+added. Quitting (`app:quit`) asks every window about unsaved documents, one at a time.
 
 ## Testing
 

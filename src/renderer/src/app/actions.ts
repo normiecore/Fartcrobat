@@ -1,8 +1,9 @@
+import { normalizePath, pathKey as platformPathKey } from '@shared/paths'
 import type { DocInfo, OpenResult, Preferences, SaveOptions } from '@shared/types'
 import { DocumentModel } from '../document/DocumentModel'
 import { EngineClient } from '../engine/EngineClient'
-import { basename, invoke, OPEN_FILTERS, PDF_FILTER, readFile, stripExtension, writeFile } from '../platform'
-import { ask, prompt } from '../ui/dialogs'
+import { basename, invoke, OPEN_FILTERS, PDF_FILTER, platform, readFile, stripExtension, writeFile } from '../platform'
+import { ask, confirm, prompt } from '../ui/dialogs'
 import { registry } from './registry'
 import { getActiveDoc, useApp } from './store'
 import { showError, toast, withProgress } from './ui-services'
@@ -121,38 +122,61 @@ function addDocument(
   return doc
 }
 
+const pathKey = (path: string) => platformPathKey(path, platform)
+
+/** Opens of files still in progress, by pathKey: a second request for the same file waits for the first. */
+const opening = new Map<string, Promise<DocumentModel | null>>()
+
+async function openPath(path: string): Promise<DocumentModel | null> {
+  const name = basename(path)
+  try {
+    let bytes: Uint8Array | null = null
+    const ext = extensionOf(name)
+    const converter = registry.fileConverters.find((c) => c.extensions.includes(ext))
+    if (converter) {
+      bytes = await withProgress(`Converting ${name} to PDF…`, () => converter.convert(path)).catch((err) => {
+        console.warn('Converter failed, falling back to built-in import', err)
+        return null
+      })
+      if (bytes) return await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, dirty: true })
+    }
+    bytes = await readFile(path)
+    const doc = await openBytes(bytes, name, { filePath: path })
+    if (doc && doc.state.filePath) {
+      const recent = await invoke('recent:add', { path, name, size: bytes.length, pageCount: doc.pageCount })
+      useApp.setState({ recent: recent })
+    }
+    return doc
+  } catch (err) {
+    showError(err, `Could not open ${name}`)
+    void invoke('recent:remove', path).then((recent) => useApp.setState({ recent }))
+    return null
+  }
+}
+
 /** Opens files from disk (dialog, drag and drop, command line, recent list). */
 export async function openPaths(paths: string[]) {
-  for (const path of paths) {
-    const existing = useApp.getState().docs.find((d) => d.state.filePath === path)
+  for (const raw of paths) {
+    const path = normalizePath(raw)
+    const key = pathKey(path)
+    const existing = useApp.getState().docs.find((d) => d.state.filePath && pathKey(d.state.filePath) === key)
     if (existing) {
       useApp.setState({ activeDocId: existing.id })
       continue
     }
-    const name = basename(path)
+    // Already being opened (a double-click on a recent file, a second launch...): show that tab.
+    const pending = opening.get(key)
+    if (pending) {
+      const doc = await pending
+      if (doc && useApp.getState().docs.includes(doc)) useApp.setState({ activeDocId: doc.id })
+      continue
+    }
+    const task = openPath(path)
+    opening.set(key, task)
     try {
-      let bytes: Uint8Array | null = null
-      const ext = extensionOf(name)
-      const converter = registry.fileConverters.find((c) => c.extensions.includes(ext))
-      if (converter) {
-        bytes = await withProgress(`Converting ${name} to PDF…`, () => converter.convert(path)).catch((err) => {
-          console.warn('Converter failed, falling back to built-in import', err)
-          return null
-        })
-        if (bytes) {
-          await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, dirty: true })
-          continue
-        }
-      }
-      bytes = await readFile(path)
-      const doc = await openBytes(bytes, name, { filePath: path })
-      if (doc && doc.state.filePath) {
-        const recent = await invoke('recent:add', { path, name, size: bytes.length, pageCount: doc.pageCount })
-        useApp.setState({ recent: recent })
-      }
-    } catch (err) {
-      showError(err, `Could not open ${name}`)
-      void invoke('recent:remove', path).then((recent) => useApp.setState({ recent }))
+      await task
+    } finally {
+      opening.delete(key)
     }
   }
 }
@@ -184,12 +208,24 @@ export async function saveDocument(
     })
     if (!chosen) return false
     path = chosen.toLowerCase().endsWith('.pdf') ? chosen : chosen + '.pdf'
+    // The save dialog only checked the name that was typed; ask before replacing another file.
+    if (path !== chosen && path !== doc.state.filePath && (await invoke('file:exists', path))) {
+      const replace = await confirm({
+        title: 'Replace file?',
+        message: `“${basename(path)}” already exists. Do you want to replace it?`,
+        confirmLabel: 'Replace',
+        danger: true
+      })
+      if (!replace) return false
+    }
   }
   try {
-    const bytes = await doc.busyWhile('Saving…', () => doc.saveBytes(opts.saveOptions ?? {}))
+    const { bytes, version } = await doc.busyWhile('Saving…', () => doc.core.doc.saveWithVersion(opts.saveOptions ?? {}))
     await writeFile(path, bytes)
-    await doc.core.doc.markSaved(basename(path))
-    doc.set({ filePath: path, title: basename(path), dirty: false })
+    // Edits made while the file was being written are not in it: the engine keeps those unsaved
+    // and reports the dirty state with this call, so it is not set here.
+    await doc.core.doc.markSaved(basename(path), version)
+    doc.set({ filePath: path, title: basename(path) })
     const recent = await invoke('recent:add', { path, name: basename(path), size: bytes.length, pageCount: doc.pageCount })
     useApp.setState({ recent })
     toast(`Saved ${basename(path)}`, { kind: 'success', timeout: 2000 })
@@ -229,6 +265,34 @@ export async function replaceDocumentBytes(
   if (path) await doc.core.doc.markSaved(basename(path))
 }
 
+/**
+ * File > Revert: reloads the document from its file in the same tab, discarding unsaved
+ * changes and the undo history. The tab keeps its place, page and zoom. When the file cannot
+ * be read the tab stays as it was and the user is told why. Returns true when reverted.
+ */
+export async function revertDocument(doc: DocumentModel): Promise<boolean> {
+  const path = doc.state.filePath
+  if (!path) return false
+  const page = doc.state.currentPage
+  try {
+    const bytes = await doc.busyWhile('Reverting…', () => readFile(path))
+    let res = await doc.core.doc.reload(bytes, {})
+    while (!res.ok) {
+      const pw = await askPassword(doc.state.title, res.wrongPassword)
+      if (pw === null) return false
+      res = await doc.core.doc.reload(bytes, { password: pw })
+    }
+    await doc.core.doc.markSaved(basename(path))
+    doc.set({ info: res.info, selection: { kind: 'none' } })
+    const target = Math.min(page, res.info.pageCount - 1)
+    if (doc.state.currentPage !== target) doc.view?.goToPage(target)
+    return true
+  } catch (err) {
+    showError(err, `Could not revert ${doc.state.title}`)
+    return false
+  }
+}
+
 // ---- closing --------------------------------------------------------------------------------
 
 async function rememberView(doc: DocumentModel) {
@@ -240,22 +304,37 @@ async function rememberView(doc: DocumentModel) {
   } catch {}
 }
 
+/**
+ * Asks whether to save a document with unsaved changes, and saves it if asked to. Returns false
+ * when the user cancelled (or the save did not happen); true when the document may be closed.
+ */
+async function settleUnsaved(doc: DocumentModel): Promise<boolean> {
+  if (!doc.state.dirty) return true
+  useApp.setState({ activeDocId: doc.id })
+  const answer = await ask({
+    title: 'Save changes?',
+    message: `Do you want to save changes to “${doc.state.title}” before closing?`,
+    buttons: [
+      { id: 'discard', label: "Don't Save", variant: 'quiet' },
+      { id: 'cancel', label: 'Cancel' },
+      { id: 'save', label: 'Save', variant: 'primary' }
+    ]
+  })
+  if (answer === null || answer === 'cancel') return false
+  if (answer === 'save' && !(await saveDocument(doc))) return false
+  return true
+}
+
 /** Closes a tab, asking to save unsaved changes. Returns false if the user cancelled. */
 export async function closeDocument(doc: DocumentModel): Promise<boolean> {
-  if (doc.state.dirty) {
-    useApp.setState({ activeDocId: doc.id })
-    const answer = await ask({
-      title: 'Save changes?',
-      message: `Do you want to save changes to “${doc.state.title}” before closing?`,
-      buttons: [
-        { id: 'discard', label: "Don't Save", variant: 'quiet' },
-        { id: 'cancel', label: 'Cancel' },
-        { id: 'save', label: 'Save', variant: 'primary' }
-      ]
-    })
-    if (answer === null || answer === 'cancel') return false
-    if (answer === 'save' && !(await saveDocument(doc))) return false
-  }
+  if (!(await settleUnsaved(doc))) return false
+  await removeDocument(doc)
+  return true
+}
+
+/** Closes a tab without asking. */
+async function removeDocument(doc: DocumentModel) {
+  if (!useApp.getState().docs.includes(doc)) return
   await rememberView(doc)
   useApp.setState((s) => {
     const idx = s.docs.findIndex((d) => d.id === doc.id)
@@ -265,19 +344,84 @@ export async function closeDocument(doc: DocumentModel): Promise<boolean> {
     return { docs, activeDocId }
   })
   doc.close()
-  return true
 }
 
-/** Closes every tab (asking about unsaved ones). Returns false if the user cancelled. */
-export async function closeAllDocuments(): Promise<boolean> {
-  for (const doc of [...useApp.getState().docs]) {
-    if (!(await closeDocument(doc))) return false
-  }
-  return true
+let closingAll: Promise<boolean> | null = null
+
+/**
+ * Closes every tab. Unsaved documents are asked about first, one by one; nothing is closed when
+ * the user cancels any of them. Returns false if the user cancelled. Calls made while one is
+ * running share its result instead of asking again.
+ */
+export function closeAllDocuments(): Promise<boolean> {
+  closingAll ??= (async () => {
+    try {
+      const docs = [...useApp.getState().docs]
+      const discarded = new Set<DocumentModel>()
+      for (const doc of docs) {
+        if (!doc.state.dirty) continue
+        if (!(await settleUnsaved(doc))) return false
+        if (doc.state.dirty) discarded.add(doc)
+      }
+      for (const doc of docs) {
+        // A document changed again while the others were being asked about.
+        if (doc.state.dirty && !discarded.has(doc) && !(await settleUnsaved(doc))) return false
+        await removeDocument(doc)
+      }
+      return true
+    } finally {
+      closingAll = null
+    }
+  })()
+  return closingAll
 }
 
+/**
+ * Quits the app (File > Exit, Cmd+Q). The main process asks every window, one at a time, about
+ * its unsaved documents (see answerCloseRequest) and quits once all of them agreed.
+ */
 export async function quitApp() {
-  if (await closeAllDocuments()) await invoke('app:quitConfirmed')
+  await invoke('app:quit')
+}
+
+let closeRequest: Promise<void> | null = null
+
+/**
+ * Answers the main process asking whether this window may close (closing the window, quitting).
+ * Unsaved documents are asked about first, one by one; only when none was cancelled are the
+ * tabs closed, so cancelling leaves every tab open. Repeated requests while the questions are
+ * on screen share the same answer instead of stacking dialogs.
+ */
+export function answerCloseRequest(): Promise<void> {
+  if (closeRequest) return closeRequest
+  closeRequest = (async () => {
+    let ok = true
+    try {
+      // Every unsaved tab, in tab order (also tabs opened while the questions were showing).
+      const settled = new Set<DocumentModel>()
+      for (;;) {
+        const next = useApp.getState().docs.find((d) => d.state.dirty && !settled.has(d))
+        if (!next) break
+        if (!(await settleUnsaved(next))) {
+          ok = false
+          break
+        }
+        settled.add(next)
+      }
+      if (ok) for (const doc of [...useApp.getState().docs]) await removeDocument(doc)
+    } catch (err) {
+      ok = false
+      showError(err, 'Could not close the window')
+    }
+    try {
+      await invoke(ok ? 'app:quitConfirmed' : 'app:quitCancelled')
+    } catch (err) {
+      showError(err)
+    }
+  })().finally(() => {
+    closeRequest = null
+  })
+  return closeRequest
 }
 
 // ---- UI state -------------------------------------------------------------------------------
@@ -310,7 +454,12 @@ export function openToolGroup(id: string | null) {
   const doc = getActiveDoc()
   if (group.requiresDocument !== false && !doc) {
     toast('Open a PDF first to use this tool.')
+    // Open the tool on the file the user picks, as Acrobat does.
     void openFileDialog()
+      .then(() => {
+        if (getActiveDoc()) openToolGroup(id)
+      })
+      .catch((err) => showError(err, 'Could not open the file'))
     return
   }
   if (group.run && !group.panel) {

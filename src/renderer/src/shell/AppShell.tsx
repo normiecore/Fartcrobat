@@ -39,7 +39,8 @@ function ReadModeBar({ doc }: { doc: DocumentModel }) {
 
 export function AppShell() {
   const doc = useActiveDoc()
-  const readMode = useApp((s) => s.readMode)
+  // Read Mode applies to a document; Home always shows the top bar.
+  const readMode = useApp((s) => s.readMode) && !!doc
   const findBarOpen = useApp((s) => s.findBarOpen)
   const leftOpen = useApp((s) => s.leftPaneOpen)
   const groupId = useApp((s) => s.toolGroupId)
@@ -82,8 +83,8 @@ export function AppShell() {
                   <DocumentView key={doc.id} doc={doc} />
                 ) : (
                   <>
-                    {findBarOpen && <FindBar key={doc.id} doc={doc} />}
-                    <Viewer key={doc.id} doc={doc} />
+                    {findBarOpen && <FindBar key={`find-${doc.id}`} doc={doc} />}
+                    <Viewer key={`view-${doc.id}`} doc={doc} />
                   </>
                 )}
                 {readMode && <ReadModeBar doc={doc} />}

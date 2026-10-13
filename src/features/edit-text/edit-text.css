@@ -1,0 +1,275 @@
+/* Edit text & images / Add text */
+
+.fc-edit-text-layer {
+  z-index: 5;
+}
+.fc-edit-text-layer.is-add {
+  cursor: text;
+}
+
+/* outlines of every editable paragraph */
+.fc-edit-text-box {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: auto;
+  cursor: text;
+  border: 1px solid rgba(20, 115, 230, 0.4);
+  border-radius: 2px;
+  /* a faint light edge keeps the outline visible on dark pages (or with inverted page colours) */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  transition:
+    background 0.08s,
+    border-color 0.08s;
+}
+.fc-edit-text-box:hover {
+  border-color: var(--accent);
+  background: rgba(20, 115, 230, 0.08);
+}
+.fc-edit-text-box:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(20, 115, 230, 0.45);
+}
+
+/* text of a header, footer, watermark or Bates number: changed with the tool that added it */
+.fc-edit-text-box.is-mark {
+  cursor: pointer;
+  border: 1px dashed rgba(128, 128, 128, 0.55);
+}
+.fc-edit-text-box.is-mark:hover {
+  border-color: var(--text-muted);
+  background: rgba(128, 128, 128, 0.08);
+}
+.fc-edit-text-box.is-passive {
+  pointer-events: none;
+}
+.fc-edit-text-mark-tag {
+  position: absolute;
+  transform: translate(-2px, calc(-100% - 4px));
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--text-muted);
+  font: 11px/16px var(--font);
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  opacity: 0.85;
+}
+.fc-edit-text-mark-tag:hover {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+.fc-edit-text-mark-tag:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: var(--focus);
+}
+
+/* page render without the original text, under the editor */
+.fc-edit-text-cover {
+  position: absolute;
+  pointer-events: none;
+}
+
+.fc-edit-text-frame {
+  position: absolute;
+  transform-origin: 0 0;
+  pointer-events: auto;
+}
+.fc-edit-text-ring {
+  position: absolute;
+  inset: -4px;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  cursor: move;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+}
+.fc-edit-text-frame.is-busy .fc-edit-text-ring {
+  border-style: dashed;
+  cursor: progress;
+}
+.fc-edit-text-editor {
+  position: relative;
+  min-width: 3px;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+  overflow-wrap: break-word;
+  font-kerning: normal;
+  transition: opacity 0.12s;
+}
+.fc-edit-text-editor::selection,
+.fc-edit-text-editor *::selection {
+  background: rgba(51, 144, 255, 0.35);
+}
+.fc-edit-text-frame.is-pending .fc-edit-text-editor {
+  opacity: 0;
+}
+.fc-edit-text-handle {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -4.5px;
+  background: #fff;
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+  cursor: ew-resize;
+}
+.fc-edit-text-handle.is-left {
+  left: -9px;
+}
+.fc-edit-text-handle.is-right {
+  right: -9px;
+}
+.fc-edit-text-frame.is-busy .fc-edit-text-handle {
+  display: none;
+}
+
+.fc-edit-text-marquee {
+  position: absolute;
+  border: 1px dashed var(--accent);
+  background: rgba(20, 115, 230, 0.06);
+  pointer-events: none;
+}
+
+/* floating formatting bar */
+.fc-edit-text-mini {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  color: var(--text);
+  user-select: none;
+}
+.fc-edit-text-mini .fc-edit-text-font {
+  width: 150px;
+}
+.fc-edit-text-mini-sep {
+  width: 1px;
+  height: 22px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
+/* shared controls */
+.fc-edit-text-font {
+  min-width: 0;
+}
+.fc-edit-text-size {
+  width: 74px;
+}
+.fc-edit-text-toggles {
+  display: inline-flex;
+  gap: 2px;
+}
+.fc-edit-text-spacing {
+  width: 90px;
+}
+
+/* panel */
+.fc-edit-text-format {
+  padding: 0 4px;
+}
+.fc-edit-text-format .fc-edit-text-font {
+  width: 100%;
+}
+.fc-edit-text-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.fc-edit-text-unit,
+.fc-edit-text-label {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-edit-text-label {
+  flex: 1;
+}
+.fc-edit-text-hint {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* contextual toolbar */
+.fc-edit-text-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+.fc-edit-text-toolbar .ui-segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fc-edit-text-toolbar-hint {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc-edit-text-row-chevron {
+  flex: none;
+  color: var(--text-muted);
+}
+.fc-edit-text-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+/* the palette opens towards the inside of the floating bar, which always fits in the window */
+.fc-edit-text-mini .ui-popover {
+  left: auto;
+  right: 0;
+}
+
+/* the document's permissions do not allow changes */
+.fc-edit-text-note {
+  display: flex;
+  gap: 8px;
+  margin: 4px 12px 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.fc-edit-text-note > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warning);
+}
+.fc-edit-text-note p {
+  margin: 0;
+}
+.fc-edit-text-note p + button {
+  margin-top: 6px;
+}

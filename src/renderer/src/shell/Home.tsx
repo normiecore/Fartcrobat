@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Clock, FileText, FolderOpen, Trash2, X } from 'lucide-react'
 import { registry } from '../app/registry'
 import { useApp } from '../app/store'
-import { openFileDialog, openPaths, openToolGroup, refreshRecent } from '../app/actions'
+import { openFileDialog, openPaths, openToolGroup, refreshRecent, setPrefs } from '../app/actions'
+import { toast } from '../app/ui-services'
 import { invoke } from '../platform'
 import { Button } from '../ui/Button'
 import { EmptyState } from '../ui/Panel'
@@ -39,7 +40,17 @@ function DefaultAppBanner() {
       <Button variant="primary" onClick={() => void invoke('defaultApp:set').then(setStatus)}>
         Make default
       </Button>
-      <button className="ui-icon-btn" aria-label="Dismiss" onClick={() => setDismissed(true)}>
+      <button
+        className="ui-icon-btn"
+        aria-label="Dismiss"
+        title="Don't ask again"
+        onClick={() => {
+          // Remembered: Home is shown again after every closed document and on every start.
+          setDismissed(true)
+          void setPrefs({ checkDefaultAppOnStartup: false })
+          toast('Fartcrobat won’t ask again. You can make it the default PDF app from Help or Preferences.', { timeout: 6000 })
+        }}
+      >
         <X size={16} />
       </button>
     </div>

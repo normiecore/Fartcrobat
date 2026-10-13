@@ -1,5 +1,5 @@
 import type { DocInfo, DocMetadata, OpenResult, PageInfo, Permission, SaveOptions } from '@shared/types'
-import { defineOps, EngineError, mutation, withTransfer } from '../define'
+import { defineOps, EngineError, mutation, withTransfer, type Transfer } from '../define'
 import type { PDFDocument, Session } from '../session'
 import {
   catalog,
@@ -206,6 +206,32 @@ export function permissionBits(p: Partial<Record<Permission, boolean>>): number 
   return bits | 0
 }
 
+/**
+ * Session state key (`s.state`): SaveOptions that every later save of this session must use. A
+ * feature sets it when an incremental save would leak removed content (e.g. after redaction).
+ */
+export const REQUIRED_SAVE_OPTIONS = 'core:requiredSaveOptions'
+
+const GARBAGE_LEVELS: NonNullable<SaveOptions['garbage']>[] = ['none', 'collect', 'compact', 'deduplicate']
+
+/** Merges the session's required save options (if any) over the caller's options. */
+export function withRequiredSaveOptions(s: Session, opts: SaveOptions): SaveOptions {
+  const req = s.state.get(REQUIRED_SAVE_OPTIONS) as SaveOptions | undefined
+  if (!req) return opts
+  if (req.mode === 'full' && opts.mode === 'incremental') {
+    throw new EngineError(
+      'This document must be saved in full (content was redacted or removed); an incremental save would keep the removed content in the file.',
+      'FULL_SAVE_REQUIRED'
+    )
+  }
+  const out: SaveOptions = { ...opts }
+  if (req.mode) out.mode = req.mode
+  if (req.garbage && GARBAGE_LEVELS.indexOf(req.garbage) > GARBAGE_LEVELS.indexOf(out.garbage ?? 'collect')) out.garbage = req.garbage
+  if (req.clean) out.clean = true
+  if (req.sanitize) out.sanitize = true
+  return out
+}
+
 function takeBuffer(buf: InstanceType<Session['mupdf']['Buffer']>): Uint8Array {
   try {
     return buf.asUint8Array().slice()
@@ -244,6 +270,7 @@ function saveIncrementally(s: Session): Uint8Array {
  * its own security settings.
  */
 export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
+  opts = withRequiredSaveOptions(s, opts)
   const doc = s.pdf
   let mode = opts.mode ?? 'auto'
   const changesSecurity = !!opts.encrypt || !!opts.decrypt
@@ -413,11 +440,24 @@ export default defineOps('doc', {
     return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
   },
 
-  /** Call after the saved bytes were written to disk successfully. */
-  markSaved(s, fileName?: string) {
+  /**
+   * Like `save`, plus the edit version the bytes correspond to. Pass that version to `markSaved`
+   * so that edits made while the file was being written keep the document dirty.
+   */
+  saveWithVersion(s, opts: SaveOptions = {}): Transfer<{ bytes: Uint8Array; version: number }> {
+    const version = s.editVersion()
+    const bytes = saveDocument(s, opts)
+    return withTransfer({ bytes, version }, [bytes.buffer as ArrayBuffer])
+  },
+
+  /**
+   * Call after the saved bytes were written to disk successfully. `version` (from
+   * `saveWithVersion`) is the state the file holds; without it the current state is marked saved.
+   */
+  markSaved(s, fileName?: string, version?: number) {
     if (fileName) s.fileName = fileName
     s.converted = false
-    s.markSaved()
+    s.markSaved(version)
   },
 
   isDirty(s): boolean {

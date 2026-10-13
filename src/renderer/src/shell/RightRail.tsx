@@ -13,12 +13,15 @@ function PageNav({ doc }: { doc: DocumentModel }) {
   const label = info.pages[current]?.label ?? String(current + 1)
   const hasLabels = info.pages.some((p, i) => p.label !== String(i + 1))
   useEffect(() => setText(hasLabels ? label : String(current + 1)), [current, label, hasLabels])
+  const shown = hasLabels ? label : String(current + 1)
   const go = () => {
     const t = text.trim()
     let idx = info.pages.findIndex((p) => p.label === t)
     if (idx < 0) idx = parseInt(t, 10) - 1
-    if (Number.isFinite(idx) && idx >= 0 && idx < info.pageCount) doc.view?.goToPage(idx)
-    else setText(hasLabels ? label : String(current + 1))
+    // The current page: stay where the view is instead of jumping to the top of the page.
+    if (idx === current) setText(shown)
+    else if (Number.isFinite(idx) && idx >= 0 && idx < info.pageCount) doc.view?.goToPage(idx)
+    else setText(shown)
   }
   return (
     <div className="shell-pagenav">

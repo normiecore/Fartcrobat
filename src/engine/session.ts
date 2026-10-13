@@ -64,6 +64,8 @@ export class Session {
   private journalOffset = 0
   /** Journal position seen by the last `noteJournal()`. */
   private knownPosition = 0
+  /** Bumps on every change to the document content (edits, undo, redo, reload, forced dirty). */
+  private editCounter = 0
   private opDepth = 0
   private progressSink: ((fraction: number, message?: string) => void) | null = null
 
@@ -99,6 +101,7 @@ export class Session {
     this.savedPosition = this.journalPosition()
     this.knownPosition = this.savedPosition
     this.forcedDirty = !!opts.converted || !!opts.dirty
+    this.editCounter++
     this.signedOnOpen = safe(() => countSignatures(doc) > 0, false)
     this.changedStructure = true
     this.changedAll = true
@@ -255,11 +258,27 @@ export class Session {
   /** Marks the document as modified even though no journalled change happened. */
   markDirty() {
     this.forcedDirty = true
+    this.editCounter++
   }
 
-  markSaved() {
+  /**
+   * Version of the document content: changes whenever an edit, undo, redo or reload happens.
+   * Record it together with the bytes you save and pass it to `markSaved`.
+   */
+  editVersion(): number {
+    return this.editCounter
+  }
+
+  /**
+   * Records that the document was written to disk. With `version` (from `editVersion()` taken when
+   * the bytes were produced), changes made after that point keep the document dirty, because the
+   * file does not contain them.
+   */
+  markSaved(version?: number) {
     this.noteJournal()
-    this.savedPosition = this.journalPosition()
+    // When the content changed after the bytes were produced, the file holds an earlier state
+    // that no journal position identifies reliably any more: stay dirty until the next save.
+    this.savedPosition = version === undefined || version === this.editCounter ? this.journalPosition() : -1
     this.forcedDirty = false
     this.changedDocument = true
   }
@@ -347,14 +366,17 @@ export class Session {
       doc.beginOperation(label)
       began = true
     } catch {}
+    const before = this.journalPosition()
     try {
       const result = fn()
       if (result instanceof Promise) {
         throw new EngineError('Mutations must be synchronous', 'ASYNC_MUTATION')
       }
       if (began) doc.endOperation()
+      if (this.journalPosition() !== before) this.editCounter++
       return result
     } catch (err) {
+      this.editCounter++
       if (began) {
         try {
           doc.abandonOperation()
@@ -375,6 +397,7 @@ export class Session {
     this.noteJournal()
     doc.undo()
     this.knownPosition = this.journalPosition()
+    this.editCounter++
     this.afterHistoryJump()
   }
 
@@ -384,6 +407,7 @@ export class Session {
     this.noteJournal()
     doc.redo()
     this.knownPosition = this.journalPosition()
+    this.editCounter++
     this.afterHistoryJump()
   }
 
