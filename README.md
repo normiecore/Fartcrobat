@@ -43,7 +43,8 @@ over can find things where they expect them. Everything runs offline.
 
 **Export and create**
 - Export to Word, Excel, PowerPoint, HTML, plain text and images
-- Create PDFs from images, HTML and, when LibreOffice is installed, Office documents
+- Create PDFs from images, HTML files, the clipboard, blank pages and Word, Excel or PowerPoint
+  files (best layout with LibreOffice installed; a built-in converter is used otherwise)
 
 **Print**
 - Print dialog with live preview, page scaling, several pages per sheet, booklets and posters
@@ -75,6 +76,10 @@ npm test           # unit tests (engine and features)
 npm run e2e        # build and run end-to-end tests (Linux: prefix with xvfb-run -a)
 npm run dist       # build installers for the current platform
 ```
+
+Some tests also check Fartcrobat's output with independent tools: `pip install -r
+tests/requirements.txt`, poppler-utils (`pdfsig`) and LibreOffice. Without them those checks are
+skipped; CI installs all of them.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the app is built and
 [docs/features](docs/features) for each feature's design notes.
