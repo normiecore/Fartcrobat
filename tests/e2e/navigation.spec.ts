@@ -402,7 +402,7 @@ test('document properties: description, fonts, security, initial view, custom; u
       (p) => (window as any).__fartcrobat.openPaths([p]),
       fixturePath('encrypted.pdf')
     )
-    await page.getByLabel('Password').fill('secret')
+    await page.getByLabel('Password', { exact: true }).fill('secret')
     await page.keyboard.press('Enter')
     await opening
     await expect.poll(async () => (await activeDocState(page))?.title).toBe('encrypted.pdf')
@@ -424,7 +424,7 @@ test('document properties: description, fonts, security, initial view, custom; u
     if (await page.evaluate(() => (window as any).__fartcrobat.registry.commands.has('protect.unlock'))) {
       // the permissions password lifts the restriction while the dialog stays open
       await notice.getByRole('button', { name: 'Enter Permissions Password…' }).click()
-      await page.getByLabel('Permissions password').fill('owner')
+      await page.getByRole('dialog', { name: 'Permissions password' }).getByLabel('Permissions password').fill('owner')
       await page.getByRole('button', { name: 'Unlock' }).click()
       await expect(notice).toBeHidden()
       await expect(dialog.getByLabel('Navigation tab')).toBeEnabled()
