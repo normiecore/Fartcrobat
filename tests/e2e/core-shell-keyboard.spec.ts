@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRender } from './helpers'
+import { activeDocState, fixturePath, launch, menuItem, openFile, runCommand, waitForRender } from './helpers'
 
 function appState(page: Page) {
   return page.evaluate(() => {
@@ -47,6 +47,58 @@ test('Escape that closes the palette or a menu does nothing else', async () => {
     // With nothing left to close, Escape still resets the tool.
     await page.keyboard.press('Escape')
     await expect.poll(async () => (await appState(page)).toolId).toBe('select')
+  } finally {
+    await app.close()
+  }
+})
+
+test('Escape closes the innermost popup first and nothing else sees it', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await runCommand(page, 'tools.hand')
+    // Stands in for a tool's own Escape handling, listening since before any popup opened.
+    await page.evaluate(() => {
+      ;(window as any).__escapes = 0
+      window.addEventListener('keydown', (e) => e.key === 'Escape' && (window as any).__escapes++, true)
+    })
+    const escapesSeen = () => page.evaluate(() => (window as any).__escapes as number)
+
+    // A submenu closes on its own first.
+    await page.locator('.shell-menu-btn').click()
+    await menuItem(page, /^View$/).hover()
+    await expect(page.locator('.ui-submenu')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.ui-submenu')).toHaveCount(0)
+    await expect(menuItem(page, /^View$/)).toBeVisible()
+
+    // A context menu opened over the menu closes alone.
+    await page.evaluate(() =>
+      (window as any).__fartcrobat.useApp.setState({ contextMenu: { x: 300, y: 300, items: [{ id: 'only', label: 'Only item' }] } })
+    )
+    await expect(menuItem(page, 'Only item')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(menuItem(page, 'Only item')).toHaveCount(0)
+    await expect(menuItem(page, /^View$/)).toBeVisible()
+    expect(await escapesSeen()).toBe(0)
+
+    // A dialog opened over the menu keeps its Escape.
+    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+    await expect(page.locator('.ui-dialog')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.ui-dialog')).toHaveCount(0)
+    await expect(menuItem(page, /^View$/)).toBeVisible()
+
+    const seen = await escapesSeen()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.ui-menu')).toHaveCount(0)
+    expect(await escapesSeen()).toBe(seen)
+    expect((await appState(page)).toolId).toBe('hand')
+
+    // The next Escape leaves the tool.
+    await page.keyboard.press('Escape')
+    await expect.poll(async () => (await appState(page)).toolId).toBe('select')
+    expect(await escapesSeen()).toBe(seen + 1)
   } finally {
     await app.close()
   }
