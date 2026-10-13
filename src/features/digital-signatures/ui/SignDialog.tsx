@@ -88,6 +88,8 @@ export function SignDialog({
   target,
   size,
   initialPermission,
+  initialReason,
+  initialLocation,
   onDone
 }: {
   doc: DocumentModel
@@ -96,6 +98,9 @@ export function SignDialog({
   /** Visible signature size in points, or null for an invisible signature. */
   size: { w: number; h: number } | null
   initialPermission: MdpPermission
+  /** Reason and location to show instead of the last ones used. */
+  initialReason?: string
+  initialLocation?: string
   onDone: (r?: SignDialogResult) => void
 }) {
   const ids = useSigStore((s) => s.ids)
@@ -115,14 +120,15 @@ export function SignDialog({
   const [busy, setBusy] = useState(false)
   const [now] = useState(() => Date.now())
   const passwordRef = useRef<HTMLInputElement>(null)
+  const prefilled = useRef({ reason: initialReason, location: initialLocation })
 
   useEffect(() => {
     let alive = true
     void Promise.all([loadSignPrefs(), loadSavedSignatureImage()]).then(([p, img]) => {
       if (!alive) return
       setPrefs(p)
-      setReason(p.reason)
-      setLocation(p.location)
+      setReason(prefilled.current.reason ?? p.reason)
+      setLocation(prefilled.current.location ?? p.location)
       setContactInfo(p.contactInfo)
       setSubFilter(p.subFilter)
       setSavedImage(img)

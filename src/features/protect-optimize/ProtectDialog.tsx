@@ -98,17 +98,21 @@ function StrengthMeter({ password }: { password: string }) {
 export function ProtectDialog({
   doc,
   mode,
+  initial,
   onDone
 }: {
   doc: DocumentModel
   mode: 'password' | 'restrict'
+  /** Choices ticked when the dialog opens (agent access); by default the mode decides. */
+  initial?: Partial<Pick<ProtectSettings, 'requireOpenPassword' | 'restrictEditing'>>
   onDone: (settings?: ProtectSettings) => void
 }) {
   const signatures = useDocState(doc, (s) => s.info.signatureCount)
   const [s, setS] = useState<ProtectSettings>(() => ({
     ...DEFAULT_PROTECT_SETTINGS,
     requireOpenPassword: mode === 'password',
-    restrictEditing: mode === 'restrict'
+    restrictEditing: mode === 'restrict',
+    ...initial
   }))
   const [confirmOpen, setConfirmOpen] = useState('')
   const [confirmPerms, setConfirmPerms] = useState('')
