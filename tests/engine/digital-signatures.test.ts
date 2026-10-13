@@ -1,8 +1,8 @@
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createLocalEngine } from '@engine/local'
 import { collectOpModules } from '@engine/registry'
 import type annotOps from '@engine/ops/annots'
@@ -22,6 +22,7 @@ import type { AppearanceContent, SignRequest, ValidationReport } from '@features
 import { fixture, openFixture } from './helpers'
 
 const TMP = mkdtempSync(join(tmpdir(), 'fc-digsig-'))
+afterAll(() => rmSync(TMP, { recursive: true, force: true }))
 const PASSWORD = 'correct horse'
 
 /** Whether `cmd args` runs and exits cleanly (a python3 whose module is missing exits with 1). */
@@ -105,7 +106,10 @@ describe('Digital IDs', () => {
     const cert = parseCertificate(rsaId.chain[0])
     expect(cert.subject.text).toBe('E=jane@example.com, CN=Jane Doe, O=Fartcrobat Tests, C=US')
     expect(cert.keyUsage).toContain('Non-repudiation')
-    expect(cert.notAfter.getFullYear() - cert.notBefore.getFullYear()).toBe(5)
+    // Valid for five years (compared as a duration: notBefore is backdated a minute, so the
+    // calendar years differ by 6 when the test runs in the first minute of a year).
+    const years = (cert.notAfter.getTime() - cert.notBefore.getTime()) / (365.25 * 24 * 3600 * 1000)
+    expect(years).toBeCloseTo(5, 1)
     expect(ecId.keyAlg).toEqual({ type: 'EC', curve: 'P-256' })
     expect(parseCertificate(ecId.chain[0]).subject.text).toBe('CN=Émile Zoë')
   })
