@@ -1,0 +1,286 @@
+/* ---- top bar indicator ---- */
+.fc-agent-access-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 9px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+}
+.fc-agent-access-indicator:hover {
+  border-color: var(--border-strong);
+}
+.fc-agent-access-indicator.is-open {
+  background: var(--bg-active);
+  border-color: var(--accent);
+}
+.fc-agent-access-indicator-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+}
+.fc-agent-access-indicator.is-busy .fc-agent-access-indicator-dot {
+  background: var(--accent);
+  animation: fc-agent-access-pulse 1.4s ease-out infinite;
+}
+@keyframes fc-agent-access-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-agent-access-indicator.is-busy .fc-agent-access-indicator-dot {
+    animation: none;
+  }
+}
+
+/* ---- popover on Home ---- */
+.fc-agent-access-popover {
+  max-height: min(560px, calc(100vh - 60px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.fc-agent-access-popover .ui-panel {
+  min-height: 0;
+  flex: 1;
+}
+
+/* ---- activity ---- */
+.fc-agent-access-activity {
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px 10px;
+  min-height: 0;
+}
+.fc-agent-access-note {
+  margin: 6px 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-agent-access-none {
+  margin: 4px;
+  font-size: var(--fs-sm);
+}
+.fc-agent-access-connections,
+.fc-agent-access-calls {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fc-agent-access-connection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+}
+.fc-agent-access-connection-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--fs-sm);
+}
+.fc-agent-access-connection-name {
+  font-weight: 600;
+  font-size: var(--fs);
+}
+.fc-agent-access-call {
+  display: flex;
+  gap: 8px;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-agent-access-call:last-child {
+  border-bottom: none;
+}
+.fc-agent-access-call-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--text-muted);
+}
+.fc-agent-access-call.is-done .fc-agent-access-call-icon {
+  color: var(--success);
+}
+.fc-agent-access-call.is-error .fc-agent-access-call-icon {
+  color: var(--danger);
+}
+.fc-agent-access-call.is-declined .fc-agent-access-call-icon {
+  color: var(--warning);
+}
+.fc-agent-access-call.is-running .fc-agent-access-call-icon {
+  color: var(--accent);
+  animation: fc-agent-access-spin 1s linear infinite;
+}
+@keyframes fc-agent-access-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.fc-agent-access-call-text {
+  flex: 1;
+  min-width: 0;
+}
+.fc-agent-access-call-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.fc-agent-access-call-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-agent-access-call-time,
+.fc-agent-access-call-meta {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-agent-access-call-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-agent-access-call-error {
+  margin-top: 2px;
+  color: var(--danger);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.fc-agent-access-activity-footer {
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---- Preferences > AI apps ---- */
+.fc-agent-access-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fc-agent-access-settings-about {
+  margin: 0;
+  line-height: 1.45;
+}
+.fc-agent-access-settings-block {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.fc-agent-access-settings-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fc-agent-access-error {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+.fc-agent-access-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.fc-agent-access-switch.is-disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.fc-agent-access-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.fc-agent-access-switch-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--border-strong);
+  transition: background 0.15s;
+}
+.fc-agent-access-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+.fc-agent-access-switch input:checked + .fc-agent-access-switch-track {
+  background: var(--accent);
+}
+.fc-agent-access-switch input:checked + .fc-agent-access-switch-track .fc-agent-access-switch-thumb {
+  transform: translateX(14px);
+}
+.fc-agent-access-switch input:focus-visible + .fc-agent-access-switch-track {
+  box-shadow: var(--focus);
+}
+
+/* ---- show_in_app outline ---- */
+.fc-agent-access-flash-layer {
+  pointer-events: none;
+}
+.fc-agent-access-flash {
+  position: absolute;
+  border: 2px solid var(--accent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  animation: fc-agent-access-flash 2.6s ease-out forwards;
+}
+@keyframes fc-agent-access-flash {
+  0% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--accent) 0%, transparent);
+  }
+  15% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ---- confirmation dialog (tools/common.tsx) ---- */
+.fc-agent-access-confirm-who {
+  margin-top: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-agent-access-confirm-details {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  max-height: 160px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
