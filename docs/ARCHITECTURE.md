@@ -221,7 +221,14 @@ npm run build && xvfb-run -a npx playwright test tests/e2e/<feature>.spec.ts
 ```
 
   `window.__fartcrobat` exposes `registry`, `useApp`, `getActiveDoc`, `openPaths`, `runCommand`
-  for tests. Take screenshots (`page.screenshot({ path: 'test-results/<name>.png' })`) and look at
+  for tests. Set `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` to run specs against a
+  packaged build instead (the release workflow does this for its smoke test).
+- Tests that check output with outside tools (pypdf, poppler `pdfsig`, LibreOffice, openssl) must
+  skip cleanly when the tool is missing; CI installs them (see `.github/workflows/ci.yml` and
+  `tests/requirements.txt`). Generate fixtures ahead of time and commit them rather than building
+  them with Python at test time.
+- Wait for observable state (`expect(...)`, `expect.poll`) rather than fixed sleeps: CI runners are
+  slower than a development machine. Take screenshots (`page.screenshot({ path: 'test-results/<name>.png' })`) and look at
   them: rendering bugs are easy to miss otherwise.
 - Before committing: `npm run typecheck && npm run lint && npm test`.
 
