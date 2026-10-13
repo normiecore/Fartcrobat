@@ -83,3 +83,8 @@ export async function activeDocState(page: Page) {
 export async function runCommand(page: Page, id: string) {
   await page.evaluate((c) => (window as any).__fartcrobat.runCommand(c), id)
 }
+
+/** A menu entry by its label, whether or not it is checkable (menuitem or menuitemcheckbox). */
+export function menuItem(page: Page, name: string | RegExp) {
+  return page.getByRole('menuitem', { name }).or(page.getByRole('menuitemcheckbox', { name }))
+}

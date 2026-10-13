@@ -55,6 +55,12 @@ async function clickOutside(page: Page) {
   await pageEl.click({ position: { x: box.width - 40, y: 40 } })
 }
 
+
+/** Whether another feature is installed (some behaviour moves to it when it is). */
+function hasFeature(page: Page, id: string) {
+  return page.evaluate((fid) => (window as any).__fartcrobat.registry.features.some((f: { id: string }) => f.id === fid), id)
+}
+
 test('fill form.pdf with the mouse and keyboard, save, reopen, clear and undo', async () => {
   const { dir, path } = tempCopy('form.pdf')
   const { app, page } = await launch()
@@ -392,6 +398,12 @@ test('all field types, buttons, signature fields, form data and dark mode', asyn
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({ fieldName: 'signature1', page: 0 })
     expect(events[0].rect).toHaveLength(4)
+    if (await hasFeature(page, 'digital-signatures')) {
+      // digital-signatures picks up the event and starts certificate signing: cancel it
+      await expect(page.getByRole('dialog')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+    }
 
     // Tab from the last field of page 1 goes to the first field of page 2
     await field(page, 'comments').click()
@@ -492,10 +504,17 @@ test('dynamic XFA forms and signed signature fields', async () => {
       return list.length
     })
     expect(events).toBe(0)
-    await sig.click()
+    if (await hasFeature(page, 'digital-signatures')) {
+      // digital-signatures sits over signed fields and shows the signature's properties, like Acrobat
+      await page.locator('.fc-digital-signatures-field.is-signed').first().click()
+      await expect(page.getByRole('dialog', { name: 'Signature Properties' })).toBeVisible()
+      await page.keyboard.press('Escape')
+    } else {
+      await sig.click()
+      await expect(page.locator('.toast', { hasText: 'Signed by Jane Signer' }).first()).toBeVisible()
+    }
     // no new signing starts on a signed field
     expect(await page.evaluate(() => (window as any).__signedEvents.length)).toBe(0)
-    await expect(page.locator('.toast', { hasText: 'Signed by Jane Signer' }).first()).toBeVisible()
   } finally {
     await app.close()
   }

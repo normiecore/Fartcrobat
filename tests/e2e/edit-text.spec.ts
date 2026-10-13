@@ -398,7 +398,8 @@ test('links to page tools of other features, helps on scanned pages and edits fr
     await page.evaluate(() => {
       const w = window as any
       w.__ran = []
-      if (!w.__fartcrobat.registry.commands.has('ocr.recognize'))
+      w.__realOcr = w.__fartcrobat.registry.commands.has('ocr.recognize')
+      if (!w.__realOcr)
         w.__fartcrobat.registry.commands.set('ocr.recognize', {
           id: 'ocr.recognize',
           label: 'Recognize Text',
@@ -412,7 +413,15 @@ test('links to page tools of other features, helps on scanned pages and edits fr
     const bar = page.locator('.fc-edit-text-toolbar')
     await expect(bar).toContainText('This page has no editable text')
     await bar.getByRole('button', { name: 'Recognize text' }).click()
-    await expect.poll(() => page.evaluate(() => (window as any).__ran)).toEqual(['ocr.recognize'])
+    if (await page.evaluate(() => (window as any).__realOcr)) {
+      // the OCR feature is installed: its Recognize Text dialog opens
+      const ocr = page.getByRole('dialog', { name: 'Recognize Text' })
+      await expect(ocr).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(ocr).toHaveCount(0)
+    } else {
+      await expect.poll(() => page.evaluate(() => (window as any).__ran)).toEqual(['ocr.recognize'])
+    }
     // page tools of "Add header, watermark or background": Watermark offers Add / Update / Remove
     const panel = page.locator('.fc-edit-text-panel')
     await expect(panel.getByRole('button', { name: /Recognize text \(OCR\)/ })).toBeVisible()

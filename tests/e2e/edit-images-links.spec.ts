@@ -2,7 +2,7 @@ import { expect, test, type ElectronApplication, type Page } from '@playwright/t
 import { existsSync, mkdtempSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRender } from './helpers'
+import { activeDocState, fixturePath, launch, menuItem, openFile, runCommand, waitForRender } from './helpers'
 
 const FIX = (name: string) => fixturePath(`edit-images-links/${name}`)
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/edit-images-links-${name}.png` })
@@ -426,7 +426,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.getByRole('menuitem', { name: 'Link', exact: true }).click()
     await expect(page.getByRole('menuitem', { name: 'Create Links from URLs…' })).toBeVisible()
     await shot(page, '16-tools-menu')
-    await page.getByRole('menuitem', { name: 'Add/Edit Web or Document Link' }).click()
+    await menuItem(page, 'Add/Edit Web or Document Link').click()
     await expect.poll(() => toolId(page)).toBe('edit.link')
 
     // ---- drag a rectangle over a web address --------------------------------------------------------

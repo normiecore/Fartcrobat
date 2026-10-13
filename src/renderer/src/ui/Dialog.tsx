@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 
 export interface DialogProps {
@@ -57,6 +57,7 @@ function trapTab(el: HTMLElement, backwards: boolean): boolean {
  * keeps Tab inside, closes with Escape and gives the focus back when it closes.
  */
 export function Dialog({ title, onClose, children, footer, width = 480, onSubmit, className }: DialogProps) {
+  const titleId = useId()
   const ref = useRef<HTMLDivElement>(null)
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
@@ -106,6 +107,7 @@ export function Dialog({ title, onClose, children, footer, width = 480, onSubmit
         ref={ref}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
         tabIndex={-1}
         className={`ui-dialog ${className ?? ''}`}
         style={{ width }}
@@ -123,7 +125,7 @@ export function Dialog({ title, onClose, children, footer, width = 480, onSubmit
         }}
       >
         <div className="ui-dialog-header">
-          <h2>{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button className="ui-icon-btn" aria-label="Close" onClick={onClose}>
             <X size={18} />
           </button>
