@@ -50,13 +50,8 @@ export function isOverText(t: PageText, p: Point, pad = 2): boolean {
   return false
 }
 
-/**
- * Finds the caret position (index between characters) closest to point p, in reading order.
- * Returns -1 when the page has no text.
- */
-export function caretAt(t: PageText, p: Point): number {
-  if (!t.lines.length) return -1
-  // nearest line: inside its bbox vertically first, else by distance
+/** Index of the line nearest to p: inside its bbox vertically first, else by distance. */
+function nearestLineIndex(t: PageText, p: Point): number {
   let best = -1
   let bestD = Infinity
   for (let li = 0; li < t.lines.length; li++) {
@@ -78,8 +73,22 @@ export function caretAt(t: PageText, p: Point): number {
       }
     }
   }
-  const line = t.lines[best]
-  const horizontal = Math.abs(line.dir[0]) >= Math.abs(line.dir[1])
+  return best
+}
+
+/** Text runs along x (false for vertical lines, e.g. on /Rotate 90 pages). */
+function isHorizontal(line: { dir: Point }): boolean {
+  return Math.abs(line.dir[0]) >= Math.abs(line.dir[1])
+}
+
+/**
+ * Finds the caret position (index between characters) closest to point p, in reading order.
+ * Returns -1 when the page has no text.
+ */
+export function caretAt(t: PageText, p: Point): number {
+  if (!t.lines.length) return -1
+  const line = t.lines[nearestLineIndex(t, p)]
+  const horizontal = isHorizontal(line)
   for (let i = line.start; i < line.end; i++) {
     const r = charRect(t, i)
     if (horizontal) {
@@ -91,6 +100,30 @@ export function caretAt(t: PageText, p: Point): number {
     }
   }
   return line.end
+}
+
+/**
+ * Index of the character under point p (or the nearest character of the nearest line). Unlike
+ * caretAt, which returns the gap between two characters, this is the character itself: use it to
+ * pick the word or line under a double or triple click. Returns -1 when the page has no text.
+ */
+export function charIndexAt(t: PageText, p: Point): number {
+  if (!t.lines.length) return -1
+  const line = t.lines[nearestLineIndex(t, p)]
+  if (line.end <= line.start) return line.start
+  const horizontal = isHorizontal(line)
+  let best = line.start
+  let bestD = Infinity
+  for (let i = line.start; i < line.end; i++) {
+    const r = charRect(t, i)
+    const d = horizontal ? Math.max(r[0] - p[0], 0, p[0] - r[2]) : Math.max(r[1] - p[1], 0, p[1] - r[3])
+    if (d < bestD) {
+      bestD = d
+      best = i
+      if (d === 0) break
+    }
+  }
+  return best
 }
 
 /** Expands [a, b) to whole words. */
@@ -125,8 +158,11 @@ export function rangeRects(t: PageText, start: number, end: number): Rect[] {
       r = r ? [Math.min(r[0], c[0]), Math.min(r[1], c[1]), Math.max(r[2], c[2]), Math.max(r[3], c[3])] : c
     }
     if (r) {
-      // use the full line height for a tidy look
-      r = [r[0], Math.min(r[1], line.bbox[1]), r[2], Math.max(r[3], line.bbox[3])]
+      // Use the full line thickness for a tidy look: the line's height for horizontal text, its
+      // width for vertical text (e.g. on /Rotate 90 pages), never its length.
+      r = isHorizontal(line)
+        ? [r[0], Math.min(r[1], line.bbox[1]), r[2], Math.max(r[3], line.bbox[3])]
+        : [Math.min(r[0], line.bbox[0]), r[1], Math.max(r[2], line.bbox[2]), r[3]]
       rects.push(r)
     }
   }
@@ -175,34 +211,46 @@ export interface SearchHit {
 
 interface Normalized {
   text: string
-  /** map[i] = index in the original text of normalized char i */
-  map: number[]
+  /** [start[i], end[i]) = the original characters that produced UTF-16 unit i of `text` */
+  start: number[]
+  end: number[]
 }
 
-/** Collapses runs of whitespace (including line breaks) to single spaces, keeping an index map. */
+/**
+ * Collapses runs of whitespace (including line breaks) to single spaces and folds compatibility
+ * characters and (unless matchCase) case, keeping an index map back to the original text. Folding
+ * can change lengths ('ﬁ' -> 'fi', 'İ' -> 'i̇', and astral characters are two UTF-16 units), so the
+ * map has one entry per UTF-16 unit of the output.
+ */
 function normalize(text: string, matchCase: boolean): Normalized {
   const out: string[] = []
-  const map: number[] = []
+  const start: number[] = []
+  const end: number[] = []
   let prevSpace = false
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]
+  for (let i = 0; i < text.length; ) {
+    const c = String.fromCodePoint(text.codePointAt(i)!)
+    const next = i + c.length
     if (/\s/.test(c)) {
-      if (prevSpace) continue
-      out.push(' ')
-      map.push(i)
-      prevSpace = true
-    } else {
-      // Fold common ligatures and soft hyphens so "office" matches "oﬃce".
-      const folded = c === '­' ? '' : c.normalize('NFKC')
-      for (const f of folded) {
-        out.push(matchCase ? f : f.toLowerCase())
-        map.push(i)
+      if (!prevSpace) {
+        out.push(' ')
+        start.push(i)
+        end.push(next)
+        prevSpace = true
       }
-      prevSpace = false
+    } else {
+      // Fold common ligatures and drop soft hyphens so "office" matches "oﬃce".
+      const nfkc = c === '­' ? '' : c.normalize('NFKC')
+      const folded = matchCase ? nfkc : nfkc.toLowerCase()
+      out.push(folded)
+      for (let k = 0; k < folded.length; k++) {
+        start.push(i)
+        end.push(next)
+      }
+      if (folded) prevSpace = false
     }
+    i = next
   }
-  map.push(text.length)
-  return { text: out.join(''), map }
+  return { text: out.join(''), start, end }
 }
 
 const WORD = /[\p{L}\p{N}_]/u
@@ -222,7 +270,7 @@ export function searchPage(t: PageText, query: string, opts: SearchOptions = {})
       if (!m[0].length) continue
       const s = m.index!
       const e = s + m[0].length
-      hits.push({ page: t.pageIndex, start: n.map[s], end: n.map[e - 1] + 1 })
+      hits.push({ page: t.pageIndex, start: n.start[s], end: n.end[e - 1] })
     }
     return hits
   }
@@ -239,7 +287,7 @@ export function searchPage(t: PageText, query: string, opts: SearchOptions = {})
       const after = e < n.text.length ? n.text[e] : ' '
       if (WORD.test(before) || WORD.test(after)) continue
     }
-    hits.push({ page: t.pageIndex, start: n.map[s], end: n.map[e - 1] + 1 })
+    hits.push({ page: t.pageIndex, start: n.start[s], end: n.end[e - 1] })
   }
   return hits
 }
