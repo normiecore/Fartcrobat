@@ -96,7 +96,10 @@ Acrobat's shortcuts and menu labels wherever Acrobat has them.
   Core ops: `doc.core.doc / render / text / nav`, and the shared modules
   `doc.ops<typeof import('@engine/ops/annots').default>('annots')`, `'forms'`, `'pages'`.
 - Every engine response carries a `ChangeSet`; the model applies it automatically: pages re-render,
-  `info` is refreshed after structural changes, the journal (Undo label) and dirty flag update.
+  `info` is refreshed after structural changes (and its document-level facts — metadata,
+  language, form, signatures, attachments — after document changes), the journal (Undo label)
+  and dirty flag update. The engine owns the dirty flag: to mark content as unsaved use
+  `doc.core.doc.markDirty()`, not `doc.set({ dirty })`.
   Use `usePageVersion(doc, page)` to refetch per-page data when that page changes and
   `useDocState(doc, s => s.docVersion)` for document-level data (outline, attachments, form,
   signatures).
@@ -110,7 +113,9 @@ Acrobat's shortcuts and menu labels wherever Acrobat has them.
 
 App-level helpers from `@renderer/sdk`: `openDialog(close => <Dialog .../>)`, `ask`, `confirm`,
 `prompt`, `toast`, `showError`, `withProgress(title, report => ...)`, `showContextMenu`,
-`openNewDocument(bytes, name)` (new unsaved tab), `saveDocument`, `replaceDocumentBytes`,
+`openNewDocument(bytes, name)` (new unsaved tab), `saveDocument`,
+`replaceDocumentBytes(doc, bytes, path | null, { password? })` (path null: unsaved in-memory
+content; the open password is reused, a new one is asked for),
 `saveBytesAs(bytes, name, filters)`, `invoke('file:openDialog', ...)`, `readFile`, `setTool`,
 `openToolGroup`, `openRightPanel`, `runCommand`, `authorName()`, `usePrefs()`, `setPrefs()`.
 UI kit: `Button`, `IconButton`, `Dialog`, `Field`, `TextInput`, `NumberInput`, `TextArea`, `Select`,
@@ -138,8 +143,14 @@ export default defineOps('stamps', {
 ```
 
 - `s.pdf` is the MuPDF `PDFDocument`; `s.page(i)` a cached `PDFPage`; `s.mupdf` the module;
-  `s.sourceBytes` the exact bytes the file was opened from (null for converted files).
-- Never keep `PDFPage`/`PDFAnnotation` objects across calls; ask the session again.
+  `s.sourceBytes` the exact bytes the file was opened from or last saved incrementally to (null
+  for converted files); `s.password` the password it was opened with.
+- Never keep `PDFPage`/`PDFAnnotation` objects across calls; ask the session again. Pages you
+  `s.touch()` are dropped from the cache when the op ends, so C-level changes (applyRedactions,
+  new widgets) show up in the next call. If you edit `/Annots` arrays by hand and read the page
+  again in the same op, call `s.invalidatePages()` first.
+- `s.state` is per-document scratch space; `doc.reload` clears it except the keys listed in
+  `s.persistentState` (e.g. `'author'`) — add your own settings keys there.
 - Mutations must be synchronous (MuPDF's journal cannot span awaits). Do async work (fetching,
   parsing) in a query op or in the UI, then call a mutation with the result.
 - Return big buffers with `withTransfer(bytes, [bytes.buffer])`.
@@ -148,6 +159,15 @@ export default defineOps('stamps', {
 - Undo/redo, dirty tracking and save are handled by the core. Saving uses MuPDF garbage
   collection without compaction because compaction breaks the live undo history; use
   `saveDocument(s, { garbage: 'deduplicate', ... })` (it writes a separate copy) when you need it.
+  Security changes and optimisation also run on a copy. Signed files (signed when opened) save
+  incrementally; an incremental save reopens the document from the bytes it wrote (object
+  numbers and feature state stay, undo history is cleared), because MuPDF builds every
+  incremental save on the bytes it was opened from. Never call `s.pdf.saveToBuffer('incremental')`
+  on the live document; use `saveDocument(s, { mode: 'incremental' })` outside mutations.
+- Copy pages with `graftPages(dst, src, pages, at)` from `@engine/ops/pages` (annotations, links
+  and form fields come along) and delete them with `deletePage(doc, index)` (detaches their
+  form fields). Reorder with `permutePages(doc, order)`, never `rearrangePages` (it drops the
+  form, attachments, page labels and more from the catalog).
 - Helpers in `src/engine/util/pdf.ts`: `readRect`, `readString`, `walkFields`, `pdfLiteral`, `num`,
   `pdfDate`, `pageBoxes`, `catalog`...
 - Low-level PDF objects: `s.pdf.newDictionary()`, `addStream(buffer, dict)`, `obj.get('Key')`,

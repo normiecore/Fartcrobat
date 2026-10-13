@@ -2,6 +2,8 @@
   position: relative;
   flex: 1;
   overflow: auto;
+  /* Fit zooms depend on the width: keep it the same whether or not a vertical scrollbar shows. */
+  scrollbar-gutter: stable;
   outline: none;
   overscroll-behavior: contain;
 }
