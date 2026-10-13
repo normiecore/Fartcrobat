@@ -97,6 +97,9 @@ export class DocumentModel {
   private changeListeners = new Set<Listener<ChangeSet>>()
   private searchToken = 0
   private closed = false
+  private changeSeq = 0
+  /** Sequence number of the newest ChangeSet whose journal and dirty state were applied. */
+  private journalSeq = 0
 
   constructor(
     readonly engine: EngineClient,
@@ -166,9 +169,13 @@ export class DocumentModel {
 
   private async applyChanges(cs: ChangeSet) {
     if (this.closed) return
+    // ChangeSets arrive in engine order, but structural ones wait for the new DocInfo first:
+    // number them so an older one never overwrites the undo/dirty state of a newer one.
+    const seq = ++this.changeSeq
     if (cs.structure) {
       try {
         const info = await this.core.doc.info()
+        if (this.closed) return
         this.set({ info })
       } catch (err) {
         console.error('Could not refresh document info', err)
@@ -177,6 +184,8 @@ export class DocumentModel {
     const info = this.state.info
     if (cs.all) this.textCache.clear()
     for (const p of cs.pages) this.textCache.delete(p)
+    const newest = seq > this.journalSeq
+    if (newest) this.journalSeq = seq
     this.set((s) => {
       const pageVersions = { ...s.pageVersions }
       for (const p of cs.pages) {
@@ -188,8 +197,8 @@ export class DocumentModel {
         pageVersions,
         globalVersion: cs.all ? s.globalVersion + 1 : s.globalVersion,
         docVersion: cs.document || cs.structure ? s.docVersion + 1 : s.docVersion,
-        journal: cs.journal,
-        dirty: cs.dirty,
+        // The engine owns the dirty flag (documents that only exist in memory are opened dirty).
+        ...(newest ? { journal: cs.journal, dirty: cs.dirty } : {}),
         currentPage
       }
     })
@@ -198,7 +207,20 @@ export class DocumentModel {
       if (this.state.search.hits.length) this.set({ search: { ...this.state.search, hits: [], active: -1, done: false } })
       if (this.state.selection.kind !== 'none') this.set({ selection: { kind: 'none' } })
     }
+    if (cs.document && !cs.structure) void this.refreshFacts()
     for (const l of this.changeListeners) l(cs)
+  }
+
+  /** Refreshes document-level DocInfo (metadata, language, form, signatures, attachments...). */
+  private async refreshFacts() {
+    try {
+      const facts = await this.core.doc.facts()
+      if (this.closed) return
+      // Engine replies arrive in order, so this is never older than the info already shown.
+      this.set((s) => ({ info: { ...s.info, ...facts, pageCount: s.info.pageCount, pages: s.info.pages } }))
+    } catch (err) {
+      console.error('Could not refresh document info', err)
+    }
   }
 
   /** Called after every engine change (after the state was updated). */
