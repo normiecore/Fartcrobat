@@ -1,5 +1,5 @@
 import { Calculator, Download, Eraser, Highlighter, Upload } from 'lucide-react'
-import { defineFeature, registry, setPrefs, showError, toast, useApp, type CommandContext, type DocumentModel } from '@renderer/sdk'
+import { defineFeature, registry, setPrefs, showError, toast, useApp, type CommandContext } from '@renderer/sdk'
 import { formController } from './controller'
 import { clearForm, exportFormData, importFormData } from './dataCommands'
 import { FieldLayer } from './FieldLayer'
@@ -11,15 +11,6 @@ function hasForm(ctx: CommandContext): boolean {
   const doc = ctx.doc
   if (!doc) return false
   return doc.state.info.hasForm || formController(doc).fieldsById.size > 0
-}
-
-/** Commits the field being edited before the document is saved. */
-function flushBeforeSave(doc: DocumentModel) {
-  const save = doc.saveBytes.bind(doc)
-  doc.saveBytes = async (opts) => {
-    await formController(doc).flush()
-    return save(opts)
-  }
 }
 
 export default defineFeature({
@@ -93,6 +84,5 @@ export default defineFeature({
   globals: [FormsGlobal],
   onDocumentOpen: (doc) => {
     formController(doc)
-    flushBeforeSave(doc)
   }
 })

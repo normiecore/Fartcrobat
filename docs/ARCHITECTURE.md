@@ -86,6 +86,12 @@ Command shortcuts use `Mod` for Ctrl (Cmd on macOS): `'Mod+Shift+S'`. Single key
 fire when single-key shortcuts are enabled in Preferences and focus is not in a text field. Match
 Acrobat's shortcuts and menu labels wherever Acrobat has them.
 
+Something edited in place whose changes are not in the document yet (a text box, a form field, a
+comment's text) registers while it is open: `const off = registerActiveEditor({ commit })`. Every
+command (menu bar, toolbar, shortcut), Save and Close await `commit()` first, so they include what
+was typed instead of changing the page underneath the editor. Commands that act on the editor
+itself set `keepEditing: true`.
+
 ### Working with a document from the UI
 
 `useActiveDoc()` (or the `doc` prop) gives a `DocumentModel`:

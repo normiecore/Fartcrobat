@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { copyFileSync, mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -613,6 +613,57 @@ test('finishes the text being edited when saving from the menu or closing the do
       .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length))
       .toBe(0)
     expect(fileText(file)).toContain('lazy dog. Kind regards.')
+  } finally {
+    await app.close()
+  }
+})
+
+/** Runs a command the way the native menu bar does (no click on the page). */
+async function menuCommand(app: ElectronApplication, id: string) {
+  await app.evaluate(({ BrowserWindow }, c) => BrowserWindow.getAllWindows()[0].webContents.send('menu:command', c), id)
+}
+
+test('commands from the menu bar write the text being edited first instead of closing it', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Edit a PDF' }).click()
+    const rotation = () =>
+      page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[0].rotation as number)
+
+    // Document > Rotate Pages…: the heading being typed is written before the pages turn
+    await blockButton(page, /^Edit text: Chapter 1$/).click()
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('Rotated heading')
+    await menuCommand(app, 'organize.rotatePages')
+    const dialog = page.locator('.ui-dialog').filter({ has: page.locator('h2', { hasText: 'Rotate Pages' }) })
+    await expect(dialog).toBeVisible()
+    await expect(editor(page)).toHaveCount(0)
+    await dialog.getByRole('button', { name: 'Rotate', exact: true }).click()
+    await expect.poll(rotation).toBe(90)
+    expect(await pageText(page)).toContain('Rotated heading')
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Rotate Pages')
+
+    // Edit > Undo while the editor is open (the keyboard focus in its formatting bar): the edit is
+    // written, then undone (not the rotation), and Redo brings it back
+    await blockButton(page, /^Edit text: Hello Fartcrobat page 1/).click()
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('End')
+    await page.keyboard.type(' Kind regards.')
+    await page.locator('.fc-edit-text-mini select[aria-label="Font"]').focus()
+    await menuCommand(app, 'edit.undo')
+    await expect.poll(async () => (await activeDocState(page))?.journal.redoLabel).toBe('Edit Text')
+    await expect(editor(page)).toHaveCount(0)
+    expect(await pageText(page)).not.toContain('Kind regards.')
+    expect(await rotation()).toBe(90)
+    await menuCommand(app, 'edit.redo')
+    await expect.poll(() => pageText(page)).toContain('lazy dog. Kind regards.')
+    expect(await pageText(page)).toContain('Rotated heading')
+    await expect(page.locator('.toast').filter({ hasText: 'the text you were editing was closed' })).toHaveCount(0)
+    await page.waitForTimeout(500)
+    await shot(page, '28-commands-from-menu')
   } finally {
     await app.close()
   }

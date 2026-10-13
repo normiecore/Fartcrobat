@@ -20,7 +20,7 @@ export {
   toggleRightPanel,
   setPrefs
 } from './app/actions'
-export { runCommand, displayShortcut } from './app/commands'
+export { runCommand, displayShortcut, registerActiveEditor, type ActiveEditor } from './app/commands'
 export { DocumentModel, useDocState, usePageVersion, type Selection, type DocState } from './document/DocumentModel'
 export * from './document/textModel'
 export { PageGeometry, type CssRect } from './viewer/geometry'

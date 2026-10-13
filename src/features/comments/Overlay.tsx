@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import type { AnnotInfo } from '@engine/ops/annots'
 import {
   PageGeometry,
+  registerActiveEditor,
   setHiddenAnnotations,
   showError,
   useActiveDoc,
@@ -163,6 +164,11 @@ function InlineEditor({
       showError(err, 'Could not save the text')
     }
   }
+
+  // Commands, Save and Close save the text first.
+  const finishRef = useRef(finish)
+  finishRef.current = finish
+  useEffect(() => registerActiveEditor({ commit: () => finishRef.current(true) }), [])
 
   // The box keeps its top edge (page orientation) and grows downwards while typing.
   const height = baseHeight + extra

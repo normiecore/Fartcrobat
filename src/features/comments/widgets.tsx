@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, CircleCheck, CircleSlash, CircleX, Flag } from 'lucide-react'
+import { registerActiveEditor } from '@renderer/sdk'
 
 /**
  * A textarea that grows with its text and saves when it loses focus (Ctrl+Enter saves too,
@@ -25,6 +26,9 @@ export const AutoTextarea = forwardRef<
   const [draft, setDraft] = useState(value)
   const focused = useRef(false)
   const skipCommit = useRef(false)
+  // While it has the focus, commands, Save and Close save the text first (by taking the focus).
+  const unregister = useRef<(() => void) | null>(null)
+  useEffect(() => () => unregister.current?.(), [])
 
   useEffect(() => {
     if (!focused.current) setDraft(value)
@@ -71,11 +75,15 @@ export const AutoTextarea = forwardRef<
       spellCheck
       onFocus={() => {
         focused.current = true
+        unregister.current?.()
+        unregister.current = registerActiveEditor({ commit: () => ref.current?.blur() })
       }}
       onChange={(e) => setDraft(e.target.value)}
       onKeyDown={onKeyDown}
       onBlur={() => {
         focused.current = false
+        unregister.current?.()
+        unregister.current = null
         if (skipCommit.current) {
           skipCommit.current = false
           return
