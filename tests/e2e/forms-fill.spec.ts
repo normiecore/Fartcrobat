@@ -347,6 +347,18 @@ test('all field types, buttons, signature fields, form data and dark mode', asyn
     await page.keyboard.type('Oregon')
     await page.keyboard.press('Enter')
     await expect.poll(() => valueOf(page, 'state')).toBe('Oregon')
+    // Leaving and coming straight back shows the typed text, not the value from before it was saved
+    await state.click()
+    await page.keyboard.press('Control+a')
+    await page.keyboard.type('Idaho')
+    await page.keyboard.press('Tab')
+    await page.keyboard.press('Shift+Tab')
+    await expect(state).toHaveValue('Idaho')
+    await expect.poll(() => valueOf(page, 'state')).toBe('Idaho')
+    await page.keyboard.press('Control+a')
+    await page.keyboard.type('Oregon')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => valueOf(page, 'state')).toBe('Oregon')
 
     // Combo box with export values: the stored value is the export value
     await field(page, 'colour').selectOption({ label: 'Blue' })

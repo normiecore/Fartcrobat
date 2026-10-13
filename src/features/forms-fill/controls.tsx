@@ -576,11 +576,18 @@ function EditableCombo({ doc, ctl, field, box, readOnly }: ControlProps) {
   draftRef.current = draft
   const fieldRef = useRef(field)
   fieldRef.current = field
+  /** The loaded field the draft last followed, and how many commits are being written. */
+  const followedRef = useRef(field)
+  const committingRef = useRef(0)
   useRegister(ctl, field.id, ref, true)
 
+  // Follow the document while the user is not editing, but only a field loaded after the last
+  // commit was written (until then `field` still holds the text from before it), like TextControl.
   useEffect(() => {
-    if (!focused && !dirtyRef.current) setDraft(field.options.find((o) => o.value === field.value)?.label ?? field.value)
-  }, [field.value, field.options, focused])
+    if (focused || dirtyRef.current || committingRef.current > 0 || field === followedRef.current) return
+    followedRef.current = field
+    setDraft(field.options.find((o) => o.value === field.value)?.label ?? field.value)
+  }, [field, focused])
 
   const commit = useCallback(
     async (text?: string) => {
@@ -589,11 +596,18 @@ function EditableCombo({ doc, ctl, field, box, readOnly }: ControlProps) {
       const f = fieldRef.current
       const opt = f.options.find((o) => o.label === t) ?? f.options.find((o) => o.label.toLowerCase() === t.toLowerCase())
       const value = opt ? opt.value : t
+      committingRef.current++
       try {
         const ok = await ctl.setChoice(f, value)
         if (!ok) setDraft(f.options.find((o) => o.value === f.value)?.label ?? f.value)
       } catch (err) {
+        // Show what the document still holds.
+        if (!dirtyRef.current) setDraft(f.options.find((o) => o.value === f.value)?.label ?? f.value)
         showError(err, `Could not change “${labelOf(f)}”`)
+      } finally {
+        committingRef.current--
+        // Fields loaded meanwhile were read before the commit was written.
+        followedRef.current = fieldRef.current
       }
     },
     [ctl]
