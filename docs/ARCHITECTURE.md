@@ -147,6 +147,9 @@ export default defineOps('stamps', {
   `saveDocument(s, { garbage: 'deduplicate', ... })` (it writes a separate copy) when you need it.
 - Helpers in `src/engine/util/pdf.ts`: `readRect`, `readString`, `walkFields`, `pdfLiteral`, `num`,
   `pdfDate`, `pageBoxes`, `catalog`...
+- For page text use `extractPageText(s, page)` from `@engine/ops/text`, or walk a `StructuredText`
+  with `walkStructuredText` from `src/engine/util/stext.ts`, never `stext.walk()`: mupdf.js cuts
+  characters above U+FFFF (emoji, CJK Extension B) down to 16 bits.
 - Low-level PDF objects: `s.pdf.newDictionary()`, `addStream(buffer, dict)`, `obj.get('Key')`,
   `obj.put('Key', value)`. To add page content, append a new stream to the page's `/Contents`
   (wrap existing content with `q ... Q` so the graphics state is clean) and add resources under
