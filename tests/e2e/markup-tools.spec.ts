@@ -1,6 +1,15 @@
 import { expect, test, type Page } from '@playwright/test'
 import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRender } from './helpers'
 
+/** Waits until a text editor (pop-up note, inline editor or dialog field) has keyboard focus. */
+async function waitForEditor(page: import('@playwright/test').Page) {
+  await page.waitForFunction(() => {
+    const a = document.activeElement as HTMLElement | null
+    return !!a && (a.tagName === 'TEXTAREA' || a.tagName === 'INPUT' || a.isContentEditable)
+  })
+}
+
+
 type Pt = { x: number; y: number }
 
 interface Annot {
@@ -385,13 +394,14 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     // keep tool selected: place two notes in a row
     await page.locator('.fc-markup-tools-pin').click()
     await expect(page.locator('.fc-markup-tools-pin')).toHaveAttribute('aria-pressed', 'true')
+    // the second note goes below the first: the comments feature opens a pop-up beside each note
     for (const x of [300, 340]) {
-      const pt = await toScreen(page, 0, x, 400)
+      const pt = await toScreen(page, 0, x === 300 ? 300 : 120, x === 300 ? 400 : 560)
       await page.mouse.click(pt.x, pt.y)
-      if (!hasComments) {
-        await page.keyboard.type(`Note at ${x}`)
-        await page.keyboard.press('Control+Enter')
-      }
+      // the note editor (ours, or the comments pop-up) gets focus: type and close it with Ctrl+Enter
+      await waitForEditor(page)
+      await page.keyboard.type(`Note at ${x}`)
+      await page.keyboard.press('Control+Enter')
       await expect.poll(async () => (await ofType(page, 'Text')).length).toBe(x === 300 ? 1 : 2)
     }
     expect(await toolId(page)).toBe('comment.note')
@@ -408,6 +418,11 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
       await expect(page.locator('.ui-dialog', { hasText: 'Replace text' })).toBeVisible()
       await page.keyboard.type('pain')
       await page.locator('.ui-dialog').getByRole('button', { name: 'Replace' }).click()
+    } else {
+      await expect(page.locator('.fc-comments-popup').last()).toBeVisible()
+      await waitForEditor(page)
+      await page.keyboard.type('pain')
+      await page.keyboard.press('Control+Enter')
     }
     await expect.poll(async () => (await ofType(page, 'Caret')).length).toBe(1)
     const strike = (await ofType(page, 'StrikeOut'))[0]
@@ -424,6 +439,11 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     if (!hasComments) {
       await page.keyboard.type('very ')
       await page.locator('.ui-dialog').getByRole('button', { name: 'Insert' }).click()
+    } else {
+      await expect(page.locator('.fc-comments-popup').last()).toBeVisible()
+      await waitForEditor(page)
+      await page.keyboard.type('very ')
+      await page.keyboard.press('Control+Enter')
     }
     await expect.poll(async () => (await ofType(page, 'Caret')).length).toBe(2)
     const inserted = (await ofType(page, 'Caret')).find((c) => c.id !== caret.id)!
@@ -436,6 +456,11 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     if (!hasComments) {
       await page.keyboard.type('A text box')
       await page.locator('.ui-dialog').getByRole('button', { name: 'Add text box' }).click()
+    } else {
+      // the comments inline editor opens; empty text boxes are discarded, so type something
+      await waitForEditor(page)
+      await page.keyboard.type('A text box')
+      await page.keyboard.press('Control+Enter')
     }
     await expect.poll(async () => (await ofType(page, 'FreeText')).length).toBe(1)
     await activate(page, 'comment.callout')
@@ -449,6 +474,10 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     if (!hasComments) {
       await page.keyboard.type('Look here')
       await page.locator('.ui-dialog').getByRole('button', { name: 'Add callout' }).click()
+    } else {
+      await waitForEditor(page)
+      await page.keyboard.type('Look here')
+      await page.keyboard.press('Control+Enter')
     }
     await expect.poll(async () => (await ofType(page, 'FreeText')).length).toBe(2)
     const callout = (await page.evaluate(async () => (window as any).__fartcrobat.getActiveDoc().ops('annots').list(0))).find(

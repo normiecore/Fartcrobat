@@ -222,6 +222,12 @@ export function PopupNote({
         if (e.key === 'Escape' && !(e.target as HTMLElement).matches('textarea, input')) {
           e.stopPropagation()
           closePopup(doc.id, a.id)
+        } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+          // Ctrl+Enter saves and closes the note, like the text box editor.
+          e.preventDefault()
+          e.stopPropagation()
+          ;(document.activeElement as HTMLElement | null)?.blur()
+          closePopup(doc.id, a.id)
         }
       }}
     >
