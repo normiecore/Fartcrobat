@@ -22,7 +22,7 @@ import {
   type PageText
 } from '@renderer/sdk'
 import type { LinkAction, LinkAppearance, LinkItem } from './engine'
-import { LINK_TOOL, errorCode, ops, selectLink, useUi } from './common'
+import { LINK_TOOL, errorCode, keyboardTaken, ops, selectLink, useUi } from './common'
 import { fileSpecToPath } from './filespec'
 
 const APPEARANCE_KEY = 'edit-images-links:linkAppearance'
@@ -379,6 +379,21 @@ export function GoToViewBar() {
       window.removeEventListener('resize', place)
     }
   }, [shown, activeId])
+  // Escape cancels (and does not also leave the current tool)
+  useEffect(() => {
+    if (!shown) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || keyboardTaken(e)) return
+      const r = useUi.getState().goToView
+      if (!r) return
+      e.preventDefault()
+      e.stopPropagation()
+      useUi.setState({ goToView: null })
+      r.onCancel()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [shown])
   if (!req || !shown) return null
   const finish = (set: boolean) => {
     const doc = getActiveDoc()

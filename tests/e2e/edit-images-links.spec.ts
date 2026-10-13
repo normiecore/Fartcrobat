@@ -470,6 +470,19 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     expect(toPage2.dest?.zoom).toBeGreaterThan(0)
     await page.waitForTimeout(400)
 
+    // ---- Escape cancels "Create Go to View" without leaving the link tool ------------------------------
+    const blank = await clientRect(page, [300, 700, 400, 720])
+    await drag(page, { x: blank.x, y: blank.y }, { x: blank.x + blank.w, y: blank.y + blank.h })
+    await expect(create).toBeVisible()
+    await create.getByRole('radio', { name: 'Go to a page view' }).check()
+    await create.getByRole('button', { name: 'Choose the view…' }).click()
+    await expect(bar).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(bar).toHaveCount(0)
+    await expect(page.getByText('The link was not created.')).toBeVisible()
+    expect(await toolId(page)).toBe('edit.link')
+    expect((await navLinks(page)).length).toBe(2)
+
     // ---- move the web link 20px down by dragging it, then resize it from a handle ---------------
     const wl = await clientRect(page, webLink.rect)
     await drag(page, center(wl), { x: center(wl).x, y: center(wl).y + 20 })
