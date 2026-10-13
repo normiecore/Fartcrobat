@@ -1,5 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
-import { activeDocState, fixturePath, launch, openFile, waitForRender } from './helpers'
+import { copyFileSync, mkdtempSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import * as mupdf from 'mupdf'
+import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRender } from './helpers'
 
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/edit-text-${name}.png` })
 
@@ -546,6 +550,60 @@ test('headers and watermarks added from the Edit panel stay updatable after edit
     await expect(editor(page)).toHaveCount(0)
     await page.waitForTimeout(400)
     await shot(page, '24-watermark-tag')
+  } finally {
+    await app.close()
+  }
+})
+
+/** Text of the first page of a PDF file on disk. */
+function fileText(path: string): string {
+  const doc = mupdf.Document.openDocument(readFileSync(path), 'application/pdf')
+  try {
+    const page = doc.loadPage(0)
+    const text = page.toStructuredText('preserve-whitespace').asText()
+    page.destroy()
+    return text
+  } finally {
+    doc.destroy()
+  }
+}
+
+test('finishes the text being edited when saving from the menu or closing the document', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-edit-text-'))
+  const file = join(dir, 'letter.pdf')
+  copyFileSync(fixturePath('text.pdf'), file)
+  const { app, page } = await launch()
+  try {
+    await openFile(page, file)
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Edit a PDF' }).click()
+    await blockButton(page, /^Edit text: Chapter 1$/).click()
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('Saved heading')
+    expect((await activeDocState(page))?.dirty).toBe(true)
+
+    // File > Save from the menu bar (no click on the page): the edit is written first
+    await runCommand(page, 'file.save')
+    await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(false)
+    await expect(editor(page)).toHaveCount(0)
+    expect(fileText(file)).toContain('Saved heading')
+    expect(fileText(file)).not.toContain('Chapter 1')
+
+    // closing with Ctrl+W while typing: "Save changes?" includes the text being edited
+    await blockButton(page, /^Edit text: Hello Fartcrobat page 1/).click()
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('End')
+    await page.keyboard.type(' Kind regards.')
+    await page.keyboard.press('Control+W')
+    const ask = page.locator('.ui-dialog').filter({ has: page.locator('h2', { hasText: 'Save changes?' }) })
+    await expect(ask).toBeVisible()
+    await shot(page, '25-save-changes')
+    await ask.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length))
+      .toBe(0)
+    expect(fileText(file)).toContain('lazy dog. Kind regards.')
   } finally {
     await app.close()
   }

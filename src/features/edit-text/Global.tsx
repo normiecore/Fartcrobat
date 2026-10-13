@@ -6,10 +6,12 @@ import { MiniFormat } from './FormatControls'
 import { closeFormattingPopover } from './popover'
 import {
   cancelSession,
+  COMMIT_LABEL,
   commitSession,
   deleteBox,
   dropSession,
   focusEditor,
+  isChanged,
   loadDefaults,
   undoLocal,
   redoLocal,
@@ -29,6 +31,7 @@ function isTyping(el: Element | null): boolean {
 function MiniToolbar() {
   const id = useEditText((s) => s.session?.id ?? null)
   const busy = useEditText((s) => s.session?.status === 'committing')
+  const done = useEditText((s) => !!s.session?.done)
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
 
@@ -71,7 +74,7 @@ function MiniToolbar() {
     return () => cancelAnimationFrame(raf)
   }, [id])
 
-  if (id === null || !pos) return null
+  if (id === null || !pos || done) return null
   return createPortal(
     <div
       ref={ref}
@@ -165,6 +168,32 @@ export function EditTextGlobal() {
       }
     })
   }, [sessionId])
+
+  // another operation starts on the document (Save or Print from the menu bar, a tool...): the
+  // text is written first so that the operation includes it. The busy state is set right before
+  // the operation is sent to the engine, so the edit reaches the engine first.
+  // Typing that is not saved into the page yet still counts as an unsaved change (for "Save
+  // changes?"): engine replies report the engine's own state, so the flag is set again when one
+  // clears it while the text is being edited.
+  useEffect(() => {
+    const s = useEditText.getState().session
+    if (!s) return
+    return s.doc.store.subscribe((st, prev) => {
+      if (st.busy && st.busy !== prev.busy && st.busy !== COMMIT_LABEL) void commitSession({ quiet: true })
+      const cur = useEditText.getState().session
+      if (!st.dirty && cur?.id === s.id && cur.status === 'editing' && isChanged(cur))
+        s.doc.set({ dirty: true })
+    })
+  }, [sessionId])
+
+  // a dialog opens while editing (Save changes?, Print, a page tool...): finish the edit first
+  useEffect(
+    () =>
+      useApp.subscribe((st, prev) => {
+        if (st.dialogs.length > prev.dialogs.length && useEditText.getState().session) void commitSession()
+      }),
+    []
+  )
 
   // switching tabs saves the edit; closing the document drops it
   useEffect(

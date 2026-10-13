@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { Point } from '@shared/geometry'
+import type { Point, Rect } from '@shared/geometry'
 import { drawResult, runCommand, useApp, useDocState, type PageGeometry } from '@renderer/sdk'
+import type { RenderResult } from '@engine/ops/render'
 import type editOps from './engine'
 import { cssBaseline, cssFamily } from './fonts'
 import { closeFormattingPopover } from './popover'
@@ -10,8 +11,10 @@ import {
   commitSession,
   consumeCaret,
   editorChanged,
+  finalShown,
   insertText,
   nudgeFrame,
+  overlayMounted,
   redoLocal,
   setFrame,
   setSelection,
@@ -26,52 +29,65 @@ const shownSessions = new Set<number>()
 
 const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
 
-/** Page render of the paragraph's area without its text, hiding the original glyphs while editing. */
+/**
+ * Page render under the editor. While editing it shows the paragraph's area without its text (so
+ * the original glyphs are hidden); once the edit is saved it shows that part of the page as it
+ * is now, so the editor can go away before the page itself has been drawn again.
+ */
 function Cover({
   session,
   geometry,
-  onReady
+  onReady,
+  onFinal
 }: {
   session: EditSession
   geometry: PageGeometry
   onReady: () => void
+  onFinal: () => void
 }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const colorMode = useApp((s) => s.prefs.pageColors)
   const annots = useDocState(session.doc, (s) => s.showAnnotations)
-  const block = session.block!
-  const { doc, page } = session
-  useEffect(() => {
-    const canvas = ref.current
-    if (!canvas) return
-    let alive = true
-    const dpr = window.devicePixelRatio || 1
+  const { doc, page, block, done } = session
+  const dpr = window.devicePixelRatio || 1
+
+  const clipOf = (rects: Rect[]) => {
     const pad = 4
     const r = geometry.rectToCss([
-      block.bbox[0] - pad,
-      block.bbox[1] - pad,
-      block.bbox[2] + pad,
-      block.bbox[3] + pad
+      Math.min(...rects.map((x) => x[0])) - pad,
+      Math.min(...rects.map((x) => x[1])) - pad,
+      Math.max(...rects.map((x) => x[2])) + pad,
+      Math.max(...rects.map((x) => x[3])) + pad
     ])
+    return [r.left * dpr, r.top * dpr, (r.left + r.width) * dpr, (r.top + r.height) * dpr] as Rect
+  }
+  const show = (res: RenderResult) => {
+    const c = ref.current!
+    drawResult(c, res)
+    c.style.left = `${res.x / dpr}px`
+    c.style.top = `${res.y / dpr}px`
+    c.style.width = `${res.width / dpr}px`
+    c.style.height = `${res.height / dpr}px`
+    c.style.visibility = 'visible'
+  }
+
+  // while editing: the paragraph's area without its text
+  useEffect(() => {
+    if (!block || !ref.current) return
+    let alive = true
     const timer = window.setTimeout(() => {
       doc
         .ops<typeof editOps>('edit-text')
         .preview(page, { start: block.start, end: block.end, check: block.text }, block.quads, {
           scale: geometry.scale * dpr,
           rotate: geometry.rotation,
-          clip: [r.left * dpr, r.top * dpr, (r.left + r.width) * dpr, (r.top + r.height) * dpr],
+          clip: clipOf([block.bbox]),
           colorMode,
           annots
         })
         .then((res) => {
           if (!alive || !ref.current) return
-          drawResult(ref.current, res)
-          const c = ref.current
-          c.style.left = `${res.x / dpr}px`
-          c.style.top = `${res.y / dpr}px`
-          c.style.width = `${res.width / dpr}px`
-          c.style.height = `${res.height / dpr}px`
-          c.style.visibility = 'visible'
+          show(res)
           onReady()
         })
         .catch((err) => {
@@ -87,6 +103,36 @@ function Cover({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc, page, block, geometry, colorMode, annots])
+
+  // after saving: the page as it is now, where the text was and where it is
+  useEffect(() => {
+    if (!done) return
+    let alive = true
+    const rects = [block?.bbox, done.bbox].filter((r): r is Rect => !!r)
+    if (!rects.length) {
+      onFinal()
+      return
+    }
+    doc.core.render
+      .page(page, {
+        scale: geometry.scale * dpr,
+        rotate: geometry.rotation,
+        clip: clipOf(rects),
+        colorMode,
+        annots
+      })
+      .then((res) => {
+        if (!alive || !ref.current) return
+        show(res)
+        onFinal()
+      })
+      .catch(() => alive && onFinal())
+    return () => {
+      alive = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [done])
+
   return <canvas ref={ref} className="fc-edit-text-cover" style={{ visibility: 'hidden' }} aria-hidden />
 }
 
@@ -97,15 +143,29 @@ function normalize(d: Point): Point {
 
 export function SessionOverlay({ session, geometry }: { session: EditSession; geometry: PageGeometry }) {
   const [coverReady, setCoverReady] = useState(!session.block)
+  const [final, setFinal] = useState(false)
+  const id = session.id
   useEffect(() => {
     // never keep the text hidden for long, even if the preview is slow
     const t = window.setTimeout(() => setCoverReady(true), 600)
-    return () => window.clearTimeout(t)
-  }, [])
+    overlayMounted(id, true)
+    return () => {
+      window.clearTimeout(t)
+      overlayMounted(id, false)
+    }
+  }, [id])
   return (
     <>
-      {session.block && <Cover session={session} geometry={geometry} onReady={() => setCoverReady(true)} />}
-      <EditorFrame session={session} geometry={geometry} visible={coverReady} />
+      <Cover
+        session={session}
+        geometry={geometry}
+        onReady={() => setCoverReady(true)}
+        onFinal={() => {
+          setFinal(true)
+          finalShown(id)
+        }}
+      />
+      <EditorFrame session={session} geometry={geometry} visible={coverReady} hidden={final} />
     </>
   )
 }
@@ -113,11 +173,14 @@ export function SessionOverlay({ session, geometry }: { session: EditSession; ge
 function EditorFrame({
   session: s,
   geometry,
-  visible
+  visible,
+  hidden
 }: {
   session: EditSession
   geometry: PageGeometry
   visible: boolean
+  /** The edit has been saved and the cover shows the result. */
+  hidden: boolean
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
@@ -411,6 +474,7 @@ function EditorFrame({
       style={{
         left: o[0],
         top: o[1],
+        visibility: hidden ? 'hidden' : undefined,
         transform: `rotate(${angle}rad) translate(${anchor}px, ${shift}px) translateX(${pct})`,
         width: s.wrap ? widthPx : undefined
       }}

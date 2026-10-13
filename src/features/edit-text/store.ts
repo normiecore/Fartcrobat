@@ -3,7 +3,7 @@
  * change it. The store owns the content; the in-place editor is a view of it that reports typing.
  */
 import { create } from 'zustand'
-import type { Point } from '@shared/geometry'
+import type { Point, Rect } from '@shared/geometry'
 import {
   getActiveDoc,
   invoke,
@@ -79,6 +79,11 @@ export interface EditSession {
   undo: Snapshot[]
   redo: Snapshot[]
   lastTyping: number
+  /**
+   * Set once the edit has been written into the page: the overlay then shows the page as it is
+   * now (where the text was and where it is), before it goes away.
+   */
+  done: { bbox: Rect | null } | null
 }
 
 interface State {
@@ -204,6 +209,7 @@ function start(
     selection: selection
       ? { start: Math.min(selection.start, len), end: Math.min(selection.end, len) }
       : { start: len, end: len },
+    done: null,
     renderToken: 1,
     focusToken: 1,
     status: 'editing',
@@ -353,8 +359,14 @@ async function refreshDirty(doc: DocumentModel) {
   } catch {}
 }
 
-/** Writes the edit into the page (one undoable step). Resolves when done (or when nothing to do). */
-export function commitSession(): Promise<void> {
+/** Busy label shown while an edit is written into the page. */
+export const COMMIT_LABEL = 'Updating text…'
+
+/**
+ * Writes the edit into the page (one undoable step). Resolves when done (or when nothing to do).
+ * `quiet` leaves the document's busy indicator alone (another operation is already showing it).
+ */
+export function commitSession(opts: { quiet?: boolean } = {}): Promise<void> {
   if (committing) return committing
   const s = useEditText.getState().session
   if (!s || s.status !== 'editing') return Promise.resolve()
@@ -380,7 +392,9 @@ export function commitSession(): Promise<void> {
   }
   committing = (async () => {
     try {
-      const res = await s.doc.busyWhile('Saving text…', () => ops(s.doc).commit(s.page, edit))
+      const res = opts.quiet
+        ? await ops(s.doc).commit(s.page, edit)
+        : await s.doc.busyWhile(COMMIT_LABEL, () => ops(s.doc).commit(s.page, edit))
       if (res.fallbackFonts.length)
         toast(
           `${res.fallbackFonts.join(', ')} does not include some of the characters you typed, so a standard font was used for that text.`,
@@ -394,8 +408,7 @@ export function commitSession(): Promise<void> {
             timeout: 8000
           }
         )
-      // keep the edited text on screen until the page has been drawn again
-      await new Promise((r) => setTimeout(r, 220))
+      await showResult(s, res.bbox)
       close(s)
       if (!s.block) maybeReturnToEditTool()
     } catch (err) {
@@ -412,6 +425,46 @@ export function commitSession(): Promise<void> {
     }
   })()
   return committing
+}
+
+// ---- the overlay after saving ------------------------------------------------------------------
+
+/** Sessions whose overlay is on screen. */
+const overlays = new Set<number>()
+const finalWaiters = new Map<number, () => void>()
+
+export function overlayMounted(id: number, mounted: boolean) {
+  if (mounted) overlays.add(id)
+  else {
+    overlays.delete(id)
+    finalWaiters.get(id)?.()
+  }
+}
+
+/** The overlay shows the page as it is after the edit (see EditSession.done). */
+export function finalShown(id: number) {
+  finalWaiters.get(id)?.()
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Swaps the editor for a render of the edited part of the page, so neither the old text nor the
+ * editor's copy of the new text shows while the page itself is drawn again.
+ */
+async function showResult(s: EditSession, bbox: Rect | null) {
+  if (!overlays.has(s.id)) return
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, 800)
+    finalWaiters.set(s.id, () => {
+      clearTimeout(timer)
+      resolve()
+    })
+    patchSession({ done: { bbox } })
+  })
+  finalWaiters.delete(s.id)
+  // the page is usually drawn again by now; a little more time covers slower renders
+  await sleep(150)
 }
 
 function maybeReturnToEditTool() {
