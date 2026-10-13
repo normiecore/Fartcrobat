@@ -39,19 +39,37 @@ const pendingUnsaved = new Set<string>()
 
 /**
  * Opens tool output (combined or extracted pages) as a new, unsaved tab: closing it asks to save
- * and the tab shows the unsaved-changes marker.
+ * and the tab shows the unsaved-changes marker. Protected output opens with `password` (the one
+ * its source was opened with), so the person is not asked again and later saves keep it.
  */
-export async function openAsNewDocument(bytes: Uint8Array, name: string): Promise<DocumentModel | null> {
+export async function openAsNewDocument(
+  bytes: Uint8Array,
+  name: string,
+  opts: { password?: string } = {}
+): Promise<DocumentModel | null> {
   const title = name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf'
   pendingUnsaved.add(title)
   try {
-    const doc = await openNewDocument(bytes, title)
+    const doc = await openNewDocument(bytes, title, { password: opts.password })
     // Already done by the onDocumentOpen hook; repeating it is harmless and waits for it.
     if (doc) await orgOps(doc).markUnsaved()
     return doc
   } finally {
     pendingUnsaved.delete(title)
   }
+}
+
+/**
+ * Opens pages extracted from `source` (bytes from its `extract` op) as a new, unsaved tab. When
+ * `source` is protected, so is the tab, and it opens without asking for the password again.
+ */
+export async function openExtractedPages(
+  source: DocumentModel,
+  bytes: Uint8Array,
+  name: string
+): Promise<DocumentModel | null> {
+  const password = (await orgOps(source).openPassword()) ?? undefined
+  return openAsNewDocument(bytes, name, { password })
 }
 
 /**
@@ -168,7 +186,8 @@ export async function movePages(doc: DocumentModel, indices: number[], gap: numb
 export async function copyPagesToDocument(source: DocumentModel, indices: number[], target: DocumentModel) {
   if (!indices.length || target.isClosed) return
   try {
-    const bytes = await orgOps(source).extract(indices)
+    // The pages join a document that keeps its own security, so they travel without protection.
+    const bytes = await orgOps(source).extract(indices, { keepProtection: false })
     await afterChange(target, () =>
       orgOps(target).insertFiles(-1, [{ data: bytes, fileName: 'pages.pdf' }], { bookmarks: false })
     )

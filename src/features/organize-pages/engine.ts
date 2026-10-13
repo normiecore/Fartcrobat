@@ -3,6 +3,15 @@ import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { PDFDocument, PDFObject, Session } from '@engine/session'
 import { openSource } from '@engine/ops/pages'
 import { isNull, readName, readNumber, readString } from '@engine/util/pdf'
+import {
+  isEncrypted,
+  outputSizer,
+  protectionOfFile,
+  saveWithProtection,
+  sessionProtection,
+  type Protection,
+  type ProtectionSummary
+} from '@engine/util/protection'
 import { appendOutline, CONTENT_KEYS, copyPages, ObjectCopier, remapOutline, type OutlineEntry } from './copy'
 import type { LabelRange, LabelStyle } from './labels'
 import { splitBySize, type SplitPart } from './split'
@@ -17,6 +26,14 @@ export interface SourceRef {
   pages?: number[]
   /** Bookmark title when combining (default: the file name without extension). */
   title?: string
+}
+
+/** The input of a combined file whose protection the result keeps (the first protected one). */
+export interface CombineProtection {
+  /** Index in the `sources` given to combine. */
+  index: number
+  fileName: string
+  summary: ProtectionSummary
 }
 
 export type ProbeResult =
@@ -44,6 +61,15 @@ function selectPages(doc: PDFDocument, pages: number[] | undefined): number[] {
   return pages.filter((p, i) => Number.isInteger(p) && p >= 0 && p < n && pages.indexOf(p) === i)
 }
 
+/** The bytes and password each opened encrypted file came from, to give outputs its protection. */
+const origins = new WeakMap<PDFDocument, { data: Uint8Array; password: string | null }>()
+
+function openFile(s: Session, data: Uint8Array, fileName: string, password?: string): PDFDocument {
+  const doc = openSource(s, data, fileName, password)
+  if (isEncrypted(doc)) origins.set(doc, { data, password: password ?? null })
+  return doc
+}
+
 function openRef(s: Session, ref: SourceRef): { doc: PDFDocument; owned: boolean } {
   if (ref.key) {
     const doc = s.scratch.get(SCRATCH_PREFIX + ref.key)
@@ -51,7 +77,15 @@ function openRef(s: Session, ref: SourceRef): { doc: PDFDocument; owned: boolean
     return { doc, owned: false }
   }
   if (!ref.data) throw new EngineError(`No data for ${ref.fileName}`, 'NO_SOURCE')
-  return { doc: openSource(s, ref.data, ref.fileName, ref.password), owned: true }
+  return { doc: openFile(s, ref.data, ref.fileName, ref.password), owned: true }
+}
+
+/** The protection of a file opened by openRef, or null when it is not encrypted. */
+function protectionOfRef(s: Session, doc: PDFDocument, fileName: string): Protection | null {
+  if (!isEncrypted(doc)) return null
+  const origin = origins.get(doc)
+  if (!origin) throw new EngineError(`The protection of ${fileName} could not be read`, 'NO_SOURCE')
+  return protectionOfFile(s.mupdf, origin.data, origin.password)
 }
 
 function pageSizes(doc: PDFDocument, max = MAX_PROBE_SIZES) {
@@ -86,20 +120,11 @@ function tryOpen(
   password?: string
 ): PDFDocument | ProbeResult {
   try {
-    return openSource(s, data, fileName, password)
+    return openFile(s, data, fileName, password)
   } catch (err) {
     if ((err as EngineError).code === 'NEEDS_PASSWORD')
       return { ok: false, needsPassword: true, wrongPassword: !!password }
     throw new EngineError(`${fileName} could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
-  }
-}
-
-function saveCompact(doc: PDFDocument): Uint8Array {
-  const buf = doc.saveToBuffer('garbage=compact,compress')
-  try {
-    return buf.asUint8Array().slice()
-  } finally {
-    buf.destroy()
   }
 }
 
@@ -218,6 +243,64 @@ function readLabelRanges(doc: PDFDocument): LabelRange[] {
     .sort((a, b) => a.start - b.start)
 }
 
+// ---- combine --------------------------------------------------------------------------------
+
+export interface CombineOptions {
+  /** One top-level bookmark per file (default true). */
+  bookmarks?: boolean
+  /** Keep each file's own bookmarks under it (default true). */
+  keepBookmarks?: boolean
+}
+
+function combineSources(
+  s: Session,
+  sources: SourceRef[],
+  opts: CombineOptions
+): { bytes: Uint8Array; protection: CombineProtection | null } {
+  if (!sources.length) throw new EngineError('Add at least one file to combine', 'NO_FILES')
+  const out = new s.mupdf.PDFDocument()
+  try {
+    const outline: OutlineEntry[] = []
+    let kept: { protection: Protection; info: CombineProtection } | null = null
+    for (let i = 0; i < sources.length; i++) {
+      const ref = sources[i]
+      s.progress(i / sources.length, `Adding ${ref.fileName} (${i + 1} of ${sources.length})`)
+      const { doc, owned } = openRef(s, ref)
+      try {
+        const pages = selectPages(doc, ref.pages)
+        if (!pages.length) continue
+        if (!kept) {
+          const protection = protectionOfRef(s, doc, ref.fileName)
+          if (protection)
+            kept = { protection, info: { index: i, fileName: ref.fileName, summary: protection.summary } }
+        }
+        const res = copyPages(out, doc, pages, { at: -1 })
+        const children =
+          opts.keepBookmarks !== false ? remapOutline(doc, out, (p) => res.pageMap.get(p) ?? null) : []
+        if (opts.bookmarks !== false) {
+          outline.push({
+            title: ref.title || stripExtension(ref.fileName),
+            uri: `#page=${res.indices[0] + 1}`,
+            open: false,
+            children
+          })
+        } else outline.push(...children)
+      } finally {
+        if (owned) doc.destroy()
+      }
+    }
+    if (out.countPages() === 0) throw new EngineError('There are no pages to combine', 'NO_PAGES')
+    s.progress(0.95, 'Adding bookmarks')
+    appendOutline(out, outline)
+    s.progress(0.97, 'Saving')
+    const bytes = saveWithProtection(s.mupdf, out, kept?.protection ?? null)
+    s.progress(1)
+    return { bytes, protection: kept?.info ?? null }
+  } finally {
+    out.destroy()
+  }
+}
+
 // ---- operations -----------------------------------------------------------------------------
 
 export default defineOps('organize-pages', {
@@ -267,62 +350,59 @@ export default defineOps('organize-pages', {
 
   /**
    * Combines files into one new PDF (Combine Files). Each file gets a top-level bookmark that holds
-   * its own bookmarks. Comments, links and form fields are kept. Returns the PDF bytes.
+   * its own bookmarks. Comments, links and form fields are kept. Returns the PDF bytes, protected
+   * like the first protected file (see combineWithProtection).
    */
-  combine(s, sources: SourceRef[], opts: { bookmarks?: boolean; keepBookmarks?: boolean } = {}) {
-    if (!sources.length) throw new EngineError('Add at least one file to combine', 'NO_FILES')
-    const out = new s.mupdf.PDFDocument()
+  combine(s, sources: SourceRef[], opts: CombineOptions = {}) {
+    const { bytes } = combineSources(s, sources, opts)
+    return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
+  },
+
+  /**
+   * Like combine, and says which file's protection the result has: when any file is encrypted, the
+   * result gets the encryption, permissions and passwords of the first one that is.
+   */
+  combineWithProtection(s, sources: SourceRef[], opts: CombineOptions = {}) {
+    const result = combineSources(s, sources, opts)
+    return withTransfer(result, [result.bytes.buffer as ArrayBuffer])
+  },
+
+  /**
+   * New PDF bytes with the given pages, keeping comments, links, form fields and bookmarks. A
+   * protected document gives a file with the same protection, unless `keepProtection` is false
+   * (pages copied into another open document, which keeps its own security).
+   */
+  extract(s, indices: number[], opts: { keepProtection?: boolean } = {}) {
+    const list = uniqueSorted(indices, s.pageCount())
+    if (!list.length) throw new EngineError('No pages selected', 'NO_PAGES')
+    const out = extractDoc(s, list)
     try {
-      const outline: OutlineEntry[] = []
-      sources.forEach((ref, i) => {
-        s.progress(i / sources.length, `Adding ${ref.fileName} (${i + 1} of ${sources.length})`)
-        const { doc, owned } = openRef(s, ref)
-        try {
-          const pages = selectPages(doc, ref.pages)
-          if (!pages.length) return
-          const res = copyPages(out, doc, pages, { at: -1 })
-          const children =
-            opts.keepBookmarks !== false ? remapOutline(doc, out, (p) => res.pageMap.get(p) ?? null) : []
-          if (opts.bookmarks !== false) {
-            outline.push({
-              title: ref.title || stripExtension(ref.fileName),
-              uri: `#page=${res.indices[0] + 1}`,
-              open: false,
-              children
-            })
-          } else outline.push(...children)
-        } finally {
-          if (owned) doc.destroy()
-        }
-      })
-      if (out.countPages() === 0) throw new EngineError('There are no pages to combine', 'NO_PAGES')
-      s.progress(0.95, 'Adding bookmarks')
-      appendOutline(out, outline)
-      s.progress(0.97, 'Saving')
-      const bytes = saveCompact(out)
-      s.progress(1)
+      const protection = opts.keepProtection === false ? null : sessionProtection(s)
+      const bytes = saveWithProtection(s.mupdf, out, protection)
       return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
     } finally {
       out.destroy()
     }
   },
 
-  /** New PDF bytes with the given pages, keeping comments, links, form fields and bookmarks. */
-  extract(s, indices: number[]) {
-    const list = uniqueSorted(indices, s.pageCount())
-    if (!list.length) throw new EngineError('No pages selected', 'NO_PAGES')
-    const out = extractDoc(s, list)
-    try {
-      const bytes = saveCompact(out)
-      return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
-    } finally {
-      out.destroy()
-    }
+  /** The protection Extract and Split give their files, or null when the document has none. */
+  protection(s): ProtectionSummary | null {
+    return sessionProtection(s)?.summary ?? null
+  },
+
+  /**
+   * The password that opens extracted files (the one this document was opened with), or null when
+   * they open without one. Only for opening them in a new tab: never show it or pass it on.
+   */
+  openPassword(s): string | null {
+    return sessionProtection(s)?.password ?? null
   },
 
   /** Plans a split into parts of at most `maxBytes` (measured by actually extracting the pages). */
   splitPlanBySize(s, maxBytes: number): SplitPart[] {
     const count = s.pageCount()
+    // Parts keep the document's protection, which adds a little to their size.
+    const sizer = outputSizer(s.mupdf, sessionProtection(s))
     const sizeOf = (a: number, b: number) => {
       const out = extractDoc(
         s,
@@ -330,15 +410,16 @@ export default defineOps('organize-pages', {
         { bookmarks: false, links: false }
       )
       try {
-        const buf = out.saveToBuffer('garbage=compact,compress')
-        const n = buf.getLength()
-        buf.destroy()
-        return n
+        return sizer.size(out)
       } finally {
         out.destroy()
       }
     }
-    return splitBySize(count, Math.max(1024, maxBytes), sizeOf, (f) => s.progress(f, 'Measuring pages'))
+    try {
+      return splitBySize(count, Math.max(1024, maxBytes), sizeOf, (f) => s.progress(f, 'Measuring pages'))
+    } finally {
+      sizer.destroy()
+    }
   },
 
   /** Inserts pages from one or more files at `at`, in one undoable step. Returns the new page indices. */

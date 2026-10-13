@@ -8,3 +8,7 @@ Acrobat 'Compare files' (tool group 'compare', Home tile).
 - Cancel/progress for large documents; no blocking of the UI thread for big diffs (chunk the work, or run the diff in a small dedicated Web Worker).
 - Unit tests for the diff/alignment logic on synthetic page texts and on compare-a.pdf vs compare-b.pdf (expects exactly 2 changes: '$1,234.56' -> '$9,876.54' and 'finance' -> 'audit').
 e2e: compare compare-a.pdf with compare-b.pdf (stub file:openDialog), results view shows 2 changes with highlights on both sides (screenshot, look at it), clicking a change scrolls; export report opens a new tab.
+
+## Protected documents
+
+The compare report shows text from both documents, so when either is password-protected or restricted the report keeps the protection of the first protected one (Old, then New), with the same method, permissions and passwords (see the organize-pages notes and `src/engine/util/protection.ts`). The report is built in the New document's engine; the protecting document's engine then applies its security (`compare.protectReport`), the report tab opens with that document's password without asking again (`compare.openPassword`), and the result message says whose protection it kept. When the protected document was a tab that has since been closed, the report cannot be created until the files are compared again.

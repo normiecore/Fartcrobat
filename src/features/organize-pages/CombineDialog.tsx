@@ -35,6 +35,7 @@ import type { ClientOps } from '@engine/define'
 import type organizeOps from './engine'
 import { openAsNewDocument } from './actions'
 import { chooseFiles, loadFile, loadOpenDocument, withPassword, type LoadedFile } from './files'
+import { protectionNote } from './protection'
 import { countLabel, formatPageRange, parsePageRange } from './ranges'
 
 type Ops = ClientOps<typeof organizeOps>
@@ -158,6 +159,8 @@ function CombineFiles({ close }: { close: () => void }) {
   const [dragIndex, setDragIndex] = useState<{ from: number; to: number } | null>(null)
   const engineRef = useRef<EngineClient | null>(null)
   const opsRef = useRef<Ops | null>(null)
+  /** Open passwords typed for items, to open a protected result without asking again. */
+  const passwordsRef = useRef(new Map<string, string>())
   const itemsRef = useRef(items)
   itemsRef.current = items
   const listRef = useRef<HTMLDivElement>(null)
@@ -210,6 +213,7 @@ function CombineFiles({ close }: { close: () => void }) {
         setItems((list) => list.filter((it) => it.id !== id))
         return
       }
+      if (opened.password) passwordsRef.current.set(id, opened.password)
       update(id, {
         name: file.name,
         path: file.path,
@@ -244,6 +248,7 @@ function CombineFiles({ close }: { close: () => void }) {
     const it = items.find((x) => x.id === id)
     if (it?.thumb) URL.revokeObjectURL(it.thumb)
     void opsRef.current?.closeScratch(id).catch(() => {})
+    passwordsRef.current.delete(id)
     setItems((list) => list.filter((x) => x.id !== id))
   }
 
@@ -335,8 +340,8 @@ function CombineFiles({ close }: { close: () => void }) {
     if (!canCombine) return
     const engine = engineRef.current!
     try {
-      const bytes = await withProgress('Combining files…', (report) =>
-        engine.ops<typeof organizeOps>('organize-pages', { onProgress: report }).combine(
+      const { bytes, protection } = await withProgress('Combining files…', (report) =>
+        engine.ops<typeof organizeOps>('organize-pages', { onProgress: report }).combineWithProtection(
           readyItems.map((it) => {
             const r = ranges.get(it.id)
             return {
@@ -350,10 +355,16 @@ function CombineFiles({ close }: { close: () => void }) {
         )
       )
       const name = binderName(useApp.getState().docs.map((d) => d.state.title))
+      // The result has the protection of the first protected file: it opens with that file's password.
+      const password = protection ? passwordsRef.current.get(readyItems[protection.index].id) : undefined
       close()
-      const doc = await openAsNewDocument(bytes, name)
+      const doc = await openAsNewDocument(bytes, name, { password })
       if (doc)
-        toast(`Combined ${countLabel(readyItems.length, 'file', 'files')} into ${name}`, { kind: 'success' })
+        toast(
+          `Combined ${countLabel(readyItems.length, 'file', 'files')} into ${name}` +
+            (protection ? '. ' + protectionNote(protection.summary, protection.fileName) : ''),
+          { kind: 'success' }
+        )
     } catch (err) {
       showError(err, 'Could not combine the files')
     }
