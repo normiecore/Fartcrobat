@@ -124,7 +124,8 @@ function applyOnPage(s: Session, pageIndex: number, ids: Set<number> | null): Pa
   const areas = infos.flatMap((i) => markAreas(i))
   const annots = removeAnnotationsIn(s, pageIndex, areas)
   const fields = removeFieldsIn(s, pageIndex, areas)
-  const tagged = snapshotPage(s, pageIndex)
+  // (a page whose content cannot be read is still redacted; its tagged text is then all removed)
+  const tagged = safe(() => snapshotPage(s, pageIndex), null)
   const page = s.page(pageIndex)
   if (chosen.length === all.length) {
     page.applyRedactions(false, IMAGE_PIXELS, LINE_ART_IF_COVERED, TEXT_REMOVE)
@@ -139,7 +140,7 @@ function applyOnPage(s: Session, pageIndex: number, ids: Set<number> | null): Pa
     }
   }
   // tagged text standing in for the removed content (/ActualText, /Alt...) goes too
-  const changedMcids = cleanRedactedPage(s, pageIndex, tagged)
+  const changedMcids = safe(() => cleanRedactedPage(s, pageIndex, tagged), 'all' as const)
   // an embedded page thumbnail still shows the page as it was
   const pageObj = s.pdf.findPage(pageIndex)
   if (!isNull(pageObj.get('Thumb'))) pageObj.delete('Thumb')

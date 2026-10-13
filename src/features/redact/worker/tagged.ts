@@ -215,12 +215,14 @@ function stripForm(s: Session, ref: PDFObject, done: Set<number>, depth = 0): vo
  * content changed (and from redacted copies of form XObjects). Returns the MCIDs whose content
  * changed or disappeared ('all' when sequences can no longer be matched one to one).
  */
-export function cleanRedactedPage(s: Session, pageIndex: number, before: TaggedSnapshot): Set<number> | 'all' {
+export function cleanRedactedPage(s: Session, pageIndex: number, snapshot: TaggedSnapshot | null): Set<number> | 'all' {
   const pageObj = s.pdf.findPage(pageIndex)
   const { src, streams } = readContents(s, pageObj)
   const ctx = pageContext(s, pageIndex)
   const after = markedSequences(src, ctx)
-  const matched = after.length === before.sequences.length
+  // without a record of the page before redacting, every sequence counts as changed
+  const before: TaggedSnapshot = snapshot ?? { sequences: [], xobjects: new Set() }
+  const matched = !!snapshot && after.length === before.sequences.length
   const beforeByMcid = new Map<number, string>()
   for (const q of before.sequences) if (q.mcid !== null) beforeByMcid.set(q.mcid, (beforeByMcid.get(q.mcid) ?? '') + '|' + q.signature)
   const afterByMcid = new Map<number, string>()

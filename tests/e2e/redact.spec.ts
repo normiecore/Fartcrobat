@@ -214,6 +214,7 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     // ---- Mark page range: page 3
     await page.getByRole('button', { name: /Mark page range/ }).first().click()
     await page.getByLabel('Page range').fill('3')
+    await page.waitForTimeout(300) // let the dialog finish fading in
     await shot(page, 'page-range')
     await page.getByRole('button', { name: 'Mark 1 page' }).click()
     await expect.poll(async () => (await marks(page)).filter((m) => m.kind === 'page').length).toBe(1)
