@@ -6,6 +6,7 @@ import type * as MuPDF from 'mupdf'
 import type { Matrix, Point, Quad } from '@shared/geometry'
 import type { PDFObject, Session } from '@engine/session'
 import { isNull, num, readName, readString } from '@engine/util/pdf'
+import { withOwnContent } from './contents'
 
 // ---- WinAnsi (the encoding of standard fonts written without embedding) ------------------
 
@@ -311,21 +312,6 @@ export function mergeToUnicode(s: Session, fontRef: PDFObject, add: Map<number, 
 
 // ---- content streams --------------------------------------------------------------------
 
-/** Wraps the existing page content in q/Q and appends `content` after it. */
-export function appendContent(s: Session, pageIndex: number, content: string) {
-  const doc = s.pdf
-  const pageObj = doc.findPage(pageIndex)
-  const old = pageObj.get('Contents')
-  const arr = doc.newArray()
-  arr.push(doc.addStream('q\n', doc.newDictionary()))
-  if (!isNull(old)) {
-    if (old.isArray()) for (let i = 0; i < old.length; i++) arr.push(old.get(i))
-    else arr.push(old)
-  }
-  arr.push(doc.addStream('Q\n' + content, doc.newDictionary()))
-  pageObj.put('Contents', arr)
-}
-
 export function matrixString(m: Matrix): string {
   return m.map((v) => num(v)).join(' ')
 }
@@ -345,6 +331,26 @@ const HELD_SUBTYPE = 'FartcrobatHeldRedact'
  */
 export function removeTextUnder(s: Session, pageIndex: number, quads: Quad[]) {
   if (!quads.length) return
+  // only the page's own content: page marks (headers, watermarks...) stay as they are
+  withOwnContent(s, pageIndex, (unwrap) =>
+    redactText(
+      s,
+      pageIndex,
+      quads.map((q) => transformQuad(q, unwrap))
+    )
+  )
+}
+
+function transformQuad(q: Quad, m: Matrix): Quad {
+  const out = [...q] as Quad
+  for (let k = 0; k < 8; k += 2) {
+    out[k] = q[k] * m[0] + q[k + 1] * m[2] + m[4]
+    out[k + 1] = q[k] * m[1] + q[k + 1] * m[3] + m[5]
+  }
+  return out
+}
+
+function redactText(s: Session, pageIndex: number, quads: Quad[]) {
   const doc = s.pdf
   const page = s.page(pageIndex)
   const pageObj = page.getObject()

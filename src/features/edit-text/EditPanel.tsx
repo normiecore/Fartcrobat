@@ -67,7 +67,7 @@ const CONTENT: Entry[] = [
 const marks = (kind: string, remove = true): Entry['more'] => [
   { id: `marks.${kind}.add`, label: 'Add…' },
   { id: `marks.${kind}.update`, label: 'Update…' },
-  ...(remove ? [{ id: `marks.${kind}.remove`, label: 'Remove' }] : [])
+  ...(remove ? [{ id: `marks.${kind}.remove`, label: 'Remove…' }] : [])
 ]
 
 const PAGES: Entry[] = [
@@ -94,7 +94,7 @@ const PAGES: Entry[] = [
     icon: Hash,
     more: [
       { id: 'marks.bates.add', label: 'Add…' },
-      { id: 'marks.bates.remove', label: 'Remove' }
+      { id: 'marks.bates.remove', label: 'Remove…' }
     ]
   },
   { id: 'organize.open', kind: 'command', label: 'Organize pages', icon: LayoutGrid },
@@ -126,6 +126,7 @@ function run(id: string, kind: Entry['kind'] = 'command') {
 
 /** A panel row that opens a small menu (Add / Update / Remove) when there is more than one action. */
 function MenuRow({ entry, disabled }: { entry: Entry; disabled: boolean }) {
+  const toolId = useApp((s) => s.toolId)
   const cmd = registry.commands.get(entry.id)
   const IconC = cmd?.icon ?? entry.icon
   const more = (entry.more ?? []).filter((m) => registry.commands.has(m.id))
@@ -135,6 +136,7 @@ function MenuRow({ entry, disabled }: { entry: Entry; disabled: boolean }) {
         icon={IconC}
         label={entry.label}
         description={entry.description}
+        active={toolId === entry.id}
         disabled={disabled}
         onClick={() => run(entry.id)}
       />
@@ -180,12 +182,17 @@ export function EditPanel({ doc }: { doc: DocumentModel | null }) {
         <Section title="Edit and add">
           {content.map((e) => {
             const tool = registry.tools.get(e.id)
+            // images can only be clicked when the image tools are installed
+            const description =
+              e.id === 'edit.content' && !registry.tools.has('edit.addImage')
+                ? 'Click any text to change it'
+                : e.description
             return (
               <ToolRow
                 key={e.id}
                 icon={tool?.icon ?? e.icon}
                 label={e.label}
-                description={e.description}
+                description={description}
                 active={toolId === e.id}
                 disabled={!doc}
                 onClick={() => run(e.id, e.kind)}
@@ -217,7 +224,7 @@ function usePageHasText(doc: DocumentModel, page: number, enabled: boolean): boo
     if (!enabled) return
     let alive = true
     loadBlocks(doc, page).then(
-      (blocks) => alive && setState({ key, has: blocks.length > 0 }),
+      (blocks) => alive && setState({ key, has: blocks.some((b) => !b.mark) }),
       () => alive && setState(null)
     )
     return () => {
@@ -238,7 +245,7 @@ export function EditToolbar({ doc }: { doc: DocumentModel }) {
     toolId === 'edit.addText'
       ? 'Click where you want to add text, or drag to set the width of a text box.'
       : editing
-        ? 'Type to change the text. Drag the frame to move it. Click outside the box when you are done, or press Esc to cancel.'
+        ? 'Type to change the text. Click outside the box to finish, or press Esc to cancel.'
         : noText
           ? 'This page has no editable text. If it is a scan, recognize its text first.'
           : 'Click any text on the page to edit it.'

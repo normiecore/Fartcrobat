@@ -20,7 +20,8 @@ import {
   pageFontFiles,
   release,
   type ContentText,
-  type ObservedGlyph
+  type ObservedGlyph,
+  type RawLine
 } from './extract'
 import { layoutText, type LayoutRun, type ShapedGlyph } from './layout'
 import {
@@ -33,13 +34,14 @@ import {
   standardFontName,
   stripSubset,
   type CommitResult,
+  type MarkType,
   type Run,
   type StandardFamily,
   type TextBlockInfo,
   type TextEdit
 } from './model'
+import { appendContent, insertPlan, markGlyphs, markIndex } from './contents'
 import {
-  appendContent,
   builtinFont,
   cjkLanguage,
   colorOps,
@@ -61,22 +63,67 @@ const ITALIC_SKEW = Math.tan((12 * Math.PI) / 180)
 
 interface PageAnalysis {
   content: ContentText
+  /** Editable paragraphs. */
   blocks: AnalyzedBlock[]
+  /** Text drawn by page marks (headers, watermarks...), changed with their own tool. */
+  marks: AnalyzedBlock[]
+}
+
+function majority<T>(items: T[]): T {
+  const count = new Map<T, number>()
+  let best = items[0]
+  let n = 0
+  for (const it of items) {
+    const c = (count.get(it) ?? 0) + 1
+    count.set(it, c)
+    if (c > n) [best, n] = [it, c]
+  }
+  return best
 }
 
 function analyzePage(s: Session, pageIndex: number): PageAnalysis {
   const content = extractContentText(s, pageIndex)
   const files = pageFontFiles(s, pageIndex)
   const bounds = s.pageBounds(pageIndex)
-  const blocks = analyzeLines(content.lines, {
+  const opts = {
     pageWidth: bounds[2] - bounds[0],
     pageHeight: bounds[3] - bounds[1],
-    embedded: (name) => {
+    embedded: (name: string) => {
       const f = files.get(name)
       return !!f && f.embedded && !f.type3
     }
-  })
-  return { content, blocks }
+  }
+  const markAt = markIndex(markGlyphs(s, pageIndex))
+  if (!markAt) return { content, blocks: analyzeLines(content.lines, opts), marks: [] }
+  // keep the text of page marks out of the editable paragraphs
+  const own: RawLine[] = []
+  const marked = new Map<MarkType, RawLine[]>()
+  const addMarked = (type: MarkType, line: RawLine) => {
+    const list = marked.get(type) ?? []
+    list.push(line)
+    marked.set(type, list)
+  }
+  for (const line of content.lines) {
+    const types = line.chars.map((c) => (/\s/.test(c.c) ? undefined : markAt(c.ox, c.oy)))
+    const ink = types.filter((t) => t !== undefined)
+    const inMarks = ink.filter((t): t is MarkType => !!t)
+    if (!inMarks.length) own.push(line)
+    else if (inMarks.length === ink.length) addMarked(majority(inMarks), line)
+    else {
+      own.push({ ...line, chars: line.chars.filter((_c, i) => !types[i]) })
+      for (const type of new Set(inMarks))
+        addMarked(type, { ...line, chars: line.chars.filter((_c, i) => types[i] === type) })
+    }
+  }
+  const marks: AnalyzedBlock[] = []
+  for (const [type, lines] of marked) {
+    for (const b of analyzeLines(lines, opts)) {
+      b.info.mark = type
+      b.info.id = `mark-${type}-${b.info.id}`
+      marks.push(b)
+    }
+  }
+  return { content, blocks: analyzeLines(own, opts), marks }
 }
 
 // ---- preview (render without some text) ---------------------------------------------------
@@ -771,7 +818,8 @@ function validate(edit: TextEdit) {
 export default defineOps('edit-text', {
   /** Editable paragraphs of a page. */
   analyze(s, pageIndex: number): TextBlockInfo[] {
-    return analyzePage(s, pageIndex).blocks.map((b) => b.info)
+    const a = analyzePage(s, pageIndex)
+    return [...a.blocks, ...a.marks].map((b) => b.info)
   },
 
   /**
@@ -837,11 +885,15 @@ export default defineOps('edit-text', {
       if (block) lost = removeBlock(s, pageIndex, block, before).lost
 
       const w = new Writer(s, pageIndex, orig)
-      const toUser = s.pageToUser(pageIndex)
-      const restore = restoreGlyphs(w, lost, toUser)
-      const text = runsText(runs).trim() ? writeText(w, edit, runs, toUser) : { content: '', bbox: null }
+      // where the new text goes, and the space it is written in (PDF user space, or the space of
+      // page content that page marks scaled down to make room for a header)
+      const plan = insertPlan(s, pageIndex)
+      const restore = restoreGlyphs(w, lost, plan.toContent)
+      const text = runsText(runs).trim()
+        ? writeText(w, edit, runs, plan.toContent)
+        : { content: '', bbox: null }
       const content = [restore.content, text.content].filter(Boolean).join('\n')
-      if (content) appendContent(s, pageIndex, content + '\n')
+      if (content) appendContent(s, pageIndex, content + '\n', plan)
       w.finish()
       s.invalidatePages()
       s.touch(pageIndex)

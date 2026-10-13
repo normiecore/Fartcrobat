@@ -31,6 +31,47 @@
   box-shadow: 0 0 0 2px rgba(20, 115, 230, 0.45);
 }
 
+/* text of a header, footer, watermark or Bates number: changed with the tool that added it */
+.fc-edit-text-box.is-mark {
+  cursor: pointer;
+  border: 1px dashed rgba(128, 128, 128, 0.55);
+}
+.fc-edit-text-box.is-mark:hover {
+  border-color: var(--text-muted);
+  background: rgba(128, 128, 128, 0.08);
+}
+.fc-edit-text-box.is-passive {
+  pointer-events: none;
+}
+.fc-edit-text-mark-tag {
+  position: absolute;
+  transform: translate(-2px, calc(-100% - 4px));
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px 1px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  color: var(--text-muted);
+  font: 11px/16px var(--font);
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  opacity: 0.85;
+}
+.fc-edit-text-mark-tag:hover {
+  opacity: 1;
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+.fc-edit-text-mark-tag:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: var(--focus);
+}
+
 /* page render without the original text, under the editor */
 .fc-edit-text-cover {
   position: absolute;

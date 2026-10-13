@@ -28,6 +28,7 @@ import {
   type Align,
   type FontChoice,
   type Frame,
+  type MarkType,
   type Run,
   type RunStyle,
   type TextBlockInfo,
@@ -143,10 +144,12 @@ export function loadBlocks(doc: DocumentModel, page: number): Promise<TextBlockI
   return promise
 }
 
-export function blockAt(blocks: TextBlockInfo[], p: Point, pad = 2): TextBlockInfo | null {
+/** The editable paragraph at a page point (the smallest one when several overlap). */
+export function blockAt(blocks: TextBlockInfo[], p: Point, pad = 2, marks = false): TextBlockInfo | null {
   let best: TextBlockInfo | null = null
   let bestArea = Infinity
   for (const b of blocks) {
+    if (!!b.mark !== marks) continue
     const r = b.bbox
     if (p[0] < r[0] - pad || p[0] > r[2] + pad || p[1] < r[1] - pad || p[1] > r[3] + pad) continue
     const area = (r[2] - r[0]) * (r[3] - r[1])
@@ -156,6 +159,17 @@ export function blockAt(blocks: TextBlockInfo[], p: Point, pad = 2): TextBlockIn
     }
   }
   return best
+}
+
+/** Plain name of a kind of page mark, for messages. */
+export function markName(mark: MarkType): string {
+  return mark === 'HeaderFooter'
+    ? 'header or footer'
+    : mark === 'Bates'
+      ? 'Bates number'
+      : mark === 'Watermark'
+        ? 'watermark'
+        : 'background'
 }
 
 // ---- starting and ending sessions -------------------------------------------------------------
@@ -255,7 +269,12 @@ export async function editTextAt(doc: DocumentModel, page: number, point: Point,
   }
   const block = blockAt(blocks, point)
   if (!block) {
-    toast('There is no editable text there. Click any outlined text to edit it.')
+    const mark = blockAt(blocks, point, 2, true)?.mark
+    toast(
+      mark
+        ? `This ${markName(mark)} was added with “Add header, watermark or background”. Click it in Edit mode to update or remove it.`
+        : 'There is no editable text there. Click any outlined text to edit it.'
+    )
     return
   }
   const sel = selectText ? (locateText(block.text, selectText) ?? undefined) : undefined

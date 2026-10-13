@@ -1,10 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type annotOps from '@engine/ops/annots'
+import type formOps from '@engine/ops/forms'
 import type navOps from '@engine/ops/nav'
 import type renderOps from '@engine/ops/render'
 import type textOps from '@engine/ops/text'
 import type ops from '@features/edit-text/engine'
 import type { Run, TextBlockInfo, TextEdit } from '@features/edit-text/model'
+import type marksOps from '@features/page-marks/engine'
+import {
+  defaultHeaderFooter,
+  defaultWatermark,
+  type FontSpec,
+  type HeaderFooterSettings,
+  type WatermarkSettings
+} from '@features/page-marks/shared'
 import { openFixture, roundTrip, type OpenedEngine } from './helpers'
 
 const tools = (e: OpenedEngine) => ({
@@ -414,6 +423,111 @@ describe('edit-text: committing edits', () => {
     expect(await e.ops<typeof annotOps>('annots').list(0)).toEqual([])
     await e.doc.undo()
     expect(await edit.text(0)).not.toContain('Brand new text')
+  })
+})
+
+describe('edit-text: working with other features', () => {
+  const hf = (text: Partial<HeaderFooterSettings['text']>, patch: Partial<HeaderFooterSettings> = {}) => {
+    const d = defaultHeaderFooter()
+    return { ...d, ...patch, text: { ...d.text, ...text } }
+  }
+  const watermark = (text: string): WatermarkSettings => {
+    const d = defaultWatermark()
+    return {
+      ...d,
+      opacity: 0.3,
+      rotation: 45,
+      source: {
+        kind: 'text',
+        text,
+        font: { ...(d.source as { font: FontSpec }).font, size: 60 },
+        align: 'center'
+      }
+    }
+  }
+
+  it('leaves headers, footers and watermarks made with page marks updatable and removable', async () => {
+    const e = await openFixture('text.pdf')
+    const { edit, text } = tools(e)
+    const marks = e.ops<typeof marksOps>('page-marks')
+    const originalHello = await lineWith(e, 0, 'Hello Fartcrobat')
+    // the header shrinks the page content to make room: the edited text must follow that
+    await marks.apply(
+      hf({ headerCenter: 'Draft copy', footerRight: 'Page <<1>> of <<n>>' }, { shrink: true }),
+      {
+        mode: 'add'
+      }
+    )
+    await marks.apply(watermark('CONFIDENTIAL'), { mode: 'add' })
+
+    const blocks = await edit.analyze(0)
+    expect(blocks.find((b) => b.text === 'Draft copy')?.mark).toBe('HeaderFooter')
+    expect(blocks.find((b) => b.text === 'CONFIDENTIAL')?.mark).toBe('Watermark')
+    // the page's own footer is ordinary text
+    expect(blocks.filter((b) => b.text === 'Page 1 of 5').map((b) => b.mark ?? 'own')).toEqual(
+      expect.arrayContaining(['own', 'HeaderFooter'])
+    )
+    const header = blocks.find((b) => b.mark === 'HeaderFooter')!
+    await expect(edit.commit(0, editOf(header, 'Changed'))).rejects.toThrow(/changed/)
+
+    const hello = blocks.find((b) => b.text.startsWith('Hello') && !b.mark)!
+    await edit.commit(0, editOf(hello, 'Goodbye'))
+    const g = await lineWith(e, 0, 'Goodbye')
+    expect(g!.quads[0]).toBeCloseTo(hello.bbox[0], 0)
+    expect(g!.line.bbox[1]).toBeCloseTo(hello.bbox[1], 0)
+    // the marks are still marks: listed on every page, recognised after the edit
+    const listing = await marks.list()
+    expect(listing.groups.map((gr) => [gr.type, gr.pages.length])).toEqual(
+      expect.arrayContaining([
+        ['HeaderFooter', 5],
+        ['Watermark', 5]
+      ])
+    )
+    const again = await edit.analyze(0)
+    expect(again.find((b) => b.text === 'Draft copy')?.mark).toBe('HeaderFooter')
+    expect(again.find((b) => b.text === 'CONFIDENTIAL')?.mark).toBe('Watermark')
+
+    // removing the header puts the content back at full size, the edited text with it
+    await marks.remove('HeaderFooter')
+    const unshrunk = await lineWith(e, 0, 'Goodbye')
+    expect(unshrunk!.quads[0]).toBeCloseTo(originalHello!.quads[0], 0)
+    expect(unshrunk!.line.bbox[1]).toBeCloseTo(originalHello!.line.bbox[1], 0)
+    expect(await edit.text(0)).not.toContain('Draft copy')
+    await marks.remove('Watermark')
+    expect(await edit.text(0)).not.toContain('CONFIDENTIAL')
+    expect(await edit.text(0)).toContain('Goodbye')
+
+    await e.doc.undo()
+    await e.doc.undo()
+    await e.doc.undo()
+    const t = (await text.page(0)).text
+    expect(t).toContain('Hello Fartcrobat page 1')
+    expect(t).toContain('Draft copy')
+    expect(t).toContain('CONFIDENTIAL')
+  })
+
+  it('keeps comments and form fields on the page', async () => {
+    const e = await openFixture('form.pdf')
+    const { edit } = tools(e)
+    const annots = e.ops<typeof annotOps>('annots')
+    const forms = e.ops<typeof formOps>('forms')
+    const label = await block(e, 0, 'Full name:')
+    const hl = await annots.create(0, { type: 'Highlight', rect: label.bbox, quads: label.quads })
+    const note = await annots.create(0, {
+      type: 'Text',
+      rect: [label.bbox[0], label.bbox[1], label.bbox[0] + 20, label.bbox[1] + 20]
+    })
+    const fieldsBefore = (await forms.list(0)).map((f) => f.name)
+    await edit.commit(0, editOf(label, 'Your full name:'))
+    expect(await edit.text(0)).toContain('Your full name:')
+    expect((await annots.list(0)).map((a) => a.id)).toEqual(expect.arrayContaining([hl.id, note.id]))
+    expect((await forms.list(0)).map((f) => f.name)).toEqual(fieldsBefore)
+    const saved = await roundTrip(e)
+    expect((await saved.ops<typeof annotOps>('annots').list(0)).map((a) => a.type).sort()).toEqual([
+      'Highlight',
+      'Text'
+    ])
+    expect((await saved.ops<typeof formOps>('forms').list(0)).length).toBe(fieldsBefore.length)
   })
 })
 

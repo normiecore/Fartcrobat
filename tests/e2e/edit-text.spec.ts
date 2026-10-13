@@ -279,7 +279,9 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
     await page.keyboard.type('A second line')
     await page.waitForTimeout(300)
     // keyboard selection scrolled the end of the line into view: show the start of the page again
-    await page.evaluate(() => ((window as any).__fartcrobat.getActiveDoc().view.getViewportElement().scrollLeft = 0))
+    await page.evaluate(
+      () => ((window as any).__fartcrobat.getActiveDoc().view.getViewportElement().scrollLeft = 0)
+    )
     await page.waitForTimeout(200)
     await shot(page, '11-zoom-200-formatting')
 
@@ -299,6 +301,22 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
     expect(lines).toContain('A second line')
     await page.waitForTimeout(600)
     await shot(page, '13-dark-after')
+
+    // dark page colours (Preferences > Accessibility): the editor and its cover follow them
+    await page.evaluate(() => {
+      const s = (window as any).__fartcrobat.useApp
+      s.setState({ prefs: { ...s.getState().prefs, pageColors: 'dark' } })
+    })
+    await page.waitForTimeout(500)
+    await blockButton(page, /^Edit text: Chapter 1/).click()
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('End')
+    await page.keyboard.type(' and more')
+    await expect(page.locator('.fc-edit-text-frame')).not.toHaveClass(/is-pending/)
+    await page.waitForTimeout(300)
+    await shot(page, '13b-dark-page-colours-editing')
+    await page.keyboard.press('Escape')
+    await expect(editor(page)).toHaveCount(0)
   } finally {
     await app.close()
   }
@@ -372,17 +390,16 @@ test('edits a rotated page, adds upright text in a rotated view and edits select
 test('links to page tools of other features, helps on scanned pages and edits from the page context menu', async () => {
   const { app, page } = await launch()
   try {
-    // stand-ins for commands that other features register (page marks, OCR)
+    // a stand-in for OCR when that feature is not installed
     await page.evaluate(() => {
       const w = window as any
       w.__ran = []
-      for (const id of [
-        'marks.watermark.add',
-        'marks.watermark.update',
-        'marks.watermark.remove',
-        'ocr.recognize'
-      ])
-        w.__fartcrobat.registry.commands.set(id, { id, label: id, run: () => w.__ran.push(id) })
+      if (!w.__fartcrobat.registry.commands.has('ocr.recognize'))
+        w.__fartcrobat.registry.commands.set('ocr.recognize', {
+          id: 'ocr.recognize',
+          label: 'Recognize Text',
+          run: () => w.__ran.push('ocr.recognize')
+        })
     })
     await openFile(page, fixturePath('scanned.pdf'))
     await waitForRender(page)
@@ -392,16 +409,27 @@ test('links to page tools of other features, helps on scanned pages and edits fr
     await expect(bar).toContainText('This page has no editable text')
     await bar.getByRole('button', { name: 'Recognize text' }).click()
     await expect.poll(() => page.evaluate(() => (window as any).__ran)).toEqual(['ocr.recognize'])
-    // page tools: Watermark offers Add / Update / Remove
+    // page tools of "Add header, watermark or background": Watermark offers Add / Update / Remove
     const panel = page.locator('.fc-edit-text-panel')
     await expect(panel.getByRole('button', { name: /Recognize text \(OCR\)/ })).toBeVisible()
+    await expect(panel.getByRole('button', { name: /^Crop pages/ })).toBeVisible()
+    await expect(panel.getByRole('button', { name: /^Organize pages/ })).toBeVisible()
     await panel.getByRole('button', { name: /^Watermark/ }).click()
-    await expect(page.getByRole('menuitem', { name: 'Update…' })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: 'Add…' })).toBeEnabled()
+    // nothing to update or remove yet
+    await expect(page.getByRole('menuitem', { name: 'Update…' })).toBeDisabled()
+    await expect(page.getByRole('menuitem', { name: 'Remove…' })).toBeDisabled()
     await shot(page, '19-scanned-page-tools')
-    await page.getByRole('menuitem', { name: 'Update…' }).click()
-    await expect
-      .poll(() => page.evaluate(() => (window as any).__ran))
-      .toEqual(['ocr.recognize', 'marks.watermark.update'])
+    await page.getByRole('menuitem', { name: 'Add…' }).click()
+    const wm = page.locator('.ui-dialog').filter({ has: page.locator('h2', { hasText: 'Add Watermark' }) })
+    await expect(wm).toBeVisible()
+    await wm.getByRole('button', { name: 'Cancel' }).click()
+    await expect(wm).toBeHidden()
+    // Crop pages switches to the crop tool, keeping the Edit panel open
+    await panel.getByRole('button', { name: /^Crop pages/ }).click()
+    await expect.poll(() => toolId(page)).toBe('marks.crop')
+    await panel.getByRole('button', { name: /^Edit text & images/ }).click()
+    await expect.poll(() => toolId(page)).toBe('edit.content')
 
     // with the Select tool, right-click text and choose "Edit Text"
     await openFile(page, fixturePath('text.pdf'))
@@ -423,6 +451,101 @@ test('links to page tools of other features, helps on scanned pages and edits fr
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Delete Text')
     expect(await pageText(page)).toContain('Lorem ipsum')
     expect(await pageText(page)).toContain('Visit https://example.com')
+  } finally {
+    await app.close()
+  }
+})
+
+test('headers and watermarks added from the Edit panel stay updatable after editing text', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Edit a PDF' }).click()
+    const panel = page.locator('.fc-edit-text-panel')
+    const dialog = (title: string) =>
+      page.locator('.ui-dialog').filter({ has: page.locator('h2', { hasText: title }) })
+    const listing = () =>
+      page.evaluate(async () => {
+        const doc = (window as any).__fartcrobat.getActiveDoc()
+        const l = await doc.ops('page-marks').list()
+        return l.groups.map((g: any) => `${g.type}:${g.pages.length}`).sort()
+      })
+
+    // add a header and a watermark with "Add header, watermark or background", from the Edit panel
+    await panel.getByRole('button', { name: /^Header & footer/ }).click()
+    await page.getByRole('menuitem', { name: 'Add…' }).click()
+    const hf = dialog('Add Header & Footer')
+    await expect(hf).toBeVisible()
+    await hf.locator('textarea[data-slot="headerRight"]').fill('Draft for review')
+    await hf.getByRole('button', { name: 'OK' }).click()
+    await expect(hf).toBeHidden()
+    await panel.getByRole('button', { name: /^Watermark/ }).click()
+    await page.getByRole('menuitem', { name: 'Add…' }).click()
+    const wm = dialog('Add Watermark')
+    await expect(wm).toBeVisible()
+    await wm.getByLabel('Watermark text').fill('CONFIDENTIAL')
+    await wm.getByRole('button', { name: 'OK' }).click()
+    await expect(wm).toBeHidden()
+    await expect.poll(() => pageText(page)).toContain('CONFIDENTIAL')
+    await expect.poll(listing).toEqual(['HeaderFooter:5', 'Watermark:5'])
+
+    // in Edit mode the marks are outlined differently and are not edited as text
+    await panel.getByRole('button', { name: /^Edit text & images/ }).click()
+    const header = blockButton(page, /^Header or footer: Draft for review/)
+    await expect(header).toBeVisible()
+    await expect(blockButton(page, /^Watermark: CONFIDENTIAL/)).toBeVisible()
+    await page.waitForTimeout(400)
+    await shot(page, '20-marks-outlined')
+
+    // edit the text under the watermark
+    await blockButton(page, /^Edit text: Hello Fartcrobat page 1/).click()
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('Edited next to a watermark')
+    await page.waitForTimeout(200)
+    await shot(page, '21-editing-under-watermark')
+    await page.keyboard.press('Control+Enter')
+    await expect(editor(page)).toHaveCount(0)
+    await expect.poll(() => pageText(page)).toContain('Edited next to a watermark')
+    expect(await pageText(page)).toContain('CONFIDENTIAL')
+    expect(await pageText(page)).toContain('Draft for review')
+    // the header and watermark can still be found, updated and removed on every page
+    expect(await listing()).toEqual(['HeaderFooter:5', 'Watermark:5'])
+    await page.waitForTimeout(500)
+    await shot(page, '22-after-edit-with-marks')
+
+    // clicking the header offers its own Update and Remove commands
+    await header.click()
+    await expect(page.getByRole('menuitem', { name: 'Update Header & Footer…' })).toBeVisible()
+    await shot(page, '23-header-menu')
+    await page.getByRole('menuitem', { name: 'Remove Header & Footer…' }).click()
+    const confirm = dialog('Remove Header & Footer')
+    await expect(confirm).toBeVisible()
+    await confirm.getByRole('button', { name: 'Remove' }).click()
+    await expect.poll(() => pageText(page)).not.toContain('Draft for review')
+    expect(await pageText(page)).toContain('Edited next to a watermark')
+    expect(await pageText(page)).toContain('CONFIDENTIAL')
+    expect(await listing()).toEqual(['Watermark:5'])
+    await expect(header).toHaveCount(0)
+
+    // the watermark lies across the text: a small tag opens its commands
+    const tag = blockButton(page, /^Watermark: CONFIDENTIAL/)
+    await expect(tag).toHaveClass(/fc-edit-text-mark-tag/)
+    await tag.click()
+    await page.getByRole('menuitem', { name: 'Update Watermark…' }).click()
+    const update = dialog('Update Watermark')
+    await expect(update).toBeVisible()
+    await expect(update.getByLabel('Watermark text')).toHaveValue('CONFIDENTIAL')
+    await update.getByRole('button', { name: 'Cancel' }).click()
+    await expect(update).toBeHidden()
+    // the paragraph under the watermark is still clicked as text
+    await blockButton(page, /^Edit text: Lorem ipsum/).click({ position: { x: 300, y: 70 } })
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(editor(page)).toHaveCount(0)
+    await page.waitForTimeout(400)
+    await shot(page, '24-watermark-tag')
   } finally {
     await app.close()
   }

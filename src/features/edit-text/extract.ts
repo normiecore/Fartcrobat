@@ -258,7 +258,11 @@ export function forget(obj: unknown) {
 
 /** Every glyph drawn by the page contents, with its exact placement and colour. */
 export function observeGlyphs(s: Session, pageIndex: number): ObservedGlyph[] {
-  const m = s.mupdf
+  return observePageGlyphs(s.mupdf, s.page(pageIndex))
+}
+
+/** Every glyph drawn by the contents of a page (of any document), in that page's space. */
+export function observePageGlyphs(m: Session['mupdf'], page: MuPDF.PDFPage): ObservedGlyph[] {
   const out: ObservedGlyph[] = []
   const collect = (
     text: MuPDF.Text,
@@ -324,7 +328,7 @@ export function observeGlyphs(s: Session, pageIndex: number): ObservedGlyph[] {
     beginGroup: (_r, cs) => release(cs)
   })
   try {
-    s.page(pageIndex).runPageContents(dev, m.Matrix.identity)
+    page.runPageContents(dev, m.Matrix.identity)
     dev.close()
   } finally {
     dev.destroy()

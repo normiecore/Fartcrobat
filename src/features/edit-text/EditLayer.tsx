@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
-import { Copy, Pencil, Trash } from 'lucide-react'
+import { ChevronDown, Copy, Pencil, Trash } from 'lucide-react'
 import type { Point } from '@shared/geometry'
 import {
+  getActiveDoc,
   invoke,
+  registry,
+  runCommand,
   showContextMenu,
   showError,
+  toast,
   useApp,
   usePageVersion,
+  type ContextMenuItem,
   type DocumentModel,
   type PageLayerProps
 } from '@renderer/sdk'
 import type editOps from './engine'
-import type { TextBlockInfo } from './model'
-import { beginEdit, beginNewText, commitSession, loadBlocks, useEditText } from './store'
+import type { MarkType, TextBlockInfo } from './model'
+import { beginEdit, beginNewText, commitSession, loadBlocks, markName, useEditText } from './store'
 import { SessionOverlay } from './TextEditor'
 
 /** Paragraphs of a page, reloaded whenever the page changes. */
@@ -142,6 +147,104 @@ function BlockBox({
   )
 }
 
+const MARK_COMMANDS: Record<MarkType, string[]> = {
+  HeaderFooter: ['marks.headerFooter.update', 'marks.headerFooter.remove'],
+  Watermark: ['marks.watermark.update', 'marks.watermark.remove'],
+  Background: ['marks.background.update', 'marks.background.remove'],
+  Bates: ['marks.bates.add', 'marks.bates.remove']
+}
+
+/** Commands offered for text that belongs to a page mark (those that are registered). */
+function markItems(mark: MarkType): ContextMenuItem[] {
+  return MARK_COMMANDS[mark]
+    .map((id) => registry.commands.get(id))
+    .filter((c): c is NonNullable<typeof c> => !!c)
+    .map((c) => {
+      const ctx = { doc: getActiveDoc() }
+      let enabled = true
+      let label = c.id
+      try {
+        enabled = c.enabled ? c.enabled(ctx) : true
+        label = typeof c.label === 'function' ? c.label(ctx) : c.label
+      } catch {
+        enabled = false
+      }
+      return {
+        id: c.id,
+        label,
+        icon: c.icon,
+        disabled: !enabled,
+        run: () => void commitSession().then(() => runCommand(c.id))
+      }
+    })
+}
+
+/**
+ * Text drawn by a header, footer, watermark or Bates number: it is changed with the tool that
+ * added it, so clicking it offers that tool's Update and Remove commands.
+ */
+function MarkBox({ block, geometry }: { block: TextBlockInfo; geometry: PageLayerProps['geometry'] }) {
+  const ref = useRef<HTMLElement | null>(null)
+  const mark = block.mark!
+  const name = markName(mark)
+  const Name = name[0].toUpperCase() + name.slice(1)
+  const label = block.text.replace(/\s+/g, ' ').trim()
+  // a watermark or background lies across the page content: only a small tag is clickable, so
+  // the text and images under it stay easy to click
+  const passive = mark === 'Watermark' || mark === 'Background'
+  const open = (x: number, y: number) => {
+    const items = markItems(mark)
+    if (!items.length) {
+      toast(
+        `This ${name} was added with “Add header, watermark or background”, which can change or remove it.`
+      )
+      return
+    }
+    showContextMenu(x, y, items)
+  }
+  const handlers = {
+    ref: (el: HTMLElement | null) => {
+      ref.current = el
+    },
+    role: 'button',
+    tabIndex: 0,
+    'aria-haspopup': 'menu' as const,
+    'aria-label': `${Name}: ${label.length > 50 ? label.slice(0, 47) + '…' : label}`,
+    title: `${Name} — click to update or remove it`,
+    onPointerDown: (e: React.PointerEvent) => {
+      if (e.button !== 0) return
+      e.preventDefault()
+      e.stopPropagation()
+      void commitSession()
+      open(e.clientX, e.clientY)
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        const r = ref.current!.getBoundingClientRect()
+        open(r.left, r.bottom)
+      }
+    },
+    onContextMenu: (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      open(e.clientX, e.clientY)
+    }
+  }
+  if (!passive)
+    return <div className="fc-edit-text-box is-mark" style={boxStyle(block, geometry, 2)} {...handlers} />
+  const o = geometry.toCss(block.frame.origin)
+  return (
+    <>
+      <div className="fc-edit-text-box is-mark is-passive" style={boxStyle(block, geometry, 2)} aria-hidden />
+      <button type="button" className="fc-edit-text-mark-tag" style={{ left: o[0], top: o[1] }} {...handlers}>
+        {Name}
+        <ChevronDown size={12} aria-hidden />
+      </button>
+    </>
+  )
+}
+
 const area = (b: TextBlockInfo) => b.frame.width * b.height
 
 /** Tool layer for "Edit text & images" and "Add text". */
@@ -208,7 +311,9 @@ export function EditLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         [...blocks]
           .sort((a, b) => area(b) - area(a))
           .map((b) =>
-            mine?.block && mine.block.id === b.id ? null : (
+            mine?.block && mine.block.id === b.id ? null : b.mark ? (
+              <MarkBox key={b.id} block={b} geometry={geometry} />
+            ) : (
               <BlockBox key={b.id} doc={doc} page={pageIndex} block={b} geometry={geometry} />
             )
           )}

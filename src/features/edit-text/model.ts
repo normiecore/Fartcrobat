@@ -51,6 +51,9 @@ export interface FontChoice {
   italic: boolean
 }
 
+/** Kinds of page marks made with "Add header, watermark or background" (page-marks). */
+export type MarkType = 'HeaderFooter' | 'Watermark' | 'Background' | 'Bates'
+
 /** A paragraph of existing page text, as found by the engine. */
 export interface TextBlockInfo {
   /** Stable for one version of the page: "<start>-<end>". */
@@ -78,6 +81,11 @@ export interface TextBlockInfo {
   text: string
   /** True when some characters could not be read (no Unicode mapping in the PDF). */
   unreadable: boolean
+  /**
+   * Set when the text belongs to a page mark (a header, footer, watermark...). It is not edited
+   * here but updated or removed with the tool that made it.
+   */
+  mark?: MarkType
 }
 
 export interface TextEdit {
