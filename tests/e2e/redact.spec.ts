@@ -168,6 +168,8 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     await expect.poll(async () => (await marks(page)).length).toBe(8)
 
     // right-click a mark: Apply / Properties / Delete
+    // (once the feature's list of marks has the restored one again: it reloads after Undo)
+    await expect(page.locator('.fc-redact-mark-row')).toHaveCount(8)
     await page.mouse.click(w.x, w.y, { button: 'right' })
     const menu = page.locator('.ui-menu')
     await expect(menu).toContainText('Apply Redaction…')
