@@ -32,6 +32,7 @@ export function useRecognizeForm(doc: DocumentModel, initialScope: PageScope = '
   const prefs = usePrefs()
   const settings = useOcrSettings()
   const installed = useLanguages((s) => s.installed)
+  const languagesLoaded = useLanguages((s) => s.loaded)
   const pageCount = useDocState(doc, (s) => s.info.pageCount)
   const currentPage = useDocState(doc, (s) => s.currentPage)
   const [scope, setScope] = useState<PageScope>(initialScope)
@@ -51,9 +52,10 @@ export function useRecognizeForm(doc: DocumentModel, initialScope: PageScope = '
       if (typeof r === 'string') return r
       pages = r
     }
+    if (!languagesLoaded) return 'Loading the installed languages…'
     const language = isAvailable(prefs.ocrLanguage, installed) ? prefs.ocrLanguage : BUNDLED_LANGUAGE
     return { pages, language, dpi: settings.dpi, skipPagesWithText: settings.skipPagesWithText }
-  }, [scope, range, pageCount, currentPage, prefs.ocrLanguage, installed, settings.dpi, settings.skipPagesWithText])
+  }, [scope, range, pageCount, currentPage, prefs.ocrLanguage, installed, languagesLoaded, settings.dpi, settings.skipPagesWithText])
 
   return { scope, setScope, range, setRange, request }
 }

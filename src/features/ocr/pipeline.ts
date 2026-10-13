@@ -42,12 +42,22 @@ export interface PageProgress {
   error?: string
 }
 
+export interface PageFailure {
+  page: number
+  message: string
+}
+
 export interface RunResult {
   results: OcrPageResult[]
   /** Pages left alone because they already have text. */
   skipped: number[]
+  /** Pages that could not be rendered or recognized (the others still are). */
+  failed: PageFailure[]
   cancelled: boolean
 }
+
+/** After this many pages in a row fail, the run stops with the error (the engine is broken). */
+export const MAX_CONSECUTIVE_FAILURES = 3
 
 export class CancelledError extends Error {
   constructor() {
@@ -63,7 +73,9 @@ export function pageHasText(st: PageOcrStatus): boolean {
 
 /**
  * Recognizes the pages one after the other. The next page is rendered while the current one is
- * recognized. Stops (and returns what is done so far, with `cancelled`) when `signal` aborts.
+ * recognized. A page that fails is reported and skipped; the run stops with the error when
+ * several pages in a row fail. Stops (and returns what is done so far, with `cancelled`) when
+ * `signal` aborts.
  */
 export async function recognizePages(
   ops: OcrEngineOps,
@@ -74,6 +86,7 @@ export async function recognizePages(
   const { signal } = hooks
   const report = (p: PageProgress) => hooks.onPage?.(p)
   const skipped: number[] = []
+  const failed: PageFailure[] = []
   let todo = [...opts.pages]
   if (opts.skipPagesWithText && todo.length) {
     const statuses = await ops.status(todo)
@@ -88,26 +101,44 @@ export async function recognizePages(
     pr.catch(() => {}) // awaited below; avoid an unhandled rejection when cancelled first
     return pr
   }
+  const cancelled = () => ({ results, skipped, failed, cancelled: true })
   let next = todo.length ? render(todo[0]) : null
-  try {
-    for (let i = 0; i < todo.length; i++) {
-      if (signal?.aborted) throw new CancelledError()
-      const page = todo[i]
-      report({ page, state: 'rendering', fraction: 0 })
-      const image = await next!
+  let inARow = 0
+  /** Records a failed page; true when the run is over (cancelled). Throws when too many fail. */
+  const fail = (page: number, err: unknown): boolean => {
+    if (err instanceof CancelledError || signal?.aborted) return true
+    if (++inARow >= MAX_CONSECUTIVE_FAILURES) throw err
+    const message = err instanceof Error ? err.message : String(err)
+    failed.push({ page, message })
+    report({ page, state: 'failed', fraction: 1, error: message })
+    return false
+  }
+  for (let i = 0; i < todo.length; i++) {
+    if (signal?.aborted) return cancelled()
+    const page = todo[i]
+    report({ page, state: 'rendering', fraction: 0 })
+    let image: OcrPageImage
+    try {
+      image = await next!
+    } catch (err) {
       next = i + 1 < todo.length ? render(todo[i + 1]) : null
-      if (signal?.aborted) throw new CancelledError()
-      report({ page, state: 'recognizing', fraction: 0 })
+      if (fail(page, err)) return cancelled()
+      continue
+    }
+    next = i + 1 < todo.length ? render(todo[i + 1]) : null
+    if (signal?.aborted) return cancelled()
+    report({ page, state: 'recognizing', fraction: 0 })
+    try {
       const out = await recognizer.recognize(image.png, { dpi: image.dpi }, (fraction) =>
         report({ page, state: 'recognizing', fraction })
       )
       const { lines, confidence, words } = tesseractToLines(out.blocks, image, out.rotateRadians)
       results.push({ page, lines, language: opts.language, dpi: image.dpi, confidence })
       report({ page, state: 'done', fraction: 1, words })
+      inARow = 0
+    } catch (err) {
+      if (fail(page, err)) return cancelled()
     }
-  } catch (err) {
-    if (err instanceof CancelledError || signal?.aborted) return { results, skipped, cancelled: true }
-    throw err
   }
-  return { results, skipped, cancelled: false }
+  return { results, skipped, failed, cancelled: false }
 }

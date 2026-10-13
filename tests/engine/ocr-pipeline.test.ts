@@ -267,8 +267,35 @@ describe('ocr pipeline with Tesseract', () => {
       { pages: [0], language: 'eng', dpi: 150, skipPagesWithText: false },
       { signal: ctrl2.signal }
     )
-    expect(run2).toEqual({ results: [], skipped: [], cancelled: true })
+    expect(run2).toEqual({ results: [], skipped: [], failed: [], cancelled: true })
     expect(progressEvents).toBeGreaterThan(0)
+  }, 120_000)
+
+  it('reports a page that fails and goes on; stops when several fail in a row', async () => {
+    const e = await openFixture('ocr/scanned-pages.pdf')
+    const real = e.ops<typeof ocrOps>('ocr')
+    const states: string[] = []
+    // Page 2 cannot be rendered.
+    const flaky = {
+      status: real.status,
+      renderPage: (page: number, opts: { dpi: number }) =>
+        page === 1 ? Promise.reject(new Error('damaged image')) : real.renderPage(page, opts)
+    }
+    const run = await recognizePages(
+      flaky,
+      nodeRecognizer(),
+      { pages: [0, 1, 3], language: 'eng', dpi: 150, skipPagesWithText: false },
+      { onPage: (p) => states.push(`${p.page}:${p.state}${p.error ? `:${p.error}` : ''}`) }
+    )
+    expect(run.cancelled).toBe(false)
+    expect(run.results.map((r) => r.page)).toEqual([0, 3])
+    expect(run.failed).toEqual([{ page: 1, message: 'damaged image' }])
+    expect(states).toContain('1:failed:damaged image')
+    // A recognizer that always fails: the run gives up with its error.
+    const broken: Recognizer = { recognize: async () => Promise.reject(new Error('engine crashed')) }
+    await expect(
+      recognizePages(real, broken, { pages: [0, 1, 3], language: 'eng', dpi: 72, skipPagesWithText: false })
+    ).rejects.toThrow('engine crashed')
   }, 120_000)
 
   it('treats pages with an OCR layer or their own text as having text', () => {

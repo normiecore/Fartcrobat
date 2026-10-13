@@ -2,7 +2,7 @@
  * Recognize Text: runs Tesseract on the chosen pages with a progress dialog, then writes the text
  * layer in one undoable step.
  */
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import { Check, CircleDashed, CircleSlash, Loader2, ScanText, TriangleAlert } from 'lucide-react'
 import { Button, Dialog, openDialog, runCommand, showError, toast, type DocumentModel } from '@renderer/sdk'
@@ -58,6 +58,9 @@ export function ocrOpsOf(doc: DocumentModel) {
 }
 
 function updatePage(p: PageProgress) {
+  const prev = useRun.getState().pages.find((x) => x.page === p.page)
+  // Tesseract reports progress very often; whole percents are enough for the dialog.
+  if (prev && prev.state === p.state && Math.round(prev.fraction * 100) === Math.round(p.fraction * 100)) return
   useRun.setState((s) => ({ pages: s.pages.map((x) => (x.page === p.page ? { ...x, ...p } : x)) }))
 }
 
@@ -92,16 +95,24 @@ function ProgressDialog({ close }: { close: () => void }) {
   }, [run.active, close])
   const total = run.pages.filter((p) => p.state !== 'skipped').length
   const finished = run.pages.filter((p) => p.state === 'done').length
+  const over = finished + run.pages.filter((p) => p.state === 'failed').length
   const current = run.pages.find((p) => p.state === 'rendering' || p.state === 'recognizing')
-  const fraction = total ? (finished + (current?.state === 'recognizing' ? current.fraction : 0)) / total : 0
-  const position = current ? run.pages.filter((p) => p.state !== 'skipped').indexOf(current) + 1 : finished
+  const fraction = total ? (over + (current?.state === 'recognizing' ? current.fraction : 0)) / total : 0
+  const position = current ? run.pages.filter((p) => p.state !== 'skipped').indexOf(current) + 1 : over
   let status: string
   if (run.phase === 'starting') status = 'Starting text recognition…'
   else if (run.phase === 'applying') status = 'Adding the recognized text to the document…'
   else if (current) status = `Page ${current.page + 1} (${position} of ${total}): ${STATE_LABEL[current.state].toLowerCase()}`
   else status = 'Finishing…'
-  const remaining = total - finished
+  const remaining = total - over
   const shown = run.phase === 'applying' ? run.applied : fraction
+  // Keep the page being recognized in view in long documents.
+  const listRef = useRef<HTMLUListElement>(null)
+  const currentPage = current?.page
+  useEffect(() => {
+    if (currentPage === undefined) return
+    listRef.current?.querySelector(`[data-page="${currentPage}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [currentPage])
   return (
     <Dialog
       title="Recognizing text"
@@ -115,7 +126,12 @@ function ProgressDialog({ close }: { close: () => void }) {
               {finished === 1 ? 'Stop and keep 1 page' : `Stop and keep ${finished} pages`}
             </Button>
           )}
-          <Button onClick={() => run.cancel?.()} disabled={run.phase === 'applying' || !run.cancel} data-testid="ocr-cancel">
+          <Button
+            onClick={() => run.cancel?.()}
+            disabled={run.phase === 'applying' || !run.cancel}
+            data-testid="ocr-cancel"
+            data-autofocus
+          >
             Cancel
           </Button>
         </>
@@ -141,9 +157,9 @@ function ProgressDialog({ close }: { close: () => void }) {
         {status}
       </div>
       {run.pages.length > 1 && (
-        <ul className={`${P}-progress-pages`} aria-label="Pages">
+        <ul ref={listRef} className={`${P}-progress-pages`} aria-label="Pages">
           {run.pages.map((p) => (
-            <li key={p.page} className={`${P}-progress-page is-${p.state}`}>
+            <li key={p.page} data-page={p.page} className={`${P}-progress-page is-${p.state}`} title={p.error}>
               <StateIcon state={p.state} />
               <span className={`${P}-progress-page-label`}>Page {p.page + 1}</span>
               <span className={`${P}-progress-page-state`}>
@@ -167,8 +183,10 @@ function plural(n: number, one: string, many: string) {
   return `${n} ${n === 1 ? one : many}`
 }
 
-function summarize(run: RunResult, applied: OcrApplySummary[]): { message: string; kind: 'success' | 'warning' | 'info' } {
-  if (!run.results.length && run.skipped.length && !run.cancelled) {
+type ToastKind = 'success' | 'warning' | 'info' | 'error'
+
+function summarize(run: RunResult, applied: OcrApplySummary[]): { message: string; kind: ToastKind } {
+  if (!run.results.length && run.skipped.length && !run.cancelled && !run.failed.length) {
     return {
       kind: 'info',
       message:
@@ -181,7 +199,7 @@ function summarize(run: RunResult, applied: OcrApplySummary[]): { message: strin
   const withText = applied.filter((a) => a.words > 0)
   const words = applied.reduce((n, a) => n + a.words, 0)
   const parts: string[] = []
-  let kind: 'success' | 'warning' | 'info' = 'success'
+  let kind: ToastKind = 'success'
   if (withText.length) {
     parts.push(
       `Recognized ${plural(words, 'word', 'words')} on ${plural(withText.length, 'page', 'pages')}. You can now search, select and copy the text.`
@@ -200,6 +218,18 @@ function summarize(run: RunResult, applied: OcrApplySummary[]): { message: strin
     )
     if (!run.results.length) kind = 'info'
   }
+  if (run.failed.length) {
+    const first = run.failed[0]
+    const pages = run.failed.map((f) => f.page + 1)
+    parts.push(
+      pages.length === 1
+        ? `Page ${pages[0]} could not be recognized (${first.message}).`
+        : `Pages ${pages.slice(0, 5).join(', ')}${pages.length > 5 ? '…' : ''} could not be recognized (${first.message}).`
+    )
+    kind = withText.length ? 'warning' : 'error'
+  }
+  const duplicates = applied.reduce((n, a) => n + a.skipped, 0)
+  if (duplicates) parts.push('Words that were already on the pages as text were not added again.')
   const conf = run.results.filter((r) => r.lines.length && (r.confidence ?? 100) < 60)
   if (conf.length) {
     parts.push('Some text was hard to read: a higher resolution or the right language may give better results.')

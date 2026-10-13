@@ -145,11 +145,16 @@ export async function startTesseract(
       if (terminated) void w.terminate()
     }, () => {})
     worker = await Promise.race([creating, initFailed, aborted])
+    // A worker that dies (e.g. out of memory) would leave the current page waiting forever.
+    ;(worker as unknown as { worker?: globalThis.Worker }).worker?.addEventListener('error', (e) => {
+      const err = new Error(e.message || 'The text recognition engine stopped unexpectedly')
+      failJob?.(err)
+    })
   } catch (err) {
     terminate()
     if (err instanceof CancelledError) throw err
     const msg = String((err as Error)?.message ?? err)
-    if (/initialization failed|traineddata|fetch/i.test(msg)) {
+    if (/initialization failed|traineddata/i.test(msg)) {
       throw new LanguageUnavailableError(
         `The language data for ${languageName(language)} could not be loaded. The file may be damaged or made for another Tesseract version.`
       )
