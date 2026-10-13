@@ -35,14 +35,47 @@ export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose
               {item.shortcut && <span className="ui-menu-shortcut">{item.shortcut}</span>}
               {item.submenu && <ChevronRight size={14} />}
             </button>
-            {item.submenu && openSub === item.id && (
-              <div className="ui-submenu">
-                <MenuList items={item.submenu} onClose={onClose} />
-              </div>
-            )}
+            {item.submenu && openSub === item.id && <Submenu items={item.submenu} onClose={onClose} />}
           </div>
         )
       )}
+    </div>
+  )
+}
+
+/**
+ * A submenu opened to the right of its item. It flips to the left when there is no room on the
+ * right and moves up (or scrolls) so it never extends past the bottom of the window.
+ */
+function Submenu({ items, onClose }: { items: ContextMenuItem[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [style, setStyle] = useState<React.CSSProperties>({ visibility: 'hidden' })
+  useLayoutEffect(() => {
+    const el = ref.current
+    const parent = el?.parentElement
+    if (!el || !parent) return
+    const p = parent.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const margin = 4
+    const next: React.CSSProperties = {}
+    if (p.right + r.width > window.innerWidth - margin && p.left - r.width >= margin) {
+      next.left = 'auto'
+      next.right = '100%'
+    }
+    const top = p.top - 5
+    const maxHeight = window.innerHeight - margin * 2
+    if (r.height > maxHeight) {
+      next.top = margin - p.top
+      next.maxHeight = maxHeight
+      next.overflowY = 'auto'
+    } else if (top + r.height > window.innerHeight - margin) {
+      next.top = window.innerHeight - margin - r.height - p.top
+    }
+    setStyle(next)
+  }, [items])
+  return (
+    <div ref={ref} className="ui-submenu" style={style}>
+      <MenuList items={items} onClose={onClose} />
     </div>
   )
 }
