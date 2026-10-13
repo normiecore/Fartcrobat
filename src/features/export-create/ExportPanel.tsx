@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { CheckCircle2, FileCode2, FileOutput, FileSpreadsheet, FileText, FileType, FolderOpen, Image, Info, Lock, Presentation } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { CheckCircle2, FileCode2, FileOutput, FileSpreadsheet, FileText, FileType, FolderOpen, Image, Info, Lock, Presentation, ScanText } from 'lucide-react'
 import {
   basename,
   Button,
@@ -7,6 +7,8 @@ import {
   EmptyState,
   invoke,
   isMac,
+  registry,
+  runCommand,
   Section,
   Segmented,
   Select,
@@ -14,6 +16,7 @@ import {
   TextInput,
   ToolPanelFrame,
   useDocState,
+  usePageVersion,
   type DocumentModel,
   type Icon
 } from '@renderer/sdk'
@@ -110,6 +113,7 @@ function FormatOptions({ o, doc }: { o: ExportOptions; doc: DocumentModel }) {
             <Checkbox checked={o.word.images} onChange={(images) => set('word', { images })} label="Include images and drawings" />
             <Checkbox checked={o.word.structure} onChange={(structure) => set('word', { structure })} label="Detect headings and lists" />
             <Checkbox checked={o.word.tables} onChange={(tables) => set('word', { tables })} label="Detect tables" />
+            <Checkbox checked={o.word.comments} onChange={(comments) => set('word', { comments })} label="Include comments" />
           </div>
         </>
       )
@@ -317,6 +321,46 @@ function Outcome({ doc }: { doc: DocumentModel }) {
   )
 }
 
+/** True when the current page is a picture without text (a scan): there is no text to export. */
+function useScannedPage(doc: DocumentModel): boolean {
+  const page = useDocState(doc, (s) => s.currentPage)
+  const version = usePageVersion(doc, page)
+  const [scanned, setScanned] = useState(false)
+  useEffect(() => {
+    let alive = true
+    doc
+      .pageText(page)
+      .then((t) => alive && setScanned(!t.text.trim() && t.images.length > 0))
+      .catch(() => alive && setScanned(false))
+    return () => {
+      alive = false
+    }
+  }, [doc, page, version])
+  return scanned
+}
+
+function ScanNote({ doc, format }: { doc: DocumentModel; format: ExportFormat }) {
+  const scanned = useScannedPage(doc)
+  if (!scanned || format === 'image') return null
+  const canOcr = registry.commands.has('ocr.recognize')
+  return (
+    <div className={`${P}-note is-warning`} data-testid="export-scan-note">
+      <ScanText size={14} />
+      <span>
+        This page is a scanned picture, so it has no text to edit. {canOcr ? 'Recognize the text first to get editable text.' : 'It is exported as a picture.'}
+        {canOcr && (
+          <>
+            {' '}
+            <button type="button" className={`${P}-link`} onClick={() => void runCommand('ocr.recognize')}>
+              Recognize Text…
+            </button>
+          </>
+        )}
+      </span>
+    </div>
+  )
+}
+
 function ExportBody({ doc }: { doc: DocumentModel }) {
   const options = useExportCreate((s) => s.options)
   const scope = useExportCreate((s) => s.scope)
@@ -339,6 +383,7 @@ function ExportBody({ doc }: { doc: DocumentModel }) {
           <Checkbox checked={options.openAfter} onChange={(openAfter) => setOptions({ openAfter })} label="Open the file when it’s ready" />
         </div>
       )}
+      <ScanNote doc={doc} format={options.format} />
       {restricted && (
         <p className={`${P}-note is-warning`}>
           <Lock size={14} />

@@ -15,6 +15,8 @@ export interface WordOptions {
   /** Turn larger text into Heading styles and bullets/numbers into Word lists. */
   structure: boolean
   tables: boolean
+  /** Comments (notes, highlights with notes, replies) become Word comments. */
+  comments: boolean
 }
 
 export interface ExcelOptions {
@@ -67,7 +69,7 @@ export interface ExportOptions {
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
   format: 'word',
   openAfter: false,
-  word: { layout: 'flowing', images: true, structure: true, tables: true },
+  word: { layout: 'flowing', images: true, structure: true, tables: true, comments: true },
   excel: { combine: false, numbers: true },
   powerpoint: { mode: 'editable' },
   image: { format: 'png', dpi: 150, quality: 85, grayscale: false, compression: 'deflate' },

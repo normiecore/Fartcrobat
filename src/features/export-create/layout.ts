@@ -12,6 +12,7 @@ import {
   FONT_MONO,
   segmentText,
   type PageContent,
+  type XComment,
   type XDrawing,
   type XFill,
   type XImage,
@@ -92,6 +93,8 @@ export interface LParagraph extends Placed {
   bold: boolean
   /** Monospaced text (code, data listings): keep its line breaks and spacing. */
   preformatted: boolean
+  /** Comments made on this paragraph (Word comments). */
+  comments?: XComment[]
   /** A line drawn under or over the paragraph (title underlines, separators). */
   borderBottom?: LBorder
   borderTop?: LBorder
@@ -1173,6 +1176,7 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
   elements.sort((a, b) => a.order - b.order || a.y0 - b.y0)
   numberLists(elements, left)
   attachRules(elements, content, usedRules, right - left)
+  attachComments(elements, content.comments ?? [])
   let prevBottom: number | null = null
   let prev: LElement | null = null
   for (const el of elements) {
@@ -1225,6 +1229,35 @@ function attachRules(elements: LElement[], content: PageContent, used: Set<XRule
     }
     const below = paras.filter((p) => overlaps(p) && p.y0 >= r.y0 - 2 && p.y0 - r.y0 <= 14).sort((a, b) => a.y0 - b.y0)[0]
     if (below && !below.borderTop) below.borderTop = { ...border, gap: Math.max(0, below.y0 - r.y0) }
+  }
+}
+
+/** Each comment goes with the paragraph it was made on (or the nearest one). */
+function attachComments(elements: LElement[], comments: XComment[]) {
+  const paras = elements.filter((e): e is LParagraph => e.kind === 'paragraph')
+  if (!paras.length) return
+  const target = new Map<number, LParagraph>()
+  for (const c of comments) {
+    if (c.parent !== null) continue
+    let best: LParagraph | null = null
+    let score = -Infinity
+    for (const p of paras) {
+      const ov = overlap(c, p)
+      // Overlap wins; otherwise the nearest paragraph (vertical distance first).
+      const dy = c.y0 > p.y1 ? c.y0 - p.y1 : p.y0 > c.y1 ? p.y0 - c.y1 : 0
+      const dx = c.x0 > p.x1 ? c.x0 - p.x1 : p.x0 > c.x1 ? p.x0 - c.x1 : 0
+      const sc = ov > 0 ? ov : -(dy * 4 + dx)
+      if (sc > score) {
+        score = sc
+        best = p
+      }
+    }
+    if (best) target.set(c.id, best)
+  }
+  for (const c of comments) {
+    const p = target.get(c.parent ?? c.id)
+    if (!p) continue
+    ;(p.comments ??= []).push(c)
   }
 }
 

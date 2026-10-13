@@ -10,6 +10,7 @@ import {
   FONT_MONO,
   FONT_SERIF,
   type PageContent,
+  type XComment,
   type XDrawing,
   type XFill,
   type XImage,
@@ -717,6 +718,75 @@ function readLinks(s: Session, pageIndex: number): XLink[] {
   return out
 }
 
+/** Kinds of comments exported as Word comments (text boxes are already part of the page text). */
+const COMMENT_TYPES = new Set(['Text', 'Highlight', 'Underline', 'StrikeOut', 'Squiggly', 'Square', 'Circle', 'Line', 'Polygon', 'PolyLine', 'Ink', 'Stamp', 'Caret', 'FileAttachment', 'Sound', 'Redact'])
+
+const TYPE_NAMES: Record<string, string> = {
+  Text: 'Note',
+  StrikeOut: 'Strikethrough',
+  Square: 'Rectangle',
+  Circle: 'Oval',
+  PolyLine: 'Polyline',
+  Ink: 'Drawing',
+  Caret: 'Inserted text',
+  FileAttachment: 'Attachment'
+}
+
+export function readComments(s: Session, pageIndex: number): XComment[] {
+  const out: XComment[] = []
+  let annots: MuPDF.PDFAnnotation[]
+  try {
+    annots = s.page(pageIndex).getAnnotations()
+  } catch {
+    return out
+  }
+  const index = new Map<number, number>()
+  annots.forEach((a, i) => {
+    try {
+      const o = a.getObject()
+      if (o.isIndirect()) index.set(o.asIndirect(), i)
+    } catch {}
+  })
+  const safe = <T>(fn: () => T, fallback: T): T => {
+    try {
+      return fn()
+    } catch {
+      return fallback
+    }
+  }
+  const all = annots.map((a, i) => {
+    const type = String(safe(() => a.getType(), ''))
+    const irt = safe(() => a.getObject().get('IRT'), null)
+    const parent = irt && irt.isIndirect() ? (index.get(irt.asIndirect()) ?? null) : null
+    const rect = safe(() => a.getBounds() as Rect, [0, 0, 0, 0] as Rect)
+    const date = safe(() => a.getModificationDate(), null) ?? safe(() => a.getCreationDate(), null)
+    return {
+      id: i,
+      parent,
+      x0: rect[0],
+      y0: rect[1],
+      x1: rect[2],
+      y1: rect[3],
+      type,
+      author: safe(() => a.getAuthor(), '') || '',
+      text: (safe(() => a.getContents(), '') || '').trim(),
+      date: date && !Number.isNaN(date.getTime()) ? date.toISOString() : null
+    }
+  })
+  const hasReplies = new Set(all.filter((c) => c.parent !== null && c.text).map((c) => c.parent))
+  for (const c of all) {
+    if (c.parent !== null) {
+      // A reply goes with its comment.
+      if (c.text && all[c.parent] && (COMMENT_TYPES.has(all[c.parent].type) || all[c.parent].type === 'FreeText')) out.push(c)
+      continue
+    }
+    if (!COMMENT_TYPES.has(c.type) && !(c.type === 'FreeText' && hasReplies.has(c.id))) continue
+    if (!c.text && !hasReplies.has(c.id)) continue
+    out.push({ ...c, text: c.text || TYPE_NAMES[c.type] || c.type })
+  }
+  return out
+}
+
 export function extractPageContent(s: Session, pageIndex: number, opts: ExtractOptions = {}): PageContent {
   const page = s.page(pageIndex)
   const bounds = page.getBounds() as Rect
@@ -812,7 +882,19 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
   const rules = vectors.rules.filter((r) => !decorations.has(r))
   const lines = buildLines(textLines)
   const decorationBoxes = [...decorations].map((r): [number, number, number, number] => [r.x0, r.y0 - r.width / 2, r.x1, r.y1 + r.width / 2])
-  return { index: pageIndex, width, height, lines, images, rules, fills: vectors.fills, drawings: vectors.drawings, links, decorations: decorationBoxes }
+  return {
+    index: pageIndex,
+    width,
+    height,
+    lines,
+    images,
+    rules,
+    fills: vectors.fills,
+    drawings: vectors.drawings,
+    links,
+    decorations: decorationBoxes,
+    comments: readComments(s, pageIndex)
+  }
 }
 
 // ---- rendering without text (PowerPoint backgrounds) --------------------------------------

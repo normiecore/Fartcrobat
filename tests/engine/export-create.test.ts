@@ -404,6 +404,46 @@ describe('form fields and comments', () => {
   })
 })
 
+describe('Word comments', () => {
+  it('turns the PDF comments and their replies into Word comments on their paragraphs', async () => {
+    const e = await openFixture('text.pdf')
+    const annots = e.ops<typeof import('@engine/ops/annots').default>('annots')
+    const note = await annots.create(0, { type: 'Text', rect: [200, 70, 220, 90], contents: 'Is this the right title?', author: 'Ana' })
+    await annots.reply(note.id, 'Yes, keep it.', 'Ben')
+    await annots.create(0, { type: 'Highlight', quads: [[72, 150, 400, 150, 72, 165, 400, 165]], contents: 'Check these numbers', author: 'Ana' })
+    const engine = e.ops<Ops>('export-create') as unknown as ExportEngine
+    const run = async (comments: boolean) => {
+      const r = await runExport(engine, {
+        options: normalizeExportOptions({ ...DEFAULT_EXPORT_OPTIONS, format: 'word', word: { ...DEFAULT_EXPORT_OPTIONS.word, comments } }),
+        pages: [0],
+        title: 'T',
+        baseName: 'T'
+      })
+      if (r.kind !== 'file') throw new Error('file expected')
+      return JSZip.loadAsync(r.data)
+    }
+    const zip = await run(true)
+    const xml = await zip.file('word/comments.xml')!.async('string')
+    expect(xml).toContain('Is this the right title?')
+    expect(xml).toContain('w:author="Ana"')
+    expect(xml).toContain('Yes, keep it.')
+    expect(xml).toContain('w:author="Ben"')
+    expect(xml).toContain('Check these numbers')
+    expect(zip.file('word/commentsExtended.xml')).not.toBeNull()
+    const doc = await zip.file('word/document.xml')!.async('string')
+    // The note sits next to the heading; the highlight on the lorem paragraph.
+    expect(doc).toMatch(/<w:commentRangeStart w:id="0"\/>(?:(?!<\/w:p>).)*Chapter 1/)
+    expect(doc).toMatch(/<w:commentRangeStart w:id="2"\/>(?:(?!<\/w:p>).)*Lorem ipsum/)
+    const plain = await run(false)
+    expect(plain.file('word/comments.xml')).toBeNull()
+    if (SOFFICE) {
+      // Word documents with comments open in LibreOffice.
+      const pages = await roundTrip(await zip.generateAsync({ type: 'uint8array' }), 'docx')
+      expect(pages[0]).toContain('Chapter 1')
+    }
+  })
+})
+
 describe('export runs', () => {
   it('stops between pages when cancelled and reports progress', async () => {
     const e = await openFixture('text.pdf')

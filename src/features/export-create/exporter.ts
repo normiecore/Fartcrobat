@@ -212,5 +212,5 @@ export async function runExport(engine: ExportEngine, job: ExportJob): Promise<E
 }
 
 function emptyContent(index: number): PageContent {
-  return { index, width: 612, height: 792, lines: [], images: [], rules: [], fills: [], drawings: [], links: [], decorations: [] }
+  return { index, width: 612, height: 792, lines: [], images: [], rules: [], fills: [], drawings: [], links: [], decorations: [], comments: [] }
 }

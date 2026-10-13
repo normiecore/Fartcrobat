@@ -6,6 +6,9 @@
 import {
   AlignmentType,
   BorderStyle,
+  CommentRangeEnd,
+  CommentRangeStart,
+  CommentReference,
   Document,
   ExternalHyperlink,
   FrameAnchorType,
@@ -31,6 +34,7 @@ import {
   VerticalAlign,
   VerticalPositionRelativeFrom,
   WidthType,
+  type ICommentOptions,
   type ISectionOptions
 } from 'docx'
 import {
@@ -122,6 +126,50 @@ class Numbering {
   }
 }
 
+/** Word comments made from the PDF's comments, anchored on their paragraphs. */
+class Comments {
+  readonly list: ICommentOptions[] = []
+  private ids = new Map<string, number>()
+
+  constructor(private readonly enabled: boolean) {}
+
+  /** Wraps a paragraph's runs with the anchors of its comments. */
+  wrap(p: LParagraph, pageIndex: number, children: (TextRun | ExternalHyperlink)[]): ParagraphChild[] {
+    if (!this.enabled || !p.comments?.length) return children
+    const ids: number[] = []
+    // Comments before their replies.
+    const ordered = [...p.comments].sort((a, b) => (a.parent === null ? 0 : 1) - (b.parent === null ? 0 : 1))
+    for (const c of ordered) {
+      const id = this.list.length
+      this.ids.set(`${pageIndex}:${c.id}`, id)
+      const parentId = c.parent !== null ? this.ids.get(`${pageIndex}:${c.parent}`) : undefined
+      const author = c.author || 'Author'
+      this.list.push({
+        id,
+        author,
+        initials: author
+          .split(/\s+/)
+          .map((w) => w[0] ?? '')
+          .join('')
+          .slice(0, 4)
+          .toUpperCase(),
+        ...(c.date ? { date: new Date(c.date) } : {}),
+        ...(parentId !== undefined ? { parentId } : {}),
+        children: c.text.split(/\r?\n/).map((line) => new Paragraph({ children: [new TextRun(line)] }))
+      })
+      ids.push(id)
+    }
+    return [
+      ...ids.map((id) => new CommentRangeStart(id)),
+      ...children,
+      ...ids.map((id) => new CommentRangeEnd(id)),
+      ...ids.map((id) => new TextRun({ children: [new CommentReference(id)] }))
+    ]
+  }
+}
+
+type ParagraphChild = TextRun | ExternalHyperlink | CommentRangeStart | CommentRangeEnd
+
 function textRuns(run: LRun, opts: { breakFirst?: boolean } = {}): TextRun[] {
   const base = {
     bold: run.bold,
@@ -163,7 +211,7 @@ function lineSpacing(p: LParagraph) {
   return { line: tw(Math.max(p.lineStep, p.size * 1.05)), lineRule: LineRuleType.AT_LEAST }
 }
 
-function paragraphOptions(p: LParagraph, numbering: Numbering, opts: WordOptions) {
+function paragraphOptions(p: LParagraph, numbering: Numbering, opts: WordOptions, comments: Comments, pageIndex: number) {
   const keepLines = p.preformatted
   const runs = keepLines ? linedRuns(p.lines) : flowRuns(p.lines)
   const indent: { left?: number; hanging?: number; firstLine?: number } = {}
@@ -184,7 +232,7 @@ function paragraphOptions(p: LParagraph, numbering: Numbering, opts: WordOptions
       ? { border: { ...(p.borderBottom ? { bottom: borderOf(p.borderBottom) } : {}), ...(p.borderTop ? { top: borderOf(p.borderTop) } : {}) } }
       : {}
   return {
-    children: runChildren(runs),
+    children: comments.wrap(p, pageIndex, runChildren(runs)),
     ...border,
     alignment: ALIGN[p.align],
     ...(heading ? { heading } : {}),
@@ -286,7 +334,7 @@ function sectionPage(page: LPage, margins: LPage['margins']) {
   }
 }
 
-function flowingSections(layout: DocLayout, opts: WordOptions, numbering: Numbering): ISectionOptions[] {
+function flowingSections(layout: DocLayout, opts: WordOptions, numbering: Numbering, comments: Comments): ISectionOptions[] {
   const sections: ISectionOptions[] = []
   let current: { page: LPage; children: Child[] } | null = null
   const close = () => {
@@ -308,7 +356,7 @@ function flowingSections(layout: DocLayout, opts: WordOptions, numbering: Number
       const brk = pageBreak ? { pageBreakBefore: true } : {}
       pageBreak = false
       if (el.kind === 'paragraph') {
-        children.push(new Paragraph({ ...paragraphOptions(el, numbering, opts), ...brk }))
+        children.push(new Paragraph({ ...paragraphOptions(el, numbering, opts, comments, page.index), ...brk }))
       } else if (el.kind === 'table') {
         numbering.breakList()
         if (opts.tables) {
@@ -384,7 +432,7 @@ function cellAsParagraph(c: LCell, x0: number, y0: number, x1: number, y1: numbe
 }
 
 /** A paragraph in a frame at its place on the page, keeping its line breaks. */
-function framedParagraph(el: LParagraph, opts: WordOptions): Paragraph {
+function framedParagraph(el: LParagraph, opts: WordOptions, comments?: Comments, pageIndex = 0): Paragraph {
   const runs = linedRuns(el.lines)
   const hang = el.list ? Math.max(6, -el.firstLine) : 0
   if (el.list && runs.length) runs.unshift({ ...runs[0], text: el.list.marker + '\t', link: undefined, underline: false })
@@ -393,7 +441,7 @@ function framedParagraph(el: LParagraph, opts: WordOptions): Paragraph {
   const slack = Math.max(6, width * 0.08)
   const x = el.align === 'right' ? el.x0 - slack : el.align === 'center' ? el.x0 - slack / 2 : el.x0
   return new Paragraph({
-    children: runChildren(runs),
+    children: comments ? comments.wrap(el, pageIndex, runChildren(runs)) : runChildren(runs),
     alignment: el.align === 'justify' ? AlignmentType.LEFT : ALIGN[el.align],
     ...(opts.structure && el.role === 'heading' ? { heading: HEADINGS[Math.min(3, el.level - 1)] } : {}),
     spacing: { before: 0, after: 0, ...(el.lines.length > 1 && el.lineStep > 0 ? { line: tw(el.lineStep), lineRule: LineRuleType.EXACT } : {}) },
@@ -432,12 +480,12 @@ function floatingImage(data: Uint8Array, mime: string, x: number, y: number, w: 
  * shading) as one picture behind the text, and every paragraph and table cell in a frame at its
  * place on the page.
  */
-function pageLayoutSection(page: LPage, opts: WordOptions, numbering: Numbering): ISectionOptions {
+function pageLayoutSection(page: LPage, opts: WordOptions, numbering: Numbering, comments: Comments): ISectionOptions {
   const children: Child[] = []
   const bg = opts.images ? page.background : undefined
   for (const el of page.elements) {
     if (el.kind === 'paragraph') {
-      children.push(framedParagraph(el, opts))
+      children.push(framedParagraph(el, opts, comments, page.index))
       numbering.breakList()
     } else if (el.kind === 'table') {
       for (const c of el.cells) {
@@ -474,7 +522,11 @@ function bodyFont(layout: DocLayout): string {
 
 export async function buildDocx(layout: DocLayout, opts: WordOptions, meta: { title: string; author?: string }): Promise<Uint8Array> {
   const numbering = new Numbering()
-  const sections = opts.layout === 'page' ? layout.pages.map((p) => pageLayoutSection(p, opts, numbering)) : flowingSections(layout, opts, numbering)
+  const comments = new Comments(opts.comments)
+  const sections =
+    opts.layout === 'page'
+      ? layout.pages.map((p) => pageLayoutSection(p, opts, numbering, comments))
+      : flowingSections(layout, opts, numbering, comments)
   const font = bodyFont(layout)
   const doc = new Document({
     creator: 'Fartcrobat',
@@ -486,6 +538,7 @@ export async function buildDocx(layout: DocLayout, opts: WordOptions, meta: { ti
       }
     },
     numbering: { config: numbering.config() },
+    ...(comments.list.length ? { comments: { children: comments.list } } : {}),
     sections
   })
   return Packer.pack(doc, 'uint8array')

@@ -95,6 +95,23 @@ export interface XDrawing {
   art: boolean
 }
 
+/** A comment (sticky note, highlight with a note, reply...) on the page. */
+export interface XComment {
+  /** Index among the page's annotations. */
+  id: number
+  /** Id of the comment this one replies to, or null. */
+  parent: number | null
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  type: string
+  author: string
+  text: string
+  /** ISO date, or null when unknown. */
+  date: string | null
+}
+
 export interface XLink {
   rect: Box
   uri: string
@@ -112,6 +129,7 @@ export interface PageContent {
   links: XLink[]
   /** Underlines and strike-through lines of the text (the runs carry them as styles). */
   decorations: Box[]
+  comments: XComment[]
 }
 
 export const FONT_BOLD = 1

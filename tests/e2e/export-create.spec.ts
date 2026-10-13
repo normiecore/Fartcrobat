@@ -162,6 +162,12 @@ test('Export a PDF: Word, images to a folder, text from the menu, keyboard and d
     await shot(page, 'restricted')
     await page.getByRole('button', { name: 'OK' }).click()
 
+    // ---- a scanned page has no text: the panel says so
+    await openPath(page, fixturePath('scanned.pdf'))
+    await expect.poll(() => activeDocState(page).then((s) => s?.title)).toBe('scanned.pdf')
+    await expect(page.getByTestId('export-scan-note')).toContainText('scanned picture')
+    await shot(page, 'scanned-note')
+
     // ---- dark theme
     await setTheme(page, 'dark')
     await page.waitForTimeout(300)
