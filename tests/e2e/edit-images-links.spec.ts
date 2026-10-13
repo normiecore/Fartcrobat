@@ -613,6 +613,8 @@ test('page marks: a header added with page marks survives image edits and can st
     await waitForRender(page)
     const before = await images(page)
     await enterEditMode(page)
+    // the image layer has to list the page's images before they can be grabbed
+    await expect(page.locator('.viewer-page[data-page-index="0"] .fc-edit-images-links-hit')).toHaveCount(2)
     const c = await clientRect(page, before[0].visible)
     await drag(page, center(c), { x: center(c).x + 60, y: center(c).y })
     await expect.poll(async () => (await images(page))[0].bbox[0]).toBeCloseTo(before[0].bbox[0] + 60 / c.scale, 0)
