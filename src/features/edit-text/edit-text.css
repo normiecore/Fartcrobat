@@ -13,13 +13,17 @@
   transform-origin: 0 0;
   pointer-events: auto;
   cursor: text;
-  border: 1px solid rgba(20, 115, 230, 0.35);
+  border: 1px solid rgba(20, 115, 230, 0.4);
   border-radius: 2px;
-  transition: background 0.08s, border-color 0.08s;
+  /* a faint light edge keeps the outline visible on dark pages (or with inverted page colours) */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  transition:
+    background 0.08s,
+    border-color 0.08s;
 }
 .fc-edit-text-box:hover {
   border-color: var(--accent);
-  background: rgba(20, 115, 230, 0.07);
+  background: rgba(20, 115, 230, 0.08);
 }
 .fc-edit-text-box:focus-visible {
   outline: none;
@@ -193,4 +197,14 @@
 .fc-edit-text-row-chevron {
   flex: none;
   color: var(--text-muted);
+}
+.fc-edit-text-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+/* the palette opens towards the inside of the floating bar, which always fits in the window */
+.fc-edit-text-mini .ui-popover {
+  left: auto;
+  right: 0;
 }

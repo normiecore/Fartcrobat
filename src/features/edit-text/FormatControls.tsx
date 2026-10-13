@@ -1,5 +1,13 @@
 import { useId } from 'react'
-import { Bold, Italic, TextAlignCenter, TextAlignEnd, TextAlignJustify, TextAlignStart, Underline } from 'lucide-react'
+import {
+  Bold,
+  Italic,
+  TextAlignCenter,
+  TextAlignEnd,
+  TextAlignJustify,
+  TextAlignStart,
+  Underline
+} from 'lucide-react'
 import { ColorButton, IconButton, displayShortcut } from '@renderer/sdk'
 import { fontOptions } from './fonts'
 import { commonStyle, FONT_SIZE_PRESETS, LINE_SPACING_PRESETS, type Align, type RunStyle } from './model'
@@ -37,7 +45,15 @@ const ALIGNS: { value: Align; label: string; icon: typeof TextAlignStart }[] = [
   { value: 'justify', label: 'Justify', icon: TextAlignJustify }
 ]
 
-function FontSelect({ value, fonts, disabled }: { value: string | undefined; fonts: ReturnType<typeof useFormatState>['fonts']; disabled: boolean }) {
+function FontSelect({
+  value,
+  fonts,
+  disabled
+}: {
+  value: string | undefined
+  fonts: ReturnType<typeof useFormatState>['fonts']
+  disabled: boolean
+}) {
   const options = fontOptions(fonts)
   return (
     <select
@@ -108,9 +124,30 @@ function SizeInput({ value, disabled }: { value: number | undefined; disabled: b
 function StyleToggles({ style, disabled }: { style: Partial<RunStyle>; disabled: boolean }) {
   return (
     <span className="fc-edit-text-toggles" role="group" aria-label="Text style">
-      <IconButton icon={Bold} label="Bold" shortcut={displayShortcut('Mod+B')} active={style.bold === true} disabled={disabled} onClick={() => toggleStyle('bold')} />
-      <IconButton icon={Italic} label="Italic" shortcut={displayShortcut('Mod+I')} active={style.italic === true} disabled={disabled} onClick={() => toggleStyle('italic')} />
-      <IconButton icon={Underline} label="Underline" shortcut={displayShortcut('Mod+U')} active={style.underline === true} disabled={disabled} onClick={() => toggleStyle('underline')} />
+      <IconButton
+        icon={Bold}
+        label="Bold"
+        shortcut={displayShortcut('Mod+B')}
+        active={style.bold === true}
+        disabled={disabled}
+        onClick={() => toggleStyle('bold')}
+      />
+      <IconButton
+        icon={Italic}
+        label="Italic"
+        shortcut={displayShortcut('Mod+I')}
+        active={style.italic === true}
+        disabled={disabled}
+        onClick={() => toggleStyle('italic')}
+      />
+      <IconButton
+        icon={Underline}
+        label="Underline"
+        shortcut={displayShortcut('Mod+U')}
+        active={style.underline === true}
+        disabled={disabled}
+        onClick={() => toggleStyle('underline')}
+      />
     </span>
   )
 }
@@ -119,16 +156,26 @@ function AlignButtons({ align, disabled }: { align: Align; disabled: boolean }) 
   return (
     <span className="fc-edit-text-toggles" role="group" aria-label="Alignment">
       {ALIGNS.map((a) => (
-        <IconButton key={a.value} icon={a.icon} label={a.label} active={align === a.value} disabled={disabled} onClick={() => setParagraph({ align: a.value })} />
+        <IconButton
+          key={a.value}
+          icon={a.icon}
+          label={a.label}
+          active={align === a.value}
+          disabled={disabled}
+          onClick={() => setParagraph({ align: a.value })}
+        />
       ))}
     </span>
   )
 }
 
-function LineSpacing({ value, disabled }: { value: number; disabled: boolean }) {
-  const presets = LINE_SPACING_PRESETS.some((p) => Math.abs(p - value) < 0.005) ? LINE_SPACING_PRESETS : [...LINE_SPACING_PRESETS, value].sort((a, b) => a - b)
+function LineSpacing({ value, disabled, id }: { value: number; disabled: boolean; id?: string }) {
+  const presets = LINE_SPACING_PRESETS.some((p) => Math.abs(p - value) < 0.005)
+    ? LINE_SPACING_PRESETS
+    : [...LINE_SPACING_PRESETS, value].sort((a, b) => a - b)
   return (
     <select
+      id={id}
       className="ui-input ui-select fc-edit-text-spacing"
       aria-label="Line spacing"
       title="Line spacing"
@@ -148,6 +195,7 @@ function LineSpacing({ value, disabled }: { value: number; disabled: boolean }) 
 /** Full formatting controls for the Edit panel. */
 export function PanelFormat() {
   const f = useFormatState()
+  const spacingId = useId()
   const disabled = f.disabled
   return (
     <div className="fc-edit-text-format" data-fc-edit-text-keep>
@@ -157,21 +205,23 @@ export function PanelFormat() {
       <div className="fc-edit-text-row">
         <SizeInput value={f.style.size} disabled={disabled} />
         <span className="fc-edit-text-unit">pt</span>
+        <StyleToggles style={f.style} disabled={disabled} />
+      </div>
+      <div className="fc-edit-text-row">
+        {/* first in its row, so its colour palette fits inside the panel */}
         <ColorButton
           title="Text colour"
           value={f.style.color ?? null}
           onChange={(c) => c && applyStyle({ color: c.toLowerCase() })}
         />
-        <StyleToggles style={f.style} disabled={disabled} />
-      </div>
-      <div className="fc-edit-text-row">
+        <span className="fc-edit-text-sep" />
         <AlignButtons align={f.align} disabled={disabled} />
       </div>
       <div className="fc-edit-text-row">
-        <label className="fc-edit-text-label" htmlFor="fc-edit-text-spacing">
+        <label className="fc-edit-text-label" htmlFor={spacingId}>
           Line spacing
         </label>
-        <LineSpacing value={f.lineSpacing} disabled={disabled} />
+        <LineSpacing id={spacingId} value={f.lineSpacing} disabled={disabled} />
       </div>
       <p className="fc-edit-text-hint">
         {f.editing
@@ -189,7 +239,11 @@ export function MiniFormat() {
     <>
       <FontSelect value={f.style.font} fonts={f.fonts} disabled={f.disabled} />
       <SizeInput value={f.style.size} disabled={f.disabled} />
-      <ColorButton title="Text colour" value={f.style.color ?? null} onChange={(c) => c && applyStyle({ color: c.toLowerCase() })} />
+      <ColorButton
+        title="Text colour"
+        value={f.style.color ?? null}
+        onChange={(c) => c && applyStyle({ color: c.toLowerCase() })}
+      />
       <StyleToggles style={f.style} disabled={f.disabled} />
     </>
   )

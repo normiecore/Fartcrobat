@@ -57,7 +57,15 @@ function measure(raw: RawLine): MLine | null {
     const q = ch.quad
     const us = [dot([q[0], q[1]], d), dot([q[2], q[3]], d), dot([q[4], q[5]], d), dot([q[6], q[7]], d)]
     const vs = [dot([q[0], q[1]], n), dot([q[2], q[3]], n), dot([q[4], q[5]], n), dot([q[6], q[7]], n)]
-    chars.push({ ch, idx, u0: Math.min(...us), u1: Math.max(...us), top: Math.min(...vs), bottom: Math.max(...vs), v: dot([ch.ox, ch.oy], n) })
+    chars.push({
+      ch,
+      idx,
+      u0: Math.min(...us),
+      u1: Math.max(...us),
+      top: Math.min(...vs),
+      bottom: Math.max(...vs),
+      v: dot([ch.ox, ch.oy], n)
+    })
     const sz = Math.round(ch.size * 100) / 100
     sizes.set(sz, (sizes.get(sz) ?? 0) + 1)
     fontCount.set(ch.font, (fontCount.get(ch.font) ?? 0) + 1)
@@ -105,7 +113,8 @@ function fits(p: Para, l: MLine): boolean {
   const overlap = Math.min(right, l.u1) - Math.max(left, l.u0)
   if (overlap < 0.5 * Math.min(right - left, l.u1 - l.u0)) return false
   // an indented line after lines sharing a left edge starts a new paragraph
-  if (p.lines.length >= 2 && p.lines.every((x) => Math.abs(x.u0 - left) < 1) && l.u0 > left + 0.8 * l.size) return false
+  if (p.lines.length >= 2 && p.lines.every((x) => Math.abs(x.u0 - left) < 1) && l.u0 > left + 0.8 * l.size)
+    return false
   return true
 }
 
@@ -168,7 +177,12 @@ function styleOfChar(ch: RawChar, embedded: (font: string) => boolean): Omit<Run
   }
 }
 
-function buildBlock(p: Para, embedded: (font: string) => boolean, pageCenter: Point, pageExtent: number): AnalyzedBlock {
+function buildBlock(
+  p: Para,
+  embedded: (font: string) => boolean,
+  pageCenter: Point,
+  pageExtent: number
+): AnalyzedBlock {
   const lines = p.lines
   const first = lines[0]
   const { d, n } = first
@@ -217,7 +231,12 @@ function buildBlock(p: Para, embedded: (font: string) => boolean, pageCenter: Po
     .map((l, li) => align !== 'justify' && l.u1 - l.u0 + spaceW + wordWidth(lines[li + 1]) <= width + 0.5)
   // list-like blocks (addresses, short items): when some lines clearly end on purpose and even the
   // longest line is only a few words, every line is its own item
-  const words = (l: MLine) => l.raw.chars.map((c) => c.c).join('').trim().split(/\s+/).length
+  const words = (l: MLine) =>
+    l.raw.chars
+      .map((c) => c.c)
+      .join('')
+      .trim()
+      .split(/\s+/).length
   if (breaks.some(Boolean) && Math.max(...lines.map(words)) <= 5) breaks.fill(true)
 
   // content
@@ -314,7 +333,8 @@ export function analyzeLines(
     if (target) {
       const last = target.lines[target.lines.length - 1]
       const gap = l.v - last.v
-      target.gap = target.lines.length === 1 ? gap : (target.gap * (target.lines.length - 1) + gap) / target.lines.length
+      target.gap =
+        target.lines.length === 1 ? gap : (target.gap * (target.lines.length - 1) + gap) / target.lines.length
       target.lines.push(l)
     } else paras.push({ lines: [l], gap: 0 })
   }

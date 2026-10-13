@@ -3,10 +3,12 @@ import type { Point } from '@shared/geometry'
 import { drawResult, runCommand, useApp, useDocState, type PageGeometry } from '@renderer/sdk'
 import type editOps from './engine'
 import { cssBaseline, cssFamily } from './fonts'
+import { closeFormattingPopover } from './popover'
 import { caretFromPoint, getSelectionOffsets, readRuns, renderRuns, setSelectionOffsets } from './richText'
 import {
   cancelSession,
   commitSession,
+  consumeCaret,
   editorChanged,
   insertText,
   nudgeFrame,
@@ -19,10 +21,21 @@ import {
   type EditSession
 } from './store'
 
+/** Sessions whose editor has been shown (it is mounted again when its page scrolls back into view). */
+const shownSessions = new Set<number>()
+
 const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform)
 
 /** Page render of the paragraph's area without its text, hiding the original glyphs while editing. */
-function Cover({ session, geometry, onReady }: { session: EditSession; geometry: PageGeometry; onReady: () => void }) {
+function Cover({
+  session,
+  geometry,
+  onReady
+}: {
+  session: EditSession
+  geometry: PageGeometry
+  onReady: () => void
+}) {
   const ref = useRef<HTMLCanvasElement>(null)
   const colorMode = useApp((s) => s.prefs.pageColors)
   const annots = useDocState(session.doc, (s) => s.showAnnotations)
@@ -34,7 +47,12 @@ function Cover({ session, geometry, onReady }: { session: EditSession; geometry:
     let alive = true
     const dpr = window.devicePixelRatio || 1
     const pad = 4
-    const r = geometry.rectToCss([block.bbox[0] - pad, block.bbox[1] - pad, block.bbox[2] + pad, block.bbox[3] + pad])
+    const r = geometry.rectToCss([
+      block.bbox[0] - pad,
+      block.bbox[1] - pad,
+      block.bbox[2] + pad,
+      block.bbox[3] + pad
+    ])
     const timer = window.setTimeout(() => {
       doc
         .ops<typeof editOps>('edit-text')
@@ -92,7 +110,15 @@ export function SessionOverlay({ session, geometry }: { session: EditSession; ge
   )
 }
 
-function EditorFrame({ session: s, geometry, visible }: { session: EditSession; geometry: PageGeometry; visible: boolean }) {
+function EditorFrame({
+  session: s,
+  geometry,
+  visible
+}: {
+  session: EditSession
+  geometry: PageGeometry
+  visible: boolean
+}) {
   const rootRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLDivElement>(null)
   const mounted = useRef(false)
@@ -130,11 +156,22 @@ function EditorFrame({ session: s, geometry, visible }: { session: EditSession; 
     if (!mounted.current) {
       mounted.current = true
       lastFocus.current = state.focusToken
+      if (shownSessions.has(state.id)) {
+        // the page scrolled back into view: take the focus back only when nobody else has it
+        const active = document.activeElement
+        if (active && active !== document.body && !active.closest('.viewer-scroll')) return
+        root.focus({ preventScroll: true })
+        setSelectionOffsets(root, state.selection.start, state.selection.end)
+        return
+      }
+      shownSessions.add(state.id)
       root.focus({ preventScroll: true })
       if (!(state.caret && caretFromPoint(root, state.caret[0], state.caret[1])))
         setSelectionOffsets(root, state.selection.start, state.selection.end)
       const sel = getSelectionOffsets(root)
       if (sel) setSelection(sel)
+      // the click point is only meaningful once (the page may scroll out of view and back)
+      if (state.caret) consumeCaret()
       return
     }
     if (hadFocus || state.focusToken !== lastFocus.current) {
@@ -231,7 +268,8 @@ function EditorFrame({ session: s, geometry, visible }: { session: EditSession; 
     }
     if (e.key === 'Escape') {
       stop()
-      cancelSession()
+      // Esc first closes an open colour palette, then cancels the edit
+      if (!closeFormattingPopover()) cancelSession()
     } else if (mod && e.key === 'Enter') {
       stop()
       void commitSession()
@@ -254,7 +292,13 @@ function EditorFrame({ session: s, geometry, visible }: { session: EditSession; 
       stop()
       const step = e.shiftKey ? 10 : 1
       const v: Point =
-        e.key === 'ArrowLeft' ? [-step, 0] : e.key === 'ArrowRight' ? [step, 0] : e.key === 'ArrowUp' ? [0, -step] : [0, step]
+        e.key === 'ArrowLeft'
+          ? [-step, 0]
+          : e.key === 'ArrowRight'
+            ? [step, 0]
+            : e.key === 'ArrowUp'
+              ? [0, -step]
+              : [0, step]
       const z = geometry.toPage([0, 0])
       const p = geometry.toPage([v[0] * geometry.scale, v[1] * geometry.scale])
       nudgeFrame(p[0] - z[0], p[1] - z[1])
@@ -316,7 +360,12 @@ function EditorFrame({ session: s, geometry, visible }: { session: EditSession; 
     let width = s.frame.width
     if (!s.wrap) {
       const contentW = root.offsetWidth / scale
-      const anchorU = s.align === 'center' ? s.frame.width / 2 - contentW / 2 : s.align === 'right' ? s.frame.width - contentW : 0
+      const anchorU =
+        s.align === 'center'
+          ? s.frame.width / 2 - contentW / 2
+          : s.align === 'right'
+            ? s.frame.width - contentW
+            : 0
       origin = [origin[0] + anchorU * d[0], origin[1] + anchorU * d[1]]
       width = contentW
     }
@@ -366,7 +415,12 @@ function EditorFrame({ session: s, geometry, visible }: { session: EditSession; 
         width: s.wrap ? widthPx : undefined
       }}
     >
-      <div className="fc-edit-text-ring" onPointerDown={startMove} title="Drag to move the text box" aria-hidden />
+      <div
+        className="fc-edit-text-ring"
+        onPointerDown={startMove}
+        title="Drag to move the text box"
+        aria-hidden
+      />
       <div
         ref={rootRef}
         className="fc-edit-text-editor"
@@ -396,8 +450,18 @@ function EditorFrame({ session: s, geometry, visible }: { session: EditSession; 
           filter: invert ? 'invert(1) hue-rotate(180deg)' : undefined
         }}
       />
-      <div className="fc-edit-text-handle is-left" onPointerDown={startResize('left')} title="Drag to change the width" aria-hidden />
-      <div className="fc-edit-text-handle is-right" onPointerDown={startResize('right')} title="Drag to change the width" aria-hidden />
+      <div
+        className="fc-edit-text-handle is-left"
+        onPointerDown={startResize('left')}
+        title="Drag to change the width"
+        aria-hidden
+      />
+      <div
+        className="fc-edit-text-handle is-right"
+        onPointerDown={startResize('right')}
+        title="Drag to change the width"
+        aria-hidden
+      />
     </div>
   )
 }

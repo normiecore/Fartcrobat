@@ -121,6 +121,22 @@ def layout_cases():
     c.save()
 
 
+def shared_xobject():
+    """Two pages drawing the same form XObject (a header), as page-mark tools produce."""
+    c = canvas.Canvas(os.path.join(OUT, 'shared-xobject.pdf'), pagesize=letter)
+    c.setTitle('Shared form XObject fixture')
+    c.beginForm('Header')
+    c.setFont('Helvetica-Bold', 14)
+    c.drawString(72, 740, 'Shared header in a form XObject')
+    c.endForm()
+    for i in range(2):
+        c.doForm('Header')
+        c.setFont('Helvetica', 12)
+        c.drawString(72, 700, 'Body text of page %d' % (i + 1))
+        c.showPage()
+    c.save()
+
+
 def office_report():
     """A word-processor export: embedded subset TrueType fonts (Carlito/Caladea) with mixed styles."""
     from docx import Document
@@ -145,6 +161,7 @@ def office_report():
 
 
 if __name__ == '__main__':
+    shared_xobject()
     office_report()
     subset_font()
     rotated()

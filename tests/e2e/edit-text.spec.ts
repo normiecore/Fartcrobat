@@ -4,14 +4,27 @@ import { activeDocState, fixturePath, launch, openFile, waitForRender } from './
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/edit-text-${name}.png` })
 
 async function pageText(page: Page, index = 0): Promise<string> {
-  return page.evaluate(async (i) => (await (window as any).__fartcrobat.getActiveDoc().pageText(i)).text as string, index)
+  return page.evaluate(
+    async (i) => (await (window as any).__fartcrobat.getActiveDoc().pageText(i)).text as string,
+    index
+  )
+}
+
+interface Line {
+  text: string
+  dir: [number, number]
+  bbox: number[]
 }
 
 /** Lines of a page's text with their direction. */
-async function pageLines(page: Page, index = 0) {
+async function pageLines(page: Page, index = 0): Promise<Line[]> {
   return page.evaluate(async (i) => {
     const t = await (window as any).__fartcrobat.getActiveDoc().pageText(i)
-    return t.lines.map((l: any) => ({ text: t.text.slice(l.start, l.end) as string, dir: l.dir as [number, number], bbox: l.bbox as number[] }))
+    return t.lines.map((l: any) => ({
+      text: t.text.slice(l.start, l.end) as string,
+      dir: l.dir as [number, number],
+      bbox: l.bbox as number[]
+    }))
   }, index)
 }
 
@@ -51,7 +64,8 @@ async function clickPage(page: Page, fx: number, fy: number, index = 0) {
 }
 
 const editor = (page: Page) => page.locator('[data-fc-edit-text-editor]')
-const toolId = (page: Page) => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId as string)
+const toolId = (page: Page) =>
+  page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId as string)
 const blockButton = (page: Page, name: RegExp, index = 0) =>
   page.locator(`.viewer-page[data-page-index="${index}"]`).getByRole('button', { name })
 
@@ -84,7 +98,12 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
       const l = t.lines.find((x: any) => t.text.slice(x.start, x.end) === 'Chapter 1')
       const el = document.querySelector('.viewer-page[data-page-index="0"]')!.getBoundingClientRect()
       const s = (doc.state.zoom * 96) / 72
-      return { x: el.left + l.bbox[0] * s, y: el.top + l.bbox[1] * s, w: (l.bbox[2] - l.bbox[0]) * s, h: (l.bbox[3] - l.bbox[1]) * s }
+      return {
+        x: el.left + l.bbox[0] * s,
+        y: el.top + l.bbox[1] * s,
+        w: (l.bbox[2] - l.bbox[0]) * s,
+        h: (l.bbox[3] - l.bbox[1]) * s
+      }
     })
     expect(Math.abs(heading.x - box.x)).toBeLessThan(3)
     expect(Math.abs(heading.y + heading.height / 2 - (box.y + box.h / 2))).toBeLessThan(4)
@@ -94,7 +113,11 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     await page.keyboard.type('Introduction')
     await expect(editor(page)).toHaveText('Introduction')
     // while editing, the selection is the custom 'edit-text:block' selection
-    expect((await activeDocState(page))?.selection).toMatchObject({ kind: 'custom', type: 'edit-text:block', page: 0 })
+    expect((await activeDocState(page))?.selection).toMatchObject({
+      kind: 'custom',
+      type: 'edit-text:block',
+      page: 0
+    })
     await shot(page, '3-typed-heading')
 
     // click outside: the change is written into the page content
@@ -110,7 +133,9 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     await shot(page, '4-after-heading')
 
     // change the size of a paragraph from the panel (no text selected = the whole paragraph)
-    const loremRight = Math.max(...(await pageLines(page)).filter((x) => x.text.startsWith('Lorem')).map((x) => x.bbox[2]))
+    const loremRight = Math.max(
+      ...(await pageLines(page)).filter((x) => x.text.startsWith('Lorem')).map((x) => x.bbox[2])
+    )
     await blockButton(page, /^Edit text: Lorem ipsum/).click()
     await expect(editor(page)).toBeFocused()
     const size = page.locator('.fc-edit-text-panel').getByLabel('Font size')
@@ -118,9 +143,13 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     await size.fill('10')
     await size.press('Enter')
     await expect(editor(page)).toBeFocused()
-    const px = await page.evaluate(() => (((window as any).__fartcrobat.getActiveDoc().state.zoom * 96) / 72) * 10)
+    const px = await page.evaluate(
+      () => (((window as any).__fartcrobat.getActiveDoc().state.zoom * 96) / 72) * 10
+    )
     await expect
-      .poll(() => editor(page).evaluate((el) => parseFloat(getComputedStyle(el.querySelector('span')!).fontSize)))
+      .poll(() =>
+        editor(page).evaluate((el) => parseFloat(getComputedStyle(el.querySelector('span')!).fontSize))
+      )
       .toBeCloseTo(px, 1)
     await page.waitForTimeout(300)
     await shot(page, '5-paragraph-size')
@@ -129,13 +158,18 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     await expect.poll(async () => (await spanAt(page, 'Lorem ipsum'))?.size).toBeCloseTo(10, 1)
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Edit Text')
     // the paragraph still wraps inside its original width
-    for (const l of (await pageLines(page)).filter((x) => x.text.includes('Lorem') || x.text.includes('consectetur')))
+    for (const l of (await pageLines(page)).filter(
+      (x) => x.text.includes('Lorem') || x.text.includes('consectetur')
+    ))
       expect(l.bbox[2]).toBeLessThan(loremRight + 1)
     await page.waitForTimeout(500)
     await shot(page, '6-after-paragraph-size')
 
     // add new text with "Add text": a click places it
-    await page.locator('.fc-edit-text-panel').getByRole('button', { name: /^Add text/ }).click()
+    await page
+      .locator('.fc-edit-text-panel')
+      .getByRole('button', { name: /^Add text/ })
+      .click()
     await expect.poll(() => toolId(page)).toBe('edit.addText')
     await clickPage(page, 0.55, 0.66)
     await expect(editor(page)).toBeFocused()
@@ -205,7 +239,9 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
       const el = (window as any).__fartcrobat.getActiveDoc().view.getViewportElement()
       el.scrollLeft = 0
     })
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(0, [66, 100, 90, 130]))
+    await page.evaluate(() =>
+      (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(0, [66, 100, 90, 130])
+    )
     await page.waitForTimeout(400)
     await waitForRender(page)
 
@@ -224,7 +260,9 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
     await page.mouse.click(q.x + 2, q.y)
     await expect(editor(page)).toBeFocused()
     await page.keyboard.type('very ')
-    await expect(editor(page)).toHaveText('Hello Fartcrobat page 1. The very quick brown fox jumps over the lazy dog.')
+    await expect(editor(page)).toHaveText(
+      'Hello Fartcrobat page 1. The very quick brown fox jumps over the lazy dog.'
+    )
 
     // select to the end of the line: bold with the keyboard, underline and colour from the mini toolbar
     await page.keyboard.press('Shift+End')
@@ -240,6 +278,9 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
     await page.keyboard.press('Enter')
     await page.keyboard.type('A second line')
     await page.waitForTimeout(300)
+    // keyboard selection scrolled the end of the line into view: show the start of the page again
+    await page.evaluate(() => ((window as any).__fartcrobat.getActiveDoc().view.getViewportElement().scrollLeft = 0))
+    await page.waitForTimeout(200)
     await shot(page, '11-zoom-200-formatting')
 
     await page.evaluate(() => {
@@ -323,6 +364,65 @@ test('edits a rotated page, adds upright text in a rotated view and edits select
     await expect.poll(() => pageText(page)).toContain('rotated by ninety-one degrees.')
     await page.waitForTimeout(500)
     await shot(page, '18-selection-edited')
+  } finally {
+    await app.close()
+  }
+})
+
+test('links to page tools of other features, helps on scanned pages and edits from the page context menu', async () => {
+  const { app, page } = await launch()
+  try {
+    // stand-ins for commands that other features register (page marks, OCR)
+    await page.evaluate(() => {
+      const w = window as any
+      w.__ran = []
+      for (const id of [
+        'marks.watermark.add',
+        'marks.watermark.update',
+        'marks.watermark.remove',
+        'ocr.recognize'
+      ])
+        w.__fartcrobat.registry.commands.set(id, { id, label: id, run: () => w.__ran.push(id) })
+    })
+    await openFile(page, fixturePath('scanned.pdf'))
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Edit a PDF' }).click()
+    // a scan has no editable text: the bar says so and offers OCR
+    const bar = page.locator('.fc-edit-text-toolbar')
+    await expect(bar).toContainText('This page has no editable text')
+    await bar.getByRole('button', { name: 'Recognize text' }).click()
+    await expect.poll(() => page.evaluate(() => (window as any).__ran)).toEqual(['ocr.recognize'])
+    // page tools: Watermark offers Add / Update / Remove
+    const panel = page.locator('.fc-edit-text-panel')
+    await expect(panel.getByRole('button', { name: /Recognize text \(OCR\)/ })).toBeVisible()
+    await panel.getByRole('button', { name: /^Watermark/ }).click()
+    await expect(page.getByRole('menuitem', { name: 'Update…' })).toBeVisible()
+    await shot(page, '19-scanned-page-tools')
+    await page.getByRole('menuitem', { name: 'Update…' }).click()
+    await expect
+      .poll(() => page.evaluate(() => (window as any).__ran))
+      .toEqual(['ocr.recognize', 'marks.watermark.update'])
+
+    // with the Select tool, right-click text and choose "Edit Text"
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await page.locator('.ui-panel-header').getByRole('button', { name: 'Back to all tools' }).click()
+    await expect.poll(() => toolId(page)).toBe('select')
+    await page.locator('.viewer-page[data-page-index="0"] .viewer-text-layer').hover()
+    await page.waitForTimeout(300)
+    const c = await charPoint(page, 'Invoice')
+    await page.mouse.click(c.x + 3, c.y, { button: 'right' })
+    await page.getByRole('menuitem', { name: 'Edit Text' }).click()
+    await expect(editor(page)).toBeFocused()
+    await expect(editor(page)).toContainText('Invoice #1000')
+    expect(await toolId(page)).toBe('edit.content')
+    // Delete removes the whole box from the mini toolbar
+    await page.locator('.fc-edit-text-mini').getByRole('button', { name: 'Delete text box' }).click()
+    await expect(editor(page)).toHaveCount(0)
+    await expect.poll(() => pageText(page)).not.toContain('Invoice #1000')
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Delete Text')
+    expect(await pageText(page)).toContain('Lorem ipsum')
+    expect(await pageText(page)).toContain('Visit https://example.com')
   } finally {
     await app.close()
   }

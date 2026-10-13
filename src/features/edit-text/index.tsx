@@ -62,7 +62,17 @@ export default defineFeature({
       panel: EditPanel,
       defaultTool: 'edit.content',
       homeTile: true,
-      keywords: ['edit text', 'change text', 'fix typo', 'replace text', 'font', 'add text', 'text box', 'type on pdf', 'edit pdf']
+      keywords: [
+        'edit text',
+        'change text',
+        'fix typo',
+        'replace text',
+        'font',
+        'add text',
+        'text box',
+        'type on pdf',
+        'edit pdf'
+      ]
     }
   ],
   tools: [
@@ -135,7 +145,15 @@ export default defineFeature({
     { menu: 'tools', group: 'edit', command: 'editText.editContent', order: 21 },
     { menu: 'tools', group: 'edit', command: 'editText.addText', order: 22 }
   ],
-  textSelectionActions: [{ id: 'edit-text', label: 'Edit text', icon: Pencil, order: 60, run: (doc, sel) => editSelection(doc, sel) }],
+  textSelectionActions: [
+    {
+      id: 'edit-text',
+      label: 'Edit text',
+      icon: Pencil,
+      order: 60,
+      run: (doc, sel) => editSelection(doc, sel)
+    }
+  ],
   pageContextMenu: [
     {
       id: 'edit-text',
@@ -143,7 +161,14 @@ export default defineFeature({
       items: ({ doc, pageIndex, point }) => {
         const t = getLoadedText(doc, pageIndex)
         if (!t || !isOverText(t, point)) return []
-        return [{ id: 'edit-text', label: 'Edit Text', icon: Pencil, run: () => void editTextAt(doc, pageIndex, point) }]
+        return [
+          {
+            id: 'edit-text',
+            label: 'Edit Text',
+            icon: Pencil,
+            run: () => void editTextAt(doc, pageIndex, point)
+          }
+        ]
       }
     }
   ],

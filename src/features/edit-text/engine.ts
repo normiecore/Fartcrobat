@@ -148,7 +148,12 @@ function filteringDevice(m: Session['mupdf'], target: MuPDF.Device, hide: HideGl
   }
   return new m.Device({
     fillPath: (p, eo, ctm, cs, c, a) => (target.fillPath(p, eo, ctm, cs, col(c), a), release(p), release(cs)),
-    strokePath: (p, st, ctm, cs, c, a) => (target.strokePath(p, st, ctm, cs, col(c), a), release(p), release(st), release(cs)),
+    strokePath: (p, st, ctm, cs, c, a) => (
+      target.strokePath(p, st, ctm, cs, col(c), a),
+      release(p),
+      release(st),
+      release(cs)
+    ),
     clipPath: (p, eo, ctm) => (target.clipPath(p, eo, ctm), release(p)),
     clipStrokePath: (p, st, ctm) => (target.clipStrokePath(p, st, ctm), release(p), release(st)),
     fillText: (t, ctm, cs, c, a) => {
@@ -168,7 +173,11 @@ function filteringDevice(m: Session['mupdf'], target: MuPDF.Device, hide: HideGl
       forget(sh)
     },
     fillImage: (img, ctm, a) => (target.fillImage(img, ctm, a), release(img)),
-    fillImageMask: (img, ctm, cs, c, a) => (target.fillImageMask(img, ctm, cs, col(c), a), release(img), release(cs)),
+    fillImageMask: (img, ctm, cs, c, a) => (
+      target.fillImageMask(img, ctm, cs, col(c), a),
+      release(img),
+      release(cs)
+    ),
     clipImageMask: (img, ctm) => (target.clipImageMask(img, ctm), release(img)),
     popClip: () => target.popClip(),
     beginMask: (r, l, cs, c) => (target.beginMask(r, l, cs, col(c)), release(cs)),
@@ -225,7 +234,9 @@ async function toResult(pixels: Uint8ClampedArray, region: Rect) {
   const width = region[2] - region[0]
   const height = region[3] - region[1]
   if (typeof createImageBitmap === 'function' && typeof ImageData === 'function') {
-    const bitmap = await createImageBitmap(new ImageData(pixels as Uint8ClampedArray<ArrayBuffer>, width, height))
+    const bitmap = await createImageBitmap(
+      new ImageData(pixels as Uint8ClampedArray<ArrayBuffer>, width, height)
+    )
     const result: RenderResult = { width, height, x: region[0], y: region[1], bitmap }
     return withTransfer(result, [bitmap])
   }
@@ -320,7 +331,12 @@ class Writer {
         const glyphsOk = o.embedded && chars.every((c) => this.origGid(o, c) > 0)
         const key = 'orig:' + o.name
         if (styleOk && glyphsOk && this.ensure(key, () => this.s.pdf.addFont(o.font))) {
-          const slot = this.slot(key, () => this.s.pdf.addFont(o.font), run.bold && !o.bold, run.italic && !o.italic)
+          const slot = this.slot(
+            key,
+            () => this.s.pdf.addFont(o.font),
+            run.bold && !o.bold,
+            run.italic && !o.italic
+          )
           const spaceGid = this.origGid(o, ' ')
           const spaceAdv = spaceGid > 0 ? safeAdv(o.font, spaceGid) : 0.278
           const map = this.toUnicode.get(key) ?? new Map<number, string>()
@@ -365,7 +381,13 @@ class Writer {
       if (gid > 0) {
         const key = 'b14cid:' + name
         if (this.ensure(key, () => s.pdf.addFont(font))) {
-          return { ch, adv: safeAdv(font, gid) * size, code: hex4(gid), slot: this.slot(key, () => s.pdf.addFont(font)), space }
+          return {
+            ch,
+            adv: safeAdv(font, gid) * size,
+            code: hex4(gid),
+            slot: this.slot(key, () => s.pdf.addFont(font)),
+            space
+          }
         }
       }
       const lang = cjkLanguage(cp)
@@ -374,12 +396,24 @@ class Writer {
         if (cjk.encodeCharacter(cp) > 0) {
           const key = 'cjk:' + lang
           if (this.ensure(key, () => s.pdf.addCJKFont(cjk, lang))) {
-            return { ch, adv: size, code: utf16Hex(ch), slot: this.slot(key, () => s.pdf.addCJKFont(cjk, lang)), space }
+            return {
+              ch,
+              adv: size,
+              code: utf16Hex(ch),
+              slot: this.slot(key, () => s.pdf.addCJKFont(cjk, lang)),
+              space
+            }
           }
         }
       }
       this.unsupported.add(ch)
-      return { ch: '?', adv: safeAdv(font, font.encodeCharacter(0x3f)) * size, code: hex2(0x3f), slot: simple, space: false }
+      return {
+        ch: '?',
+        adv: safeAdv(font, font.encodeCharacter(0x3f)) * size,
+        code: hex2(0x3f),
+        slot: simple,
+        space: false
+      }
     }
   }
 
@@ -405,7 +439,13 @@ function safeAdv(font: MuPDF.Font, gid: number): number {
   }
 }
 
-function buildOrigFonts(s: Session, pageIndex: number, names: Set<string>, content: ContentText | null, glyphs: ObservedGlyph[]) {
+function buildOrigFonts(
+  s: Session,
+  pageIndex: number,
+  names: Set<string>,
+  content: ContentText | null,
+  glyphs: ObservedGlyph[]
+) {
   const out = new Map<string, OrigFont>()
   if (!names.size) return out
   const files = pageFontFiles(s, pageIndex)
@@ -467,7 +507,8 @@ function originIndex(chars: { ox: number; oy: number }[]) {
     const gy = Math.round(y)
     for (let dx = -1; dx <= 1; dx++)
       for (let dy = -1; dy <= 1; dy++)
-        for (const c of grid.get(`${gx + dx}:${gy + dy}`) ?? []) if (Math.abs(c.ox - x) <= tol && Math.abs(c.oy - y) <= tol) return true
+        for (const c of grid.get(`${gx + dx}:${gy + dy}`) ?? [])
+          if (Math.abs(c.ox - x) <= tol && Math.abs(c.oy - y) <= tol) return true
     return false
   }
 }
@@ -585,7 +626,11 @@ function removeBlock(s: Session, pageIndex: number, block: AnalyzedBlock, before
 
 // ---- writing ------------------------------------------------------------------------------
 
-function restoreGlyphs(w: Writer, lost: ObservedGlyph[], toUser: Matrix): { content: string; restored: number } {
+function restoreGlyphs(
+  w: Writer,
+  lost: ObservedGlyph[],
+  toUser: Matrix
+): { content: string; restored: number } {
   const parts: string[] = []
   let restored = 0
   for (const g of lost) {
@@ -605,7 +650,12 @@ function restoreGlyphs(w: Writer, lost: ObservedGlyph[], toUser: Matrix): { cont
   return { content: parts.join('\n'), restored }
 }
 
-function writeText(w: Writer, edit: TextEdit, runs: Run[], toUser: Matrix): { content: string; bbox: Rect | null } {
+function writeText(
+  w: Writer,
+  edit: TextEdit,
+  runs: Run[],
+  toUser: Matrix
+): { content: string; bbox: Rect | null } {
   const layoutRuns: LayoutRun[] = runs.map((r) => ({ style: r, text: r.text, shape: w.shaper(r) }))
   const len = Math.hypot(edit.frame.dir[0], edit.frame.dir[1]) || 1
   const d: Point = [edit.frame.dir[0] / len, edit.frame.dir[1] / len]
@@ -656,8 +706,12 @@ function writeText(w: Writer, edit: TextEdit, runs: Run[], toUser: Matrix): { co
       }
       flushHex()
       if (tj.length) {
-        const render = slot.synthBold ? `2 Tr ${num(Math.max(0.2, size * 0.03))} w ${colorOps(rgb, true)}` : '0 Tr'
-        out.push(`/${name} ${num(size)} Tf ${render} ${colorOps(rgb)} ${matrixString(tm)} Tm [${tj.join(' ')}] TJ`)
+        const render = slot.synthBold
+          ? `2 Tr ${num(Math.max(0.2, size * 0.03))} w ${colorOps(rgb, true)}`
+          : '0 Tr'
+        out.push(
+          `/${name} ${num(size)} Tf ${render} ${colorOps(rgb)} ${matrixString(tm)} Tm [${tj.join(' ')}] TJ`
+        )
       }
       k = e
     }
@@ -709,7 +763,8 @@ function validate(edit: TextEdit) {
     throw new EngineError('Invalid text box', 'BAD_EDIT')
   if (Math.hypot(f.dir[0], f.dir[1]) < 1e-6) throw new EngineError('Invalid text direction', 'BAD_EDIT')
   for (const r of edit.runs) {
-    if (!finite(r.size) || r.size <= 0 || r.size > 2000) throw new EngineError('Font size must be between 0 and 2000 points', 'BAD_EDIT')
+    if (!finite(r.size) || r.size <= 0 || r.size > 2000)
+      throw new EngineError('Font size must be between 0 and 2000 points', 'BAD_EDIT')
   }
 }
 
@@ -724,7 +779,13 @@ export default defineOps('edit-text', {
    * a watermark or other text crossing it stays visible). When the paragraph cannot be found any
    * more, glyphs whose centre lies inside `quads` are left out instead.
    */
-  async preview(s, pageIndex: number, source: { start: number; end: number; check: string } | null, quads: Quad[], opts: RenderOptions) {
+  async preview(
+    s,
+    pageIndex: number,
+    source: { start: number; end: number; check: string } | null,
+    quads: Quad[],
+    opts: RenderOptions
+  ) {
     let hide: HideGlyph = (_o, c) => quads.some((q) => insideQuad(c, q))
     if (source) {
       const block = analyzePage(s, pageIndex).blocks.find(
@@ -761,9 +822,14 @@ export default defineOps('edit-text', {
         const src = edit.source
         block = analysis.blocks.find((b) => b.info.start === src.start && b.info.end === src.end) ?? null
         if (!block || block.info.text !== src.check)
-          throw new EngineError('The text on this page has changed. Click the text again to edit it.', 'STALE_BLOCK')
+          throw new EngineError(
+            'The text on this page has changed. Click the text again to edit it.',
+            'STALE_BLOCK'
+          )
       }
-      const origNames = new Set(runs.filter((r) => isOrigFont(r.font) && r.text.trim()).map((r) => r.font.slice(5)))
+      const origNames = new Set(
+        runs.filter((r) => isOrigFont(r.font) && r.text.trim()).map((r) => r.font.slice(5))
+      )
       const before = block || origNames.size ? observeGlyphs(s, pageIndex) : []
       const orig = buildOrigFonts(s, pageIndex, origNames, analysis?.content ?? null, before)
 

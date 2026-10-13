@@ -6,6 +6,7 @@ import {
   commonStyle,
   DEFAULT_STYLE,
   editKey,
+  locateText,
   normalizeRuns,
   replaceRange,
   runsText,
@@ -13,6 +14,7 @@ import {
   type Run
 } from '@features/edit-text/model'
 import { winAnsiCode } from '@features/edit-text/write'
+import { localFamilies } from '@features/edit-text/fonts'
 
 const run = (text: string, patch: Partial<Run> = {}): Run => ({ ...DEFAULT_STYLE, ...patch, text })
 
@@ -66,24 +68,73 @@ describe('edit-text model', () => {
   })
 })
 
+describe('edit-text fonts and text lookup', () => {
+  it('classifies common office fonts by name before trusting font flags', () => {
+    expect(classifyFont('BAAAAA+Carlito-Bold', { serif: true })).toBe('sans')
+    expect(classifyFont('CAAAAA+Caladea-Regular')).toBe('serif')
+    expect(classifyFont('LiberationSans-Bold', { serif: true })).toBe('sans')
+    expect(classifyFont('NotoSerif-Italic')).toBe('serif')
+    expect(classifyFont('DejaVuSansMono')).toBe('mono')
+    expect(classifyFont('FranklinGothic-Book')).toBe('sans')
+    expect(classifyFont('SomeUnknownFont', { serif: true })).toBe('serif')
+    expect(classifyFont('SomeUnknownFont')).toBe('sans')
+  })
+
+  it('derives installed font family names from PDF font names', () => {
+    expect(localFamilies('ABCDEF+TimesNewRomanPS-BoldMT')).toEqual(['TimesNewRoman', 'Times New Roman'])
+    expect(localFamilies('ArialMT')).toEqual(['Arial'])
+    expect(localFamilies('CAAAAA+Caladea-Regular')).toEqual(['Caladea'])
+    expect(localFamilies('Calibri,Bold')).toEqual(['Calibri'])
+    expect(localFamilies('#20weird')).toEqual([])
+  })
+
+  it('finds selected text inside a paragraph despite different white space', () => {
+    const text = 'Jane Smith\n12 High Street\nSpringfield'
+    expect(locateText(text, 'Smith 12 High')).toEqual({ start: 5, end: 18 })
+    expect(text.slice(5, 18)).toBe('Smith\n12 High')
+    expect(locateText(text, '  Street  ')).toEqual({ start: 19, end: 25 })
+    expect(locateText(text, 'nowhere')).toBeNull()
+    expect(locateText(text, '   ')).toBeNull()
+  })
+})
+
 describe('edit-text layout', () => {
   // every character is 1pt per point of font size wide (monospace) to keep numbers simple
   const shape =
     (size: number) =>
     (ch: string): ShapedGlyph => ({ ch, adv: size * 0.5, code: '00', slot: 's', space: ch === ' ' })
-  const lr = (text: string, size = 10): LayoutRun => ({ style: { ...DEFAULT_STYLE, size }, text, shape: shape(size) })
+  const lr = (text: string, size = 10): LayoutRun => ({
+    style: { ...DEFAULT_STYLE, size },
+    text,
+    shape: shape(size)
+  })
   const lineText = (l: { glyphs: { g: ShapedGlyph }[] }) => l.glyphs.map((g) => g.g.ch).join('')
 
   it('wraps at spaces and keeps hard breaks', () => {
-    const res = layoutText([lr('aaa bbb ccc\nddd')], { wrap: true, width: 40, align: 'left', lineSpacing: 1.2, ascent: 1 })
+    const res = layoutText([lr('aaa bbb ccc\nddd')], {
+      wrap: true,
+      width: 40,
+      align: 'left',
+      lineSpacing: 1.2,
+      ascent: 1
+    })
     expect(res.lines.map(lineText)).toEqual(['aaa bbb', 'ccc', 'ddd'])
     expect(res.lines.map((l) => l.v)).toEqual([10, 22, 34])
     expect(res.lines[0].width).toBe(35)
   })
 
   it('does not wrap single-line boxes and splits words longer than the box', () => {
-    expect(layoutText([lr('aaa bbb ccc')], { wrap: false, width: 10, align: 'left', lineSpacing: 1.2, ascent: 1 }).lines).toHaveLength(1)
-    const res = layoutText([lr('abcdefghij')], { wrap: true, width: 20, align: 'left', lineSpacing: 1, ascent: 1 })
+    expect(
+      layoutText([lr('aaa bbb ccc')], { wrap: false, width: 10, align: 'left', lineSpacing: 1.2, ascent: 1 })
+        .lines
+    ).toHaveLength(1)
+    const res = layoutText([lr('abcdefghij')], {
+      wrap: true,
+      width: 20,
+      align: 'left',
+      lineSpacing: 1,
+      ascent: 1
+    })
     expect(res.lines.map(lineText)).toEqual(['abcd', 'efgh', 'ij'])
   })
 
@@ -92,7 +143,13 @@ describe('edit-text layout', () => {
     expect(c.lines[0].offset).toBe(10)
     const r = layoutText([lr('aa bb')], { wrap: true, width: 45, align: 'right', lineSpacing: 1, ascent: 1 })
     expect(r.lines[0].offset).toBe(20)
-    const j = layoutText([lr('aa bb cc dd ee')], { wrap: true, width: 45, align: 'justify', lineSpacing: 1, ascent: 1 })
+    const j = layoutText([lr('aa bb cc dd ee')], {
+      wrap: true,
+      width: 45,
+      align: 'justify',
+      lineSpacing: 1,
+      ascent: 1
+    })
     expect(j.lines.map(lineText)).toEqual(['aa bb cc', 'dd ee'])
     const first = j.lines[0]
     const last = first.glyphs[first.glyphs.length - 1]
@@ -101,7 +158,13 @@ describe('edit-text layout', () => {
   })
 
   it('uses the largest size on a line for line spacing', () => {
-    const res = layoutText([lr('small\n'), lr('big', 20)], { wrap: false, width: 100, align: 'left', lineSpacing: 1.5, ascent: 1 })
+    const res = layoutText([lr('small\n'), lr('big', 20)], {
+      wrap: false,
+      width: 100,
+      align: 'left',
+      lineSpacing: 1.5,
+      ascent: 1
+    })
     expect(res.lines[0].v).toBe(10)
     expect(res.lines[1].v).toBe(10 + 1.5 * 20)
   })

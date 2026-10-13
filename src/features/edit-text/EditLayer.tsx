@@ -56,7 +56,11 @@ function unit(d: Point): Point {
 }
 
 /** CSS placement of a paragraph's outline, turned with its text (rotated text gets a rotated box). */
-function boxStyle(block: TextBlockInfo, geometry: PageLayerProps['geometry'], pad: number): React.CSSProperties {
+function boxStyle(
+  block: TextBlockInfo,
+  geometry: PageLayerProps['geometry'],
+  pad: number
+): React.CSSProperties {
   const d = unit(block.frame.dir)
   const o = geometry.toCss(block.frame.origin)
   const p1 = geometry.toCss([block.frame.origin[0] + d[0], block.frame.origin[1] + d[1]])
@@ -70,9 +74,20 @@ function boxStyle(block: TextBlockInfo, geometry: PageLayerProps['geometry'], pa
   }
 }
 
-function BlockBox({ doc, page, block, geometry }: { doc: DocumentModel; page: number; block: TextBlockInfo; geometry: PageLayerProps['geometry'] }) {
+function BlockBox({
+  doc,
+  page,
+  block,
+  geometry
+}: {
+  doc: DocumentModel
+  page: number
+  block: TextBlockInfo
+  geometry: PageLayerProps['geometry']
+}) {
   const ref = useRef<HTMLDivElement>(null)
-  const open = (caret: Point | null, pagePoint: Point | null) => void beginEdit(doc, page, block, caret, pagePoint)
+  const open = (caret: Point | null, pagePoint: Point | null) =>
+    void beginEdit(doc, page, block, caret, pagePoint)
   const label = block.text.replace(/\s+/g, ' ').trim()
   return (
     <div
@@ -109,10 +124,18 @@ function BlockBox({ doc, page, block, geometry }: { doc: DocumentModel; page: nu
             id: 'copy',
             label: 'Copy Text',
             icon: Copy,
-            run: () => void invoke('clipboard:writeText', block.text).catch((err) => showError(err, 'Could not copy'))
+            run: () =>
+              void invoke('clipboard:writeText', block.text).catch((err) => showError(err, 'Could not copy'))
           },
           { id: 'sep', label: '', separator: true },
-          { id: 'delete', label: 'Delete Text Box', icon: Trash, shortcut: 'Del', danger: true, run: () => void deleteBlock(doc, page, block) }
+          {
+            id: 'delete',
+            label: 'Delete Text Box',
+            icon: Trash,
+            shortcut: 'Del',
+            danger: true,
+            run: () => void deleteBlock(doc, page, block)
+          }
         ])
       }}
     />
@@ -185,7 +208,9 @@ export function EditLayer({ doc, pageIndex, geometry }: PageLayerProps) {
         [...blocks]
           .sort((a, b) => area(b) - area(a))
           .map((b) =>
-            mine?.block && mine.block.id === b.id ? null : <BlockBox key={b.id} doc={doc} page={pageIndex} block={b} geometry={geometry} />
+            mine?.block && mine.block.id === b.id ? null : (
+              <BlockBox key={b.id} doc={doc} page={pageIndex} block={b} geometry={geometry} />
+            )
           )}
       {drag && Math.abs(drag.b[0] - drag.a[0]) > 8 && (
         <div

@@ -4,12 +4,22 @@
  */
 import { create } from 'zustand'
 import type { Point } from '@shared/geometry'
-import { getActiveDoc, invoke, openToolGroup, setTool, showError, toast, useApp, type DocumentModel } from '@renderer/sdk'
+import {
+  getActiveDoc,
+  invoke,
+  openToolGroup,
+  setTool,
+  showError,
+  toast,
+  useApp,
+  type DocumentModel
+} from '@renderer/sdk'
 import type editOps from './engine'
 import {
   applyStyle as applyStyleToRuns,
   DEFAULT_STYLE,
   editKey,
+  locateText,
   normalizeRuns,
   replaceRange,
   runsLength,
@@ -86,12 +96,21 @@ let committing: Promise<void> | null = null
 
 function patchSession(patch: Partial<EditSession> | ((s: EditSession) => Partial<EditSession>)) {
   useEditText.setState((st) =>
-    st.session ? { session: { ...st.session, ...(typeof patch === 'function' ? patch(st.session) : patch) } } : st
+    st.session
+      ? { session: { ...st.session, ...(typeof patch === 'function' ? patch(st.session) : patch) } }
+      : st
   )
 }
 
 function snapshot(s: EditSession): Snapshot {
-  return { runs: s.runs, selection: s.selection, frame: s.frame, align: s.align, lineSpacing: s.lineSpacing, wrap: s.wrap }
+  return {
+    runs: s.runs,
+    selection: s.selection,
+    frame: s.frame,
+    align: s.align,
+    lineSpacing: s.lineSpacing,
+    wrap: s.wrap
+  }
 }
 
 function withUndo(s: EditSession): Pick<EditSession, 'undo' | 'redo'> {
@@ -104,7 +123,10 @@ export function isChanged(s: EditSession): boolean {
 
 // ---- blocks of a page (cached per page version) ---------------------------------------------
 
-const blockCache = new WeakMap<DocumentModel, Map<number, { version: number; promise: Promise<TextBlockInfo[]> }>>()
+const blockCache = new WeakMap<
+  DocumentModel,
+  Map<number, { version: number; promise: Promise<TextBlockInfo[]> }>
+>()
 
 export function loadBlocks(doc: DocumentModel, page: number): Promise<TextBlockInfo[]> {
   let m = blockCache.get(doc)
@@ -142,7 +164,15 @@ function start(
   doc: DocumentModel,
   page: number,
   block: TextBlockInfo | null,
-  init: { frame: Frame; wrap: boolean; align: Align; lineSpacing: number; ascent: number; runs: Run[]; fonts: FontChoice[] },
+  init: {
+    frame: Frame
+    wrap: boolean
+    align: Align
+    lineSpacing: number
+    ascent: number
+    runs: Run[]
+    fonts: FontChoice[]
+  },
   caret: Point | null,
   selection?: Sel
 ) {
@@ -157,7 +187,9 @@ function start(
     runs,
     initialKey: '',
     caret,
-    selection: selection ? { start: Math.min(selection.start, len), end: Math.min(selection.end, len) } : { start: len, end: len },
+    selection: selection
+      ? { start: Math.min(selection.start, len), end: Math.min(selection.end, len) }
+      : { start: len, end: len },
     renderToken: 1,
     focusToken: 1,
     status: 'editing',
@@ -169,7 +201,10 @@ function start(
   useEditText.setState({ session: s })
   doc.setSelection({ kind: 'custom', type: 'edit-text:block', page, data: { id: block?.id ?? 'new' } })
   if (block?.unreadable)
-    toast('Some characters in this text cannot be read from the file, so they may change when you edit it.', { kind: 'warning', timeout: 6000 })
+    toast('Some characters in this text cannot be read from the file, so they may change when you edit it.', {
+      kind: 'warning',
+      timeout: 6000
+    })
 }
 
 /**
@@ -191,7 +226,9 @@ export async function beginEdit(
     // the page may have changed: find the paragraph again
     try {
       const blocks = await loadBlocks(doc, page)
-      target = pagePoint ? blockAt(blocks, pagePoint) : (blocks.find((b) => b.id === block.id && b.text === block.text) ?? null)
+      target = pagePoint
+        ? blockAt(blocks, pagePoint)
+        : (blocks.find((b) => b.id === block.id && b.text === block.text) ?? null)
     } catch (err) {
       showError(err, 'Could not read the text on this page')
       return
@@ -200,34 +237,6 @@ export async function beginEdit(
   if (!target || useEditText.getState().session) return
   const { frame, wrap, align, lineSpacing, ascent, runs, fonts } = target
   start(doc, page, target, { frame, wrap, align, lineSpacing, ascent, runs, fonts }, caret, selection)
-}
-
-/** Character range of `needle` inside `text`, ignoring differences in white space. */
-export function locateText(text: string, needle: string): Sel | null {
-  const norm = (str: string) => {
-    let out = ''
-    const map: number[] = []
-    let space = false
-    for (let i = 0; i < str.length; i++) {
-      if (/\s/.test(str[i])) {
-        if (space || !out) continue
-        out += ' '
-        map.push(i)
-        space = true
-      } else {
-        out += str[i]
-        map.push(i)
-        space = false
-      }
-    }
-    return { out, map }
-  }
-  const h = norm(text)
-  const n = norm(needle).out.trim()
-  if (!n) return null
-  const at = h.out.indexOf(n)
-  if (at < 0) return null
-  return { start: h.map[at], end: h.map[at + n.length - 1] + 1 }
 }
 
 /**
@@ -254,7 +263,13 @@ export async function editTextAt(doc: DocumentModel, page: number, point: Point,
 }
 
 /** Starts a new, empty text box (Add Text). */
-export async function beginNewText(doc: DocumentModel, page: number, origin: Point, width: number | null, dir: Point = [1, 0]) {
+export async function beginNewText(
+  doc: DocumentModel,
+  page: number,
+  origin: Point,
+  width: number | null,
+  dir: Point = [1, 0]
+) {
   await commitSession()
   if (useEditText.getState().session) return
   const d = useEditText.getState().defaults
@@ -353,10 +368,13 @@ export function commitSession(): Promise<void> {
           { kind: 'warning', timeout: 7000 }
         )
       if (res.unsupported.length)
-        toast(`These characters cannot be shown with the available fonts and were replaced with “?”: ${res.unsupported.join(' ')}`, {
-          kind: 'warning',
-          timeout: 8000
-        })
+        toast(
+          `These characters cannot be shown with the available fonts and were replaced with “?”: ${res.unsupported.join(' ')}`,
+          {
+            kind: 'warning',
+            timeout: 8000
+          }
+        )
       // keep the edited text on screen until the page has been drawn again
       await new Promise((r) => setTimeout(r, 220))
       close(s)
@@ -391,13 +409,23 @@ export function editorChanged(runs: Run[], selection: Sel) {
   const now = Date.now()
   const group = now - s.lastTyping < 800
   const wasClean = !isChanged(s)
-  patchSession((cur) => ({ ...(group ? {} : withUndo(cur)), runs: normalizeRuns(runs), selection, lastTyping: now }))
+  patchSession((cur) => ({
+    ...(group ? {} : withUndo(cur)),
+    runs: normalizeRuns(runs),
+    selection,
+    lastTyping: now
+  }))
   if (wasClean) markDirty(s.doc)
 }
 
 function markDirty(doc: DocumentModel) {
   // unsaved typing counts as a change (e.g. for "Save changes?" when closing)
   if (!doc.state.dirty) doc.set({ dirty: true })
+}
+
+/** Forgets the click point once the editor has put the caret there. */
+export function consumeCaret() {
+  patchSession({ caret: null })
 }
 
 /** Gives the keyboard focus back to the text being edited (keeping its selection). */
@@ -431,7 +459,10 @@ export function applyStyle(patch: Partial<RunStyle>, opts: { focus?: boolean } =
     setDefaults(patch)
     return
   }
-  commandChange((cur) => ({ runs: applyStyleToRuns(cur.runs, cur.selection.start, cur.selection.end, patch) }), opts.focus !== false)
+  commandChange(
+    (cur) => ({ runs: applyStyleToRuns(cur.runs, cur.selection.start, cur.selection.end, patch) }),
+    opts.focus !== false
+  )
 }
 
 /** Toggles bold/italic/underline: on unless the whole target already has it. */
@@ -530,13 +561,22 @@ export function redoLocal(): boolean {
 export function setDefaults(patch: Partial<Defaults>) {
   const defaults = { ...useEditText.getState().defaults, ...patch }
   useEditText.setState({ defaults })
-  invoke('store:set', 'edit-text:defaults', defaults).catch((err) => showError(err, 'Could not remember the text settings'))
+  invoke('store:set', 'edit-text:defaults', defaults).catch((err) =>
+    showError(err, 'Could not remember the text settings')
+  )
 }
 
 export async function loadDefaults() {
   try {
     const v = (await invoke('store:get', 'edit-text:defaults')) as Partial<Defaults> | undefined
-    if (v && typeof v === 'object') useEditText.setState({ defaults: { ...INITIAL_DEFAULTS, ...v, font: typeof v.font === 'string' && !v.font.startsWith('orig:') ? v.font : 'Helvetica' } })
+    if (v && typeof v === 'object')
+      useEditText.setState({
+        defaults: {
+          ...INITIAL_DEFAULTS,
+          ...v,
+          font: typeof v.font === 'string' && !v.font.startsWith('orig:') ? v.font : 'Helvetica'
+        }
+      })
   } catch {}
 }
 

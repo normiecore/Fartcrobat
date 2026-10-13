@@ -1,9 +1,18 @@
 /** CSS fonts that approximate PDF fonts in the in-place editor. */
-import { classifyFont, isOrigFont, STANDARD_FAMILIES, stripSubset, type FontChoice, type FontClass, type StandardFamily } from './model'
+import {
+  classifyFont,
+  isOrigFont,
+  STANDARD_FAMILIES,
+  stripSubset,
+  type FontChoice,
+  type FontClass,
+  type StandardFamily
+} from './model'
 
 const STACKS: Record<FontClass, string> = {
   sans: 'Helvetica, Arial, "Liberation Sans", "Nimbus Sans", "Nimbus Sans L", "DejaVu Sans", sans-serif',
-  serif: '"Times New Roman", Times, "Liberation Serif", "Nimbus Roman", "Nimbus Roman No9 L", "DejaVu Serif", serif',
+  serif:
+    '"Times New Roman", Times, "Liberation Serif", "Nimbus Roman", "Nimbus Roman No9 L", "DejaVu Serif", serif',
   mono: '"Courier New", Courier, "Liberation Mono", "Nimbus Mono PS", "DejaVu Sans Mono", monospace'
 }
 
@@ -46,7 +55,11 @@ export function fontClassOf(key: string, fonts: FontChoice[]): FontClass {
 
 /** Font key from a computed font-family value, or null. */
 export function fontKeyFromCss(family: string): string | null {
-  const first = family.split(',')[0]?.trim().replace(/^["']|["']$/g, '') ?? ''
+  const first =
+    family
+      .split(',')[0]
+      ?.trim()
+      .replace(/^["']|["']$/g, '') ?? ''
   if (!first.startsWith(TOKEN)) return null
   try {
     return decodeURIComponent(first.slice(TOKEN.length))
@@ -56,7 +69,8 @@ export function fontKeyFromCss(family: string): string | null {
 }
 
 export function fontLabel(key: string, fonts: FontChoice[]): string {
-  if (isOrigFont(key)) return fonts.find((f) => f.key === key)?.label ?? key.slice(5).replace(/^[A-Z]{6}\+/, '')
+  if (isOrigFont(key))
+    return fonts.find((f) => f.key === key)?.label ?? key.slice(5).replace(/^[A-Z]{6}\+/, '')
   return STANDARD_LABELS[key as StandardFamily] ?? key
 }
 
@@ -74,7 +88,13 @@ const baselineCache = new Map<string, number>()
  * Distance in CSS px from the top of a line box to its baseline, for a font, size and unitless
  * line height. Used to line the editor's text up with the PDF baseline.
  */
-export function cssBaseline(family: string, sizePx: number, lineHeight: number, bold: boolean, italic: boolean): number {
+export function cssBaseline(
+  family: string,
+  sizePx: number,
+  lineHeight: number,
+  bold: boolean,
+  italic: boolean
+): number {
   const key = `${family}|${sizePx.toFixed(2)}|${lineHeight}|${bold}|${italic}`
   const hit = baselineCache.get(key)
   if (hit !== undefined) return hit

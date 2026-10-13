@@ -3,9 +3,21 @@ import { createPortal } from 'react-dom'
 import { Check, Trash } from 'lucide-react'
 import { IconButton, toast, useApp } from '@renderer/sdk'
 import { MiniFormat } from './FormatControls'
-import { cancelSession, commitSession, deleteBox, dropSession, focusEditor, loadDefaults, undoLocal, redoLocal, useEditText } from './store'
+import { closeFormattingPopover } from './popover'
+import {
+  cancelSession,
+  commitSession,
+  deleteBox,
+  dropSession,
+  focusEditor,
+  loadDefaults,
+  undoLocal,
+  redoLocal,
+  useEditText
+} from './store'
 
-const KEEP = '[data-fc-edit-text-frame], [data-fc-edit-text-keep], .ui-dialog-backdrop, .ui-floating, .ui-popover, .ui-popover-scrim'
+const KEEP =
+  '[data-fc-edit-text-frame], [data-fc-edit-text-keep], .ui-dialog-backdrop, .ui-floating, .ui-popover, .ui-popover-scrim'
 
 function isTyping(el: Element | null): boolean {
   if (!el) return false
@@ -77,7 +89,13 @@ function MiniToolbar() {
       <MiniFormat />
       <span className="fc-edit-text-mini-sep" />
       <IconButton icon={Trash} label="Delete text box" disabled={busy} onClick={() => deleteBox()} />
-      <IconButton icon={Check} label="Done" shortcut="Ctrl+Enter" disabled={busy} onClick={() => void commitSession()} />
+      <IconButton
+        icon={Check}
+        label="Done"
+        shortcut="Ctrl+Enter"
+        disabled={busy}
+        onClick={() => void commitSession()}
+      />
     </div>,
     document.body
   )
@@ -106,10 +124,11 @@ export function EditTextGlobal() {
       if (!s || s.status !== 'editing') return
       const target = e.target instanceof Element ? e.target : null
       if (target?.closest('[data-fc-edit-text-editor]') || useApp.getState().dialogs.length) return
-      if (e.key === 'Escape' && isTyping(target) && target?.closest('[data-fc-edit-text-keep]')) {
-        // Esc in a formatting field goes back to the text (and must not leave the Edit tool);
-        // the field's own handler still runs and puts its value back
+      if (e.key === 'Escape' && target?.closest('[data-fc-edit-text-keep]')) {
+        // Esc in the formatting controls steps back to the text (it must neither cancel the
+        // edit nor leave the Edit tool); a field's own handler still runs and puts its value back
         e.preventDefault()
+        closeFormattingPopover()
         window.setTimeout(focusEditor, 0)
         return
       }

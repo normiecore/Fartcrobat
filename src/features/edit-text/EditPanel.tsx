@@ -1,5 +1,19 @@
 import { useEffect, useState } from 'react'
-import { ChevronDown, Crop, Droplet, Hash, Image as ImageIcon, LayoutGrid, Link, PanelTop, ScanText, TextCursorInput, Type, Wallpaper, X } from 'lucide-react'
+import {
+  ChevronDown,
+  Crop,
+  Droplet,
+  Hash,
+  Image as ImageIcon,
+  LayoutGrid,
+  Link,
+  PanelTop,
+  ScanText,
+  TextCursorInput,
+  Type,
+  Wallpaper,
+  X
+} from 'lucide-react'
 import {
   Button,
   DropdownMenu,
@@ -32,8 +46,20 @@ interface Entry {
 }
 
 const CONTENT: Entry[] = [
-  { id: 'edit.content', kind: 'tool', label: 'Edit text & images', description: 'Click any text or image to change it', icon: TextCursorInput },
-  { id: 'edit.addText', kind: 'tool', label: 'Add text', description: 'Click where the new text should go', icon: Type },
+  {
+    id: 'edit.content',
+    kind: 'tool',
+    label: 'Edit text & images',
+    description: 'Click any text or image to change it',
+    icon: TextCursorInput
+  },
+  {
+    id: 'edit.addText',
+    kind: 'tool',
+    label: 'Add text',
+    description: 'Click where the new text should go',
+    icon: Type
+  },
   { id: 'edit.addImage', kind: 'tool', label: 'Add image', icon: ImageIcon },
   { id: 'edit.link', kind: 'tool', label: 'Link', description: 'Add or edit links', icon: Link }
 ]
@@ -46,9 +72,21 @@ const marks = (kind: string, remove = true): Entry['more'] => [
 
 const PAGES: Entry[] = [
   { id: 'marks.crop', kind: 'command', label: 'Crop pages', icon: Crop },
-  { id: 'marks.headerFooter.add', kind: 'command', label: 'Header & footer', icon: PanelTop, more: marks('headerFooter') },
+  {
+    id: 'marks.headerFooter.add',
+    kind: 'command',
+    label: 'Header & footer',
+    icon: PanelTop,
+    more: marks('headerFooter')
+  },
   { id: 'marks.watermark.add', kind: 'command', label: 'Watermark', icon: Droplet, more: marks('watermark') },
-  { id: 'marks.background.add', kind: 'command', label: 'Background', icon: Wallpaper, more: marks('background') },
+  {
+    id: 'marks.background.add',
+    kind: 'command',
+    label: 'Background',
+    icon: Wallpaper,
+    more: marks('background')
+  },
   {
     id: 'marks.bates.add',
     kind: 'command',
@@ -60,11 +98,19 @@ const PAGES: Entry[] = [
     ]
   },
   { id: 'organize.open', kind: 'command', label: 'Organize pages', icon: LayoutGrid },
-  { id: 'ocr.recognize', kind: 'command', label: 'Recognize text (OCR)', description: 'Make scanned pages editable', icon: ScanText }
+  {
+    id: 'ocr.recognize',
+    kind: 'command',
+    label: 'Recognize text (OCR)',
+    description: 'Make scanned pages editable',
+    icon: ScanText
+  }
 ]
 
 function available(e: Entry): boolean {
-  return e.kind === 'tool' ? registry.tools.has(e.id) : registry.commands.has(e.id) || (e.id === 'marks.crop' && registry.tools.has('marks.crop'))
+  return e.kind === 'tool'
+    ? registry.tools.has(e.id)
+    : registry.commands.has(e.id) || (e.id === 'marks.crop' && registry.tools.has('marks.crop'))
 }
 
 function run(id: string, kind: Entry['kind'] = 'command') {
@@ -84,7 +130,15 @@ function MenuRow({ entry, disabled }: { entry: Entry; disabled: boolean }) {
   const IconC = cmd?.icon ?? entry.icon
   const more = (entry.more ?? []).filter((m) => registry.commands.has(m.id))
   if (more.length < 2)
-    return <ToolRow icon={IconC} label={entry.label} description={entry.description} disabled={disabled} onClick={() => run(entry.id)} />
+    return (
+      <ToolRow
+        icon={IconC}
+        label={entry.label}
+        description={entry.description}
+        disabled={disabled}
+        onClick={() => run(entry.id)}
+      />
+    )
   const items = (): ContextMenuItem[] => {
     const ctx = { doc: getActiveDoc() }
     return more.map((m) => {
@@ -191,10 +245,22 @@ export function EditToolbar({ doc }: { doc: DocumentModel }) {
   return (
     <div className="fc-edit-text-toolbar" data-fc-edit-text-keep>
       <div className="ui-segmented" role="radiogroup" aria-label="Edit mode">
-        <button type="button" role="radio" aria-checked={toolId === 'edit.content'} className={toolId === 'edit.content' ? 'is-active' : ''} onClick={() => setTool('edit.content')}>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={toolId === 'edit.content'}
+          className={toolId === 'edit.content' ? 'is-active' : ''}
+          onClick={() => setTool('edit.content')}
+        >
           <TextCursorInput size={14} /> Edit
         </button>
-        <button type="button" role="radio" aria-checked={toolId === 'edit.addText'} className={toolId === 'edit.addText' ? 'is-active' : ''} onClick={() => setTool('edit.addText')}>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={toolId === 'edit.addText'}
+          className={toolId === 'edit.addText' ? 'is-active' : ''}
+          onClick={() => setTool('edit.addText')}
+        >
           <Type size={14} /> Add text
         </button>
       </div>
@@ -206,7 +272,12 @@ export function EditToolbar({ doc }: { doc: DocumentModel }) {
           Recognize text
         </Button>
       )}
-      <Button size="sm" variant="quiet" icon={X} onClick={() => void commitSession().then(() => openToolGroup(null))}>
+      <Button
+        size="sm"
+        variant="quiet"
+        icon={X}
+        onClick={() => void commitSession().then(() => openToolGroup(null))}
+      >
         Close
       </Button>
     </div>

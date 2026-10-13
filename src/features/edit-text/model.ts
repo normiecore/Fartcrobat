@@ -178,7 +178,14 @@ export function sameStyle(a: RunStyle, b: RunStyle): boolean {
 }
 
 export function styleOf(r: RunStyle): RunStyle {
-  return { font: r.font, size: r.size, color: r.color, bold: r.bold, italic: r.italic, underline: r.underline }
+  return {
+    font: r.font,
+    size: r.size,
+    color: r.color,
+    bold: r.bold,
+    italic: r.italic,
+    underline: r.underline
+  }
 }
 
 export function runsText(runs: Run[]): string {
@@ -265,7 +272,9 @@ export function commonStyle(runs: Run[], start: number, end: number): Partial<Ru
   const keys: (keyof RunStyle)[] = ['font', 'size', 'color', 'bold', 'italic', 'underline']
   for (const k of keys) {
     const v = list[0][k]
-    if (list.every((r) => (k === 'color' ? String(r[k]).toLowerCase() === String(v).toLowerCase() : r[k] === v)))
+    if (
+      list.every((r) => (k === 'color' ? String(r[k]).toLowerCase() === String(v).toLowerCase() : r[k] === v))
+    )
       (out as Record<string, unknown>)[k] = v
   }
   return out
@@ -310,15 +319,63 @@ export function replaceRange(runs: Run[], start: number, end: number, text: stri
 }
 
 /** Canonical string of an edit's content, to detect whether anything changed. */
-export function editKey(e: { runs: Run[]; frame: Frame; align: Align; lineSpacing: number; wrap: boolean }): string {
+export function editKey(e: {
+  runs: Run[]
+  frame: Frame
+  align: Align
+  lineSpacing: number
+  wrap: boolean
+}): string {
   const r = (v: number) => Math.round(v * 100) / 100
   return JSON.stringify({
-    runs: normalizeRuns(e.runs).map((x) => [x.text, x.font, r(x.size), x.color.toLowerCase(), x.bold, x.italic, x.underline]),
-    frame: [r(e.frame.origin[0]), r(e.frame.origin[1]), r(e.frame.dir[0]), r(e.frame.dir[1]), r(e.frame.width)],
+    runs: normalizeRuns(e.runs).map((x) => [
+      x.text,
+      x.font,
+      r(x.size),
+      x.color.toLowerCase(),
+      x.bold,
+      x.italic,
+      x.underline
+    ]),
+    frame: [
+      r(e.frame.origin[0]),
+      r(e.frame.origin[1]),
+      r(e.frame.dir[0]),
+      r(e.frame.dir[1]),
+      r(e.frame.width)
+    ],
     align: e.align,
     lineSpacing: r(e.lineSpacing),
     wrap: e.wrap
   })
+}
+
+/** Character range of `needle` inside `text`, ignoring differences in white space. */
+export function locateText(text: string, needle: string): { start: number; end: number } | null {
+  const norm = (str: string) => {
+    let out = ''
+    const map: number[] = []
+    let space = false
+    for (let i = 0; i < str.length; i++) {
+      if (/\s/.test(str[i])) {
+        if (space || !out) continue
+        out += ' '
+        map.push(i)
+        space = true
+      } else {
+        out += str[i]
+        map.push(i)
+        space = false
+      }
+    }
+    return { out, map }
+  }
+  const h = norm(text)
+  const n = norm(needle).out.trim()
+  if (!n) return null
+  const at = h.out.indexOf(n)
+  if (at < 0) return null
+  return { start: h.map[at], end: h.map[at + n.length - 1] + 1 }
 }
 
 // ---- colours ----------------------------------------------------------------------------

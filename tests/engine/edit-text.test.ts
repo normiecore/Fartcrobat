@@ -53,7 +53,11 @@ async function lineWith(e: OpenedEngine, page: number, needle: string) {
   const at = t.text.indexOf(needle)
   if (at < 0) return null
   const line = t.lines.find((l) => l.start <= at && l.end > at)!
-  return { text: t.text.slice(line.start, line.end), quads: [...t.quads.slice(line.start * 8, line.end * 8)], line }
+  return {
+    text: t.text.slice(line.start, line.end),
+    quads: [...t.quads.slice(line.start * 8, line.end * 8)],
+    line
+  }
 }
 
 describe('edit-text: finding paragraphs', () => {
@@ -63,7 +67,13 @@ describe('edit-text: finding paragraphs', () => {
     const heading = blocks.find((b) => b.text === 'Chapter 1')!
     expect(heading.wrap).toBe(false)
     expect(heading.runs).toHaveLength(1)
-    expect(heading.runs[0]).toMatchObject({ font: 'Helvetica', size: 24, bold: true, italic: false, color: '#000000' })
+    expect(heading.runs[0]).toMatchObject({
+      font: 'Helvetica',
+      size: 24,
+      bold: true,
+      italic: false,
+      color: '#000000'
+    })
     expect(heading.frame.origin[0]).toBeCloseTo(72, 0)
     const lorem = blocks.find((b) => b.text.startsWith('Lorem'))!
     expect(lorem.wrap).toBe(true)
@@ -118,7 +128,9 @@ describe('edit-text: committing edits', () => {
     // the next line is untouched (same text, same glyph positions)
     const nextAfter = await lineWith(e, 0, 'Lorem ipsum')
     expect(nextAfter!.text).toBe(nextBefore!.text)
-    expect(nextAfter!.quads.map((v) => Math.round(v * 100))).toEqual(nextBefore!.quads.map((v) => Math.round(v * 100)))
+    expect(nextAfter!.quads.map((v) => Math.round(v * 100))).toEqual(
+      nextBefore!.quads.map((v) => Math.round(v * 100))
+    )
     // other pages untouched
     expect((await text.page(1)).text).toContain('Hello Fartcrobat page 2')
 
@@ -134,7 +146,9 @@ describe('edit-text: committing edits', () => {
     expect(t2.text).toContain('Goodbye. The quick brown fox')
     expect(t2.text).not.toContain('Hello Fartcrobat page 1')
     // it is still editable after reopening
-    const reopened = (await again.ops<typeof ops>('edit-text').analyze(0)).find((x) => x.text.startsWith('Goodbye'))!
+    const reopened = (await again.ops<typeof ops>('edit-text').analyze(0)).find((x) =>
+      x.text.startsWith('Goodbye')
+    )!
     expect(reopened.runs[0]).toMatchObject({ font: 'Helvetica', size: 12 })
   })
 
@@ -204,7 +218,10 @@ describe('edit-text: committing edits', () => {
       ['Revenue grew', true],
       [' while costs', false]
     ])
-    const runs = para.runs.map((r) => ({ ...r, text: r.text.replace('activities', 'main activities and results') }))
+    const runs = para.runs.map((r) => ({
+      ...r,
+      text: r.text.replace('activities', 'main activities and results')
+    }))
     let res = await edit.commit(0, editOf(para, runs))
     expect(res.fallbackFonts).toEqual([])
     // the heading sits right above the paragraph: editing it must not disturb the new paragraph
@@ -225,6 +242,21 @@ describe('edit-text: committing edits', () => {
     expect(span.color).toBe(0x365f91)
     const p2 = t.text.indexOf('Revenue grew')
     expect(t.spans.find((sp) => sp.start <= p2 && sp.end > p2)!.font).toMatch(/Caladea-Bold/)
+  })
+
+  it('only changes the edited page, even when pages share a form XObject', async () => {
+    const e = await openFixture('edit-text/shared-xobject.pdf')
+    const { edit } = tools(e)
+    const header = await block(e, 0, 'Shared header')
+    await edit.commit(0, editOf(header, 'Edited header'))
+    expect(e.lastChanges?.pages).toEqual([0])
+    expect(await edit.text(0)).toContain('Edited header')
+    expect(await edit.text(0)).not.toContain('Shared header')
+    expect(await edit.text(1)).toContain('Shared header in a form XObject')
+    const saved = await roundTrip(e)
+    const t = saved.ops<typeof ops>('edit-text')
+    expect(await t.text(0)).not.toContain('Shared header')
+    expect(await t.text(1)).toContain('Shared header in a form XObject')
   })
 
   it('writes characters outside Latin-1 (Greek, Cyrillic, CJK) with matching fonts', async () => {
@@ -252,7 +284,9 @@ describe('edit-text: committing edits', () => {
     await edit.commit(0, editOf(heading, 'Annual jumping report, edited'))
     const tightAfter = await lineWith(e, 0, 'ÉCOLE')
     expect(tightAfter!.text).toBe(tightBefore!.text)
-    expect(tightAfter!.quads.map((v) => Math.round(v * 10))).toEqual(tightBefore!.quads.map((v) => Math.round(v * 10)))
+    expect(tightAfter!.quads.map((v) => Math.round(v * 10))).toEqual(
+      tightBefore!.quads.map((v) => Math.round(v * 10))
+    )
 
     const linked = await block(e, 0, 'Read the full terms')
     await edit.commit(0, editOf(linked, 'Read the full terms and conditions online'))
@@ -311,7 +345,10 @@ describe('edit-text: committing edits', () => {
     const i = under!.text.indexOf('Under')
     const x0 = under!.quads[i * 8]
     const baseline = 400 + 0.9 * 14
-    const r = await render.page(1, { scale: 2, clip: [x0 * 2 + 4, (baseline + 1) * 2, x0 * 2 + 40, (baseline + 3) * 2] })
+    const r = await render.page(1, {
+      scale: 2,
+      clip: [x0 * 2 + 4, (baseline + 1) * 2, x0 * 2 + 40, (baseline + 3) * 2]
+    })
     let dark = 0
     for (let k = 0; k < r.pixels!.length; k += 4) if (r.pixels![k] < 100) dark++
     expect(dark).toBeGreaterThan(20)
@@ -321,7 +358,14 @@ describe('edit-text: committing edits', () => {
     const e = await openFixture('text.pdf')
     const { edit, text } = tools(e)
     const long = 'This sentence is long enough to wrap onto several lines inside a narrow box.'
-    await edit.commit(2, newText([100, 560], [{ ...style, text: long }], { wrap: true, align: 'center', frame: { origin: [100, 560], dir: [1, 0], width: 150 } }))
+    await edit.commit(
+      2,
+      newText([100, 560], [{ ...style, text: long }], {
+        wrap: true,
+        align: 'center',
+        frame: { origin: [100, 560], dir: [1, 0], width: 150 }
+      })
+    )
     const t = await text.page(2)
     const lines = t.lines.filter((l) => l.bbox[1] >= 555 && l.bbox[1] < 650)
     expect(lines.length).toBeGreaterThanOrEqual(3)
@@ -333,7 +377,14 @@ describe('edit-text: committing edits', () => {
     const words = lines.map((l) => t.text.slice(l.start, l.end).trim()).join(' ')
     expect(words).toBe(long)
 
-    await edit.commit(3, newText([100, 560], [{ ...style, text: long + ' ' + long }], { wrap: true, align: 'justify', frame: { origin: [100, 560], dir: [1, 0], width: 200 } }))
+    await edit.commit(
+      3,
+      newText([100, 560], [{ ...style, text: long + ' ' + long }], {
+        wrap: true,
+        align: 'justify',
+        frame: { origin: [100, 560], dir: [1, 0], width: 200 }
+      })
+    )
     const t3 = await text.page(3)
     const jl = t3.lines.filter((l) => l.bbox[1] >= 555 && l.bbox[1] < 700)
     expect(jl.length).toBeGreaterThanOrEqual(3)
@@ -345,9 +396,9 @@ describe('edit-text: committing edits', () => {
     const e = await openFixture('text.pdf')
     const { edit } = tools(e)
     const b = await block(e, 0, 'Jump to chapter 3')
-    await expect(edit.commit(0, { ...editOf(b, 'x'), source: { start: b.start, end: b.end, check: 'something else' } })).rejects.toThrow(
-      /changed/
-    )
+    await expect(
+      edit.commit(0, { ...editOf(b, 'x'), source: { start: b.start, end: b.end, check: 'something else' } })
+    ).rejects.toThrow(/changed/)
     await edit.commit(0, editOf(b, ''))
     expect(e.lastChanges?.journal.undoLabel).toBe('Delete Text')
     expect(await edit.text(0)).not.toContain('Jump to chapter 3')
@@ -390,8 +441,15 @@ describe('edit-text: preview', () => {
     expect(dark(preview.pixels!)).toBe(0)
     // text outside the block is still drawn
     const hello = await block(e, 0, 'Hello')
-    const clip2: [number, number, number, number] = [hello.bbox[0] * 2, hello.bbox[1] * 2, hello.bbox[2] * 2, hello.bbox[3] * 2]
-    expect(dark((await edit.preview(0, src(heading), heading.quads, { scale: 2, clip: clip2 })).pixels!)).toBeGreaterThan(100)
+    const clip2: [number, number, number, number] = [
+      hello.bbox[0] * 2,
+      hello.bbox[1] * 2,
+      hello.bbox[2] * 2,
+      hello.bbox[3] * 2
+    ]
+    expect(
+      dark((await edit.preview(0, src(heading), heading.quads, { scale: 2, clip: clip2 })).pixels!)
+    ).toBeGreaterThan(100)
     // without a (current) paragraph, the glyphs inside the quads are left out
     expect(dark((await edit.preview(0, null, heading.quads, { scale: 2, clip })).pixels!)).toBe(0)
   })
@@ -400,7 +458,12 @@ describe('edit-text: preview', () => {
     const e = await openFixture('edit-text/layout.pdf')
     const { edit, render } = tools(e)
     const b = await block(e, 0, 'Watermarked')
-    const clip: [number, number, number, number] = [b.bbox[0] * 2, b.bbox[1] * 2, b.bbox[2] * 2, b.bbox[3] * 2]
+    const clip: [number, number, number, number] = [
+      b.bbox[0] * 2,
+      b.bbox[1] * 2,
+      b.bbox[2] * 2,
+      b.bbox[3] * 2
+    ]
     const count = (px: Uint8ClampedArray, test: (r: number, g: number, bl: number) => boolean) => {
       let n = 0
       for (let k = 0; k < px.length; k += 4) if (test(px[k], px[k + 1], px[k + 2])) n++
@@ -413,5 +476,5 @@ describe('edit-text: preview', () => {
     expect(count(normal, black)).toBeGreaterThan(200)
     expect(count(preview, black)).toBeLessThan(count(normal, black) * 0.05)
     expect(count(preview, red)).toBeGreaterThan(count(normal, red) * 0.9)
-})
+  })
 })

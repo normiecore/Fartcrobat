@@ -234,7 +234,8 @@ export function toRgb(cs: MuPDF.ColorSpace | null, color: number[]): [number, nu
   const n = color.length
   if (n === 1) return [color[0], color[0], color[0]]
   if (n === 3) return [color[0], color[1], color[2]]
-  if (n === 4) return [(1 - color[0]) * (1 - color[3]), (1 - color[1]) * (1 - color[3]), (1 - color[2]) * (1 - color[3])]
+  if (n === 4)
+    return [(1 - color[0]) * (1 - color[3]), (1 - color[1]) * (1 - color[3]), (1 - color[2]) * (1 - color[3])]
   void cs
   return [0, 0, 0]
 }
@@ -259,7 +260,13 @@ export function forget(obj: unknown) {
 export function observeGlyphs(s: Session, pageIndex: number): ObservedGlyph[] {
   const m = s.mupdf
   const out: ObservedGlyph[] = []
-  const collect = (text: MuPDF.Text, ctm: Matrix, kind: ObservedGlyph['kind'], rgb: [number, number, number], alpha: number) => {
+  const collect = (
+    text: MuPDF.Text,
+    ctm: Matrix,
+    kind: ObservedGlyph['kind'],
+    rgb: [number, number, number],
+    alpha: number
+  ) => {
     text.walk({
       showGlyph(font, trm, gid, uni) {
         if (gid < 0) {
@@ -267,7 +274,17 @@ export function observeGlyphs(s: Session, pageIndex: number): ObservedGlyph[] {
           if (out.length) out[out.length - 1].lig = true
           return
         }
-        out.push({ font, fontName: font.getName(), gid, uni, m: concat(trm as Matrix, ctm), rgb, alpha, kind, lig: false })
+        out.push({
+          font,
+          fontName: font.getName(),
+          gid,
+          uni,
+          m: concat(trm as Matrix, ctm),
+          rgb,
+          alpha,
+          kind,
+          lig: false
+        })
       }
     })
   }

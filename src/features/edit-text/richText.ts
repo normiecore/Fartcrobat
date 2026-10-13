@@ -88,7 +88,13 @@ function underlined(el: HTMLElement, root: HTMLElement): boolean {
   return false
 }
 
-function styleFromElement(el: HTMLElement, root: HTMLElement, scale: number, fallback: RunStyle, sizes: number[]): RunStyle {
+function styleFromElement(
+  el: HTMLElement,
+  root: HTMLElement,
+  scale: number,
+  fallback: RunStyle,
+  sizes: number[]
+): RunStyle {
   const cs = getComputedStyle(el)
   const font = fontKeyFromCss(cs.fontFamily) ?? fallback.font
   let size = Math.round((parseFloat(cs.fontSize) / scale) * 100) / 100
@@ -107,7 +113,15 @@ function styleFromElement(el: HTMLElement, root: HTMLElement, scale: number, fal
 
 /** Reads the editor content back into runs. */
 export function readRuns(root: HTMLElement, scale: number, previous: Run[]): Run[] {
-  const fallback = previous[0] ?? { font: 'Helvetica', size: 12, color: '#000000', bold: false, italic: false, underline: false, text: '' }
+  const fallback = previous[0] ?? {
+    font: 'Helvetica',
+    size: 12,
+    color: '#000000',
+    bold: false,
+    italic: false,
+    underline: false,
+    text: ''
+  }
   const sizes = [...new Set(previous.map((r) => r.size))]
   const cache = new Map<HTMLElement, RunStyle>()
   const runs: Run[] = []
