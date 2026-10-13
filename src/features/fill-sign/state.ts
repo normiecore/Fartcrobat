@@ -22,10 +22,12 @@ export interface EditingState {
   docId: string
   page: number
   id: number
-  /** The item was created for this editing session (empty text on commit undoes the creation). */
-  isNew: boolean
-  /** Engine changes made while editing (an empty new item can only be undone if this is 0). */
-  edits: number
+  /**
+   * New text that is not in the document yet: it is added as one "Add Text" step when the typing
+   * is finished, and nothing is added if it is left empty. Size, colour and spacing changes made
+   * meanwhile only change `item`.
+   */
+  draft: boolean
   /** Latest known state of the item (the page's item list may not have caught up yet). */
   item: FillSignItem
 }
@@ -69,6 +71,21 @@ export type FillSignOps = typeof ops
 
 export function fsOps(doc: DocumentModel) {
   return doc.ops<FillSignOps>('fill-sign')
+}
+
+// ---- drafts ----------------------------------------------------------------------------------
+
+/**
+ * Commits of drafts that are under way, by draft id. An action that reaches a draft while its
+ * commit is running (e.g. a menu click that took the focus from the editor) waits for it and then
+ * acts on the created item (null when the draft was empty and nothing was added).
+ */
+export const draftCommits = new Map<number, Promise<FillSignItem | null>>()
+
+export function trackDraftCommit(id: number, commit: Promise<FillSignItem | null>) {
+  draftCommits.set(id, commit)
+  const forget = () => void setTimeout(() => draftCommits.delete(id), 5000)
+  commit.then(forget, forget)
 }
 
 // ---- selection -------------------------------------------------------------------------------

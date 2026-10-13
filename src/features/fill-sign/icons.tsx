@@ -62,6 +62,20 @@ export function RoundedBoxIcon(props: IconProps) {
   )
 }
 
+/** "AV" with a double arrow: letter spacing. */
+export function LetterSpacingIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 13 6.5 4l3.5 9" />
+      <path d="M4.4 9.8h4.2" />
+      <path d="M14 4l3.5 9L21 4" />
+      <path d="M3.5 18.5h17" strokeWidth={1.6} />
+      <path d="M6 16l-2.5 2.5L6 21" strokeWidth={1.6} />
+      <path d="M18 16l2.5 2.5L18 21" strokeWidth={1.6} />
+    </Svg>
+  )
+}
+
 export function InitialsIcon(props: IconProps) {
   return (
     <Svg {...props}>

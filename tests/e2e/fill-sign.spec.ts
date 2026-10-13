@@ -12,6 +12,7 @@ interface Item {
   text: string
   size: number
   color: string
+  spacing: number
 }
 
 async function items(page: Page, pageIndex = 0): Promise<Item[]> {
@@ -30,6 +31,39 @@ async function toClient(page: Page, pageIndex: number, pt: [number, number]): Pr
     },
     { i: pageIndex, pt }
   )
+}
+
+/** Client rect of a page-space rect, with the view rotation applied. */
+async function clientRect(page: Page, pageIndex: number, r: [number, number, number, number]) {
+  return page.evaluate(
+    ({ i, r }) => {
+      const doc = (window as any).__fartcrobat.getActiveDoc()
+      const el = document.querySelector(`.viewer-page[data-page-index="${i}"]`)!
+      const b = el.getBoundingClientRect()
+      const info = doc.state.info.pages[i]
+      const rot = doc.state.viewRotation
+      const s = b.width / (rot % 180 ? info.height : info.width)
+      const map = ([x, y]: number[]) => {
+        if (rot === 90) return [(info.height - y) * s, x * s]
+        if (rot === 180) return [(info.width - x) * s, (info.height - y) * s]
+        if (rot === 270) return [y * s, (info.width - x) * s]
+        return [x * s, y * s]
+      }
+      const a = map([r[0], r[1]])
+      const c = map([r[2], r[3]])
+      return {
+        x: b.left + Math.min(a[0], c[0]),
+        y: b.top + Math.min(a[1], c[1]),
+        width: Math.abs(c[0] - a[0]),
+        height: Math.abs(c[1] - a[1])
+      }
+    },
+    { i: pageIndex, r }
+  )
+}
+
+async function toolId(page: Page): Promise<string> {
+  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)
 }
 
 async function cssPerPoint(page: Page, pageIndex = 0): Promise<number> {
@@ -73,13 +107,38 @@ test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
     expect(text.rect[0]).toBeCloseTo(100, 0)
     expect((text.rect[1] + text.rect[3]) / 2).toBeCloseTo(600, 0)
     expect((await activeDocState(page))?.dirty).toBe(true)
-    expect((await activeDocState(page))?.journal.undoLabel).toBe('Edit Text')
+    // clicking and typing is one step: there is never an empty text box in the document
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Add Text')
 
     // the item is selected: mini toolbar, A+ makes it bigger
     await expect(page.locator('.fc-fill-sign-minibar')).toBeVisible()
     await page.locator('.fc-fill-sign-minibar').getByRole('button', { name: 'Larger text' }).click()
     await expect.poll(async () => (await items(page))[0].size).toBe(13)
     await page.screenshot({ path: 'test-results/fill-sign-text.png' })
+
+    // undo: the size change, then the whole text at once; redo brings both back
+    await runCommand(page, 'edit.undo')
+    await expect.poll(async () => (await items(page))[0]?.size).toBe(12)
+    await runCommand(page, 'edit.undo')
+    await expect.poll(async () => (await items(page)).length).toBe(0)
+    await runCommand(page, 'edit.redo')
+    await runCommand(page, 'edit.redo')
+    await expect.poll(async () => (await items(page)).map((i) => [i.text, i.size])).toEqual([['Jane Doe', 13]])
+
+    // ---- Letter spacing from the mini toolbar (for boxed "comb" fields) -----------------------
+    const plain = (await items(page))[0]
+    await page.locator(`[data-fill-sign-id="${plain.id}"]`).click() // Add text tool: opens it for typing
+    await expect(editor).toBeFocused()
+    await page.locator('.fc-fill-sign-minibar').getByRole('button', { name: 'Letter spacing' }).click()
+    await page.getByRole('menuitem', { name: '4 pt' }).click()
+    await expect.poll(async () => (await items(page))[0].spacing).toBe(4)
+    const spaced = (await items(page))[0]
+    expect(spaced.rect[2] - spaced.rect[0]).toBeGreaterThan(plain.rect[2] - plain.rect[0] + 7 * 4 - 1)
+    expect(spaced.text).toBe('Jane Doe')
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Change Letter Spacing')
+    await settle(page)
+    await page.screenshot({ path: 'test-results/fill-sign-spacing.png' })
+    await page.keyboard.press('Escape')
 
     // clicking elsewhere with Add text and leaving it empty adds nothing
     await clickAt(page, 0, [300, 560])
@@ -174,6 +233,8 @@ test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
     await page.screenshot({ path: 'test-results/fill-sign-menu-saved.png' })
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
+    // Esc only closed the menu: the Check mark tool is still on
+    expect(await toolId(page)).toBe('fillsign.check')
     const stored = await page.evaluate(() => (window as any).api.invoke('store:get', 'fill-sign:signature'))
     expect(String(stored)).toMatch(/^data:image\/png;base64,/)
 
@@ -197,10 +258,12 @@ test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
     await page.mouse.dblclick(tx, ty)
     await expect(editor).toBeFocused()
     await expect(editor).toHaveValue('Jane Doe')
-    // the editor sits where the PDF text is
+    // the editor sits where the PDF text is, with the same letter spacing
     const eb = (await editor.boundingBox())!
     const [ex] = await toClient(page, 0, [t.rect[0], t.rect[1]])
     expect(Math.abs(eb.x - ex)).toBeLessThan(2)
+    const s15 = await cssPerPoint(page)
+    expect(parseFloat(await editor.evaluate((el) => getComputedStyle(el).letterSpacing))).toBeCloseTo(4 * s15, 0)
     await page.keyboard.press('End')
     await page.keyboard.type(', Esq.')
     await page.screenshot({ path: 'test-results/fill-sign-zoom-edit.png' })
@@ -231,6 +294,7 @@ test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
         ['check', ''],
         ['signature', '']
       ])
+    expect((await items(second.page))[0].spacing).toBe(4)
     await second.page.locator('.shell-quicktool[aria-label="Add text"]').click()
     await settle(second.page, 600)
     await second.page.screenshot({ path: 'test-results/fill-sign-reopened.png' })
@@ -272,6 +336,56 @@ test('Fill & Sign: panel, draw and image signatures, preferences, dark theme', a
     await expect.poll(async () => (await items(page)).map((i) => i.kind)).toEqual(['box', 'date', 'cross'])
     await settle(page)
     await page.screenshot({ path: 'test-results/fill-sign-marks-dark.png' })
+
+    // Custom letter spacing for the date
+    const date = (await items(page))[1]
+    await page.locator(`[data-fill-sign-id="${date.id}"]`).click() // Date tool: opens it for typing
+    await expect(page.locator('.fc-fill-sign-textarea')).toBeFocused()
+    await page.locator('.fc-fill-sign-minibar').getByRole('button', { name: 'Letter spacing' }).click()
+    await page.getByRole('menuitem', { name: 'Custom…' }).click()
+    const spacingDialog = page.getByRole('dialog').filter({ hasText: 'Letter spacing' })
+    await spacingDialog.getByRole('textbox').fill('99')
+    await expect(spacingDialog.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await spacingDialog.getByRole('textbox').fill('6')
+    await spacingDialog.getByRole('button', { name: 'Apply' }).click()
+    await expect.poll(async () => (await items(page))[1].spacing).toBe(6)
+    expect((await items(page))[1].text).toBe(date.text)
+
+    // ---- Rotated view: overlays follow the rotation ------------------------------------------
+    await runCommand(page, 'view.rotateCW')
+    await settle(page, 600)
+    const cross = (await items(page))[2]
+    const crossHit = page.locator(`[data-fill-sign-id="${cross.id}"]`)
+    await crossHit.scrollIntoViewIfNeeded()
+    await crossHit.click()
+    const expected = await clientRect(page, 0, cross.rect)
+    const frame = (await page.locator('.fc-fill-sign-frame').boundingBox())!
+    expect(frame.x).toBeLessThan(expected.x + 0.5)
+    expect(frame.y).toBeLessThan(expected.y + 0.5)
+    expect(frame.x + frame.width).toBeGreaterThan(expected.x + expected.width - 0.5)
+    expect(frame.y + frame.height).toBeGreaterThan(expected.y + expected.height - 0.5)
+    // drag-resize in the rotated view: the cross grows (keeping its shape)
+    const rh = (await page.locator('.fc-fill-sign-handle').boundingBox())!
+    await page.mouse.move(rh.x + rh.width / 2, rh.y + rh.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(rh.x + rh.width / 2 - 25, rh.y + rh.height / 2 + 25, { steps: 5 })
+    await page.mouse.up()
+    await expect.poll(async () => (await items(page))[2].size).toBeGreaterThan(cross.size * 1.5)
+    const grown = (await items(page))[2]
+    expect((grown.rect[2] - grown.rect[0]) / (grown.rect[3] - grown.rect[1])).toBeCloseTo(1, 1)
+    // edit the date in place: the editor is turned with the page
+    const d2 = (await items(page))[1]
+    const dateBox = await clientRect(page, 0, d2.rect)
+    await page.mouse.dblclick(dateBox.x + dateBox.width / 2, dateBox.y + dateBox.height / 2)
+    await expect(page.locator('.fc-fill-sign-textarea')).toBeFocused()
+    const eb = (await page.locator('.fc-fill-sign-textarea').boundingBox())!
+    expect(eb.width).toBeLessThan(eb.height) // vertical, like the page
+    expect(Math.abs(eb.y - dateBox.y)).toBeLessThan(3)
+    await settle(page)
+    await page.screenshot({ path: 'test-results/fill-sign-rotated-dark.png' })
+    await page.keyboard.press('Escape')
+    await runCommand(page, 'view.rotateCCW')
+    await settle(page)
 
     // Draw a signature (initials) in blue
     await page.locator('.fc-fill-sign-bigbtn').click()
@@ -331,10 +445,20 @@ test('Fill & Sign: panel, draw and image signatures, preferences, dark theme', a
     expect(String(await page.evaluate(() => (window as any).api.invoke('store:get', 'fill-sign:initials')))).toMatch(/^data:image\/png/)
 
     // Escape cancels placing
+    const before = await toolId(page)
+    expect(before).toBe('fillsign.date')
     await runCommand(page, 'fillsign.placeInitials')
-    await expect.poll(async () => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('fillsign.place')
+    await expect.poll(async () => toolId(page)).toBe('fillsign.place')
     await page.keyboard.press('Escape')
-    await expect.poll(async () => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).not.toBe('fillsign.place')
+    // back to the tool used before, not the Select tool
+    await expect.poll(async () => toolId(page)).toBe(before)
+    expect((await items(page)).filter((i) => i.kind === 'initials')).toHaveLength(1)
+
+    // the saved initials in the panel place them directly
+    await page.getByRole('button', { name: 'Place your saved initials' }).click()
+    await expect.poll(async () => toolId(page)).toBe('fillsign.place')
+    await clickAt(page, 0, [480, 520])
+    await expect.poll(async () => (await items(page)).filter((i) => i.kind === 'initials')).toHaveLength(2)
 
     // Preferences > Signatures
     await runCommand(page, 'app.preferences')

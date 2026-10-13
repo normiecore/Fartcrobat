@@ -30,10 +30,8 @@ import {
 import { fsOps, hideItem, selectItem, unhideItem, useFillSign, waitForRepaint } from './state'
 import { changeSize, createAt, moveItem, resizeItem, startEditing, TOOL_KIND } from './actions'
 import { commitActiveEditor, TextEditor } from './TextEditor'
-import { itemContextMenu, MiniToolbar } from './MiniToolbar'
+import { hitBox, itemContextMenu, MiniToolbar } from './MiniToolbar'
 
-/** Smallest hit target for tiny marks (CSS px). */
-const MIN_HIT = 14
 const DRAG_THRESHOLD = 3
 const MIN_SIZE_PT = 4
 
@@ -42,9 +40,12 @@ interface Gesture {
   item: FillSignItem
   pointerId: number
   start: Point
+  /** Resize: pointer position minus the item's corner (CSS px), so the corner does not jump. */
+  grab: Point
   moved: boolean
   wasSelected: boolean
 }
+
 
 interface Live {
   id: number
@@ -208,6 +209,16 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const editingItem = editing ? (findItem(editing.id) ?? editing.item) : null
   const selected = findItem(selectedId) ?? (editing && editing.id === selectedId ? editing.item : undefined)
 
+  // Keyboard focus follows the selection when nothing else has it (e.g. after a menu or the text
+  // editor closed), so Delete, the arrow keys and Esc act on the selected item.
+  const selectedInList = selectedId != null && items.some((i) => i.id === selectedId)
+  useEffect(() => {
+    if (!selectedInList || editing) return
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    rootRef.current?.querySelector<HTMLElement>(`[data-fill-sign-id="${selectedId}"]`)?.focus({ preventScroll: true })
+  }, [selectedId, selectedInList, editing])
+
   const local = (e: { clientX: number; clientY: number }): Point => {
     const b = rootRef.current!.getBoundingClientRect()
     return [e.clientX - b.left, e.clientY - b.top]
@@ -255,7 +266,10 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     if (editing && editing.id === item.id && type === 'move') return // clicks inside the edited text
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     if (type === 'move') (e.currentTarget as HTMLElement).focus({ preventScroll: true })
-    gesture.current = { type, item, pointerId: e.pointerId, start: local(e), moved: false, wasSelected }
+    const start = local(e)
+    const corner = geometry.toCss([item.rect[2], item.rect[3]])
+    const grab: Point = type === 'resize' ? [start[0] - corner[0], start[1] - corner[1]] : [0, 0]
+    gesture.current = { type, item, pointerId: e.pointerId, start, grab, moved: false, wasSelected }
   }
 
   const onItemPointerMove = (e: React.PointerEvent) => {
@@ -274,7 +288,8 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       const r = g.item.rect
       setLive({ id: g.item.id, rect: [r[0] + dx, r[1] + dy, r[2] + dx, r[3] + dy] })
     } else {
-      setLive({ id: g.item.id, rect: resizedRect(g.item, geometry.toPage(p), geometry.width, geometry.height) })
+      const to: Point = [p[0] - g.grab[0], p[1] - g.grab[1]]
+      setLive({ id: g.item.id, rect: resizedRect(g.item, geometry.toPage(to), geometry.width, geometry.height) })
     }
   }
 
@@ -300,7 +315,8 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       const [dx, dy] = clampMove(g.item.rect, b[0] - a[0], b[1] - a[1], geometry.width, geometry.height)
       await moveItem(doc, g.item, dx, dy)
     } else {
-      await resizeItem(doc, g.item, resizedRect(g.item, geometry.toPage(p), geometry.width, geometry.height))
+      const to: Point = [p[0] - g.grab[0], p[1] - g.grab[1]]
+      await resizeItem(doc, g.item, resizedRect(g.item, geometry.toPage(to), geometry.width, geometry.height))
     }
     await endPreview(g.item.id)
   }
@@ -363,16 +379,14 @@ export function FillSignLayer({ doc, pageIndex, geometry }: PageLayerProps) {
     >
       {showAnnots &&
         items.map((item) => {
-          const c = geometry.rectToCss(live && live.id === item.id ? live.rect : item.rect)
-          const w = Math.max(MIN_HIT, c.width)
-          const h = Math.max(MIN_HIT, c.height)
+          const box = hitBox(geometry, live && live.id === item.id ? live.rect : item.rect)
           const isSel = selectedId === item.id
           const isEditing = editing?.id === item.id
           return (
             <div
               key={item.id}
               className={`fc-fill-sign-item is-${item.kind} ${isSel ? 'is-selected' : ''} ${isEditing ? 'is-editing' : ''} ${item.locked ? 'is-locked' : ''}`}
-              style={{ left: c.left - (w - c.width) / 2, top: c.top - (h - c.height) / 2, width: w, height: h }}
+              style={box}
               tabIndex={0}
               role="button"
               aria-label={`${kindLabel(item.kind)}${item.text ? `: ${item.text}` : ''}`}
@@ -450,9 +464,17 @@ function SelectionFrame({
   onHandleMove: (e: React.PointerEvent) => void
   onHandleUp: (e: React.PointerEvent) => void
 }) {
-  const c = geometry.rectToCss(rect)
-  const corner = geometry.toCss([rect[2], rect[3]])
+  const c = hitBox(geometry, rect)
   const pad = 3
+  // The handle drags the item's bottom-right corner (in page space): put it on the frame corner
+  // on that side, wherever the view rotation turned it.
+  const corner = geometry.toCss([rect[2], rect[3]])
+  const cx = c.left + c.width / 2
+  const cy = c.top + c.height / 2
+  const hx = cx + Math.sign(corner[0] - cx || 1) * (c.width / 2 + pad)
+  const hy = cy + Math.sign(corner[1] - cy || 1) * (c.height / 2 + pad)
+  const horizontal = item.kind === 'line' && geometry.rotation % 180 === 0
+  const vertical = item.kind === 'line' && geometry.rotation % 180 !== 0
   return (
     <>
       <div
@@ -461,10 +483,10 @@ function SelectionFrame({
       />
       {!item.locked && (
         <div
-          className={`fc-fill-sign-handle ${item.kind === 'line' ? 'is-horizontal' : ''}`}
-          style={{ left: corner[0], top: corner[1] }}
+          className={`fc-fill-sign-handle ${horizontal ? 'is-horizontal' : ''} ${vertical ? 'is-vertical' : ''}`}
+          style={{ left: hx, top: hy }}
           role="presentation"
-          title={keepsAspect(item.kind) || isTextKind(item.kind) ? 'Drag to resize' : 'Drag to resize'}
+          title={item.kind === 'line' ? 'Drag to make longer or shorter' : 'Drag to resize'}
           onPointerDown={onHandleDown}
           onPointerMove={onHandleMove}
           onPointerUp={onHandleUp}

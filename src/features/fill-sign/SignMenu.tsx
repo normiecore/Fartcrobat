@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
-import { confirm, FloatingAt, getActiveDoc, toast } from '@renderer/sdk'
+import { confirm, FloatingAt, getActiveDoc, toast, useApp } from '@renderer/sdk'
 import type { SignatureKind } from './shared'
 import { loadSaved, saveSignature, useFillSign, type SignatureImage } from './state'
-import { startPlacing } from './actions'
+import { cancelPlacing, PLACE_TOOL, startPlacing } from './actions'
 import { openSignatureDialog } from './SignatureDialog'
 import { InitialsIcon } from './icons'
 
@@ -95,6 +95,24 @@ export function SignMenuHost() {
 
   useEffect(() => {
     void loadSaved()
+  }, [])
+
+  // Esc closes the menu, or cancels placing a signature and goes back to the previous tool. Caught
+  // before the app's own Esc handling, which would otherwise also switch to the Select tool.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      const st = useFillSign.getState()
+      if (st.menu) {
+        e.preventDefault()
+        closeSignMenu()
+      } else if (st.placing && useApp.getState().toolId === PLACE_TOOL && !useApp.getState().dialogs.length) {
+        e.preventDefault()
+        cancelPlacing()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [])
 
   useEffect(() => {

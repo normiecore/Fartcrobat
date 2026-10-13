@@ -30,6 +30,15 @@ export const FIRST_BASELINE = 0.8
 /** Extra width so MuPDF never wraps a line that was measured to fit exactly. */
 export const TEXT_SLACK = 1
 
+/** Letter spacing choices (points) for text, e.g. to line characters up with boxed "comb" fields. */
+export const SPACING_STEPS = [1, 2, 3, 4, 6, 8, 10, 12, 16]
+
+/** Letter spacing is kept between 0 and 4 x the font size, rounded to 0.01 pt. */
+export function clampSpacing(spacing: number, size: number): number {
+  const v = Number.isFinite(spacing) ? spacing : 0
+  return Math.round(Math.max(0, Math.min(size * 4, v)) * 100) / 100
+}
+
 /** Natural height of a placed signature (0.5 in) and of initials. */
 export const SIGNATURE_HEIGHT = 36
 export const INITIALS_HEIGHT = 30
@@ -60,6 +69,35 @@ export interface FillSignItem {
   /** Extra space between letters of text items, in points (0 = normal). */
   spacing: number
   locked: boolean
+}
+
+/**
+ * Text that is being typed for the first time is a draft: it only exists in the editor until the
+ * typing is finished, then it is added to the document as one "Add Text" step (and nothing is
+ * added when it is left empty). Drafts use ids no annotation can have.
+ */
+const DRAFT_BASE = -1_000_000_000
+let draftCounter = 0
+
+export function newDraftId(): number {
+  return DRAFT_BASE - ++draftCounter
+}
+
+export function isDraftId(id: number): boolean {
+  return id <= DRAFT_BASE
+}
+
+/** Top-left corner of new text for a click: the text starts there, centred on the first line. */
+export function textTopLeft(at: Point, size: number, pageWidth: number, pageHeight: number): Point {
+  const x = Math.max(0, Math.min(at[0], pageWidth - size))
+  const y = Math.max(0, Math.min(at[1] - (size * LINE_HEIGHT) / 2, pageHeight - size * LINE_HEIGHT))
+  return [x, y]
+}
+
+/** Box of a text item at a top-left corner (width is a minimum; the real width follows the text). */
+export function textBox(topLeft: Point, text: string, size: number): Rect {
+  const lines = Math.max(1, text.split('\n').length)
+  return [topLeft[0], topLeft[1], topLeft[0] + size * 0.6, topLeft[1] + lines * size * LINE_HEIGHT]
 }
 
 export function isTextKind(k: FillSignKind): k is TextKind {

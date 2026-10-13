@@ -1,6 +1,6 @@
 import { ChevronDown, Lightbulb, PenLine, Send } from 'lucide-react'
 import { displayShortcut, openToolGroup, registry, Section, setTool, ToolPanelFrame, ToolRow, useApp, type DocumentModel } from '@renderer/sdk'
-import { KIND_TOOL } from './actions'
+import { KIND_TOOL, startPlacing } from './actions'
 import { KIND_ICON } from './icons'
 import { openSignMenu } from './SignMenu'
 import { TOOL_LABEL, TOOL_ORDER } from './Toolbar'
@@ -47,9 +47,29 @@ export function FillSignPanel({ doc }: { doc: DocumentModel | null }) {
           <ChevronDown size={16} />
         </button>
         {(signature || initials) && (
-          <div className="fc-fill-sign-panel-saved" aria-hidden>
-            {signature && <img src={signature.dataUrl} alt="" />}
-            {initials && <img src={initials.dataUrl} alt="" />}
+          <div className="fc-fill-sign-panel-saved" role="group" aria-label="Saved signature and initials">
+            {signature && (
+              <button
+                type="button"
+                disabled={!doc}
+                title="Place your saved signature"
+                aria-label="Place your saved signature"
+                onClick={() => startPlacing('signature', signature)}
+              >
+                <img src={signature.dataUrl} alt="" draggable={false} />
+              </button>
+            )}
+            {initials && (
+              <button
+                type="button"
+                disabled={!doc}
+                title="Place your saved initials"
+                aria-label="Place your saved initials"
+                onClick={() => startPlacing('initials', initials)}
+              >
+                <img src={initials.dataUrl} alt="" draggable={false} />
+              </button>
+            )}
           </div>
         )}
         <Section title="Fill in">

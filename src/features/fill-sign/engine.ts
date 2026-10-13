@@ -7,6 +7,7 @@ import { FLAG_LOCKED, FLAG_PRINT, transformAnnotation } from '@engine/ops/annots
 import { isNull, num, pageBoxes, readString } from '@engine/util/pdf'
 import {
   clampSize,
+  clampSpacing,
   DEFAULT_COLOR,
   DEFAULT_TEXT_SIZE,
   FILLSIGN_TAG,
@@ -235,10 +236,11 @@ function applySpacing(annot: PDFAnnotation, spacing: number) {
   const src = buf.asUint8Array().slice()
   buf.destroy()
   const insert = new TextEncoder().encode(`${num(spacing)} Tc\n`)
+  const already = (at: number) => insert.every((b, k) => src[at + k] === b)
   const parts: Uint8Array[] = []
   let last = 0
   for (let i = 0; i + 2 < src.length; i++) {
-    if (src[i] === 0x42 && src[i + 1] === 0x54 && isWs(src[i + 2]) && (i === 0 || isWs(src[i - 1]))) {
+    if (src[i] === 0x42 && src[i + 1] === 0x54 && isWs(src[i + 2]) && (i === 0 || isWs(src[i - 1])) && !already(i + 3)) {
       parts.push(src.subarray(last, i + 3), insert)
       last = i + 3
     }
@@ -284,6 +286,9 @@ function measuredRight(annot: PDFAnnotation, x: number): number {
 /**
  * Sets contents, font, colour and letter spacing of a FreeText item and fits its rect to the
  * text, keeping the top-left corner at (x, y).
+ *
+ * Must be the last change to the annotation in an operation: any later property change (data,
+ * dates, author) makes MuPDF synthesize the appearance again, without the letter spacing.
  */
 function layoutText(
   annot: PDFAnnotation,
@@ -311,7 +316,16 @@ function layoutText(
   applySpacing(annot, spacing)
 }
 
-function createText(s: Session, page: PDFPage, topLeft: Point, kind: TextKind, text: string, size: number, color: string) {
+function createText(
+  s: Session,
+  page: PDFPage,
+  topLeft: Point,
+  kind: TextKind,
+  text: string,
+  size: number,
+  color: string,
+  spacing = 0
+) {
   const annot = page.createAnnotation('FreeText')
   try {
     annot.setCreationDate(new Date())
@@ -320,7 +334,9 @@ function createText(s: Session, page: PDFPage, topLeft: Point, kind: TextKind, t
   if (safe(() => annot.hasBorder(), false)) annot.setBorderWidth(0)
   annot.setColor([])
   stamp(s, annot, kind, size)
-  layoutText(annot, topLeft[0], topLeft[1], text, size, color)
+  const sp = clampSpacing(spacing, size)
+  if (sp > 0) writeData(s, annot, { spacing: String(sp) })
+  layoutText(annot, topLeft[0], topLeft[1], text, size, color, sp)
   return annot
 }
 
@@ -420,8 +436,16 @@ function applyRect(s: Session, f: Found, kind: FillSignKind, rect: Rect, size?: 
     const old = visualRect(annot, kind)
     const oldSize = sizeOf(annot, kind, old, readData(annot))
     const newSize = size ?? clampSize(oldSize * ((r[3] - r[1]) / Math.max(0.01, old[3] - old[1])))
-    layoutText(annot, r[0], r[1], safe(() => annot.getContents(), ''), newSize, colorOf(annot, kind))
+    // Dragging the corner scales the whole text, letter spacing included; A-/A+ keep the spacing.
+    let spacing = spacingOf(annot)
+    if (spacing > 0) {
+      const next = clampSpacing(size === undefined ? (spacing * newSize) / Math.max(0.01, oldSize) : spacing, newSize)
+      if (next !== spacing) writeData(s, annot, { spacing: String(next) })
+      spacing = next
+    }
+    const color = colorOf(annot, kind)
     stamp(s, annot, kind, newSize)
+    layoutText(annot, r[0], r[1], safe(() => annot.getContents(), ''), newSize, color, spacing)
   } else if (isMarkKind(kind)) {
     const old = visualRect(annot, kind)
     const oldSize = sizeOf(annot, kind, old, readData(annot))
@@ -477,6 +501,8 @@ export interface AddTextOptions {
   text?: string
   size?: number
   color?: string
+  /** Extra space between letters in points. */
+  spacing?: number
   /** Treat `at` as the top-left corner instead of the click point. */
   topLeft?: boolean
 }
@@ -560,7 +586,7 @@ export default defineOps('fill-sign', {
       const [pw, ph] = pageSize(s, pageIndex)
       const x = Math.max(0, Math.min(tl[0], pw - size))
       const y = Math.max(0, Math.min(tl[1], ph - size * LINE_HEIGHT))
-      const annot = createText(s, page, [x, y], kind, opts.text ?? '', size, opts.color ?? DEFAULT_COLOR)
+      const annot = createText(s, page, [x, y], kind, opts.text ?? '', size, opts.color ?? DEFAULT_COLOR, opts.spacing ?? 0)
       changed(s, pageIndex)
       return describe(s, { annot, page, pageIndex })
     }
@@ -574,8 +600,9 @@ export default defineOps('fill-sign', {
     assertUnlocked(f)
     const r = visualRect(f.annot, kind)
     const size = sizeOf(f.annot, kind, r, readData(f.annot))
-    layoutText(f.annot, r[0], r[1], text.replace(/\r\n?/g, '\n'), size, colorOf(f.annot, kind))
+    const color = colorOf(f.annot, kind)
     stamp(s, f.annot, kind, size)
+    layoutText(f.annot, r[0], r[1], text.replace(/\r\n?/g, '\n'), size, color)
     changed(s, f.pageIndex)
     return describe(s, f)
   }),
@@ -670,18 +697,14 @@ export default defineOps('fill-sign', {
     const f = find(s, id, hintPage)
     assertUnlocked(f)
     const kind = kindOf(f)
-    if (isTextKind(kind)) {
-      const r = visualRect(f.annot, kind)
-      layoutText(f.annot, r[0], r[1], safe(() => f.annot.getContents(), ''), sizeOf(f.annot, kind, r, readData(f.annot)), color)
-    } else if (isMarkKind(kind)) {
-      const r = visualRect(f.annot, kind)
-      drawMark(f.annot, kind, r, sizeOf(f.annot, kind, r, readData(f.annot)), color)
-    } else {
-      throw new EngineError('The colour of a signature cannot be changed here', 'BAD_KIND')
-    }
+    if (isSignatureKind(kind)) throw new EngineError('The colour of a signature cannot be changed here', 'BAD_KIND')
     try {
       f.annot.setModificationDate(new Date())
     } catch {}
+    const r = visualRect(f.annot, kind)
+    const size = sizeOf(f.annot, kind, r, readData(f.annot))
+    if (isTextKind(kind)) layoutText(f.annot, r[0], r[1], safe(() => f.annot.getContents(), ''), size, color)
+    else drawMark(f.annot, kind as MarkKind, r, size, color)
     changed(s, f.pageIndex)
     return describe(s, f)
   }),
@@ -694,7 +717,7 @@ export default defineOps('fill-sign', {
     if (!isTextKind(kind)) throw new EngineError('Only text has letter spacing', 'BAD_KIND')
     const r = visualRect(f.annot, kind)
     const size = sizeOf(f.annot, kind, r, readData(f.annot))
-    const sp = Math.round(Math.max(0, Math.min(size * 4, Number.isFinite(spacing) ? spacing : 0)) * 100) / 100
+    const sp = clampSpacing(spacing, size)
     writeData(s, f.annot, { spacing: String(sp) })
     try {
       f.annot.setModificationDate(new Date())

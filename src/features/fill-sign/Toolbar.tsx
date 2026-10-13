@@ -1,6 +1,6 @@
 import { AArrowDown, AArrowUp, ChevronDown, Crosshair, PenLine, X } from 'lucide-react'
 import { Button, IconButton, openToolGroup, setTool, useApp, useDocState, type DocumentModel } from '@renderer/sdk'
-import { FILL_SIGN_COLORS, isSignatureKind, stepSize, type FillSignItem, type MarkKind, type TextKind } from './shared'
+import { FILL_SIGN_COLORS, isDraftId, isSignatureKind, stepSize, type FillSignItem, type MarkKind, type TextKind } from './shared'
 import { fsOps, selectedItem, setDefaultColor, setDefaultTextSize, useFillSign } from './state'
 import { activateFillTool, cancelPlacing, changeColor, changeSize, KIND_TOOL, placeSignature, TOOL_KIND } from './actions'
 import { KIND_ICON } from './icons'
@@ -30,12 +30,17 @@ async function withSelected(doc: DocumentModel, fn: (item: FillSignItem) => Prom
     otherwise()
     return
   }
-  try {
-    const item = await fsOps(doc).get(sel.id, sel.page)
-    await fn(item)
-  } catch {
-    otherwise()
+  let item: FillSignItem | null = null
+  if (isDraftId(sel.id)) {
+    const e = useFillSign.getState().editing
+    item = e && e.docId === doc.id && e.id === sel.id ? e.item : null
+  } else {
+    item = await fsOps(doc)
+      .get(sel.id, sel.page)
+      .catch(() => null)
   }
+  if (item) await fn(item)
+  else otherwise()
 }
 
 /**
@@ -49,7 +54,15 @@ export function FillSignToolbar({ doc }: { doc: DocumentModel }) {
   const selection = useDocState(doc, (s) => s.selection)
   const hasSel = !!selectedItem(doc) && selection.kind === 'custom'
   return (
-    <div className="fc-fill-sign-toolbar" role="group" aria-label="Fill & Sign">
+    <div
+      className="fc-fill-sign-toolbar"
+      role="group"
+      aria-label="Fill & Sign"
+      onMouseDown={(e) => {
+        // Clicking a button here must not end typing in the text being edited.
+        if ((e.target as HTMLElement).closest('button')) e.preventDefault()
+      }}
+    >
       {TOOL_ORDER.map((k) => {
         const Icon = KIND_ICON[k]
         const id = KIND_TOOL[k]

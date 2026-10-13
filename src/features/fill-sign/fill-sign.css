@@ -54,6 +54,9 @@
 .fc-fill-sign-handle.is-horizontal {
   cursor: ew-resize;
 }
+.fc-fill-sign-handle.is-vertical {
+  cursor: ns-resize;
+}
 .fc-fill-sign-preview {
   position: absolute;
   pointer-events: none;
@@ -155,6 +158,10 @@
 .fc-fill-sign-minibar button.is-danger:hover:not(:disabled) {
   color: var(--danger);
 }
+.fc-fill-sign-minibar button.is-on {
+  color: var(--accent-text);
+  background: var(--bg-active);
+}
 .fc-fill-sign-minibar-wide {
   min-width: 40px !important;
 }
@@ -185,6 +192,11 @@
 }
 .fc-fill-sign-signbtn {
   gap: 6px;
+}
+.fc-fill-sign-signbtn > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .fc-fill-sign-size {
   min-width: 42px;
@@ -287,14 +299,28 @@
   gap: 8px;
   padding: 0 4px 4px;
 }
-.fc-fill-sign-panel-saved img {
-  height: 30px;
+.fc-fill-sign-panel-saved button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-width: 0;
   max-width: 60%;
-  object-fit: contain;
-  padding: 2px 6px;
+  padding: 3px 8px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 4px;
+}
+.fc-fill-sign-panel-saved button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.fc-fill-sign-panel-saved button:disabled {
+  opacity: 0.5;
+}
+.fc-fill-sign-panel-saved img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
 }
 .fc-fill-sign-tip {
   display: flex;

@@ -10,6 +10,7 @@ import {
   lineWidthFor,
   markDimensions,
   stepSize,
+  textTopLeft,
   type FillSignItem
 } from '@features/fill-sign/shared'
 import { fixture, openFixture, roundTrip, type OpenedEngine } from './helpers'
@@ -32,6 +33,20 @@ async function inkInside(e: OpenedEngine, page: number, rect: [number, number, n
   let dark = 0
   for (let i = 0; i < px.length; i += 4) if (px[i] < 128 && px[i + 1] < 128 && px[i + 2] < 128) dark++
   return dark / (px.length / 4)
+}
+
+/** Right edge (page space) of the inked (non-white) pixels inside a page-space rect, rendered at 2x. */
+async function inkRight(e: OpenedEngine, page: number, rect: [number, number, number, number]) {
+  const scale = 2
+  const r = await ops(e).render.page(page, { scale, clip: [rect[0] * scale, rect[1] * scale, rect[2] * scale, rect[3] * scale] })
+  const px = r.pixels!
+  let right = -1
+  for (let y = 0; y < r.height; y++)
+    for (let x = 0; x < r.width; x++) {
+      const i = (y * r.width + x) * 4
+      if (Math.min(px[i], px[i + 1], px[i + 2]) < 128 && x > right) right = x
+    }
+  return rect[0] + (right + 1) / scale
 }
 
 const width = (r: number[]) => r[2] - r[0]
@@ -336,6 +351,90 @@ describe('fill-sign engine', () => {
       expect(width(check.rect)).toBeCloseTo(w, 1)
       expect(height(check.rect)).toBeCloseTo(h, 1)
     }
+  })
+
+  it('puts typed text exactly where the editor showed it, also next to the page edges', async () => {
+    const e = await openFixture('text.pdf')
+    const { fs } = ops(e)
+    const [pw, ph] = [e.info.pages[0].width, e.info.pages[0].height]
+    for (const [at, size] of [
+      [[100, 650], 12],
+      [[2, 3], 18],
+      [[pw - 4, ph - 2], 10]
+    ] as [[number, number], number][]) {
+      const byClick = await fs.addText(0, at, { text: 'X', size })
+      const tl = textTopLeft(at, size, pw, ph)
+      const byCorner = await fs.addText(0, tl, { text: 'X', size, topLeft: true })
+      expect(byClick.rect[0]).toBeCloseTo(tl[0], 3)
+      expect(byClick.rect[1]).toBeCloseTo(tl[1], 3)
+      expect(byCorner.rect.slice(0, 2)).toEqual(byClick.rect.slice(0, 2))
+      expect(byClick.rect[3]).toBeLessThanOrEqual(ph + 0.001)
+    }
+  })
+
+  it('spaces letters out for boxed fields and keeps the spacing through every change', async () => {
+    const e = await openFixture('text.pdf')
+    const { fs, annots } = ops(e)
+    // an empty area of page 2 so only our text is measured
+    const plain = await fs.addText(1, [72, 500], { text: '12345678', size: 12, topLeft: true })
+    expect(plain.spacing).toBe(0)
+    const plainRight = await inkRight(e, 1, [60, 495, 450, 520])
+
+    const spaced = await fs.setSpacing(plain.id, 10)
+    expect(e.lastChanges?.journal.undoLabel).toBe('Change Letter Spacing')
+    expect(e.lastChanges?.dirty).toBe(true)
+    expect(spaced.spacing).toBe(10)
+    expect(spaced.rect[0]).toBeCloseTo(plain.rect[0], 3)
+    // 7 gaps between 8 digits grow by 10pt each; the box follows the text
+    expect(width(spaced.rect) - width(plain.rect)).toBeGreaterThan(65)
+    expect(width(spaced.rect) - width(plain.rect)).toBeLessThan(85)
+    const spacedRight = await inkRight(e, 1, [60, 495, 450, 520])
+    expect(spacedRight - plainRight).toBeCloseTo(70, -1)
+    expect(spacedRight).toBeLessThanOrEqual(spaced.rect[2] + 0.5)
+    expect((await annots.get(plain.id)).extra.spacing).toBe('10')
+
+    // editing the text, moving, recolouring and A+ keep the spacing
+    const edited = await fs.setText(plain.id, '1234')
+    expect(edited.spacing).toBe(10)
+    expect(width(edited.rect)).toBeGreaterThan(4 * 6.6 + 3 * 10 - 1)
+    const moved = await fs.move(plain.id, 0, 30, 'text')
+    expect(moved.spacing).toBe(10)
+    expect(await inkRight(e, 1, [60, 525, 450, 550])).toBeGreaterThan(moved.rect[0] + 3 * 10 + 3 * 6.6)
+    expect((await fs.setColor(plain.id, '#1a3e9a')).spacing).toBe(10)
+    const bigger = await fs.setSize(plain.id, 13, 'text')
+    expect(bigger.spacing).toBe(10)
+    // dragging the corner scales letters and spacing together
+    const r = bigger.rect
+    const doubled = await fs.resize(plain.id, [r[0], r[1], r[0] + width(r) * 2, r[1] + height(r) * 2], 'text')
+    expect(doubled.size).toBeCloseTo(26, 1)
+    expect(doubled.spacing).toBeCloseTo(20, 1)
+
+    // back to normal, and undo
+    const normal = await fs.setSpacing(plain.id, 0)
+    expect(normal.spacing).toBe(0)
+    await e.doc.undo()
+    expect((await fs.get(plain.id)).spacing).toBeCloseTo(20, 1)
+
+    // limits: never negative, at most 4 x the font size
+    expect((await fs.setSpacing(plain.id, -5)).spacing).toBe(0)
+    expect((await fs.setSpacing(plain.id, 1000)).spacing).toBeCloseTo(26 * 4, 1)
+    await expect(fs.setSpacing((await fs.addMark(1, [300, 300], 'check')).id, 4)).rejects.toThrow(/Only text/)
+  })
+
+  it('adds text with letter spacing in one step and keeps it after saving', async () => {
+    const e = await openFixture('text.pdf')
+    const { fs } = ops(e)
+    const item = await fs.addText(1, [72, 600], { text: 'ABCD', size: 14, spacing: 8, color: '#c4161c', topLeft: true })
+    expect(e.lastChanges?.journal.undoLabel).toBe('Add Text')
+    expect(item).toMatchObject({ text: 'ABCD', size: 14, spacing: 8, color: '#c4161c' })
+    expect(item.rect[0]).toBeCloseTo(72, 3)
+    expect(item.rect[1]).toBeCloseTo(600, 3)
+    const again = await roundTrip(e)
+    const [reopened] = await again.ops<typeof fillSignOps>('fill-sign').list(1)
+    expect(reopened).toMatchObject({ text: 'ABCD', spacing: 8 })
+    expect(width(reopened.rect)).toBeCloseTo(width(item.rect), 1)
+    // the saved appearance has the spacing (other PDF viewers show the same thing)
+    expect(await inkRight(again, 1, [60, 595, 400, 625])).toBeGreaterThan(72 + 3 * 8 + 3 * 9)
   })
 
   it('lays the first baseline out where the inline editor expects it', async () => {
