@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useDocState, usePageVersion, type DocumentModel } from '../document/DocumentModel'
 import { useApp } from '../app/store'
 import type { PageGeometry } from './geometry'
@@ -62,13 +62,21 @@ export function PageCanvas({
   // Detail tile: sharp rendering of the visible region at high zoom.
   const vr = visibleRect
   const tileKey = needsDetail && vr ? [vr.left, vr.top, vr.width, vr.height].map((v) => Math.round(v / 64)).join(',') : ''
-  useEffect(() => {
+  /** What the detail canvas currently shows (everything but the tile position), or null. */
+  const detailShownRef = useRef<string | null>(null)
+  // A layout effect: an outdated tile is hidden before the new layout is painted.
+  useLayoutEffect(() => {
     const canvas = detailRef.current
     if (!canvas) return
-    if (!needsDetail || !vr) {
+    const content = `d${pageIndex}:v${version}:s${desired.toFixed(4)}:r${geometry.rotation}:${colorMode}:h${hiddenKey}:a${annots}`
+    // The tile is placed and sized in CSS pixels of the scale it was rendered at. It may stay up
+    // while only the visible region moves (scrolling), but not once the zoom, view rotation or
+    // content changed: until the new tile arrives, the (stretched) base canvas is correct.
+    if (!needsDetail || !vr || detailShownRef.current !== content) {
       canvas.style.display = 'none'
-      return
+      detailShownRef.current = null
     }
+    if (!needsDetail || !vr) return
     const margin = 128
     const clip = {
       left: Math.max(0, vr.left - margin),
@@ -77,7 +85,7 @@ export function PageCanvas({
       bottom: Math.min(geometry.cssHeight, vr.top + vr.height + margin)
     }
     const q = renderQueueFor(doc)
-    const key = `d${pageIndex}:v${version}:s${desired.toFixed(4)}:r${geometry.rotation}:${colorMode}:${tileKey}:h${hiddenKey}:a${annots}`
+    const key = `${content}:t${tileKey}`
     let alive = true
     const timer = window.setTimeout(() => {
       const req = q.request(
@@ -103,6 +111,7 @@ export function PageCanvas({
         c.style.top = `${r.y / dpr}px`
         c.style.width = `${r.width / dpr}px`
         c.style.height = `${r.height / dpr}px`
+        detailShownRef.current = content
       })
     }, 120)
     let cancel = () => {}

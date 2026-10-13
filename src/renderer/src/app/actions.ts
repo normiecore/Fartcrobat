@@ -37,9 +37,22 @@ function extensionOf(name: string) {
   return (/\.([^.]+)$/.exec(name)?.[1] ?? '').toLowerCase()
 }
 
+function askPassword(name: string, wrong: boolean | undefined): Promise<string | null> {
+  return prompt({
+    title: 'Password required',
+    message: wrong
+      ? `The password for “${name}” is incorrect. Try again.`
+      : `“${name}” is protected. Enter the document open password.`,
+    label: 'Password',
+    password: true,
+    okLabel: 'Open'
+  })
+}
+
 /**
  * Opens bytes as a new tab. Prompts for a password when needed. `filePath` is null for documents
- * that do not exist on disk yet (created, combined, converted).
+ * that do not exist on disk yet (created, combined, converted); pass `dirty` for those so the
+ * tab asks to be saved: the engine then reports them unsaved until they are.
  */
 export async function openBytes(
   bytes: Uint8Array,
@@ -50,22 +63,14 @@ export async function openBytes(
   try {
     await engine.ready()
     const doc = engine.ops<typeof import('@engine/ops/doc').default>('doc')
-    let res: OpenResult = await doc.open(bytes, { fileName: name })
+    let res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty })
     while (!res.ok) {
-      const pw = await prompt({
-        title: 'Password required',
-        message: res.wrongPassword
-          ? `The password for “${name}” is incorrect. Try again.`
-          : `“${name}” is protected. Enter the document open password.`,
-        label: 'Password',
-        password: true,
-        okLabel: 'Open'
-      })
+      const pw = await askPassword(name, res.wrongPassword)
       if (pw === null) {
         engine.terminate()
         return null
       }
-      res = await doc.authenticate(pw)
+      res = await doc.authenticate(pw, { dirty: opts.dirty })
     }
     return addDocument(engine, res.info, name, opts)
   } catch (err) {
@@ -197,12 +202,23 @@ export async function saveDocument(
 
 /**
  * Replaces the document content with new bytes (e.g. after signing or optimising), writes them to
- * disk at `path` and reloads the tab from that file.
+ * disk at `path` and reloads the tab from that file. With `path` null the new content is only in
+ * memory and the tab stays unsaved. The password the document was opened with is reused; when
+ * the new bytes need another one, pass it as `opts.password` or the user is asked for it.
  */
-export async function replaceDocumentBytes(doc: DocumentModel, bytes: Uint8Array, path: string | null) {
+export async function replaceDocumentBytes(
+  doc: DocumentModel,
+  bytes: Uint8Array,
+  path: string | null,
+  opts: { password?: string } = {}
+) {
   if (path) await writeFile(path, bytes)
-  const res = await doc.core.doc.reload(bytes, {})
-  if (!res.ok) throw new Error('The new document requires a password')
+  let res = await doc.core.doc.reload(bytes, { password: opts.password, dirty: !path })
+  while (!res.ok) {
+    const pw = await askPassword(doc.state.title, res.wrongPassword)
+    if (pw === null) throw new Error('The new document requires a password')
+    res = await doc.core.doc.reload(bytes, { password: pw, dirty: !path })
+  }
   doc.set({
     info: res.info,
     filePath: path ?? doc.state.filePath,

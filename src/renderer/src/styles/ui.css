@@ -295,6 +295,14 @@
   top: -5px;
   z-index: 2;
 }
+/* A submenu is as wide as its longest item (otherwise labels with shortcuts wrap). */
+.ui-submenu > .ui-menu {
+  width: max-content;
+  max-width: 480px;
+}
+.ui-submenu > .ui-menu .ui-menu-shortcut {
+  margin-left: 16px;
+}
 
 .ui-dialog-backdrop {
   position: fixed;

@@ -50,6 +50,7 @@ img { display: block; object-fit: contain; }
           landscape: !!job.landscape,
           deviceName: job.deviceName || undefined,
           duplexMode: job.duplex,
+          pageSize: job.pageSize,
           margins: { marginType: 'none' }
         },
         (success, failureReason) => resolve(success ? { ok: true } : { ok: false, error: failureReason })
