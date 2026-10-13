@@ -7,7 +7,7 @@ import './styles/viewer.css'
 import { loadFeatures, registry } from './app/registry'
 import { getActiveDoc, useApp } from './app/store'
 import { handleShortcut, runCommand, scheduleMenuUpdate } from './app/commands'
-import { openPaths, quitApp, refreshRecent } from './app/actions'
+import { openNewDocument, openPaths, quitApp, refreshRecent, replaceDocumentBytes } from './app/actions'
 import { invoke, onMainEvent } from './platform'
 import { authorName, coreFeature } from './core/coreFeature'
 import { AppShell } from './shell/AppShell'
@@ -90,7 +90,7 @@ async function boot() {
   void refreshRecent()
   const launch = await invoke('app:launchFiles').catch(() => [] as string[])
   if (launch.length) await openPaths(launch)
-  ;(window as any).__fartcrobat = { registry, useApp, getActiveDoc, openPaths, runCommand }
+  ;(window as any).__fartcrobat = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes }
 }
 
 void boot()
