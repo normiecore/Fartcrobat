@@ -1,0 +1,68 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 9 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /CropBox [100 100 512 692] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> >> /Annots [7 0 R 8 0 R] >>
+endobj
+4 0 obj
+<< /Length 266  >>
+stream
+BT /F1 12 Tf 120 650 Td (Visible text inside) Tj ET
+BT /F1 12 Tf 20 750 Td (CROPPEDSECRET outside) Tj ET
+BT /F1 12 Tf 30 400 Td (EDGE text straddles the crop box) Tj ET
+q 1 0 0 rg 20 20 50 50 re f Q
+q 0 0 1 rg 200 300 100 100 re f Q
+q 200 0 0 100 300 50 cm /Im1 Do Q
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Length 64 /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8 >>
+stream
+                                                                
+endstream
+endobj
+7 0 obj
+<< /Type /Annot /Subtype /Link /Rect [20 740 200 760] /Border [0 0 0] /A << /S /URI /URI (https://outside.example) >> >>
+endobj
+8 0 obj
+<< /Type /Annot /Subtype /Link /Rect [120 640 300 660] /Border [0 0 0] /A << /S /URI /URI (https://inside.example) >> >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 5 0 R >> >> >>
+endobj
+10 0 obj
+<< /Length 57  >>
+stream
+BT /F1 12 Tf 20 750 Td (Page two corner text stays) Tj ET
+endstream
+endobj
+11 0 obj
+<< /Title (Cropped) >>
+endobj
+xref
+0 12
+0000000000 65535 f 
+0000000015 00000 n 
+0000000064 00000 n 
+0000000127 00000 n 
+0000000328 00000 n 
+0000000646 00000 n 
+0000000743 00000 n 
+0000000951 00000 n 
+0000001087 00000 n 
+0000001223 00000 n 
+0000001350 00000 n 
+0000001459 00000 n 
+trailer
+<< /Size 12 /Root 1 0 R /Info 11 0 R >>
+startxref
+1498
+%%EOF

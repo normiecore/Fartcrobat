@@ -206,6 +206,32 @@ export function permissionBits(p: Partial<Record<Permission, boolean>>): number 
   return bits | 0
 }
 
+/**
+ * Session state key (`s.state`): SaveOptions that every later save of this session must use. A
+ * feature sets it when an incremental save would leak removed content (e.g. after redaction).
+ */
+export const REQUIRED_SAVE_OPTIONS = 'core:requiredSaveOptions'
+
+const GARBAGE_LEVELS: NonNullable<SaveOptions['garbage']>[] = ['none', 'collect', 'compact', 'deduplicate']
+
+/** Merges the session's required save options (if any) over the caller's options. */
+export function withRequiredSaveOptions(s: Session, opts: SaveOptions): SaveOptions {
+  const req = s.state.get(REQUIRED_SAVE_OPTIONS) as SaveOptions | undefined
+  if (!req) return opts
+  if (req.mode === 'full' && opts.mode === 'incremental') {
+    throw new EngineError(
+      'This document must be saved in full (content was redacted or removed); an incremental save would keep the removed content in the file.',
+      'FULL_SAVE_REQUIRED'
+    )
+  }
+  const out: SaveOptions = { ...opts }
+  if (req.mode) out.mode = req.mode
+  if (req.garbage && GARBAGE_LEVELS.indexOf(req.garbage) > GARBAGE_LEVELS.indexOf(out.garbage ?? 'collect')) out.garbage = req.garbage
+  if (req.clean) out.clean = true
+  if (req.sanitize) out.sanitize = true
+  return out
+}
+
 function takeBuffer(buf: InstanceType<Session['mupdf']['Buffer']>): Uint8Array {
   try {
     return buf.asUint8Array().slice()
@@ -244,6 +270,7 @@ function saveIncrementally(s: Session): Uint8Array {
  * its own security settings.
  */
 export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
+  opts = withRequiredSaveOptions(s, opts)
   const doc = s.pdf
   let mode = opts.mode ?? 'auto'
   const changesSecurity = !!opts.encrypt || !!opts.decrypt
