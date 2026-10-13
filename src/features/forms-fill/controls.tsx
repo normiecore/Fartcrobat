@@ -131,6 +131,9 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly, display }: 
   const highlightColor = useFormsSettings((st) => st.highlightColor)
   const markedDirtyRef = useRef(false)
   const caretRef = useRef<number | null>(null)
+  /** The loaded field the draft last followed, and how many commits are being written. */
+  const followedRef = useRef(field)
+  const committingRef = useRef(0)
   fieldRef.current = field
   useRegister(ctl, field.id, ref, true)
 
@@ -139,14 +142,16 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly, display }: 
     setDraft(v)
   }
 
-  // Follow the document while the user is not editing.
+  // Follow the document while the user is not editing. The layer reloads its fields only after a
+  // commit is written, so until then `field` holds the value from before the commit: only a field
+  // loaded after it may replace the draft (Shift+Tab straight back would show the old text).
   useEffect(() => {
-    if (!focused && !dirtyRef.current) {
-      draftRef.current = field.value
-      setDraft(field.value)
-      originalRef.current = field.value
-    }
-  }, [field.value, focused])
+    if (focused || dirtyRef.current || committingRef.current > 0 || field === followedRef.current) return
+    followedRef.current = field
+    draftRef.current = field.value
+    setDraft(field.value)
+    originalRef.current = field.value
+  }, [field, focused])
 
   // After a commit the page re-renders; keep showing the new text until the new appearance is
   // drawn: shortly after the layer has the new value (the page was re-rendered at the same time).
@@ -169,6 +174,7 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly, display }: 
     dirtyRef.current = false
     const f = fieldRef.current
     const raw = draftRef.current
+    committingRef.current++
     try {
       const r = await ctl.commitText(f, raw)
       if (!r.ok) {
@@ -185,8 +191,14 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly, display }: 
       }
       return true
     } catch (err) {
+      // Show what the document still holds.
+      if (!dirtyRef.current) setText(originalRef.current)
       if (!doc.isClosed) showError(err, `Could not fill in “${labelOf(f)}”`)
       return false
+    } finally {
+      committingRef.current--
+      // Fields loaded meanwhile were read before the commit was written.
+      followedRef.current = fieldRef.current
     }
   }, [ctl, doc])
 
@@ -316,7 +328,7 @@ export function TextControl({ doc, ctl, field, extra, box, readOnly, display }: 
       if (readOnly) return
       setFocused(true)
       setPending(null)
-      if (!dirtyRef.current) originalRef.current = fieldRef.current.value
+      if (!dirtyRef.current) originalRef.current = draftRef.current
       ctl.prepare()
       ctl.activeEditor = { id: field.id, flush: () => void commit() }
     },
