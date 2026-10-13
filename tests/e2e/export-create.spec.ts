@@ -305,7 +305,9 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromClipboard'))
     await expect(page.locator('.toast', { hasText: 'The clipboard is empty' })).toBeVisible()
 
-    // ---- an Office file opened like any file is converted with LibreOffice
+    // ---- an Office file opened like any file is converted (by LibreOffice when it is installed,
+    // otherwise by the built-in converter)
+    const libreOffice = await page.evaluate(() => (window as any).api.invoke('feature:export-create:findLibreOffice'))
     await openPath(page, fixturePath('export-create/sample.docx'))
     await expect.poll(() => docCount(page), { timeout: 90000 }).toBe(8)
     state = await activeDocState(page)
@@ -319,7 +321,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
     await page.locator('.prefs-nav button', { hasText: 'Convert' }).click()
     await page.getByTestId('lo-detect').click()
-    await expect(page.getByTestId('lo-status')).toContainText(/Found LibreOffice \d/)
+    await expect(page.getByTestId('lo-status')).toContainText(libreOffice ? /Found LibreOffice \d/ : 'LibreOffice was not found')
     await shot(page, 'settings-convert')
     await setTheme(page, 'dark')
     await page.waitForTimeout(300)
