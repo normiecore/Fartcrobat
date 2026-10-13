@@ -149,11 +149,97 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
     r.unknownReason = 'The document has not been saved since it was created or converted, so its signatures cannot be checked.'
     return r
   }
+  const chk = await checkSignatureData(ctx, r, v, vNum)
+  if (!chk) return r
+
+  // Byte range must not have been tampered with by a later update of this signature dictionary.
+  if (ctx.revs && !r.coversWholeFile) {
+    const changed = objectsChangedAfter(ctx.revs, chk.end)
+    if (changed === null) {
+      r.changesUnknown = true
+    } else {
+      if (changed.has(vNum) && changed.get(vNum) !== 'f') r.problems.push('The signature dictionary was changed after signing.')
+      // Permission in force for this signature: certification (if signed at or after it) and lock.
+      let permission: MdpPermission | null = null
+      if (ctx.certified && chk.end >= ctx.certEnd && ctx.certEnd > 0) permission = ctx.certified.permission
+      if (r.lock?.permission) permission = permission ? (Math.min(permission, r.lock.permission) as MdpPermission) : r.lock.permission
+      const lockedFields = r.lock ? (r.lock.action === 'All' ? '*' : r.lock.action === 'Include' ? r.lock.fields : null) : null
+      try {
+        r.changes = describeChanges(ctx.s.pdf, changed, sizeAt(ctx.revs, chk.end), { permission, lockedFields })
+      } catch {
+        r.changesUnknown = true
+      }
+    }
+  } else if (!ctx.revs && !r.coversWholeFile) {
+    r.changesUnknown = true
+  }
+  return r
+}
+
+/** Report fields that only depend on the file bytes and the signature value (cached per file). */
+const DATA_KEYS = [
+  'integrity',
+  'signatureValid',
+  'revisionEnd',
+  'coversWholeFile',
+  'revision',
+  'revisionCount',
+  'digestAlgorithm',
+  'signatureAlgorithm',
+  'signingTime',
+  'timestamp',
+  'certificates',
+  'chainVerified',
+  'chainComplete',
+  'certValidAtSigning',
+  'certExpiredNow',
+  'signerName',
+  'problems',
+  'warnings',
+  'unknownReason'
+] as const satisfies readonly (keyof SignatureReport)[]
+
+type DataResult = { end: number } | null
+interface CachedData {
+  values: Partial<SignatureReport>
+  result: DataResult
+}
+
+/**
+ * Checks of the signed bytes are by far the slowest part (hashing the whole file, verifying
+ * certificates) and depend only on the file, so they are remembered for the bytes the document
+ * was opened (or last saved) from; editing the document does not repeat them.
+ */
+const dataCache = new WeakMap<Uint8Array, Map<string, CachedData>>()
+
+async function checkSignatureData(ctx: Context, r: SignatureReport, v: PDFObject, vNum: number): Promise<DataResult> {
+  const src = ctx.src!
+  const key = `${vNum}|${r.kind}|${r.subFilter}|${r.byteRange.join(',')}`
+  let perFile = dataCache.get(src)
+  if (!perFile) {
+    perFile = new Map()
+    dataCache.set(src, perFile)
+  }
+  const hit = perFile.get(key)
+  if (hit) {
+    const copy = structuredClone(hit.values)
+    Object.assign(r, copy)
+    return hit.result
+  }
+  const result = await checkSignatureDataUncached(ctx, r, v, vNum)
+  const values: Partial<SignatureReport> = {}
+  for (const k of DATA_KEYS) (values as Record<string, unknown>)[k] = r[k]
+  perFile.set(key, { values: structuredClone(values), result })
+  return result
+}
+
+async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: PDFObject, vNum: number): Promise<DataResult> {
+  const src = ctx.src!
   const chk = checkByteRange(src, r.byteRange)
   if (!chk.ok || !chk.contents) {
     r.integrity = false
     r.problems.push(chk.problem ?? 'The signature byte range is invalid.')
-    return r
+    return null
   }
   r.revisionEnd = chk.end
   r.coversWholeFile = chk.end >= src.length || onlyWhitespaceAfter(src, chk.end)
@@ -206,43 +292,27 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
     if (brokenLink >= 0) r.warnings.push('A certificate in the chain does not verify against its issuer.')
   }
   if (!r.signerName) r.signerName = 'Unknown signer'
+  return { end: chk.end }
+}
 
-  // Byte range must not have been tampered with by a later update of this signature dictionary.
-  if (ctx.revs && !r.coversWholeFile) {
-    const changed = objectsChangedAfter(ctx.revs, chk.end)
-    if (changed === null) {
-      r.changesUnknown = true
-    } else {
-      if (changed.has(vNum) && changed.get(vNum) !== 'f') r.problems.push('The signature dictionary was changed after signing.')
-      // Permission in force for this signature: certification (if signed at or after it) and lock.
-      let permission: MdpPermission | null = null
-      if (ctx.certified && chk.end >= ctx.certEnd && ctx.certEnd > 0) permission = ctx.certified.permission
-      if (r.lock?.permission) permission = permission ? (Math.min(permission, r.lock.permission) as MdpPermission) : r.lock.permission
-      const lockedFields = r.lock ? (r.lock.action === 'All' ? '*' : r.lock.action === 'Include' ? r.lock.fields : null) : null
-      try {
-        r.changes = describeChanges(ctx.s.pdf, changed, sizeAt(ctx.revs, chk.end), { permission, lockedFields })
-      } catch {
-        r.changesUnknown = true
-      }
-    }
-  } else if (!ctx.revs && !r.coversWholeFile) {
-    r.changesUnknown = true
+/** Revisions of a file, parsed once per file. */
+const revisionCache = new WeakMap<Uint8Array, Promise<RevisionInfo | null>>()
+
+function revisionsOf(src: Uint8Array): Promise<RevisionInfo | null> {
+  let p = revisionCache.get(src)
+  if (!p) {
+    p = readRevisions(src).catch(() => null)
+    revisionCache.set(src, p)
   }
-  return r
+  return p
 }
 
 export async function validateSignatures(s: Session): Promise<ValidationReport> {
   const pdf = s.pdf
   const fields = listSignatureFields(pdf, s)
   const src = s.sourceBytes
-  let revs: RevisionInfo | null = null
-  if (src) {
-    try {
-      revs = await readRevisions(src)
-    } catch {
-      revs = null
-    }
-  }
+  // Only signed documents need the revision structure of the file.
+  const revs: RevisionInfo | null = src && fields.some((f) => f.signed) ? await revisionsOf(src) : null
   const certified = certification(pdf)
   const ctx: Context = { s, src, revs, certified, certEnd: 0 }
   if (certified && src) {

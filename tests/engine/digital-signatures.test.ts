@@ -209,6 +209,24 @@ describe('signing and validation', () => {
     writeFileSync(join(TMP, 'twice.pdf'), second.bytes)
   })
 
+  it('revalidates an edited document from the cached checks of its file', async () => {
+    const e = await openFixture('text.pdf')
+    const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+    const e2 = await openBytes(bytes)
+    const first = await e2.sig.validate()
+    // An unsaved edit (rotating a page) moves the field; the file checks stay the same.
+    await e2.ops<typeof pageOps>('pages').rotate([0], 90)
+    const second = await e2.sig.validate()
+    const [a, b] = [first.signatures[0], second.signatures[0]]
+    expect(b.integrity && b.signatureValid).toBe(true)
+    expect(b.certificates).toEqual(a.certificates)
+    expect(b.problems).toEqual([])
+    expect(b.rect).not.toEqual(a.rect)
+    // Results are copies: changing one report does not leak into the next.
+    b.problems.push('x')
+    expect((await e2.sig.validate()).signatures[0].problems).toEqual([])
+  })
+
   it('reports comments added after signing', async () => {
     const e = await openFixture('text.pdf')
     const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
