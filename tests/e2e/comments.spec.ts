@@ -32,6 +32,14 @@ async function toScreen(page: Page, pt: [number, number], pageIndex = 0): Promis
   return [box.x + pt[0] * s, box.y + pt[1] * s]
 }
 
+/** The id of the comment whose hit area is under a point of the window, or null. */
+async function annotAt(page: Page, x: number, y: number): Promise<number | null> {
+  return page.evaluate(([px, py]) => {
+    const id = document.elementFromPoint(px, py)?.closest('[data-annot-id]')?.getAttribute('data-annot-id')
+    return id ? Number(id) : null
+  }, [x, y])
+}
+
 async function scale(page: Page): Promise<number> {
   const box = (await page.locator('.viewer-page[data-page-index="0"]').boundingBox())!
   return box.width / 612
@@ -122,8 +130,10 @@ test('select, move, edit, reply, export and import comments', async () => {
     await page.keyboard.press('Control+z')
     await expect.poll(async () => (await op(page, 'annots', 'get', ids.sq)).rect[0]).toBeCloseTo(before.rect[0], 1)
 
-    // ---- arrow keys nudge (1 pt, Shift = 10 pt)
+    // ---- arrow keys nudge (1 pt, Shift = 10 pt), once the page shows the restored position
+    await expect.poll(() => annotAt(page, bx, by)).toBe(ids.sq)
     await page.mouse.click(bx, by)
+    await expect(page.locator(`.fc-comments-selbox[data-annot-id="${ids.sq}"]`)).toBeVisible()
     await page.keyboard.press('ArrowRight')
     await expect.poll(async () => (await op(page, 'annots', 'get', ids.sq)).rect[0]).toBeCloseTo(before.rect[0] + 1, 1)
     await page.keyboard.press('Shift+ArrowDown')
