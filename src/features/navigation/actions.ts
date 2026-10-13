@@ -7,16 +7,30 @@ import { bookmarkUi, setBookmarkUi } from './state'
 
 export const navOps = (doc: DocumentModel) => doc.ops<typeof navigationOps>('navigation')
 export const pageOps = (doc: DocumentModel) => doc.ops<typeof import('@engine/ops/pages').default>('pages')
+export const annotOps = (doc: DocumentModel) => doc.ops<typeof import('@engine/ops/annots').default>('annots')
 
 export const NAV_PANELS = ['thumbnails', 'bookmarks', 'attachments', 'layers', 'search'] as const
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
 
+/**
+ * Shows a page. Without a page viewer (a tool such as Organize Pages replaces it) the page becomes
+ * the current one, and the viewer opens there when it comes back.
+ */
+export function showPage(doc: DocumentModel, index: number) {
+  const page = Math.max(0, Math.min(doc.pageCount - 1, index))
+  if (doc.view) doc.view.goToPage(page)
+  else doc.set({ currentPage: page })
+}
+
 /** Navigates to a bookmark destination, applying its magnification like Acrobat does. */
 export async function goToDest(doc: DocumentModel, dest: BookmarkDest) {
   const view = doc.view
-  if (!view) return
   const page = Math.max(0, Math.min(doc.pageCount - 1, dest.page))
+  if (!view) {
+    showPage(doc, page)
+    return
+  }
   let mode: 'fit-page' | 'fit-width' | null = null
   if (dest.type === 'Fit' || dest.type === 'FitB') mode = 'fit-page'
   else if (dest.type === 'FitH' || dest.type === 'FitBH') mode = 'fit-width'
@@ -98,19 +112,6 @@ export function toggleNavigationPanes() {
   const cur = useApp.getState().rightPanelId
   if (cur) useApp.setState({ rightPanelId: null })
   else openRightPanel(lastNavPanel)
-}
-
-/**
- * Document info (metadata, attachment count) is only refetched by the core after structural changes;
- * call this after changing document-level data it reports.
- */
-export async function refreshInfo(doc: DocumentModel) {
-  try {
-    const info = await doc.core.doc.info()
-    if (!doc.isClosed) doc.set({ info })
-  } catch (err) {
-    showError(err, 'Could not refresh the document information')
-  }
 }
 
 /** Resolves once the document info differs from `before` (it is refetched after structural changes). */

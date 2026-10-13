@@ -19,7 +19,7 @@ import {
   type ContextMenuItem,
   type DocumentModel
 } from '@renderer/sdk'
-import { infoChanged, pageOps, undoToast } from './actions'
+import { infoChanged, pageOps, showPage, undoToast } from './actions'
 import { loadNavSettings, setThumbSize, useNavSettings, type ThumbSize } from './state'
 import {
   describePages,
@@ -51,27 +51,30 @@ const ThumbCanvas = memo(function ThumbCanvas({
   const version = usePageVersion(doc, index)
   const colorMode = useApp((s) => s.prefs.pageColors)
   const annots = useDocState(doc, (s) => s.showAnnotations)
-  const [ready, setReady] = useState(false)
+  /** Key of the render on the canvas; the previous image stays up while a newer one renders. */
+  const [shown, setShown] = useState<string | null>(null)
+  const dpr = window.devicePixelRatio || 1
+  const scale = (width * dpr) / Math.max(1, page.width)
+  const key = `fc-navigation-thumb:${page.id}:${version}:${scale.toFixed(4)}:${colorMode}:${annots}`
   useEffect(() => {
-    const dpr = window.devicePixelRatio || 1
-    const scale = (width * dpr) / Math.max(1, page.width)
-    const key = `fc-navigation-thumb:${page.id}:${version}:${scale.toFixed(4)}:${colorMode}:${annots}`
     const req = renderQueueFor(doc).request(key, index, { scale, colorMode, annots }, 50 + index / 100000)
     let alive = true
     void req.promise.then((r) => {
       if (!alive || !r || !ref.current) return
       drawResult(ref.current, r)
-      setReady(true)
+      setShown(key)
     })
     return () => {
       alive = false
       req.cancel()
     }
-  }, [doc, index, page.id, page.width, version, width, colorMode, annots])
+    // the key covers page, version, scale, colours and comments
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, index, key])
   return (
     <canvas
       ref={ref}
-      className={`fc-navigation-thumb-canvas ${ready ? 'is-ready' : ''}`}
+      className={`fc-navigation-thumb-canvas ${shown ? 'is-ready' : ''} ${shown === key ? '' : 'is-stale'}`}
       style={{ width, height }}
       aria-hidden="true"
     />
@@ -180,7 +183,7 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
       const before = doc.state.info
       await pageOps(doc).insertBlank(index + 1)
       await infoChanged(doc, before)
-      doc.view?.goToPage(index + 1)
+      showPage(doc, index + 1)
     } catch (err) {
       showError(err, 'Could not insert a page')
     }
@@ -254,7 +257,7 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
       anchorRef.current = idx
     }
     setActive(idx)
-    if (opts.navigate !== false && !opts.toggle && !opts.range) doc.view?.goToPage(idx)
+    if (opts.navigate !== false && !opts.toggle && !opts.range) showPage(doc, idx)
     else scrollIntoView(idx)
   }
 
@@ -293,7 +296,7 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
       case 'Enter':
       case ' ':
         e.preventDefault()
-        doc.view?.goToPage(active)
+        showPage(doc, active)
         return
       case 'Delete':
       case 'Backspace':
@@ -407,7 +410,7 @@ export function ThumbnailsPanel({ doc }: { doc: DocumentModel }) {
           const pages = doc.state.info.pages
           const ids = d.ids.filter((id) => pages.some((p) => p.id === id))
           const first = pages.findIndex((p) => p.id === ids[0])
-          if (first >= 0) doc.view?.goToPage(first)
+          if (first >= 0) showPage(doc, first)
           if (ids.length > 1) setSelectedIds(ids)
         })
         .catch((err) => showError(err, 'Could not move pages'))

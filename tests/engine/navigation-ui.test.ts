@@ -36,6 +36,7 @@ function bm(title: string, page: number | null, children: Bookmark[] = [], open 
     title,
     dest: page === null ? null : { page, x: null, y: null, zoom: null, type: 'Fit' },
     uri: null,
+    broken: false,
     open,
     bold: false,
     italic: false,

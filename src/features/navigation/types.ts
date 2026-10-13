@@ -28,6 +28,8 @@ export interface Bookmark {
   dest: BookmarkDest | null
   /** External link or other action target (e.g. "https://…"), when the bookmark is not a page destination. */
   uri: string | null
+  /** The destination page was deleted from the document. */
+  broken: boolean
   /** Open in the PDF (/Count > 0). Used as the initial expanded state. */
   open: boolean
   bold: boolean
@@ -64,6 +66,8 @@ export interface AnnotationFileInfo {
   fileName: string
   size: number | null
   description: string
+  /** The comment is locked (annotation flag Locked): it cannot be deleted. */
+  locked: boolean
 }
 
 export interface AttachmentList {

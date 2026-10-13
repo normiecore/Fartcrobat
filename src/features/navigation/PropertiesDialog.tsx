@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Lock } from 'lucide-react'
 import {
   Button,
   Dialog,
@@ -16,7 +17,7 @@ import {
   usePrefs,
   type DocumentModel
 } from '@renderer/sdk'
-import { navOps, refreshInfo } from './actions'
+import { navOps } from './actions'
 import type {
   DocumentPropertiesData,
   FontInfo,
@@ -66,12 +67,14 @@ function DescriptionTab({
   doc,
   meta,
   setMeta,
-  props
+  props,
+  readOnly
 }: {
   doc: DocumentModel
   meta: Record<MetaKey, string>
   setMeta: (k: MetaKey, v: string) => void
   props: DocumentPropertiesData | null
+  readOnly: boolean
 }) {
   const info = useDocState(doc, (s) => s.info)
   const filePath = useDocState(doc, (s) => s.filePath)
@@ -97,11 +100,18 @@ function DescriptionTab({
   const field = (k: MetaKey, label: string, multiline = false) => (
     <Row label={label}>
       {multiline ? (
-        <TextArea aria-label={label} rows={2} value={meta[k]} onChange={(e) => setMeta(k, e.target.value)} />
+        <TextArea
+          aria-label={label}
+          rows={2}
+          value={meta[k]}
+          readOnly={readOnly}
+          onChange={(e) => setMeta(k, e.target.value)}
+        />
       ) : (
         <TextInput
           aria-label={label}
           value={meta[k]}
+          readOnly={readOnly}
           onChange={(e) => setMeta(k, e.target.value)}
           data-autofocus={k === 'title' ? true : undefined}
         />
@@ -334,11 +344,13 @@ const MAGNIFICATIONS: { value: string; label: string }[] = [
 function InitialViewTab({
   view,
   setView,
-  pageCount
+  pageCount,
+  readOnly
 }: {
   view: InitialView
   setView: (v: InitialView) => void
   pageCount: number
+  readOnly: boolean
 }) {
   const mag = typeof view.magnification === 'number' ? String(view.magnification) : view.magnification
   const magOptions = MAGNIFICATIONS.some((o) => o.value === mag)
@@ -351,6 +363,7 @@ function InitialViewTab({
         <Row label="Navigation tab">
           <Select<NavigationTab>
             aria-label="Navigation tab"
+            disabled={readOnly}
             value={view.navigationTab}
             options={NAV_TABS}
             onChange={(v) => setView({ ...view, navigationTab: v })}
@@ -359,6 +372,7 @@ function InitialViewTab({
         <Row label="Page layout">
           <Select<InitialLayout>
             aria-label="Page layout"
+            disabled={readOnly}
             value={view.pageLayout}
             options={LAYOUTS}
             onChange={(v) => setView({ ...view, pageLayout: v })}
@@ -367,6 +381,7 @@ function InitialViewTab({
         <Row label="Magnification">
           <Select<string>
             aria-label="Magnification"
+            disabled={readOnly}
             value={mag}
             options={magOptions}
             onChange={(v) =>
@@ -381,6 +396,7 @@ function InitialViewTab({
           <span className="fc-navigation-props-inline">
             <NumberInput
               aria-label="Open to page"
+              disabled={readOnly}
               value={view.openToPage + 1}
               min={1}
               max={pageCount}
@@ -392,7 +408,7 @@ function InitialViewTab({
           </span>
         </Row>
       </div>
-      {view.openActionIsScript && (
+      {view.openActionIsScript && !readOnly && (
         <p className="fc-navigation-hint">
           This document runs a script when it opens. Changing the page or magnification replaces that script.
         </p>
@@ -408,10 +424,12 @@ function InitialViewTab({
 
 function CustomTab({
   entries,
-  setEntries
+  setEntries,
+  readOnly
 }: {
   entries: { key: string; value: string }[]
   setEntries: (e: { key: string; value: string }[]) => void
+  readOnly: boolean
 }) {
   const [name, setName] = useState('')
   const [value, setValue] = useState('')
@@ -432,58 +450,60 @@ function CustomTab({
   return (
     <div className="fc-navigation-props-tab">
       <h4 className="fc-navigation-props-heading">Custom Properties</h4>
-      <div className="fc-navigation-custom-form">
-        <label className="ui-field">
-          <span className="ui-field-label">Name</span>
-          <TextInput
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              setTouched(false)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                e.stopPropagation()
-                add()
-              }
-            }}
-          />
-        </label>
-        <label className="ui-field">
-          <span className="ui-field-label">Value</span>
-          <TextInput
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                e.stopPropagation()
-                add()
-              }
-            }}
-          />
-        </label>
-        <div className="fc-navigation-custom-buttons">
-          <Button size="sm" onClick={add} disabled={!name.trim()}>
-            {exists ? 'Change' : 'Add'}
-          </Button>
-          <Button
-            size="sm"
-            variant="quiet"
-            disabled={selected === null}
-            onClick={() => {
-              setEntries(entries.filter((e) => e.key !== selected))
-              setSelected(null)
-              setName('')
-              setValue('')
-            }}
-          >
-            Delete
-          </Button>
+      {!readOnly && (
+        <div className="fc-navigation-custom-form">
+          <label className="ui-field">
+            <span className="ui-field-label">Name</span>
+            <TextInput
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                setTouched(false)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  add()
+                }
+              }}
+            />
+          </label>
+          <label className="ui-field">
+            <span className="ui-field-label">Value</span>
+            <TextInput
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  add()
+                }
+              }}
+            />
+          </label>
+          <div className="fc-navigation-custom-buttons">
+            <Button size="sm" onClick={add} disabled={!name.trim()}>
+              {exists ? 'Change' : 'Add'}
+            </Button>
+            <Button
+              size="sm"
+              variant="quiet"
+              disabled={selected === null}
+              onClick={() => {
+                setEntries(entries.filter((e) => e.key !== selected))
+                setSelected(null)
+                setName('')
+                setValue('')
+              }}
+            >
+              Delete
+            </Button>
+          </div>
         </div>
-      </div>
-      {touched && error && <div className="ui-field-error">{error}</div>}
+      )}
+      {touched && error && !readOnly && <div className="ui-field-error">{error}</div>}
       <div className="fc-navigation-custom-table" role="listbox" aria-label="Custom properties">
         <div className="fc-navigation-custom-head" role="presentation">
           <span>Name</span>
@@ -498,11 +518,13 @@ function CustomTab({
             aria-selected={selected === e.key}
             className={`fc-navigation-custom-row ${selected === e.key ? 'is-selected' : ''}`}
             onClick={() => {
+              if (readOnly) return
               setSelected(e.key)
               setName(e.key)
               setValue(e.value)
             }}
             onKeyDown={(ev) => {
+              if (readOnly) return
               if (ev.key === 'Enter' || ev.key === ' ') {
                 ev.preventDefault()
                 setSelected(e.key)
@@ -516,6 +538,22 @@ function CustomTab({
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/** Shown on the editable tabs when the document's security settings don't allow changes. */
+function RestrictedNotice() {
+  const canUnlock = registry.commands.has('protect.unlock')
+  return (
+    <div className="fc-navigation-props-locked" role="note">
+      <Lock size={16} aria-hidden="true" />
+      <span>This document's security settings don't allow changes, so its properties are read-only.</span>
+      {canUnlock && (
+        <Button size="sm" onClick={() => void runCommand('protect.unlock')}>
+          Enter Permissions Password…
+        </Button>
+      )}
     </div>
   )
 }
@@ -549,6 +587,8 @@ export function PropertiesDialog({
   const [custom, setCustom] = useState<{ key: string; value: string }[] | null>(null)
   const [saving, setSaving] = useState(false)
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  // Acrobat greys these out when "Changing the Document" is not allowed.
+  const readOnly = info.permissions.edit === false
 
   useEffect(() => {
     let alive = true
@@ -583,14 +623,13 @@ export function PropertiesDialog({
   }, [meta, props, view, custom])
 
   const ok = async () => {
-    if (!Object.keys(patch).length) {
+    if (readOnly || !Object.keys(patch).length) {
       close()
       return
     }
     setSaving(true)
     try {
       await navOps(doc).setProperties(patch)
-      await refreshInfo(doc)
       close()
     } catch (err) {
       showError(err, 'Could not change the document properties')
@@ -654,8 +693,10 @@ export function PropertiesDialog({
         id={`fc-navigation-tabpanel-${tab}`}
         aria-labelledby={`fc-navigation-tab-${tab}`}
       >
+        {readOnly && (tab === 'description' || tab === 'initial' || tab === 'custom') && <RestrictedNotice />}
         {tab === 'description' && (
           <DescriptionTab
+            readOnly={readOnly}
             doc={doc}
             meta={meta}
             setMeta={(k, v) => setMetaState((m) => ({ ...m, [k]: v }))}
@@ -666,13 +707,13 @@ export function PropertiesDialog({
         {tab === 'fonts' && <FontsTab doc={doc} />}
         {tab === 'initial' &&
           (view ? (
-            <InitialViewTab view={view} setView={setView} pageCount={info.pageCount} />
+            <InitialViewTab view={view} setView={setView} pageCount={info.pageCount} readOnly={readOnly} />
           ) : (
             <div className="fc-navigation-loading">Loading…</div>
           ))}
         {tab === 'custom' &&
           (custom ? (
-            <CustomTab entries={custom} setEntries={setCustom} />
+            <CustomTab entries={custom} setEntries={setCustom} readOnly={readOnly} />
           ) : (
             <div className="fc-navigation-loading">Loading…</div>
           ))}

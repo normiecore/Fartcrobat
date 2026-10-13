@@ -30,7 +30,7 @@ import {
   type ContextMenuItem,
   type DocumentModel
 } from '@renderer/sdk'
-import { navOps, refreshInfo, undoToast } from './actions'
+import { annotOps, navOps, showPage, undoToast } from './actions'
 import type { AttachmentList } from './types'
 import { formatBytes, formatDate, mimeTypeFor } from './util'
 
@@ -122,6 +122,21 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
     }
   }, [doc, docVersion])
 
+  // Forget a selection whose file is gone (deleted, undone, or its page removed).
+  useEffect(() => {
+    if (!list) return
+    setSelected((sel) => {
+      if (!sel) return sel
+      if (sel.kind === 'file') return list.files.some((f) => f.key === sel.key) ? sel : null
+      // a comment keeps its id when its page moves; follow it
+      const a = list.annotations.find((x) => x.id === sel.id)
+      if (!a) return null
+      return a.page === sel.page && String(a.rect) === String(sel.rect)
+        ? sel
+        : { kind: 'annot', id: a.id, page: a.page, rect: a.rect }
+    })
+  }, [list])
+
   const nameOf = useCallback(
     (sel: NonNullable<Selected>): string => {
       if (sel.kind === 'file') return list?.files.find((f) => f.key === sel.key)?.fileName ?? sel.key
@@ -200,7 +215,6 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
       }
     }
     if (added.length) {
-      void refreshInfo(doc)
       setSelected({ kind: 'file', key: added[added.length - 1] })
       undoToast(doc, added.length === 1 ? `Attached ${added[0]}` : `Attached ${added.length} files`)
     }
@@ -219,12 +233,24 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
     }
   }
 
+  const isLocked = (sel: Selected) =>
+    sel?.kind === 'annot' && !!list?.annotations.find((a) => a.id === sel.id)?.locked
+
   const remove = async (sel: NonNullable<Selected>) => {
-    if (sel.kind !== 'file') return
     const name = nameOf(sel)
+    if (isLocked(sel)) {
+      toast(`The comment holding ${name} is locked. Unlock it in its properties to delete it.`, {
+        kind: 'warning'
+      })
+      return
+    }
     try {
-      await navOps(doc).deleteAttachment(sel.key)
-      void refreshInfo(doc)
+      if (sel.kind === 'file') await navOps(doc).deleteAttachment(sel.key)
+      else {
+        await annotOps(doc).delete([sel.id], sel.page)
+        const cur = doc.state.selection
+        if (cur.kind === 'annotations' && cur.ids.includes(sel.id)) doc.clearSelection()
+      }
       setSelected(null)
       undoToast(doc, `Deleted ${name}`)
     } catch (err) {
@@ -250,9 +276,12 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
     }
   }
 
+  /** Scrolls to the comment holding the file and selects it, like clicking it on the page. */
   const showAnnotation = (sel: Extract<Selected, { kind: 'annot' }>) => {
-    if (sel.rect) doc.view?.scrollToRect(sel.page, sel.rect, { center: true })
-    else doc.view?.goToPage(sel.page)
+    if (sel.page >= doc.pageCount) return
+    doc.setSelection({ kind: 'annotations', page: sel.page, ids: [sel.id] })
+    if (sel.rect && doc.view) doc.view.scrollToRect(sel.page, sel.rect, { center: true })
+    else showPage(doc, sel.page)
   }
 
   const menuFor = (sel: NonNullable<Selected>): ContextMenuItem[] => [
@@ -270,7 +299,18 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
             run: () => void remove(sel)
           }
         ]
-      : [{ id: 'goto', label: `Show on Page ${sel.page + 1}`, run: () => showAnnotation(sel) }])
+      : [
+          { id: 'goto', label: `Show on Page ${sel.page + 1}`, run: () => showAnnotation(sel) },
+          { id: 'sep', label: '', separator: true },
+          {
+            id: 'delete',
+            label: 'Delete Comment and File',
+            icon: Trash2,
+            danger: true,
+            disabled: isLocked(sel),
+            run: () => void remove(sel)
+          }
+        ])
   ]
 
   const isSel = (s: Selected) =>
@@ -294,7 +334,7 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
       if (e.key === 'Enter') {
         e.preventDefault()
         void open(sel)
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && sel.kind === 'file') {
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
         e.stopPropagation()
         void remove(sel)
@@ -362,7 +402,7 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
         <IconButton
           icon={Trash2}
           label="Delete attachment"
-          disabled={selected?.kind !== 'file'}
+          disabled={!selected || isLocked(selected)}
           onClick={() => selected && void remove(selected)}
         />
       </div>

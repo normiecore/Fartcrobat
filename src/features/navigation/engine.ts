@@ -3,7 +3,16 @@ import { hexToRgb, rgbToHex, transformPoint, transformRect } from '@shared/geome
 import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { PDFObject, Session } from '@engine/session'
 import docOps from '@engine/ops/doc'
-import { catalog, isNull, pdfDate, readName, readNumber, readRect, readString } from '@engine/util/pdf'
+import {
+  catalog,
+  isNull,
+  pageRotation,
+  pdfDate,
+  readName,
+  readNumber,
+  readRect,
+  readString
+} from '@engine/util/pdf'
 import type {
   AnnotationFileInfo,
   AttachmentList,
@@ -208,9 +217,84 @@ interface MuOutlineItem {
   down?: MuOutlineItem[]
 }
 
+/** Page object number -> page index. */
+function pageIndexMap(s: Session): Map<number, number> {
+  const map = new Map<number, number>()
+  const n = s.pageCount()
+  for (let i = 0; i < n; i++) {
+    const id = safe(() => s.pageId(i), 0)
+    if (id) map.set(id, i)
+  }
+  return map
+}
+
+/** Named destinations from the catalog's /Dests dictionary and the /Names /Dests name tree. */
+function namedDestinations(s: Session): Map<string, PDFObject> {
+  const out = new Map<string, PDFObject>()
+  const cat = catalog(s.pdf)
+  safe(() => {
+    const dests = cat.get('Dests')
+    if (!isNull(dests) && dests.resolve().isDictionary()) dests.forEach((v, k) => out.set(String(k), v))
+  }, undefined)
+  const visited = new Set<number>()
+  const walk = (node: PDFObject, depth: number) => {
+    if (depth > 32 || isNull(node)) return
+    const n = objNum(node)
+    if (n) {
+      if (visited.has(n)) return
+      visited.add(n)
+    }
+    const names = node.get('Names')
+    if (!isNull(names) && names.isArray()) {
+      for (let i = 0; i + 1 < names.length; i += 2) {
+        const key = names.get(i)
+        const name = key.isString() ? key.asString() : key.isName() ? key.asName() : null
+        if (name !== null && !out.has(name)) out.set(name, names.get(i + 1))
+      }
+    }
+    const kids = node.get('Kids')
+    if (!isNull(kids) && kids.isArray()) for (let i = 0; i < kids.length; i++) walk(kids.get(i), depth + 1)
+  }
+  safe(() => walk(cat.get('Names').get('Dests'), 0), undefined)
+  return out
+}
+
+/**
+ * True when a bookmark's destination names a page object that is no longer in the document (its
+ * page was deleted). MuPDF resolves such destinations to the first page, which would send the
+ * reader to the wrong place.
+ */
+function pointsAtMissingPage(
+  item: PDFObject,
+  pages: Map<number, number>,
+  named: () => Map<string, PDFObject>
+): boolean {
+  return safe(() => {
+    let d = item.get('Dest')
+    if (isNull(d)) {
+      const a = item.get('A')
+      if (isNull(a) || readName(a.get('S')) !== 'GoTo') return false
+      d = a.get('D')
+    }
+    let o = d.resolve()
+    if (o.isString() || o.isName()) {
+      const target = named().get(o.isString() ? o.asString() : o.asName())
+      if (!target) return false
+      o = target.resolve()
+    }
+    if (o.isDictionary()) o = o.get('D').resolve()
+    if (!o.isArray() || o.length < 1) return false
+    const first = o.get(0)
+    return first.isIndirect() && !pages.has(first.asIndirect())
+  }, false)
+}
+
 function readOutline(s: Session): Bookmark[] {
   const root = outlineRoot(s)
   if (!root) return []
+  const pages = pageIndexMap(s)
+  let namedCache: Map<string, PDFObject> | null = null
+  const named = () => (namedCache ??= namedDestinations(s))
   // MuPDF resolves destinations (explicit, named, GoTo actions) for us; its outline follows the same
   // /First → /Next order as our walk, so the two trees are zipped by position.
   const mu = safe(() => (s.pdf.loadOutline() ?? []) as MuOutlineItem[], [])
@@ -220,7 +304,8 @@ function readOutline(s: Session): Bookmark[] {
     if (depth > 64) return []
     return childrenOf(node, visited).map((item, k) => {
       const m = muKids[k]
-      const { dest, uri } = resolveUri(s, m?.uri)
+      const broken = pointsAtMissingPage(item, pages, named)
+      const { dest, uri } = broken ? { dest: null, uri: null } : resolveUri(s, m?.uri)
       const flags = readNumber(item.get('F'), 0)
       const hasKids = !isNull(item.get('First'))
       return {
@@ -228,6 +313,7 @@ function readOutline(s: Session): Bookmark[] {
         title: readString(item.get('Title')),
         dest,
         uri,
+        broken,
         open: hasKids && readNumber(item.get('Count'), 0) > 0,
         bold: (flags & FLAG_BOLD) !== 0,
         italic: (flags & FLAG_ITALIC) !== 0,
@@ -251,8 +337,7 @@ function makeDest(s: Session, t: BookmarkTarget): PDFObject {
   let left: number | null = null
   let top: number | null = null
   if (t.x !== null || t.y !== null) {
-    const rotated = s.pdf.findPage(t.page).getInheritable('Rotate')
-    const rotation = ((Math.round(readNumber(rotated, 0)) % 360) + 360) % 360
+    const rotation = pageRotation(readNumber(s.pdf.findPage(t.page).getInheritable('Rotate'), 0))
     const p = transformPoint([t.x ?? 0, t.y ?? 0] as Point, s.pageToUser(t.page))
     if (rotation === 0) {
       left = t.x === null ? null : p[0]
@@ -334,6 +419,8 @@ function listEmbeddedFiles(s: Session): EmbeddedFileInfo[] {
     .sort((a, b) => a.fileName.localeCompare(b.fileName))
 }
 
+const ANNOT_FLAG_LOCKED = 128
+
 /** FileAttachment annotations, read from the page dictionaries without loading pages. */
 function listAnnotationFiles(s: Session): AnnotationFileInfo[] {
   const out: AnnotationFileInfo[] = []
@@ -355,7 +442,8 @@ function listAnnotationFiles(s: Session): AnnotationFileInfo[] {
         rect,
         fileName: info.fileName,
         size: info.size,
-        description: readString(a.get('Contents'))
+        description: readString(a.get('Contents')),
+        locked: (readNumber(a.get('F'), 0) & ANNOT_FLAG_LOCKED) !== 0
       })
     }
   }

@@ -240,6 +240,11 @@
 .fc-navigation-bm-row.is-dragged {
   opacity: 0.45;
 }
+.fc-navigation-bm-row.is-broken .fc-navigation-bm-title,
+.fc-navigation-bm-row.is-broken .fc-navigation-bm-icon {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
 .fc-navigation-bm-row.is-drop-inside {
   background: var(--bg-active);
   box-shadow: inset 0 0 0 2px var(--accent);
@@ -738,4 +743,25 @@
 }
 .fc-navigation-reading-test {
   margin-bottom: 12px;
+}
+
+/* Document Properties of a document whose security settings don't allow changes */
+.fc-navigation-props-locked {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  font-size: var(--fs-sm);
+}
+.fc-navigation-props-locked > span {
+  flex: 1 1 240px;
+}
+.fc-navigation-props .ui-input[readonly] {
+  background: var(--bg-sunken);
+  color: var(--text-muted);
 }

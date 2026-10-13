@@ -32,6 +32,12 @@ async function pageTexts(page: Page): Promise<string[]> {
   return out
 }
 
+/** Waits until every mounted thumbnail shows its latest render. */
+async function thumbsSettled(page: Page) {
+  await expect(page.locator('.fc-navigation-thumb-canvas').first()).toBeVisible()
+  await expect(page.locator('.fc-navigation-thumb-canvas.is-stale')).toHaveCount(0)
+}
+
 async function setTheme(page: Page, theme: 'light' | 'dark') {
   await page.evaluate((t) => {
     const { useApp } = (window as any).__fartcrobat
@@ -51,6 +57,7 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     await expect
       .poll(() => page.locator('.fc-navigation-thumb-canvas.is-ready').count())
       .toBeGreaterThanOrEqual(3)
+    await thumbsSettled(page)
     await shot(page, 'thumbnails')
 
     // click page 3
@@ -71,6 +78,7 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     await expect
       .poll(async () => (await page.locator('.fc-navigation-thumb-canvas').first().boundingBox())!.width)
       .toBeGreaterThan(before + 30)
+    await thumbsSettled(page)
     await shot(page, 'thumbnails-large')
     await page.locator('.fc-navigation-footer input[type=range]').fill('0')
 
@@ -117,6 +125,7 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     await expect
       .poll(() => page.locator('.fc-navigation-thumb-canvas.is-ready').count())
       .toBeGreaterThanOrEqual(3)
+    await thumbsSettled(page)
     await shot(page, 'thumbnails-rotated')
 
     // delete the blank page with the keyboard, then undo everything
@@ -129,6 +138,7 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(false)
 
     await setTheme(page, 'dark')
+    await thumbsSettled(page)
     await shot(page, 'thumbnails-dark')
   } finally {
     await app.close()
@@ -309,6 +319,29 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
       )
       .toMatchObject({ bold: true, color: '#f44336' })
     await shot(page, 'bookmarks-dark')
+
+    // deleting a page leaves its bookmark marked, not silently pointing at page 1
+    await page.getByRole('button', { name: 'Page Thumbnails', exact: true }).click()
+    await page.locator('.fc-navigation-thumb[data-page-index="3"]').click()
+    await page.keyboard.press('Delete')
+    await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(4)
+    await page.getByRole('button', { name: 'Bookmarks', exact: true }).click()
+    const ch4 = page.getByRole('treeitem', { name: /Chapter 4/ })
+    await expect(ch4).toHaveClass(/is-broken/)
+    await runCommand(page, 'nav.first')
+    await ch4.click()
+    const warning = page.locator('.toast', { hasText: 'pointed to a page that was deleted' })
+    await expect(warning).toBeVisible()
+    expect((await activeDocState(page))?.currentPage).toBe(0)
+    await shot(page, 'bookmarks-broken-dark')
+    // point it at the page on screen instead
+    await runCommand(page, 'nav.last')
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(3)
+    await warning.getByRole('button', { name: 'Use current page' }).click()
+    await expect(ch4).not.toHaveClass(/is-broken/)
+    expect(
+      (await engine<any[]>(page, 'navigation', 'outline')).find((b) => b.title === 'Chapter 4').dest.page
+    ).toBe(3)
   } finally {
     await app.close()
   }
@@ -380,10 +413,34 @@ test('document properties: description, fonts, security, initial view, custom; u
     await expect(dialog).toContainText('128-bit RC4')
     await expect(dialog.locator('.fc-navigation-denied').first()).toHaveText('Not Allowed')
     await shot(page, 'properties-security-dark')
+    // "Changing the Document: Not Allowed": the properties are read-only, like in Acrobat
     await dialog.getByRole('tab', { name: 'Description' }).click()
+    const notice = dialog.locator('.fc-navigation-props-locked')
+    await expect(notice).toContainText("security settings don't allow changes")
+    await expect(dialog.getByLabel('Author', { exact: true })).not.toBeEditable()
     await shot(page, 'properties-description-dark')
-    await dialog.getByRole('button', { name: 'Cancel' }).click()
-    await expect(dialog).toBeHidden()
+    await dialog.getByRole('tab', { name: 'Initial View' }).click()
+    await expect(dialog.getByLabel('Navigation tab')).toBeDisabled()
+    if (await page.evaluate(() => (window as any).__fartcrobat.registry.commands.has('protect.unlock'))) {
+      // the permissions password lifts the restriction while the dialog stays open
+      await notice.getByRole('button', { name: 'Enter Permissions Password…' }).click()
+      await page.getByLabel('Permissions password').fill('owner')
+      await page.getByRole('button', { name: 'Unlock' }).click()
+      await expect(notice).toBeHidden()
+      await expect(dialog.getByLabel('Navigation tab')).toBeEnabled()
+      await dialog.getByRole('tab', { name: 'Description' }).click()
+      await dialog.getByLabel('Author', { exact: true }).fill('Grace Hopper')
+      await dialog.getByRole('button', { name: 'OK' }).click()
+      await expect(dialog).toBeHidden()
+      await expect
+        .poll(() =>
+          page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author)
+        )
+        .toBe('Grace Hopper')
+    } else {
+      await dialog.getByRole('button', { name: 'Cancel' }).click()
+      await expect(dialog).toBeHidden()
+    }
   } finally {
     await app.close()
   }
@@ -477,6 +534,19 @@ test('attachments, layers and the initial view', async () => {
     const opened = await app.evaluate(() => (globalThis as any).__opened as string)
     expect(readFileSync(opened, 'utf8')).toBe('name,amount\nalpha,1\nbeta,2\n')
 
+    // a file in a comment: clicking it selects the comment on its page; Delete removes it (undoable)
+    await page.locator('.fc-navigation-att-row', { hasText: 'notes.txt' }).click()
+    await expect
+      .poll(async () => (await activeDocState(page))?.selection)
+      .toMatchObject({ kind: 'annotations', page: 1, ids: [expect.any(Number)] })
+    await expect(page.locator('.viewer-page[data-page-index="1"]')).toBeInViewport()
+    await shot(page, 'attachments-comment-selected')
+    await page.keyboard.press('Delete')
+    await expect(page.locator('.fc-navigation-att-row', { hasText: 'notes.txt' })).toHaveCount(0)
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Delete Annotation')
+    await page.keyboard.press('Control+z')
+    await expect(page.locator('.fc-navigation-att-row', { hasText: 'notes.txt' })).toHaveCount(1)
+
     // delete scan.png, undo
     await page.locator('.fc-navigation-att-row', { hasText: 'scan.png' }).click()
     await page.getByRole('button', { name: 'Delete attachment' }).click()
@@ -541,8 +611,17 @@ test('read out loud and the View menu entries', async () => {
     await page.getByRole('menuitem', { name: 'Read Out Loud', exact: true }).hover()
     await expect(page.getByRole('menuitem', { name: /Read To End of Document/ })).toBeVisible()
     await shot(page, 'menu-read-out-loud')
+    // one Show/Hide submenu, shared with the comments feature
+    await expect(page.getByRole('menuitem', { name: 'Show/Hide', exact: true })).toHaveCount(1)
     await page.getByRole('menuitem', { name: 'Show/Hide', exact: true }).hover()
     await expect(page.getByRole('menuitem', { name: /Page Thumbnails/ })).toBeVisible()
+    await expect(page.getByRole('menuitem', { name: /Navigation Panes/ })).toBeVisible()
+    if (
+      await page.evaluate(() =>
+        (window as any).__fartcrobat.registry.commands.has('comments.toggleVisibility')
+      )
+    )
+      await expect(page.getByRole('menuitem', { name: /Show\/Hide Comments/ })).toBeVisible()
     await shot(page, 'menu-show-hide')
     await page.getByRole('menuitem', { name: /Page Thumbnails/ }).click()
     await expect(page.locator('.shell-rightpanel', { hasText: 'Page Thumbnails' })).toBeVisible()

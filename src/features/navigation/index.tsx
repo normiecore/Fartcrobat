@@ -190,6 +190,12 @@ const commands: CommandDefinition[] = [
   }
 ]
 
+/**
+ * Menus build one submenu per (group, label), so the panes share the group of the comments
+ * feature's "Show/Hide Comments" entry: everything lands in a single View > Show/Hide submenu.
+ */
+const SHOW_HIDE_GROUP = 'comments-showhide'
+
 const menus: MenuContribution[] = [
   { menu: 'file', group: 'properties', command: 'file.properties', order: 700 },
   { menu: 'edit', group: 'find', command: 'search.advanced', order: 310 },
@@ -197,9 +203,9 @@ const menus: MenuContribution[] = [
   ...['navigationPanes', 'thumbnails', 'bookmarks', 'attachments', 'layers'].map(
     (id, i): MenuContribution => ({
       menu: 'view',
-      group: 'showhide',
+      group: SHOW_HIDE_GROUP,
       command: `view.showHide.${id}`,
-      order: 450 + i,
+      order: 440 + i,
       submenu: 'Show/Hide'
     })
   ),

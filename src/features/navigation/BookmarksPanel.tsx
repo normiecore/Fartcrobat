@@ -165,7 +165,9 @@ function BookmarkPropertiesDialog({
               ? `Page ${dest.page + 1}${dest.zoom ? `, ${Math.round(dest.zoom * 100)}% zoom` : ''}`
               : bookmark.uri
                 ? bookmark.uri
-                : 'None'}
+                : bookmark.broken
+                  ? 'A page that was deleted'
+                  : 'None'}
           </span>
           <Checkbox
             checked={useCurrentView}
@@ -313,6 +315,12 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
     set({ selected: b.id })
     if (b.dest) void goToDest(doc, b.dest)
     else if (b.uri) void followExternalLink(b.uri)
+    else if (b.broken)
+      toast(`“${b.title}” pointed to a page that was deleted.`, {
+        kind: 'warning',
+        timeout: 8000,
+        action: { label: 'Use current page', run: () => void setDestination(b) }
+      })
     else toast('This bookmark has no destination in this document.', { kind: 'warning' })
   }
 
@@ -701,14 +709,16 @@ export function BookmarksPanel({ doc }: { doc: DocumentModel }) {
                   aria-selected={isSel}
                   className={`fc-navigation-bm-row ${isSel ? 'is-selected' : ''} ${b.id === currentId ? 'is-current' : ''} ${
                     drop?.draggedId === b.id ? 'is-dragged' : ''
-                  } ${indicator?.inside && drop?.row === i ? 'is-drop-inside' : ''}`}
+                  } ${indicator?.inside && drop?.row === i ? 'is-drop-inside' : ''} ${b.broken ? 'is-broken' : ''}`}
                   style={style}
                   title={
                     b.dest
                       ? `${b.title} — page ${b.dest.page + 1}`
                       : b.uri
                         ? `${b.title} — ${b.uri}`
-                        : b.title
+                        : b.broken
+                          ? `${b.title} — its page was deleted`
+                          : b.title
                   }
                   onPointerDown={(e) => startDrag(e, b)}
                   onClick={() => {

@@ -238,6 +238,55 @@ describe('navigation: bookmarks', () => {
     expect(list.find((b) => b.title === 'Chapter 5')!.dest?.page).toBe(0)
     expect(list.find((b) => b.title === 'Chapter 1')!.dest?.page).toBe(1)
   })
+
+  it('marks bookmarks whose page was deleted instead of sending them to page 1', async () => {
+    const e = await openFixture('text.pdf')
+    const pdf = e.session.pdf
+    // Chapter 3 uses a named destination (name tree), Chapter 4 an explicit one.
+    e.session.runMutation('Use a named destination', () => {
+      const root = pdf.getTrailer().get('Root')
+      const tree = pdf.newDictionary()
+      const names = pdf.newArray()
+      names.push(pdf.newString('chap3'))
+      const arr = pdf.newArray()
+      arr.push(pdf.findPage(2))
+      arr.push(pdf.newName('Fit'))
+      names.push(arr)
+      tree.put('Names', names)
+      const nameDict = pdf.newDictionary()
+      nameDict.put('Dests', pdf.addObject(tree))
+      root.put('Names', nameDict)
+      const third = root.get('Outlines').get('First').get('Next').get('Next')
+      third.put('Dest', pdf.newString('chap3'))
+      third.delete('A')
+    })
+
+    let list = await nav(e).outline()
+    expect(list.map((b) => [b.dest?.page, b.broken])).toEqual([
+      [0, false],
+      [1, false],
+      [2, false],
+      [3, false],
+      [4, false]
+    ])
+    await e.ops<typeof pageOps>('pages').delete([2, 3])
+    list = await nav(e).outline()
+    expect(list.map((b) => [b.title, b.dest?.page ?? null, b.broken])).toEqual([
+      ['Chapter 1', 0, false],
+      ['Chapter 2', 1, false],
+      ['Chapter 3', null, true],
+      ['Chapter 4', null, true],
+      ['Chapter 5', 2, false]
+    ])
+    // a new destination repairs it
+    await nav(e).setBookmarkDestination(list[3].id, { page: 1, x: null, y: 100, zoom: null })
+    expect((await nav(e).outline())[3]).toMatchObject({ broken: false, dest: { page: 1 } })
+    await e.doc.undo()
+    await e.doc.undo()
+    list = await nav(e).outline()
+    expect(list.map((b) => b.broken)).toEqual([false, false, false, false, false])
+    expect(list[2].dest?.page).toBe(2)
+  })
 })
 
 describe('navigation: attachments', () => {
@@ -254,7 +303,7 @@ describe('navigation: attachments', () => {
     })
     expect(files[0].modified).toBe('2024-03-05T10:15:00.000Z')
     expect(annotations).toHaveLength(1)
-    expect(annotations[0]).toMatchObject({ page: 1, fileName: 'notes.txt', size: 30 })
+    expect(annotations[0]).toMatchObject({ page: 1, fileName: 'notes.txt', size: 30, locked: false })
     const data = await nav(e).attachmentData('data.csv')
     expect(new TextDecoder().decode(data)).toBe('name,amount\nalpha,1\nbeta,2\n')
     const note = await nav(e).annotationFileData(1, annotations[0].id)
