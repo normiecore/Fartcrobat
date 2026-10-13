@@ -8,7 +8,7 @@ import type { PDFObject, Session } from '@engine/session'
 import { isNull, parsePdfDate, readName, readString, walkFields } from '@engine/util/pdf'
 import type { HiddenItem, HiddenItemId, HiddenScan, SanitizeOptions, SanitizeReport } from '../shared'
 import { binaryToBytes, bytesToBinary, decodeName, filterHiddenLayers } from './contentFilter'
-import { collectPageGlyphs, coveredGlyphs, glyphKey, removeGlyphs, type PageGlyphs } from './glyphs'
+import { collectPageGlyphs, coveredGlyphs, glyphKey, removeGlyphs } from './glyphs'
 
 function safe<T>(fn: () => T, fallback: T): T {
   try {
@@ -568,10 +568,11 @@ function filterLayersOnPage(s: Session, pageIndex: number, hidden: Map<number, s
       const x = dict(ref)
       if (!x || readName(x.get('Subtype')) !== 'Form') continue
       const formRes = dict(x.get('Resources')) ?? res
-      const r = filterHiddenLayers(readContent(ref), ctxFor(formRes))
-      if (r.removed) {
+      const src = readContent(ref)
+      const r = filterHiddenLayers(src, ctxFor(formRes))
+      if (r.out !== src) {
         ref.writeStream(binaryToBytes(r.out))
-        removed += r.removed
+        removed += r.removed + r.hiddenText
       }
       visitForms(r.visibleForms, formRes, depth + 1)
     }
@@ -582,10 +583,10 @@ function filterLayersOnPage(s: Session, pageIndex: number, hidden: Map<number, s
   const streams = c.isArray() ? items(c) : [contents]
   const src = streams.map(readContent).join('\n')
   const r = filterHiddenLayers(src, ctxFor(resources))
-  if (r.removed) {
+  if (r.out !== src) {
     if (streams.length === 1) streams[0].writeStream(binaryToBytes(r.out))
     else pageObj.put('Contents', s.pdf.addStream(binaryToBytes(r.out), s.pdf.newDictionary()))
-    removed += r.removed
+    removed += r.removed + r.hiddenText
   }
   visitForms(r.visibleForms, resources, 0)
   return removed
@@ -624,45 +625,29 @@ function dropOcgs(s: Session, hidden: Map<number, string>) {
   if (items(oc.get('OCGs')).length === 0) catalog(s).delete('OCProperties')
 }
 
-/** Glyphs drawn only when the hidden layers are switched on, per page. */
-function hiddenLayerGlyphs(s: Session): Map<number, Quad[]> {
-  const out = new Map<number, Quad[]>()
-  const doc = s.pdf
-  const n = safe(() => doc.countLayers(), 0)
-  const off: number[] = []
-  for (let i = 0; i < n; i++) if (!safe(() => doc.isLayerVisible(i), true)) off.push(i)
-  if (!off.length) return out
-  const pages = s.pageCount()
-  const before: Map<number, PageGlyphs> = new Map()
-  for (let p = 0; p < pages; p++) before.set(p, collectPageGlyphs(s, p))
-  try {
-    for (const i of off) doc.setLayerVisible(i, true)
-    for (let p = 0; p < pages; p++) {
-      const seen = new Set<string>()
-      const b = before.get(p)!
-      for (const g of [...b.visible, ...b.invisible]) seen.add(glyphKey(g))
-      const after = collectPageGlyphs(s, p)
-      const extra = [...after.visible, ...after.invisible].filter((g) => !seen.has(glyphKey(g)))
-      if (extra.length) out.set(p, extra.map((g) => g.core))
-    }
-  } finally {
-    for (const i of off) safe(() => doc.setLayerVisible(i, false), undefined)
-  }
-  return out
-}
-
 function hiddenLayersItem(s: Session, dry: boolean): HiddenItem {
   const hidden = hiddenOcgs(s)
   const details = [...hidden.values()]
   if (dry || hidden.size === 0) return { id: 'hiddenLayers', count: hidden.size, details }
-  const glyphs = hiddenLayerGlyphs(s)
-  const doneForms = new Set<number>()
   const pages = s.pageCount()
+  // invisible text already on the pages (e.g. OCR) is kept apart from the hidden-layer text
+  const before: Set<string>[] = []
+  for (let p = 0; p < pages; p++) before.push(new Set(collectPageGlyphs(s, p).invisible.map(glyphKey)))
+  const doneForms = new Set<number>()
+  let changed = 0
   for (let p = 0; p < pages; p++) {
-    filterLayersOnPage(s, p, hidden, doneForms)
-    s.progress((p + 1) / pages / 3, 'Removing hidden layers…')
+    changed += filterLayersOnPage(s, p, hidden, doneForms)
+    s.progress(((p + 1) / pages) * 0.15, 'Removing hidden layers…')
   }
-  for (const [p, quads] of glyphs) removeGlyphs(s, p, quads)
+  if (changed) {
+    s.invalidatePages()
+    // text that was on hidden layers is now invisible text: remove it precisely
+    for (let p = 0; p < pages; p++) {
+      const layerText = collectPageGlyphs(s, p).invisible.filter((g) => !before[p].has(glyphKey(g)))
+      if (layerText.length) removeGlyphs(s, p, layerText.map((g) => g.core))
+      s.progress(0.15 + ((p + 1) / pages) * 0.15, 'Removing hidden layers…')
+    }
+  }
   // annotations on hidden layers
   filterAnnots(s, (a) => !ocHidden(a.get('OC'), hidden))
   dropOcgs(s, hidden)

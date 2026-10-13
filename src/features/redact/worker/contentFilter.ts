@@ -4,8 +4,8 @@
  *
  * Inside a hidden layer the painting operators are neutralised (paths end with `n`, which keeps any
  * clipping), and shadings, XObjects and inline images are dropped. Graphics and text state operators
- * are kept so the content that follows is unaffected. Text drawn on hidden layers is removed
- * separately with MuPDF's redaction filter, which keeps text positions intact.
+ * are kept so the content that follows is unaffected. Text drawn on hidden layers is made invisible
+ * and then removed with MuPDF's redaction filter, which keeps text positions intact.
  */
 
 export interface Operand {
@@ -193,6 +193,10 @@ export function tokenize(src: string): ContentOp[] {
 }
 
 const PAINT = new Set(['f', 'F', 'f*', 'B', 'B*', 'b', 'b*', 'S', 's'])
+const SHOW_TEXT = new Set(['Tj', 'TJ', "'", '"'])
+
+/** Tag that replaces /OC on blocks whose content was neutralised. */
+export const NEUTRALISED_TAG = '/FcHiddenLayer'
 
 export interface HiddenFilterContext {
   /** True when the /Properties resource with this name is a hidden OCG or OCMD. */
@@ -205,16 +209,25 @@ export interface FilterResult {
   out: string
   /** Number of painting operations removed. */
   removed: number
+  /** Number of text-showing operations made invisible (to be removed by the redaction filter). */
+  hiddenText: number
   /** Names of form XObjects drawn outside hidden layers (to filter recursively). */
   visibleForms: string[]
 }
 
-/** Removes everything painted on hidden layers from a content stream. */
+/**
+ * Neutralises everything drawn on hidden layers in a content stream: drawings and images are
+ * removed, text becomes invisible (render mode 3) so it can then be removed precisely by MuPDF's
+ * redaction filter, and the hidden blocks stop being optional content.
+ */
 export function filterHiddenLayers(src: string, ctx: HiddenFilterContext): FilterResult {
   const ops = tokenize(src)
   const stack: boolean[] = []
   let hidden = 0
   let removed = 0
+  let hiddenText = 0
+  let tr = 0
+  const trStack: number[] = []
   const visibleForms: string[] = []
   let out = ''
   let last = 0
@@ -224,6 +237,17 @@ export function filterHiddenLayers(src: string, ctx: HiddenFilterContext): Filte
   }
   for (const op of ops) {
     switch (op.op) {
+      case 'q':
+        trStack.push(tr)
+        break
+      case 'Q':
+        if (trStack.length) tr = trStack.pop()!
+        break
+      case 'Tr': {
+        const v = parseFloat(op.operands[0]?.text ?? '')
+        if (Number.isFinite(v)) tr = v
+        break
+      }
       case 'BMC':
         stack.push(false)
         continue
@@ -232,7 +256,10 @@ export function filterHiddenLayers(src: string, ctx: HiddenFilterContext): Filte
         const prop = op.operands[1]
         const h = tag?.text === '/OC' && prop?.kind === 'name' && ctx.isHiddenProperty(prop.text.slice(1))
         stack.push(h)
-        if (h) hidden++
+        if (h) {
+          hidden++
+          replace(op, `${NEUTRALISED_TAG} BMC`)
+        }
         continue
       }
       case 'EMC':
@@ -246,6 +273,9 @@ export function filterHiddenLayers(src: string, ctx: HiddenFilterContext): Filte
       } else if (op.op === 'sh' || op.op === 'Do' || op.op === 'BI') {
         replace(op, '')
         removed++
+      } else if (SHOW_TEXT.has(op.op)) {
+        replace(op, `3 Tr ${src.slice(op.start, op.end)} ${tr} Tr`)
+        hiddenText++
       }
       continue
     }
@@ -261,7 +291,7 @@ export function filterHiddenLayers(src: string, ctx: HiddenFilterContext): Filte
     }
   }
   out += src.slice(last)
-  return { out, removed, visibleForms }
+  return { out, removed, hiddenText, visibleForms }
 }
 
 /** Decodes PDF name escapes (#xx). */
