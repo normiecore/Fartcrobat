@@ -311,7 +311,7 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     await props.getByLabel('Bold').check()
     await props.locator('.ui-swatch[title="#F44336"]').click()
     await shot(page, 'bookmark-properties-dark')
-    await props.getByRole('button', { name: 'OK' }).click()
+    await props.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(props).toBeHidden()
     await expect
       .poll(async () =>
@@ -378,7 +378,7 @@ test('document properties: description, fonts, security, initial view, custom; u
     await dialog.getByRole('button', { name: 'Add' }).click()
     await expect(dialog.getByRole('option', { name: /Department/ })).toBeVisible()
     await shot(page, 'properties-custom')
-    await dialog.getByRole('button', { name: 'OK' }).click()
+    await dialog.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(dialog).toBeHidden()
 
     await expect
@@ -430,7 +430,7 @@ test('document properties: description, fonts, security, initial view, custom; u
       await expect(dialog.getByLabel('Navigation tab')).toBeEnabled()
       await dialog.getByRole('tab', { name: 'Description' }).click()
       await dialog.getByLabel('Author', { exact: true }).fill('Grace Hopper')
-      await dialog.getByRole('button', { name: 'OK' }).click()
+      await dialog.getByRole('button', { name: 'OK', exact: true }).click()
       await expect(dialog).toBeHidden()
       await expect
         .poll(() =>
@@ -593,6 +593,11 @@ test('attachments, layers and the initial view', async () => {
   }
 })
 
+/** A menu entry whether or not it is checkable (menuitem or menuitemcheckbox). */
+function menuEntry(page: Page, name: RegExp) {
+  return page.locator('[role="menuitem"], [role="menuitemcheckbox"]').filter({ hasText: name })
+}
+
 test('read out loud and the View menu entries', async () => {
   const { app, page } = await launch()
   try {
@@ -614,16 +619,16 @@ test('read out loud and the View menu entries', async () => {
     // one Show/Hide submenu, shared with the comments feature
     await expect(page.getByRole('menuitem', { name: 'Show/Hide', exact: true })).toHaveCount(1)
     await page.getByRole('menuitem', { name: 'Show/Hide', exact: true }).hover()
-    await expect(page.getByRole('menuitem', { name: /Page Thumbnails/ })).toBeVisible()
-    await expect(page.getByRole('menuitem', { name: /Navigation Panes/ })).toBeVisible()
+    await expect(menuEntry(page, /Page Thumbnails/)).toBeVisible()
+    await expect(menuEntry(page, /Navigation Panes/)).toBeVisible()
     if (
       await page.evaluate(() =>
         (window as any).__fartcrobat.registry.commands.has('comments.toggleVisibility')
       )
     )
-      await expect(page.getByRole('menuitem', { name: /Show\/Hide Comments/ })).toBeVisible()
+      await expect(menuEntry(page, /Show\/Hide Comments/)).toBeVisible()
     await shot(page, 'menu-show-hide')
-    await page.getByRole('menuitem', { name: /Page Thumbnails/ }).click()
+    await menuEntry(page, /Page Thumbnails/).click()
     await expect(page.locator('.shell-rightpanel', { hasText: 'Page Thumbnails' })).toBeVisible()
     await runCommand(page, 'view.showHide.bookmarks')
 

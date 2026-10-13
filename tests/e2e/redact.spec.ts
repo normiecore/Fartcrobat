@@ -226,7 +226,7 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     await page.getByLabel('Custom overlay text').fill('REDACTED')
     await expect(page.locator('.fc-redact-preview')).toContainText('REDACTED')
     await shot(page, 'properties')
-    await page.getByRole('button', { name: 'OK' }).click()
+    await page.getByRole('button', { name: 'OK', exact: true }).click()
     await expect.poll(async () => (await marks(page)).every((m) => m.overlay === 'REDACTED')).toBe(true)
 
     // zoomed in, marks and previews still line up with the text

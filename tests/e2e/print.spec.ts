@@ -382,7 +382,7 @@ test('print: Properties uses the system dialog, cancel stops a large job, restri
     await expect(notice).toContainText('restricted this document so that it can’t be printed')
     await expect(dialog(page)).toHaveCount(0)
     await page.screenshot({ path: 'test-results/print-restricted.png' })
-    await notice.getByRole('button', { name: 'OK' }).click()
+    await notice.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(notice).toHaveCount(0)
   } finally {
     await app.close()

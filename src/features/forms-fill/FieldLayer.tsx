@@ -90,6 +90,8 @@ export function FieldLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       return out
     }
     load().catch((err) => {
+      // A page deleted while its fields were loading: its layer is about to go away.
+      if ((err as { code?: string })?.code === 'BAD_PAGE') return
       if (alive && !doc.isClosed) ctl.loadFailed(err)
     })
     return () => {

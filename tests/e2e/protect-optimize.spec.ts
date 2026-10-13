@@ -86,7 +86,7 @@ test('protect using password, reopen asks for it; restrictions, copy blocking an
     await expect(done).toBeVisible()
     await expect(done).toContainText('Opening it needs the password you set.')
     await shot(page, 'protected-summary')
-    await done.getByRole('button', { name: 'OK' }).click()
+    await done.getByRole('button', { name: 'OK', exact: true }).click()
 
     expect(existsSync(protectedPath)).toBe(true)
     await expect(page.getByTestId('security-badge')).toBeVisible()
@@ -132,7 +132,7 @@ test('protect using password, reopen asks for it; restrictions, copy blocking an
     await page.getByTestId('protect-apply').click()
     const done2 = dialogTitled(page, 'Your PDF is protected')
     await expect(done2).toContainText('copying text and images')
-    await done2.getByRole('button', { name: 'OK' }).click()
+    await done2.getByRole('button', { name: 'OK', exact: true }).click()
     // the author keeps full access in this session
     await expect(page.getByTestId('restricted-bar')).toHaveCount(0)
     await runCommand(page, 'file.close')

@@ -30,7 +30,10 @@ function usePageBlocks(doc: DocumentModel, page: number, enabled: boolean): Text
     let alive = true
     loadBlocks(doc, page).then(
       (list) => alive && setBlocks({ version, list }),
-      (err) => alive && showError(err, 'Could not read the text on this page')
+      (err) => {
+        // A page deleted while its text was loading: its layer is about to go away.
+        if (alive && (err as { code?: string })?.code !== 'BAD_PAGE') showError(err, 'Could not read the text on this page')
+      }
     )
     return () => {
       alive = false
