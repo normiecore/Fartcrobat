@@ -144,6 +144,26 @@ describe('layout analysis', () => {
     expect(terms.find((r) => r.link)).toMatchObject({ link: 'https://example.org/terms', underline: true, text: 'example.org/terms' })
   })
 
+  it('reads a PDF made by Word/LibreOffice: Symbol bullets, numbered headings, ruled title, grid table', async () => {
+    const layout = analyzeDocument(await contents('export-create/proposal.pdf'))
+    const els = layout.pages[0].elements
+    const paras = paragraphs(els)
+    const byText = (t: string) => paras.find((p) => text(p).startsWith(t))!
+    expect(byText('Project Proposal')).toMatchObject({ role: 'heading', level: 1 })
+    expect(byText('Project Proposal').borderBottom).toBeDefined()
+    // "1. Background" in larger type is a heading that keeps its number, not a list.
+    expect(byText('1. Background')).toMatchObject({ role: 'heading', level: 2 })
+    expect(byText('2.1 Milestones')).toMatchObject({ role: 'heading', level: 3 })
+    expect(paras.filter((p) => p.list?.format === 'bullet').map(text)).toEqual(['Reduce costs by 20%', 'Ship the beta in March', 'Hire four engineers'])
+    expect(paras.filter((p) => p.list?.format === 'bullet').every((p) => p.list!.marker === '•')).toBe(true)
+    expect(paras.filter((p) => p.list?.format === 'decimal').map(text)).toEqual(['Design review', 'Prototype', 'Launch'])
+    const table = els.find((e): e is LTable => e.kind === 'table')!
+    expect(table).toMatchObject({ rows: 4, cols: 3, ruled: true })
+    expect(layout.pages[1].elements.some((e) => e.kind === 'paragraph' && text(e).startsWith('3. Conclusion') && e.role === 'heading')).toBe(true)
+    // The text's left edge is the margin even though the table borders stick out.
+    expect(byText('Our team').indent).toBeLessThan(1)
+  })
+
   it('exports a scanned page as a picture', async () => {
     const layout = analyzeDocument(await contents('scanned.pdf'))
     const els = layout.pages[0].elements
@@ -362,6 +382,25 @@ describe('HTML and text export', () => {
     expect(paras).toContain('• Two new offices opened')
     expect(paras).toContain('Region\tUnits\tRevenue\tGrowth')
     expect(paras).not.toContain('\f')
+  })
+})
+
+describe('form fields and comments', () => {
+  it('exports what was typed into form fields', async () => {
+    const e = await openFixture('form.pdf')
+    const forms = e.ops<typeof import('@engine/ops/forms').default>('forms')
+    const field = (await forms.list(0)).find((f) => f.name === 'fullName')!
+    await forms.setValue(field.id, 'Jane Q. Public')
+    const engine = e.ops<Ops>('export-create') as unknown as ExportEngine
+    const run = (patch: Partial<ExportOptions>) =>
+      runExport(engine, { options: normalizeExportOptions({ ...DEFAULT_EXPORT_OPTIONS, ...patch }), pages: [0], title: 'T', baseName: 'T' })
+    const txt = await run({ format: 'text' })
+    if (txt.kind !== 'file') throw new Error('file expected')
+    expect(new TextDecoder().decode(txt.data)).toContain('Jane Q. Public')
+    const docx = await run({ format: 'word' })
+    if (docx.kind !== 'file') throw new Error('file expected')
+    const xml = await (await JSZip.loadAsync(docx.data)).file('word/document.xml')!.async('string')
+    expect(xml).toContain('Jane Q. Public')
   })
 })
 

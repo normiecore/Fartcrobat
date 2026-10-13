@@ -733,7 +733,10 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
   const fonts = new Map<number, { name: string; flags: number }>()
   let blockIndex = 0
   let current: RawLine | null = null
-  const stext = page.toStructuredText('preserve-whitespace,preserve-images')
+  // Through a display list with the "extras" so filled-in form fields and comments that show
+  // text (text boxes, stamps) come along, as they appear on the page.
+  const list = page.toDisplayList(true)
+  const stext = list.toStructuredText('preserve-whitespace,preserve-images')
   try {
     stext.walk({
       onImageBlock(bbox, transform, image) {
@@ -801,6 +804,7 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
     })
   } finally {
     stext.destroy()
+    list.destroy()
   }
   const vectors = collectVectors(s, pageIndex, width, height)
   const textLines = rawLines.filter((l) => l.chars.some((c) => !isSpace(c.c)))
@@ -909,4 +913,16 @@ export function encodeAuto(pix: MuPDF.Pixmap): { data: Uint8Array; mime: 'image/
   const n = pix.getNumberOfComponents() + pix.getAlpha()
   if (!pix.getAlpha() && looksLikePhoto(pix.getPixels(), n, pix.getWidth() * pix.getHeight())) return { data: pix.asJPEG(85).slice(), mime: 'image/jpeg' }
   return { data: pix.asPNG().slice(), mime: 'image/png' }
+}
+
+/** Plain text of a page, line by line, with filled-in form fields and comment text. */
+export function pageText(s: Session, pageIndex: number): string {
+  const list = s.page(pageIndex).toDisplayList(true)
+  const st = list.toStructuredText('preserve-whitespace')
+  try {
+    return st.asText()
+  } finally {
+    st.destroy()
+    list.destroy()
+  }
 }

@@ -92,8 +92,19 @@ export interface LParagraph extends Placed {
   bold: boolean
   /** Monospaced text (code, data listings): keep its line breaks and spacing. */
   preformatted: boolean
+  /** A line drawn under or over the paragraph (title underlines, separators). */
+  borderBottom?: LBorder
+  borderTop?: LBorder
   /** Candidate for a heading before the levels of the whole document are known. */
   headingCandidate: boolean
+}
+
+export interface LBorder {
+  /** Line width in points. */
+  width: number
+  color: number
+  /** Distance from the text, in points. */
+  gap: number
 }
 
 export interface LCell {
@@ -305,9 +316,14 @@ function romanValue(s: string): number {
   return total
 }
 
+/** Bullets drawn with Symbol or Wingdings fonts come out as private-use characters. */
+const PRIVATE_BULLETS: Record<number, string> = { 0xf0b7: '•', 0xf0a7: '▪', 0xf06e: '■', 0xf06c: '●', 0xf0d8: '➢', 0xf0fc: '✓', 0xf076: '❖', 0xf0a8: '◆', 0xf075: '◆' }
+
 export function parseMarker(text: string): Omit<ListInfo, 'depth'> | null {
   const t = text.trim()
   if (t.length === 1 && BULLET_CHARS.includes(t)) return { format: 'bullet', marker: t, value: 1 }
+  const code = t.length === 1 ? t.charCodeAt(0) : 0
+  if (code >= 0xe000 && code <= 0xf8ff) return { format: 'bullet', marker: PRIVATE_BULLETS[code] ?? '•', value: 1 }
   const m = /^\(?([0-9]{1,3}|[a-zA-Z]|[ivxlcdmIVXLCDM]{1,6})[.)]$/.exec(t)
   if (!m) return null
   const k = m[1]
@@ -992,16 +1008,21 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
 
   // 1. Ruled tables claim the text inside their grid.
   let remaining = textLines
+  const usedRules = new Set<XRule>()
   if (detectTables) {
     const segs = new Map<XSegment, XLine>()
     for (const l of textLines) if (!l.rotated) for (const s of l.segments) segs.set(s, l)
     const claimed = new Set<XSegment>()
     for (const grid of findGrids(content.rules)) {
-      if (isChart(grid, content)) continue
+      if (isChart(grid, content)) {
+        for (const r of [...grid.hs, ...grid.vs]) usedRules.add(r)
+        continue
+      }
       const free = new Map([...segs].filter(([s]) => !claimed.has(s)))
       const t = ruledTable(grid, free, content.fills)
       if (!t) continue
       elements.push(t.table)
+      for (const r of [...grid.hs, ...grid.vs]) usedRules.add(r)
       for (const s of t.used) claimed.add(s)
     }
     remaining = []
@@ -1099,7 +1120,9 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
     cur = null
   }
   for (const src of remaining) {
-    const marked = structure && !src.rotated ? detectMarker(src) : null
+    let marked = structure && !src.rotated ? detectMarker(src) : null
+    // A numbered heading ("1. Background" in larger type) is a heading, not a list item.
+    if (marked && marked.list.format !== 'bullet' && marked.line.size >= bodySize * 1.15) marked = null
     const line = marked ? marked.line : lineFromSegments(src.segments)
     if (!lineString(line).trim()) continue
     if (!cur || marked || startsNewParagraph(cur, line, src, area)) {
@@ -1147,6 +1170,7 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
   // Reading order: MuPDF's block order, then top to bottom.
   elements.sort((a, b) => a.order - b.order || a.y0 - b.y0)
   numberLists(elements, left)
+  attachRules(elements, content, usedRules, right - left)
   let prevBottom: number | null = null
   let prev: LElement | null = null
   for (const el of elements) {
@@ -1161,7 +1185,9 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
   }
   const tops = elements.map((e) => e.y0)
   const bottoms = elements.map((e) => e.y1)
-  const lefts = elements.map((e) => e.x0)
+  // The left margin is where the text starts; table borders and pictures may stick out a little.
+  const textual = elements.filter((e): e is LParagraph => e.kind === 'paragraph' && !e.list && e.align !== 'center' && e.align !== 'right')
+  const lefts = (textual.length ? textual : elements).map((e) => e.x0)
   const rights = elements.map((e) => e.x1)
   const clampMargin = (v: number) => Math.max(18, Math.min(108, Math.round(v)))
   const margins = elements.length
@@ -1176,6 +1202,28 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
   for (const el of elements) if (el.kind === 'paragraph') el.indent = Math.max(0, el.indent + left - margins.left)
   const graphics = content.images.length > 0 || content.rules.length > 0 || content.fills.length > 0 || content.drawings.length > 0
   return { index: content.index, width: content.width, height: content.height, margins, elements, graphics }
+}
+
+/**
+ * Long horizontal lines on their own (a line under a title, a separator) become borders of the
+ * paragraph just above or below them.
+ */
+function attachRules(elements: LElement[], content: PageContent, used: Set<XRule>, contentWidth: number) {
+  const paras = elements.filter((e): e is LParagraph => e.kind === 'paragraph')
+  const inside = (r: XRule, b: { x0: number; y0: number; x1: number; y1: number }) => r.x0 >= b.x0 - 2 && r.x1 <= b.x1 + 2 && r.y0 >= b.y0 - 2 && r.y0 <= b.y1 + 2
+  for (const r of content.rules) {
+    if (r.dir !== 'h' || used.has(r) || r.x1 - r.x0 < 0.3 * contentWidth) continue
+    if (content.drawings.some((d) => inside(r, d)) || elements.some((e) => e.kind !== 'paragraph' && inside(r, e))) continue
+    const overlaps = (p: LParagraph) => Math.min(p.x1, r.x1) - Math.max(p.x0, r.x0) > 0
+    const above = paras.filter((p) => overlaps(p) && p.y1 <= r.y0 + 2 && r.y0 - p.y1 <= 14).sort((a, b) => b.y1 - a.y1)[0]
+    const border = { width: Math.max(0.25, Math.min(6, r.width)), color: r.color }
+    if (above && !above.borderBottom) {
+      above.borderBottom = { ...border, gap: Math.max(0, r.y0 - above.y1) }
+      continue
+    }
+    const below = paras.filter((p) => overlaps(p) && p.y0 >= r.y0 - 2 && p.y0 - r.y0 <= 14).sort((a, b) => a.y0 - b.y0)[0]
+    if (below && !below.borderTop) below.borderTop = { ...border, gap: Math.max(0, below.y0 - r.y0) }
+  }
 }
 
 /** Nesting depth of list items from their indentation; item values continue across items. */

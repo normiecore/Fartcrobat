@@ -229,6 +229,58 @@ def sample_docx():
     d.save(os.path.join(OUT, 'sample.docx'))
 
 
+def word_made_pdf():
+    """A Word document turned into PDF by LibreOffice (Symbol-font bullets, numbered headings,
+    a ruled title, a grid table, a picture). Needs soffice; the PDF is committed."""
+    import shutil
+    import subprocess
+    import tempfile
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Inches, RGBColor
+    d = Document()
+    d.add_heading('Project Proposal', 0)
+    d.add_heading('1. Background', level=1)
+    p = d.add_paragraph('Our team has been working on the new platform for two years. ' * 4)
+    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    p = d.add_paragraph()
+    p.add_run('Bold statement. ').bold = True
+    p.add_run('Italic remark. ').italic = True
+    p.add_run('Red warning.').font.color.rgb = RGBColor(0xC0, 0, 0)
+    d.add_heading('2. Goals', level=1)
+    for t in ['Reduce costs by 20%', 'Ship the beta in March', 'Hire four engineers']:
+        d.add_paragraph(t, style='List Bullet')
+    d.add_heading('2.1 Milestones', level=2)
+    for t in ['Design review', 'Prototype', 'Launch']:
+        d.add_paragraph(t, style='List Number')
+    t = d.add_table(rows=4, cols=3)
+    t.style = 'Table Grid'
+    for i, row in enumerate([('Phase', 'Weeks', 'Budget'), ('Design', '4', '$12,000'), ('Build', '12', '$85,500'), ('Test', '6', '$20,250')]):
+        for j, v in enumerate(row):
+            t.cell(i, j).text = v
+    img = Image.new('RGB', (600, 300), 'white')
+    dr = ImageDraw.Draw(img)
+    dr.ellipse([50, 50, 250, 250], fill=(20, 115, 230))
+    dr.rectangle([320, 80, 550, 220], fill=(215, 55, 63))
+    b = io.BytesIO()
+    img.save(b, 'PNG')
+    b.seek(0)
+    d.add_picture(b, width=Inches(4))
+    d.add_paragraph('Figure 1: concept').alignment = WD_ALIGN_PARAGRAPH.CENTER
+    d.add_page_break()
+    d.add_heading('3. Conclusion', level=1)
+    d.add_paragraph('We recommend approving the proposal. ' * 5)
+    soffice = shutil.which('soffice') or shutil.which('libreoffice')
+    if not soffice:
+        print('soffice not found: proposal.pdf not regenerated')
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        src = os.path.join(tmp, 'proposal.docx')
+        d.save(src)
+        subprocess.run([soffice, f'-env:UserInstallation=file://{tmp}/profile', '--headless', '--norestore',
+                        '--convert-to', 'pdf', '--outdir', OUT, src], check=True, capture_output=True)
+
+
 def sample_html():
     png = chart_png().getvalue()
     import base64
@@ -258,3 +310,4 @@ if __name__ == '__main__':
     complex_doc()
     sample_docx()
     sample_html()
+    word_made_pdf()

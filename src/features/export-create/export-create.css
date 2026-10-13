@@ -405,3 +405,10 @@
 .fc-export-create-grid .ui-segmented {
   justify-self: start;
 }
+
+/* While Create a PDF fills the document area, the document's toolbar and page controls would do
+   nothing. */
+.shell-docarea:has(> .shell-viewer-wrap > .fc-export-create-view) > .shell-doctoolbar,
+.shell-main:has(.shell-docarea .fc-export-create-view) .shell-rightrail-bottom {
+  display: none;
+}

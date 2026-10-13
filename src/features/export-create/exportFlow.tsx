@@ -18,6 +18,7 @@ import {
   writeFile,
   type DocumentModel
 } from '@renderer/sdk'
+import type exportOps from './engine'
 import { ExportCancelled, runExport, type ExportEngine } from './exporter'
 import { getState, loadSettings, setState, type PageScope } from './state'
 import { FORMAT_INFO, IMAGE_EXT, parsePageRange, type ExportFormat, type ExportOptions } from './shared'
@@ -132,7 +133,7 @@ export async function exportDocument(doc: DocumentModel, format?: ExportFormat, 
   let cancelled = false
   setState({ busy: true })
   try {
-    const engine = doc.ops('export-create') as unknown as ExportEngine
+    const engine: ExportEngine = doc.ops<typeof exportOps>('export-create')
     const label = FORMAT_INFO[fmt].short
     const result = await withProgress(
       `Exporting to ${label}…`,

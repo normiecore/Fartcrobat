@@ -173,8 +173,19 @@ function paragraphOptions(p: LParagraph, numbering: Numbering, opts: WordOptions
   const heading = opts.structure && p.role === 'heading' ? HEADINGS[Math.min(3, p.level - 1)] : undefined
   const listRef = opts.structure && p.list ? numbering.reference(p) : null
   if (!listRef) numbering.breakList()
+  const borderOf = (b: NonNullable<LParagraph['borderBottom']>) => ({
+    style: BorderStyle.SINGLE,
+    size: Math.max(2, Math.round(b.width * 8)),
+    color: hex(b.color),
+    space: Math.round(Math.min(31, b.gap))
+  })
+  const border =
+    p.borderBottom || p.borderTop
+      ? { border: { ...(p.borderBottom ? { bottom: borderOf(p.borderBottom) } : {}), ...(p.borderTop ? { top: borderOf(p.borderTop) } : {}) } }
+      : {}
   return {
     children: runChildren(runs),
+    ...border,
     alignment: ALIGN[p.align],
     ...(heading ? { heading } : {}),
     ...(listRef ? { numbering: listRef } : {}),
@@ -259,7 +270,7 @@ function buildTable(t: LTable, margins: LPage['margins']): Table {
     width: { size: widths.reduce((a, b) => a + b, 0), type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
     borders: { top: border, bottom: border, left: border, right: border, insideHorizontal: border, insideVertical: border },
-    indent: { size: Math.max(0, tw(t.x0 - margins.left)), type: WidthType.DXA }
+    indent: { size: Math.max(-tw(36), tw(t.x0 - margins.left)), type: WidthType.DXA }
   })
 }
 
@@ -301,7 +312,15 @@ function flowingSections(layout: DocLayout, opts: WordOptions, numbering: Number
       } else if (el.kind === 'table') {
         numbering.breakList()
         if (opts.tables) {
-          children.push(new Paragraph({ ...brk, spacing: { before: tw(el.spaceBefore), after: 0 }, children: [] }))
+          // A 1-point paragraph carries the space before the table (and keeps tables apart).
+          children.push(
+            new Paragraph({
+              ...brk,
+              spacing: { before: tw(Math.max(0, el.spaceBefore - 1)), after: 0, line: 20, lineRule: LineRuleType.EXACT },
+              run: { size: 2 },
+              children: []
+            })
+          )
           children.push(buildTable(el, current.page.margins))
         } else children.push(...tableAsText(el, !!brk.pageBreakBefore))
       } else {

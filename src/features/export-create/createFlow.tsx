@@ -48,6 +48,11 @@ const HTML_FILTERS = [{ name: 'Web pages', extensions: HTML_EXTENSIONS }]
 
 class Cancelled extends Error {}
 
+/** An error message without Electron's "Error invoking remote method …" wrapping. */
+function errorText(err: unknown): string {
+  return String((err as Error)?.message ?? err).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, '')
+}
+
 /** Opens the new PDF in a tab and leaves Create a PDF so the document shows. */
 async function openCreated(bytes: Uint8Array, name: string): Promise<DocumentModel | null> {
   const doc = await openNewDocument(bytes, name)
@@ -77,7 +82,16 @@ async function hintLibreOffice(ext: string) {
 
 /** Office file -> PDF bytes with LibreOffice; null when LibreOffice is not installed. */
 export async function convertOffice(path: string): Promise<Uint8Array | null> {
-  const bytes = await invoke('feature:export-create:convertOffice', path)
+  let bytes: Uint8Array | null
+  try {
+    bytes = await invoke('feature:export-create:convertOffice', path)
+  } catch (err) {
+    const ext = extensionOf(path)
+    const fallback = BUILTIN_OFFICE_EXTENSIONS.includes(ext) ? ' Trying the built-in converter instead.' : ''
+    const reason = errorText(err).replace(/\.$/, '')
+    toast(`LibreOffice could not convert ${basename(path)}: ${reason}.${fallback}`, { kind: 'warning', timeout: 10000 })
+    throw err
+  }
   if (!bytes) void hintLibreOffice(extensionOf(path))
   return bytes
 }
@@ -152,7 +166,7 @@ async function run<T>(title: string, task: (report: (fraction: number | null, me
     return await withProgress(title, task)
   } catch (err) {
     if (err instanceof Cancelled) return null
-    showError(err, 'Could not create the PDF')
+    showError(new Error(errorText(err)), 'Could not create the PDF')
     return null
   } finally {
     setState({ creating: false })

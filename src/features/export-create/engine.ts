@@ -7,7 +7,7 @@ import { defineOps, EngineError, withTransfer } from '@engine/define'
 import { graftPages, openSource } from '@engine/ops/pages'
 import type { PDFDocument, Session } from '@engine/session'
 import type { PageRaster } from './content'
-import { encodeAuto, extractPageContent, renderArea, type ExtractOptions } from './extract'
+import { encodeAuto, extractPageContent, pageText, renderArea, type ExtractOptions } from './extract'
 import { DEFAULT_IMAGE_PAGE_OPTIONS, IMAGE_EXTENSIONS, extensionOf, fitImagePage, type CreatePart, type ImagePageOptions } from './shared'
 
 type Rect = [number, number, number, number]
@@ -176,14 +176,9 @@ export default defineOps('export-create', {
     return pageHtml(s, pageIndex, opts.images)
   },
 
-  /** Plain text of a page, line by line. */
+  /** Plain text of a page, line by line (with filled-in form fields). */
   text(s, pageIndex: number): string {
-    const st = s.page(pageIndex).toStructuredText('preserve-whitespace')
-    try {
-      return st.asText()
-    } finally {
-      st.destroy()
-    }
+    return pageText(s, pageIndex)
   },
 
   /**

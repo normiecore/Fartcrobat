@@ -153,6 +153,7 @@ test('Export a PDF: Word, images to a folder, text from the menu, keyboard and d
     await expect(panel(page).getByText('security settings don’t allow copying')).toBeVisible()
     await page.getByTestId('export-run').click()
     await expect(page.getByRole('heading', { name: 'Exporting isn’t allowed' })).toBeVisible()
+    await page.waitForTimeout(400)
     await shot(page, 'restricted')
     await page.getByRole('button', { name: 'OK' }).click()
 

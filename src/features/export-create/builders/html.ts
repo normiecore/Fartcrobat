@@ -68,11 +68,12 @@ pre { margin: 0.25em 0; white-space: pre-wrap; }
 .page-break { break-before: page; height: 0; border: 0; margin: 1.5em 0; border-top: 1px dashed #ccc; }
 @media print { .page-break { border: 0; margin: 0; } }`
 
-function runHtml(r: LRun, bodyFamily: string, bodySize: number): string {
+function runHtml(r: LRun, bodyFamily: string, bodySize: number, heading = false): string {
   let html = escapeHtml(r.text).replace(/\t/g, '&emsp;').replace(/\n/g, '<br>')
   const style: string[] = []
   if (r.family !== bodyFamily) style.push(`font-family: ${escapeHtml(cssFontStack(r.family, r.mono ? 4 : 0).replace(/"/g, "'"))}`)
-  if (Math.abs(r.size - bodySize) > 0.25) style.push(`font-size: ${r.size}pt`)
+  // Headings keep the size they have in the PDF, not the browser's heading sizes.
+  if (heading || Math.abs(r.size - bodySize) > 0.25) style.push(`font-size: ${r.size}pt`)
   if (r.color !== 0) style.push(`color: ${hex(r.color)}`)
   if (style.length) html = `<span style="${style.join('; ')}">${html}</span>`
   if (r.bold) html = `<strong>${html}</strong>`
@@ -83,8 +84,8 @@ function runHtml(r: LRun, bodyFamily: string, bodySize: number): string {
   return html
 }
 
-function runsHtml(runs: LRun[], ctx: Ctx, stripBold = false): string {
-  return runs.map((r) => runHtml(stripBold ? { ...r, bold: false } : r, ctx.family, ctx.size)).join('')
+function runsHtml(runs: LRun[], ctx: Ctx, heading = false): string {
+  return runs.map((r) => runHtml(heading ? { ...r, bold: false } : r, ctx.family, ctx.size, heading)).join('')
 }
 
 interface Ctx {
@@ -98,13 +99,17 @@ function paragraphHtml(p: LParagraph, ctx: Ctx): string {
   if (p.indent > 1 && !p.list) style.push(`margin-left: ${Math.round(p.indent)}pt`)
   if (p.firstLine > 1 && !p.list) style.push(`text-indent: ${Math.round(p.firstLine)}pt`)
   if (p.spaceBefore > 6) style.push(`margin-top: ${Math.round(p.spaceBefore)}pt`)
+  if (p.borderBottom) style.push(`border-bottom: ${Math.max(0.5, p.borderBottom.width)}pt solid ${hex(p.borderBottom.color)}; padding-bottom: ${Math.round(p.borderBottom.gap)}pt`)
+  if (p.borderTop) style.push(`border-top: ${Math.max(0.5, p.borderTop.width)}pt solid ${hex(p.borderTop.color)}; padding-top: ${Math.round(p.borderTop.gap)}pt`)
   const attr = style.length ? ` style="${style.join('; ')}"` : ''
   if (p.preformatted) return `<pre${attr}>${runsHtml(linedRuns(p.lines), ctx)}</pre>`
   const runs = flowRuns(p.lines)
   if (p.role === 'heading') {
     const level = Math.min(6, Math.max(1, p.level))
-    // Headings are bold already.
-    return `<h${level}${attr}>${runsHtml(runs, ctx, true)}</h${level}>`
+    // Headings are bold already; a heading that is not bold in the PDF stays normal weight.
+    const weight = p.bold ? '' : ' style="font-weight: normal"'
+    const attrs = attr ? attr.replace(/"$/, p.bold ? '"' : '; font-weight: normal"') : weight
+    return `<h${level}${attrs}>${runsHtml(runs, ctx, true)}</h${level}>`
   }
   return `<p${attr}>${runsHtml(runs, ctx)}</p>`
 }
