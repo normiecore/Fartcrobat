@@ -180,6 +180,20 @@ describe('redact: marks and apply', () => {
     expect(await pixel(e, 0, Math.round(r[2] + 30), Math.round((r[1] + r[3]) / 2))).toEqual([255, 255, 255])
   })
 
+  it('fills and labels the right place on cropped pages', async () => {
+    const e = await openFixture('redact/cropped.pdf')
+    const redact = e.ops<Redact>('redact')
+    const [mark] = await redact.mark([{ page: 0, kind: 'text', quads: await quadsOf(e, 0, 'Visible text') }], props({ overlay: 'custom', customText: 'XX' }))
+    await redact.apply()
+    const t = (await pageText(e, 0)).text
+    expect(t).not.toContain('Visible text')
+    expect(t).toContain('XX')
+    const r = mark.rect
+    expect(await pixel(e, 0, Math.round(r[0] + 2), Math.round((r[1] + r[3]) / 2))).toEqual([0, 0, 0])
+    // and nowhere else: just above the mark the page is white
+    expect(await pixel(e, 0, Math.round((r[0] + r[2]) / 2), Math.round(r[1] - 10))).toEqual([255, 255, 255])
+  })
+
   it('repeats overlay text and can leave the area unfilled', async () => {
     const e = await openFixture('text.pdf')
     const redact = e.ops<Redact>('redact')
