@@ -43,6 +43,8 @@ export class Session {
   private changedDocument = false
   private savedPosition = 0
   private forcedDirty = false
+  /** Bumps on every change to the document content (edits, undo, redo, reload, forced dirty). */
+  private editCounter = 0
   private opDepth = 0
   private progressSink: ((fraction: number, message?: string) => void) | null = null
 
@@ -67,6 +69,7 @@ export class Session {
     }
     this.savedPosition = this.journalPosition()
     this.forcedDirty = !!opts.converted
+    this.editCounter++
     this.changedStructure = true
     this.changedAll = true
     this.changedDocument = true
@@ -169,10 +172,29 @@ export class Session {
   /** Marks the document as modified even though no journalled change happened. */
   markDirty() {
     this.forcedDirty = true
+    this.editCounter++
   }
 
-  markSaved() {
-    this.savedPosition = this.journalPosition()
+  /**
+   * Version of the document content: changes whenever an edit, undo, redo or reload happens.
+   * Record it together with the bytes you save and pass it to `markSaved`.
+   */
+  editVersion(): number {
+    return this.editCounter
+  }
+
+  /**
+   * Records that the document was written to disk. With `version` (from `editVersion()` taken when
+   * the bytes were produced), changes made after that point keep the document dirty, because the
+   * file does not contain them.
+   */
+  markSaved(version?: number) {
+    if (version === undefined || version === this.editCounter) {
+      this.savedPosition = this.journalPosition()
+    } else {
+      // The file holds an earlier state that no journal position identifies reliably any more.
+      this.savedPosition = -1
+    }
     this.forcedDirty = false
     this.changedDocument = true
   }
@@ -233,6 +255,7 @@ export class Session {
     const doc = this.pdf
     if (this.opDepth > 0) return fn()
     this.opDepth++
+    this.editCounter++
     let began = false
     try {
       doc.beginOperation(label)
@@ -264,6 +287,7 @@ export class Session {
     const doc = this.pdf
     if (!doc.canUndo()) return
     doc.undo()
+    this.editCounter++
     this.afterHistoryJump()
   }
 
@@ -271,6 +295,7 @@ export class Session {
     const doc = this.pdf
     if (!doc.canRedo()) return
     doc.redo()
+    this.editCounter++
     this.afterHistoryJump()
   }
 

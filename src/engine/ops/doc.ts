@@ -1,5 +1,5 @@
 import type { DocInfo, DocMetadata, OpenResult, PageInfo, Permission, SaveOptions } from '@shared/types'
-import { defineOps, EngineError, mutation, withTransfer } from '../define'
+import { defineOps, EngineError, mutation, withTransfer, type Transfer } from '../define'
 import type { PDFDocument, Session } from '../session'
 import { countSignatures, hasForm, hasXfa, pageBoxes, pageLabels, parsePdfDate } from '../util/pdf'
 
@@ -321,11 +321,24 @@ export default defineOps('doc', {
     return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
   },
 
-  /** Call after the saved bytes were written to disk successfully. */
-  markSaved(s, fileName?: string) {
+  /**
+   * Like `save`, plus the edit version the bytes correspond to. Pass that version to `markSaved`
+   * so that edits made while the file was being written keep the document dirty.
+   */
+  saveWithVersion(s, opts: SaveOptions = {}): Transfer<{ bytes: Uint8Array; version: number }> {
+    const version = s.editVersion()
+    const bytes = saveDocument(s, opts)
+    return withTransfer({ bytes, version }, [bytes.buffer as ArrayBuffer])
+  },
+
+  /**
+   * Call after the saved bytes were written to disk successfully. `version` (from
+   * `saveWithVersion`) is the state the file holds; without it the current state is marked saved.
+   */
+  markSaved(s, fileName?: string, version?: number) {
     if (fileName) s.fileName = fileName
     s.converted = false
-    s.markSaved()
+    s.markSaved(version)
   },
 
   isDirty(s): boolean {
