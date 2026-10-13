@@ -232,12 +232,20 @@ test('files handed over while the window is still loading are all opened', async
     // One process per file, 60 ms apart from the moment the window exists (selecting several PDFs
     // in a file manager and pressing Enter): the first ones arrive before the renderer has booted.
     await app.evaluate(async ({ app, BrowserWindow }, list) => {
-      while (!BrowserWindow.getAllWindows().length) await new Promise((r) => setTimeout(r, 2))
+      // Electron delivers `second-instance` from the main loop, so emit only from timer callbacks.
+      // This evaluate itself can start in the middle of the app's `new BrowserWindow(...)` (the
+      // inspector runs it at the next JS interrupt check): the window is listed already but the app
+      // has not registered it yet, and an event emitted right there would get a second window.
+      do {
+        await new Promise((r) => setTimeout(r, 2))
+      } while (!BrowserWindow.getAllWindows().length)
       for (const f of list) {
         app.emit('second-instance', {}, ['/opt/Fartcrobat/fartcrobat', f], '/', {})
         await new Promise((r) => setTimeout(r, 60))
       }
     }, names.map(fixturePath))
+    // Every file goes to the one window, not to windows of their own.
+    expect(await windowCount(app)).toBe(1)
     const page = await app.firstWindow()
     await page.waitForSelector('.shell')
     await expect.poll(async () => (await docTitles(page)).sort(), { timeout: 30000 }).toEqual([...names].sort())
