@@ -1,0 +1,81 @@
+# Installer configuration (electron-builder). Build with: npm run dist (or dist:win / dist:mac / dist:linux)
+appId: org.fartcrobat.app
+productName: Fartcrobat
+copyright: Copyright © 2026 Fartcrobat contributors. Licensed under the GNU AGPL v3 or later.
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+  - '!**/*.map'
+  # The renderer and main bundles contain all code; runtime node_modules are not needed.
+  - '!node_modules/**'
+asar: true
+asarUnpack:
+  - resources/**
+publish: null
+fileAssociations:
+  - ext: pdf
+    name: PDF Document
+    description: PDF Document
+    mimeType: application/pdf
+    role: Editor
+    rank: Default
+    icon: pdf-document
+win:
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  icon: build/icon.ico
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Fartcrobat
+  license: build/license.txt
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  icon: build/icon.png
+  darkModeSupport: true
+  # Unsigned builds by default. Set CSC_LINK / APPLE_ID etc. in CI to sign and notarize.
+  identity: null
+  hardenedRuntime: false
+  extendInfo:
+    NSHumanReadableCopyright: Fartcrobat is free software under the GNU AGPL v3 or later.
+dmg:
+  title: Fartcrobat ${version}
+linux:
+  target:
+    - AppImage
+    - deb
+    - tar.gz
+  category: Office
+  icon: build/icons
+  executableName: fartcrobat
+  syncDesktopName: true
+  synopsis: PDF reader, editor and signer
+  description: Free, open-source PDF reader, editor and signer for people coming from Adobe Acrobat Pro.
+  mimeTypes:
+    - application/pdf
+  desktop:
+    entry:
+      Name: Fartcrobat
+      GenericName: PDF Editor
+      Comment: Read, edit, comment on and sign PDF documents
+      Keywords: pdf;acrobat;reader;editor;sign;forms;
+      StartupWMClass: Fartcrobat
+  maintainer: Fartcrobat contributors <noreply@fartcrobat.org>
+deb:
+  priority: optional

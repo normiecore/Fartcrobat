@@ -61,16 +61,36 @@ export interface PageBoxes {
   height: number
 }
 
-/** Page geometry read straight from the page dictionary (fast: does not load the page). */
+const LETTER: Rect = [0, 0, 612, 792]
+const NO_RECT: Rect = [0, 0, 0, 0]
+
+function isEmptyRect(r: Rect): boolean {
+  return !(r[0] < r[2] && r[1] < r[3])
+}
+
+/** /Rotate snapped the way MuPDF does: to the nearest multiple of 90, in 0..270. */
+export function pageRotation(rotate: number): 0 | 90 | 180 | 270 {
+  let r = Math.round(rotate) || 0
+  if (r < 0) r = 360 - (-r % 360)
+  if (r >= 360) r = r % 360
+  r = 90 * Math.floor((r + 45) / 90)
+  return (r >= 360 ? 0 : r) as 0 | 90 | 180 | 270
+}
+
+/**
+ * Page geometry read straight from the page dictionary (fast: does not load the page). Mirrors
+ * MuPDF's page transform, so it always agrees with what is rendered: an empty or missing box
+ * falls back to Letter, the crop box is clipped to the media box, and /Rotate snaps to 90°.
+ */
 export function pageBoxes(doc: PDFDocument, index: number): PageBoxes {
   const pageObj = doc.findPage(index)
-  const mediaBox = readRect(pageObj.getInheritable('MediaBox'))
+  const media = readRect(pageObj.getInheritable('MediaBox'), NO_RECT)
   const cropRaw = pageObj.getInheritable('CropBox')
-  let cropBox = isNull(cropRaw) ? mediaBox : readRect(cropRaw, mediaBox)
-  cropBox = rectIntersection(cropBox, mediaBox) ?? mediaBox
-  let rotation = Math.round(readNumber(pageObj.getInheritable('Rotate'), 0))
-  rotation = (((rotation % 360) + 360) % 360) as number
-  if (rotation % 90 !== 0) rotation = 0
+  let cropBox = isNull(cropRaw) ? media : (rectIntersection(media, readRect(cropRaw, NO_RECT)) ?? NO_RECT)
+  if (isEmptyRect(cropBox)) cropBox = LETTER
+  if (cropBox[2] - cropBox[0] < 1 || cropBox[3] - cropBox[1] < 1) cropBox = [0, 0, 1, 1]
+  const mediaBox = isEmptyRect(media) ? LETTER : media
+  const rotation: number = pageRotation(readNumber(pageObj.getInheritable('Rotate'), 0))
   const userUnit = readNumber(pageObj.get('UserUnit'), 1) || 1
   const w = (cropBox[2] - cropBox[0]) * userUnit
   const h = (cropBox[3] - cropBox[1]) * userUnit

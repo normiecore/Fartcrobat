@@ -1,0 +1,760 @@
+/* Prepare a form / Request e-signatures. Page overlays sit on white paper in both themes, so they
+   use fixed colours; panels and dialogs use the theme variables. */
+
+.fc-prepare-form-layer {
+  --pf-blue: #1f6fd6;
+  /* fairly opaque, so names stay readable over the field's own text and the page */
+  --pf-blue-soft: rgba(222, 234, 255, 0.72);
+  --pf-blue-line: rgba(31, 111, 214, 0.75);
+  cursor: default;
+  user-select: none;
+}
+.fc-prepare-form-layer.is-creating {
+  cursor: crosshair;
+}
+.fc-prepare-form-layer.is-creating .fc-prepare-form-box {
+  pointer-events: none;
+}
+
+.fc-prepare-form-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid var(--pf-blue-line);
+  background: var(--pf-blue-soft);
+  border-radius: 1px;
+  cursor: move;
+  outline: none;
+}
+.fc-prepare-form-box:hover {
+  background: rgba(208, 224, 255, 0.8);
+  border-color: var(--pf-blue);
+}
+.fc-prepare-form-box.is-selected {
+  border: 2px solid var(--pf-blue);
+  background: rgba(208, 224, 255, 0.8);
+  z-index: 2;
+}
+.fc-prepare-form-box:focus-visible {
+  box-shadow: 0 0 0 3px rgba(31, 111, 214, 0.35);
+}
+.fc-prepare-form-box.is-hidden {
+  border-style: dashed;
+  opacity: 0.6;
+}
+.fc-prepare-form-box.type-radio {
+  border-radius: 50%;
+}
+
+.fc-prepare-form-inner {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.fc-prepare-form-name {
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: calc(100% - 4px);
+  padding: 0 3px;
+  border-radius: 2px;
+  /* opaque chip: the name stays readable over the field's own text */
+  background: rgba(232, 240, 255, 0.94);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 600 11px/14px var(--font);
+  color: #0f4fa8;
+  pointer-events: none;
+}
+.fc-prepare-form-box.type-list .fc-prepare-form-name,
+.fc-prepare-form-box.type-signature .fc-prepare-form-name {
+  top: 2px;
+  transform: none;
+}
+/* tiny fields (check boxes, radio buttons): the name shows above them on hover or when selected */
+.fc-prepare-form-box.is-small .fc-prepare-form-name {
+  left: -2px;
+  top: auto;
+  bottom: calc(100% + 5px);
+  transform: none;
+  max-width: none;
+  overflow: visible;
+  background: #fff;
+  border: 1px solid var(--pf-blue-line);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.1s;
+  z-index: 3;
+}
+.fc-prepare-form-box.is-small:hover .fc-prepare-form-name,
+.fc-prepare-form-box.is-small.is-solo .fc-prepare-form-name {
+  opacity: 1;
+}
+.fc-prepare-form-req {
+  color: #d7373f;
+  margin-left: 2px;
+  font-weight: 700;
+}
+
+.fc-prepare-form-tab {
+  position: absolute;
+  left: 1px;
+  top: 1px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 9px;
+  background: var(--pf-blue);
+  color: #fff;
+  font: 700 10px/18px var(--font);
+  text-align: center;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.fc-prepare-form-box.has-tab .fc-prepare-form-name {
+  left: 22px;
+  max-width: calc(100% - 24px);
+}
+/* check boxes and radio buttons are too small to hold the number: it sits on their left */
+.fc-prepare-form-box.is-small .fc-prepare-form-tab {
+  left: auto;
+  right: calc(100% + 3px);
+  top: 50%;
+  transform: translateY(-50%);
+}
+.fc-prepare-form-box.is-small.has-tab .fc-prepare-form-name {
+  left: -2px;
+  max-width: none;
+}
+
+.fc-prepare-form-handle {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border: 1.5px solid var(--pf-blue);
+  border-radius: 1px;
+  box-sizing: border-box;
+}
+.fc-prepare-form-handle.h-nw {
+  left: -5px;
+  top: -5px;
+  cursor: nwse-resize;
+}
+.fc-prepare-form-handle.h-n {
+  left: calc(50% - 4px);
+  top: -5px;
+  cursor: ns-resize;
+}
+.fc-prepare-form-handle.h-ne {
+  right: -5px;
+  top: -5px;
+  cursor: nesw-resize;
+}
+.fc-prepare-form-handle.h-e {
+  right: -5px;
+  top: calc(50% - 4px);
+  cursor: ew-resize;
+}
+.fc-prepare-form-handle.h-se {
+  right: -5px;
+  bottom: -5px;
+  cursor: nwse-resize;
+}
+.fc-prepare-form-handle.h-s {
+  left: calc(50% - 4px);
+  bottom: -5px;
+  cursor: ns-resize;
+}
+.fc-prepare-form-handle.h-sw {
+  left: -5px;
+  bottom: -5px;
+  cursor: nesw-resize;
+}
+.fc-prepare-form-handle.h-w {
+  left: -5px;
+  top: calc(50% - 4px);
+  cursor: ew-resize;
+}
+
+.fc-prepare-form-ghost {
+  position: absolute;
+  border: 1.5px dashed var(--pf-blue);
+  background: rgba(80, 150, 255, 0.12);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  box-sizing: border-box;
+  font: 500 11px var(--font);
+  color: #0f4fa8;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.fc-prepare-form-ghost.is-hover {
+  opacity: 0.8;
+}
+.fc-prepare-form-band {
+  position: absolute;
+  border: 1px dashed var(--pf-blue);
+  background: rgba(80, 150, 255, 0.1);
+  pointer-events: none;
+}
+
+/* the name box under a new field */
+.fc-prepare-form-inline {
+  position: absolute;
+  z-index: 20;
+  width: 230px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  font-size: var(--fs);
+  cursor: default;
+}
+.fc-prepare-form-inline-close {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 4px;
+  display: inline-flex;
+  padding: 3px;
+}
+.fc-prepare-form-inline-close:hover {
+  background: var(--bg-hover);
+}
+.fc-prepare-form-inline-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.fc-prepare-form-inline-row > span {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-prepare-form-inline-links {
+  display: flex;
+  gap: 14px;
+}
+.fc-prepare-form-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.fc-prepare-form-link:hover {
+  text-decoration: underline;
+}
+
+/* contextual toolbar */
+.fc-prepare-form-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  container-type: inline-size;
+}
+/* narrow windows (or a side panel open): drop the hint, then the button labels */
+@container (max-width: 760px) {
+  .fc-prepare-form-toolbar-hint {
+    display: none;
+  }
+}
+@container (max-width: 600px) {
+  .fc-prepare-form-toolbar .ui-btn {
+    padding: 0 7px;
+  }
+  .fc-prepare-form-toolbar .ui-btn > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+.fc-prepare-form-toolbar-hint {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-left: 6px;
+  min-width: 0;
+}
+.fc-prepare-form-toolbar-spacer {
+  flex: 1;
+}
+.fc-prepare-form-toolbar .ui-btn {
+  margin-left: 4px;
+}
+
+/* left pane */
+.fc-prepare-form-left {
+  display: flex;
+  flex-direction: column;
+}
+.fc-prepare-form-mode {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 8px;
+}
+.fc-prepare-form-mode .ui-segmented {
+  flex: none;
+}
+.fc-prepare-form-mode > span {
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+.fc-prepare-form-tip,
+.fc-prepare-form-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px;
+  margin: 4px 0 8px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.fc-prepare-form-tip svg,
+.fc-prepare-form-note svg {
+  flex: none;
+  margin-top: 2px;
+}
+.fc-prepare-form-note {
+  color: var(--text);
+}
+.fc-prepare-form-note.is-warning svg {
+  color: var(--warning);
+}
+.fc-prepare-form-hint {
+  margin: 4px 0;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+/* request e-signatures */
+.fc-prepare-form-signer-form {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.fc-prepare-form-signers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fc-prepare-form-signers li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  background: var(--bg-elev);
+}
+.fc-prepare-form-signers li.is-pending {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+.fc-prepare-form-signer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fc-prepare-form-signer-num {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--bg-active);
+  color: var(--accent-text);
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-sm);
+}
+.fc-prepare-form-signer-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fc-prepare-form-signer-name > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-prepare-form-signer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.fc-prepare-form-sigfields {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fc-prepare-form-sigfields li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fc-prepare-form-assign {
+  height: 28px;
+  padding: 2px 6px;
+  font-size: var(--fs-sm);
+}
+.fc-prepare-form-sent {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fc-prepare-form-sent svg {
+  vertical-align: -3px;
+}
+.fc-prepare-form-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-all;
+  user-select: text;
+  padding: 4px 6px;
+  background: var(--bg-elev);
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+.fc-prepare-form-sent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.fc-prepare-form-request .ui-btn-primary {
+  width: 100%;
+  justify-content: center;
+}
+
+/* Fields panel */
+.fc-prepare-form-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.fc-prepare-form-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 4px 8px;
+}
+.fc-prepare-form-panel-list {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+.fc-prepare-form-page {
+  margin-bottom: 10px;
+}
+.fc-prepare-form-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 4px;
+}
+.fc-prepare-form-page-head h4 {
+  margin: 6px 0;
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.fc-prepare-form-order {
+  width: auto;
+  font-size: var(--fs-sm);
+  padding: 2px 6px;
+  height: 26px;
+}
+.fc-prepare-form-page ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fc-prepare-form-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px;
+  border-radius: var(--radius);
+  cursor: default;
+  outline: none;
+  border-top: 2px solid transparent;
+  border-bottom: 2px solid transparent;
+}
+.fc-prepare-form-field:hover {
+  background: var(--bg-hover);
+}
+.fc-prepare-form-field.is-selected {
+  background: var(--bg-active);
+  color: var(--accent-text);
+}
+.fc-prepare-form-field:focus-visible {
+  box-shadow: var(--focus);
+}
+.fc-prepare-form-field.is-dragging {
+  opacity: 0.4;
+}
+.fc-prepare-form-field.is-drop-before {
+  border-top-color: var(--accent);
+}
+.fc-prepare-form-field.is-drop-after {
+  border-bottom-color: var(--accent);
+}
+.fc-prepare-form-grip {
+  color: var(--text-muted);
+  cursor: grab;
+  flex: none;
+}
+.fc-prepare-form-field svg {
+  flex: none;
+}
+.fc-prepare-form-field-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-prepare-form-field-num {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+.fc-prepare-form-rename {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 2px 6px;
+}
+.fc-prepare-form-panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding: 8px 4px 2px;
+}
+.fc-prepare-form-panel-tip {
+  padding: 0 4px;
+}
+
+/* Properties dialog */
+.fc-prepare-form-props .ui-dialog-body {
+  min-height: 380px;
+}
+.fc-prepare-form-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.fc-prepare-form-tabs button {
+  border: none;
+  background: transparent;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.fc-prepare-form-tabs button:hover {
+  color: var(--text);
+}
+.fc-prepare-form-tabs button.is-active {
+  color: var(--accent-text);
+  border-bottom-color: var(--accent);
+}
+.fc-prepare-form-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.fc-prepare-form-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.fc-prepare-form-row > .ui-field {
+  flex: 1;
+  min-width: 140px;
+}
+.fc-prepare-form-row > .ui-field-inline {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.fc-prepare-form-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fc-prepare-form-inline-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fc-prepare-form-inline-field .ui-input-number {
+  width: 80px;
+}
+.fc-prepare-form-inline-field .ui-select {
+  width: auto;
+}
+.fc-prepare-form-h {
+  margin: 4px 0 -4px;
+  font-size: var(--fs-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.fc-prepare-form-add {
+  flex: none;
+}
+.fc-prepare-form-items {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-height: 180px;
+  min-height: 64px;
+  overflow: auto;
+  background: var(--bg);
+  outline: none;
+}
+.fc-prepare-form-items:focus-visible {
+  box-shadow: var(--focus);
+}
+.fc-prepare-form-items > .fc-prepare-form-hint {
+  padding: 8px 10px;
+}
+.fc-prepare-form-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 3px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-prepare-form-item:last-child {
+  border-bottom: none;
+}
+.fc-prepare-form-item.is-selected {
+  background: var(--bg-active);
+}
+.fc-prepare-form-item-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-prepare-form-item-value {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-family: var(--font-mono);
+}
+.fc-prepare-form-item-num {
+  color: var(--text-muted);
+  width: 20px;
+  text-align: right;
+}
+.fc-prepare-form-item-actions {
+  display: flex;
+}
+.fc-prepare-form-item-actions .ui-icon-btn {
+  width: 24px;
+  height: 24px;
+}
+.fc-prepare-form-default {
+  display: inline-flex;
+}
+.fc-prepare-form-example {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+.fc-prepare-form-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.fc-prepare-form-code.is-invalid {
+  border-color: var(--danger);
+}
+.fc-prepare-form-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 24px;
+}
+.fc-prepare-form-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  background: var(--bg);
+}
+.fc-prepare-form-calc {
+  display: flex;
+  gap: 12px;
+}
+.fc-prepare-form-calc .fc-prepare-form-items {
+  flex: 1;
+  max-height: 260px;
+}
+.fc-prepare-form-calc-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

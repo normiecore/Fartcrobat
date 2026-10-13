@@ -1,0 +1,244 @@
+/* markup-tools: comment creation tools */
+
+/* ---- page layers ---------------------------------------------------------------------- */
+.fc-markup-tools-layer {
+  touch-action: none;
+  user-select: none;
+}
+.fc-markup-tools-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.fc-markup-tools-multiply {
+  mix-blend-mode: multiply;
+}
+.fc-markup-tools-cursor-draw,
+.fc-markup-tools-cursor-note {
+  cursor: crosshair;
+}
+.fc-markup-tools-cursor-typewriter,
+.fc-markup-tools-cursor-insertText {
+  cursor: text;
+}
+.fc-markup-tools-cursor-pencil {
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'><path d='M21.17 6.81a1 1 0 0 0-3.98-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z' stroke='white' stroke-width='3.5'/><path d='M21.17 6.81a1 1 0 0 0-3.98-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z' stroke='black' stroke-width='1.5'/><path d='m15 5 4 4' stroke='black' stroke-width='1.5'/></svg>")
+      2 22,
+    crosshair;
+}
+.fc-markup-tools-cursor-eraser {
+  cursor: none;
+}
+.fc-markup-tools-eraser {
+  fill: rgba(255, 255, 255, 0.35);
+  stroke: #4a4a4a;
+  stroke-width: 1.25;
+}
+.fc-markup-tools-vertex {
+  fill: #fff;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.fc-markup-tools-vertex.is-target {
+  fill: var(--accent);
+}
+.fc-markup-tools-ghost-note {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  border-radius: 2px;
+  color: #000;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.fc-markup-tools-ghost-caret {
+  position: absolute;
+  width: 2px;
+  opacity: 0.75;
+  pointer-events: none;
+  animation: fc-markup-tools-blink 1s steps(2, start) infinite;
+}
+@keyframes fc-markup-tools-blink {
+  to {
+    visibility: hidden;
+  }
+}
+.fc-markup-tools-tip {
+  position: absolute;
+  z-index: 2;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+/* ---- tool options bar ----------------------------------------------------------------- */
+.fc-markup-tools-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.fc-markup-tools-toolbar > * {
+  flex-shrink: 0;
+}
+.fc-markup-tools-toolbar.is-compact {
+  gap: 5px;
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-label {
+  display: none;
+}
+/* compact layout: a small icon replaces each text label (the full name stays in the tooltip) */
+.fc-markup-tools-compact-icon {
+  display: none;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-compact-icon {
+  display: inline-block;
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-field {
+  gap: 3px;
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-color {
+  gap: 3px;
+  padding: 0 5px 0 4px;
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-toolname {
+  padding-right: 6px;
+}
+.fc-markup-tools-toolbar.is-compact .ui-select {
+  max-width: 112px;
+}
+.fc-markup-tools-toolbar.is-compact .fc-markup-tools-draft .ui-btn {
+  padding: 0 7px;
+}
+.fc-markup-tools-toolname {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  padding-right: 10px;
+  border-right: 1px solid var(--border);
+}
+.fc-markup-tools-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-markup-tools-field .ui-select,
+.fc-markup-tools-toolbar > .ui-select {
+  height: 28px;
+  color: var(--text);
+  font-size: var(--fs);
+}
+.fc-markup-tools-toolbar .ui-segmented {
+  display: inline-flex;
+  vertical-align: middle;
+}
+.fc-markup-tools-toolbar .ui-segmented button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 26px;
+  padding: 0 8px;
+}
+.fc-markup-tools-linestyle {
+  display: inline-flex;
+}
+.fc-markup-tools-toolbar > .fc-markup-tools-hint {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-markup-tools-draft {
+  display: inline-flex;
+  gap: 4px;
+}
+.fc-markup-tools-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  background: var(--bg-elev);
+  font-size: var(--fs-sm);
+}
+.fc-markup-tools-color:hover {
+  background: var(--bg-hover);
+}
+.fc-markup-tools-color[aria-expanded='true'] {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+.fc-markup-tools-color-swatch {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+  background-clip: padding-box;
+}
+[data-theme='dark'] .fc-markup-tools-color-swatch {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.fc-markup-tools-popover {
+  position: fixed;
+  z-index: 902;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow);
+}
+.fc-markup-tools-popover-title {
+  padding: 0 4px 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.fc-markup-tools-pin.is-active,
+.fc-markup-tools-pin[aria-pressed='true'] {
+  color: var(--accent-text);
+}
+
+/* ---- panel ---------------------------------------------------------------------------- */
+.fc-markup-tools-panel .ui-section {
+  margin: 2px 0 10px;
+}
+.fc-markup-tools-panel .ui-tool-row {
+  padding: 6px 10px;
+}
+.fc-markup-tools-panel-footer {
+  flex: 1;
+  font-size: var(--fs-sm);
+}
+
+/* ---- fallback text entry -------------------------------------------------------------- */
+.fc-markup-tools-entry {
+  min-height: 90px;
+}
