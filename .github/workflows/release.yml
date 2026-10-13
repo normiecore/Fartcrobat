@@ -1,9 +1,15 @@
 name: Release
 
-# Builds installers for Windows, macOS and Linux. Run it manually, or push a tag like v0.2.0 to
-# also publish a GitHub release with the installers attached.
+# Builds installers for Windows, macOS and Linux. Run it manually to only build them. To publish
+# a GitHub release with the installers attached, either run it manually on main with a version
+# (the tag v<version> is created on the commit it built), or push a tag like v0.2.0.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: Publish as this version, e.g. 0.2.0 (must match package.json; runs on main only). Leave empty to only build.
+        required: false
+        default: ''
   push:
     tags: ['v*']
 
@@ -63,17 +69,33 @@ jobs:
           if-no-files-found: error
 
   publish:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '' && github.ref == 'refs/heads/main')
     needs: build
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-      - name: Create GitHub release
+      - name: Create the GitHub release (or add the installers to it)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Fartcrobat $GITHUB_REF_NAME" --generate-notes
+          TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', inputs.version) }}
+        run: |
+          set -euo pipefail
+          # The installers carry the version from package.json: the tag must say the same.
+          expected="v$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$expected" ]; then
+            echo "::error::$TAG does not match the version in package.json ($expected)"
+            exit 1
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # Made on GitHub first (Releases > Draft a new release): attach the installers.
+            gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            # A manual run creates the tag on the commit it built.
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fartcrobat $TAG" --generate-notes
+          fi
