@@ -647,6 +647,8 @@ test('a document that does not allow changes asks for its permissions password f
     await openFile(page, fixturePath('forms-fill/signed.pdf'))
     await waitForRender(page)
     await expect(page.locator('.fc-edit-text-note')).toContainText('signatures invalid')
+    await expect(blockButton(page, /^Edit text: All field types/)).toBeVisible()
+    await page.waitForTimeout(800)
     await shot(page, '27-signed-document')
   } finally {
     await app.close()
