@@ -15,6 +15,8 @@ export interface AtomicWriteOptions {
   /** Pauses between rename attempts when Windows reports the file as busy (virus scanners, indexers). */
   retryDelays?: number[]
   fs?: Partial<AtomicWriteFs>
+  /** Permissions for the file instead of the original's (0o600 for secrets). Ignored on Windows. */
+  mode?: number
 }
 
 const defaultFs: AtomicWriteFs = {
@@ -75,13 +77,13 @@ export async function atomicWrite(path: string, data: Uint8Array, opts: AtomicWr
   if (existing?.isDirectory()) throw Object.assign(new Error(`${target} is a folder`), { code: 'EISDIR' })
 
   const tmp = join(dirname(target), `.${basename(target)}.${process.pid}-${randomBytes(4).toString('hex')}.fartcrobat-tmp`)
-  const handle = await fsp.open(tmp, 'wx', existing ? existing.mode & 0o777 : 0o666)
+  const handle = await fsp.open(tmp, 'wx', opts.mode ?? (existing ? existing.mode & 0o777 : 0o666))
   try {
     await fs.writeData(handle, data)
-    if (existing && platform !== 'win32') {
+    if ((existing || opts.mode !== undefined) && platform !== 'win32') {
       // open() applies the umask; restore the exact permissions, then the owner if we may.
-      await handle.chmod(existing.mode & 0o7777)
-      if (typeof process.getuid === 'function' && (existing.uid !== process.getuid() || existing.gid !== process.getgid?.())) {
+      await handle.chmod(opts.mode ?? existing!.mode & 0o7777)
+      if (existing && typeof process.getuid === 'function' && (existing.uid !== process.getuid() || existing.gid !== process.getgid?.())) {
         try {
           await handle.chown(existing.uid, existing.gid)
         } catch {}
@@ -99,6 +101,7 @@ export async function atomicWrite(path: string, data: Uint8Array, opts: AtomicWr
     if (existing && existing.nlink > 1) {
       // Renaming would detach this name from the other hard links; update the shared file.
       await fs.copyFile(tmp, target)
+      if (opts.mode !== undefined && platform !== 'win32') await fsp.chmod(target, opts.mode)
       return
     }
     for (let attempt = 0; ; attempt++) {
