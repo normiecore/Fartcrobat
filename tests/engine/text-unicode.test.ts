@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createLocalEngine } from '@engine/local'
 import type docOps from '@engine/ops/doc'
 import type textOps from '@engine/ops/text'
+import type editTextOps from '@features/edit-text/engine'
+import type exportOps from '@features/export-create/engine'
 import {
   caretAt,
   charQuad,
@@ -112,5 +114,17 @@ describe('text outside the Basic Multilingual Plane', () => {
     const [quad] = rangeQuads(t, x, x + 6)
     expect(quad[0]).toBeCloseTo(charQuad(t, x)[0], 3)
     expect(quad[2]).toBeCloseTo(charQuad(t, x + 5)[2], 3)
+  })
+})
+
+describe('features that read page text', () => {
+  it('keep characters outside the BMP: Export a PDF and Edit Text', async () => {
+    const e = await openAstral()
+    const content = await e.ops<typeof exportOps>('export-create').content(0, { images: false })
+    const exported = JSON.stringify(content.lines)
+    for (const s of ['😀', '𝐀𝐁', '𠀋𠀋']) expect(exported).toContain(s)
+    const blocks = await e.ops<typeof editTextOps>('edit-text').analyze(0)
+    const edited = blocks.map((b) => b.text).join('\n')
+    for (const s of ['Hi 😀 there', 'x𝐀𝐁y z', '𠀋𠀋 end']) expect(edited).toContain(s)
   })
 })

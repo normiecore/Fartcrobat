@@ -9,6 +9,7 @@ import type * as MuPDF from 'mupdf'
 import type { Matrix, Point, Quad, Rect } from '@shared/geometry'
 import type { PDFObject, Session } from '@engine/session'
 import { isNull, readName } from '@engine/util/pdf'
+import { walkStructuredText } from '@engine/util/stext'
 
 export interface RawChar {
   c: string
@@ -81,7 +82,7 @@ export function extractContentText(s: Session, pageIndex: number): ContentText {
   let cur: RawLine | null = null
   const parts: string[] = []
   try {
-    stext.walk({
+    walkStructuredText(stext, {
       beginLine(bbox, wmode, dir) {
         cur = { start: count, end: count, bbox: bbox as Rect, wmode, dir: dir as Point, chars: [] }
       },
