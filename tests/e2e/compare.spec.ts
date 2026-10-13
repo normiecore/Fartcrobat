@@ -1,50 +1,5 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { activeDocState, fixturePath, launch, openFile, waitForRender } from './helpers'
-
-/**
- * Two long documents: 150 pages; in the new one every 10th page says "version 2", page 40 is gone
- * and a new page follows page 100.
- */
-function makeLongPair(): { old: string; new: string } {
-  const dir = mkdtempSync(join(tmpdir(), 'fc-compare-'))
-  const script = join(dir, 'make.py')
-  writeFileSync(
-    script,
-    `
-import sys
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-def make(path, new):
-    c = canvas.Canvas(path, pagesize=letter)
-    for i in range(1, 151):
-        if new and i == 40:
-            continue
-        c.setFont('Helvetica-Bold', 16)
-        c.drawString(72, 720, f'Section {i}')
-        c.setFont('Helvetica', 11)
-        for k in range(30):
-            v = 2 if (new and i % 10 == 0 and k == 3) else 1
-            c.drawString(72, 690 - k * 18, f'Paragraph {k} of section {i} describes clause {i * 31 + k} in version {v}.')
-        c.showPage()
-        if new and i == 100:
-            c.setFont('Helvetica-Bold', 16)
-            c.drawString(72, 720, 'Additional terms')
-            c.setFont('Helvetica', 11)
-            c.drawString(72, 690, 'These terms were added in the new edition of the contract.')
-            c.showPage()
-    c.save()
-make(sys.argv[1], False)
-make(sys.argv[2], True)
-`
-  )
-  const paths = { old: join(dir, 'long-old.pdf'), new: join(dir, 'long-new.pdf') }
-  execFileSync('python3', [script, paths.old, paths.new])
-  return paths
-}
 
 /** Makes the native Open dialog return `old` or `new` depending on which side asks. */
 async function stubOpenDialog(app: ElectronApplication, oldPath: string, newPath: string) {
@@ -285,10 +240,11 @@ test('compares two files from Home: page changes, filters, keyboard and dark the
 })
 
 test('long documents: progress, cancel, page ranges and a responsive window', async () => {
-  const long = makeLongPair()
+  // 150 pages each; in the new one every 10th page says "version 2", page 40 is gone and a new page
+  // follows page 100 (tests/fixtures/compare/make_fixtures.py).
   const { app, page } = await launch()
   try {
-    await stubOpenDialog(app, long.old, long.new)
+    await stubOpenDialog(app, fixturePath('compare/long-old.pdf'), fixturePath('compare/long-new.pdf'))
     await page.locator('.home-tile', { hasText: 'Compare files' }).click()
     const host = page.locator('.fc-compare-home')
     await browseFor(page, 'old', host.locator('.fc-compare-card').first())
