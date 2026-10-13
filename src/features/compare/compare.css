@@ -1,0 +1,752 @@
+/* Compare files */
+:root {
+  --fc-compare-replaced: #f59e0b;
+  --fc-compare-inserted: #22a06b;
+  --fc-compare-deleted: #e5484d;
+  --fc-compare-formatting: #8b5cf6;
+  --fc-compare-image: #2f7fea;
+  --fc-compare-page: #64748b;
+  --fc-compare-old: #c2410c;
+  --fc-compare-new: #15803d;
+}
+[data-theme='dark'] {
+  --fc-compare-old: #fb923c;
+  --fc-compare-new: #4ade80;
+  --fc-compare-page: #94a3b8;
+}
+
+.fc-compare-muted {
+  color: var(--text-muted);
+}
+
+/* ---- tags, chips ---- */
+.fc-compare-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid currentColor;
+  flex-shrink: 0;
+}
+.fc-compare-tag--old {
+  color: var(--fc-compare-old);
+}
+.fc-compare-tag--new {
+  color: var(--fc-compare-new);
+}
+
+/* ---- left panel: setup ---- */
+.fc-compare-intro {
+  margin: 0 4px 6px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.fc-compare-slot {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  background: var(--bg);
+  transition: border-color 0.12s, background 0.12s;
+}
+.fc-compare-slot.is-drop {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: var(--bg-active);
+}
+.fc-compare-slot-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.fc-compare-slot-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.fc-compare-slot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+.fc-compare-slot-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  min-width: 0;
+}
+.fc-compare-btn-caret {
+  margin-left: 2px;
+  vertical-align: -2px;
+}
+.fc-compare-range {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.fc-compare-range .ui-select {
+  flex: 0 0 auto;
+  width: 108px;
+}
+.fc-compare-range .ui-input:not(.ui-select) {
+  flex: 1;
+}
+.fc-compare-range-error {
+  margin-top: 4px;
+}
+.fc-compare-swap {
+  display: flex;
+  justify-content: center;
+  margin: 2px 0;
+}
+.fc-compare-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px;
+}
+.fc-compare-spin {
+  animation: fc-compare-spin 1s linear infinite;
+}
+@keyframes fc-compare-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- left panel: results ---- */
+.fc-compare-summary {
+  padding: 2px 4px 8px;
+}
+.fc-compare-files {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.fc-compare-files > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.fc-compare-new {
+  margin: 8px 0 0 -6px;
+}
+.fc-compare-total {
+  margin-top: 8px;
+  font-size: var(--fs-lg);
+}
+.fc-compare-total b {
+  font-size: 22px;
+}
+.fc-compare-same {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--text);
+}
+.fc-compare-same svg {
+  color: var(--success);
+  flex-shrink: 0;
+}
+.fc-compare-stale {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 8px;
+  align-items: start;
+  margin: 4px 0 10px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  line-height: 1.4;
+}
+.fc-compare-stale svg {
+  color: var(--warning);
+  margin-top: 1px;
+}
+.fc-compare-stale .ui-btn {
+  grid-column: 2;
+  justify-self: start;
+}
+.fc-compare-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 2px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 13px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev);
+  font-size: var(--fs-sm);
+}
+.fc-compare-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.fc-compare-chip:disabled {
+  opacity: 0.45;
+}
+.fc-compare-chip.is-on {
+  background: var(--bg-active);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+.fc-compare-chip-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.fc-compare-chip.is-on .fc-compare-chip-count {
+  color: inherit;
+}
+.fc-compare-chip--all {
+  border-style: dashed;
+}
+.fc-compare-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--fc-cat);
+}
+.fc-compare-chip--replaced,
+.fc-compare-item--replaced,
+.fc-compare-hl--replaced {
+  --fc-cat: var(--fc-compare-replaced);
+}
+.fc-compare-chip--inserted,
+.fc-compare-item--inserted,
+.fc-compare-hl--inserted,
+.fc-compare-badge--inserted {
+  --fc-cat: var(--fc-compare-inserted);
+}
+.fc-compare-chip--deleted,
+.fc-compare-item--deleted,
+.fc-compare-hl--deleted,
+.fc-compare-badge--deleted {
+  --fc-cat: var(--fc-compare-deleted);
+}
+.fc-compare-chip--formatting,
+.fc-compare-item--formatting,
+.fc-compare-hl--formatting {
+  --fc-cat: var(--fc-compare-formatting);
+}
+.fc-compare-chip--image,
+.fc-compare-item--image,
+.fc-compare-hl--image {
+  --fc-cat: var(--fc-compare-image);
+}
+.fc-compare-chip--page,
+.fc-compare-item--page,
+.fc-compare-badge--page {
+  --fc-cat: var(--fc-compare-page);
+}
+.fc-compare-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  outline: none;
+}
+.fc-compare-item {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  line-height: 1.35;
+}
+.fc-compare-item:hover {
+  background: var(--bg-hover);
+}
+.fc-compare-item.is-selected {
+  background: var(--bg-active);
+}
+.fc-compare-item-bar {
+  flex: 0 0 4px;
+  border-radius: 2px;
+  background: var(--fc-cat);
+}
+.fc-compare-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fc-compare-item-title {
+  overflow-wrap: anywhere;
+}
+.fc-compare-item-detail,
+.fc-compare-item-meta {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-compare-more {
+  padding: 10px 8px;
+  font-size: var(--fs-sm);
+}
+
+/* ---- document view ---- */
+.fc-compare-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--doc-bg);
+}
+
+/* setup landing */
+.fc-compare-landing {
+  flex: 1;
+  overflow: auto;
+  display: flex;
+}
+.fc-compare-landing-inner {
+  margin: auto;
+  padding: 32px 24px;
+  max-width: 760px;
+  text-align: center;
+}
+.fc-compare-landing h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+.fc-compare-landing p {
+  margin: 0 auto 24px;
+  max-width: 560px;
+  line-height: 1.5;
+}
+.fc-compare-cards {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 12px;
+}
+.fc-compare-cards-mid {
+  display: flex;
+  align-items: center;
+}
+.fc-compare-swap-h svg {
+  transform: rotate(90deg);
+}
+.fc-compare-card {
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 14px 16px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  transition: border-color 0.12s, background 0.12s;
+}
+.fc-compare-card.has-file {
+  border-style: solid;
+  border-color: var(--border);
+}
+.fc-compare-card.is-drop {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: var(--bg-active);
+}
+.fc-compare-card-label {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.fc-compare-card-thumb {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+.fc-compare-card-page {
+  background: #fff;
+  box-shadow: var(--page-shadow);
+}
+.fc-compare-card-page canvas {
+  display: block;
+}
+.fc-compare-card-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+}
+.fc-compare-card-name {
+  max-width: 100%;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-compare-landing-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+/* progress */
+.fc-compare-progress-wrap {
+  position: absolute;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--doc-bg) 70%, transparent);
+}
+.fc-compare-progress {
+  width: 360px;
+  max-width: calc(100% - 32px);
+  padding: 20px 22px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.fc-compare-progress .ui-btn {
+  align-self: flex-end;
+}
+.fc-compare-progress-title {
+  font-weight: 700;
+  font-size: var(--fs-lg);
+}
+.fc-compare-progress-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.fc-compare-progress-bar > div {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+.fc-compare-progress-msg {
+  font-size: var(--fs-sm);
+  min-height: 1.3em;
+}
+
+/* results */
+.fc-compare-results {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fc-compare-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 6px 10px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+.fc-compare-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.fc-compare-toolbar-spacer {
+  flex: 1;
+}
+.fc-compare-counter {
+  min-width: 112px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.fc-compare-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.fc-compare-zoom {
+  min-width: 78px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-elev);
+  font-variant-numeric: tabular-nums;
+}
+.fc-compare-zoom:hover {
+  background: var(--bg-hover);
+}
+.fc-compare-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  outline: none;
+  overscroll-behavior: contain;
+}
+.fc-compare-content {
+  position: relative;
+}
+.fc-compare-colheads {
+  position: sticky;
+  top: 0;
+  height: 34px;
+  z-index: 30;
+  background: color-mix(in srgb, var(--doc-bg) 88%, transparent);
+  backdrop-filter: blur(4px);
+  border-bottom: 1px solid var(--border);
+}
+.fc-compare-colhead {
+  position: absolute;
+  top: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  min-width: 0;
+}
+.fc-compare-colhead-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.fc-compare-colhead-plus {
+  color: var(--text-muted);
+}
+.fc-compare-page-label {
+  position: absolute;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.fc-compare-badge {
+  height: 18px;
+  padding: 0 7px;
+  border: none;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--fc-cat);
+}
+.fc-compare-page {
+  position: absolute;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  contain: layout paint;
+}
+.fc-compare-page canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+.fc-compare-page.is-inserted {
+  box-shadow: 0 0 0 3px var(--fc-compare-inserted), var(--page-shadow);
+}
+.fc-compare-page.is-deleted {
+  box-shadow: 0 0 0 3px var(--fc-compare-deleted), var(--page-shadow);
+}
+.fc-compare-page.is-page {
+  box-shadow: 0 0 0 3px var(--fc-compare-page), var(--page-shadow);
+}
+.fc-compare-page.is-selected {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+.fc-compare-page.is-stacked {
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
+}
+.fc-compare-placeholder {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-align: center;
+  padding: 12px;
+}
+.fc-compare-closed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6e6e6e;
+  background: repeating-linear-gradient(45deg, #f4f4f4, #f4f4f4 10px, #ececec 10px, #ececec 20px);
+}
+
+/* highlights */
+.fc-compare-hl {
+  position: absolute;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--fc-cat) 30%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--fc-cat) 85%, transparent);
+  mix-blend-mode: multiply;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.fc-compare-hl--image {
+  background: color-mix(in srgb, var(--fc-cat) 12%, transparent);
+  box-shadow: inset 0 0 0 2px var(--fc-cat);
+}
+.fc-compare-hl--formatting {
+  background: color-mix(in srgb, var(--fc-cat) 18%, transparent);
+  box-shadow: inset 0 -2px 0 var(--fc-cat);
+}
+.fc-compare-hl.is-anchor {
+  background: var(--fc-cat);
+  box-shadow: none;
+  border-radius: 1px;
+  mix-blend-mode: normal;
+}
+.fc-compare-hl.is-anchor::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -6px;
+  border-left: 5.5px solid transparent;
+  border-right: 5.5px solid transparent;
+  border-top: 6px solid var(--fc-cat);
+}
+.fc-compare-hl:hover {
+  background: color-mix(in srgb, var(--fc-cat) 45%, transparent);
+}
+.fc-compare-hl.is-selected {
+  mix-blend-mode: normal;
+  background: color-mix(in srgb, var(--fc-cat) 22%, transparent);
+  box-shadow: 0 0 0 2px var(--fc-cat), 0 0 0 5px color-mix(in srgb, var(--fc-cat) 35%, transparent);
+  animation: fc-compare-pulse 1.2s ease-out 1;
+  z-index: 2;
+}
+.fc-compare-hl.is-anchor.is-selected {
+  background: var(--fc-cat);
+}
+@keyframes fc-compare-pulse {
+  0% {
+    box-shadow: 0 0 0 2px var(--fc-cat), 0 0 0 14px color-mix(in srgb, var(--fc-cat) 0%, transparent);
+  }
+  30% {
+    box-shadow: 0 0 0 2px var(--fc-cat), 0 0 0 8px color-mix(in srgb, var(--fc-cat) 45%, transparent);
+  }
+}
+
+/* single page overlay: the new page over the old one with a difference blend, inverted so that
+   matching content fades to white and differences stay dark */
+.fc-compare-overlay-stack {
+  position: absolute;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  isolation: isolate;
+  filter: invert(1);
+  overflow: hidden;
+}
+.fc-compare-overlay-stack canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+.fc-compare-overlay-new {
+  mix-blend-mode: difference;
+}
+.fc-compare-overlay-stack:has(> canvas:only-child) {
+  filter: none;
+}
+.fc-compare-overlay-ghost {
+  position: absolute;
+  opacity: 0.16;
+  pointer-events: none;
+  overflow: hidden;
+}
+.fc-compare-overlay-ghost canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+}
+.fc-compare-scroll.is-overlay .fc-compare-hl:not(.is-anchor) {
+  background: transparent;
+  mix-blend-mode: normal;
+}
+.fc-compare-colhead-hint {
+  margin-left: 10px;
+  font-weight: 400;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Home: Compare files without an open document */
+.fc-compare-home {
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  background: var(--doc-bg);
+}
+.fc-compare-home-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+/* While Compare files shows its own view, the hidden document's toolbar (zoom, tools, find) and
+   page/zoom controls would do nothing: the compare toolbar replaces them. */
+.shell-docarea:has(> .shell-viewer-wrap > .fc-compare-view) > .shell-doctoolbar,
+.shell-main:has(.fc-compare-view) .shell-rightrail-bottom {
+  display: none;
+}
