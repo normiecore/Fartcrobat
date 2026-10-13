@@ -66,6 +66,9 @@ export function eventToShortcut(e: KeyboardEvent): string {
   let key = e.key
   if (key === ' ') key = 'Space'
   else if (key.length === 1) key = key.toUpperCase()
+  // Non-Latin layouts (Russian, Greek, Hebrew...) report their own letters: use the physical key,
+  // as Acrobat does, so Ctrl+S still saves. Latin layouts (AZERTY, QWERTZ) keep their letters.
+  if (key.length === 1 && !/^[\x20-\x7e]$/.test(key) && /^Key[A-Z]$/.test(e.code)) key = e.code.slice(3)
   // Shift changes symbols ("+" vs "="); use the physical key for digits and symbols.
   if (e.code.startsWith('Digit')) key = e.code.slice(5)
   else if (e.code === 'Equal') key = '='
@@ -99,6 +102,19 @@ function toAccelerator(s: string): string {
     .join('+')
 }
 
+/** Keys that move within a focused control (slider, radio group, list, menu...). */
+const NAVIGATION_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
+
+const KEY_NAVIGATED_ROLES = '[role=slider],[role=radio],[role=radiogroup],[role=listbox],[role=option],[role=menu],[role=menubar],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=tablist],[role=tab],[role=tree],[role=treeitem],[role=grid],[role=spinbutton],[role=scrollbar]'
+
+/** True when the focused element uses the arrow, Home and End keys itself. */
+function ownsNavigationKeys(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false
+  if (el instanceof HTMLInputElement && ['range', 'radio', 'number'].includes(el.type)) return true
+  if (el.tagName === 'SELECT') return true
+  return !!el.closest(KEY_NAVIGATED_ROLES)
+}
+
 function isTypingTarget(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false
   if (el.isContentEditable) return true
@@ -126,6 +142,16 @@ function buildShortcutIndex() {
   }
 }
 
+/**
+ * False while something modal is up (a dialog, "Find text or tools", the progress indicator of a
+ * long operation): keyboard shortcuts and native menu commands must not act on the document
+ * underneath.
+ */
+export function commandsAllowed(): boolean {
+  const s = useApp.getState()
+  return !s.dialogs.length && !s.paletteOpen && !s.progress
+}
+
 /** Global keydown handler. Returns true when a command handled the event. */
 export function handleShortcut(e: KeyboardEvent): boolean {
   if (!shortcutIndex) buildShortcutIndex()
@@ -140,9 +166,12 @@ export function handleShortcut(e: KeyboardEvent): boolean {
   // While typing, plain keys and text-editing shortcuts belong to the input.
   if (typing && !hasMod && !functionKey) return false
   if (typing && /^(Ctrl|Meta)\+(Shift\+)?[ACVXZY]$/.test(combo)) return false
+  // Arrows, Home and End move the caret (with Alt/Option/Ctrl: by word or line) in text fields,
+  // and move the value or the focus in sliders, radio groups, lists and menus.
+  if (NAVIGATION_KEYS.has(key) && (typing || (!hasMod && ownsNavigationKeys(e.target)))) return false
   const letterKey = !hasMod && /^[A-Z0-9]$/.test(key)
   if (letterKey && !useApp.getState().prefs.singleKeyShortcuts) return false
-  if (useApp.getState().dialogs.length || useApp.getState().paletteOpen) return false
+  if (!commandsAllowed()) return false
   const ctx = commandContext()
   for (const cmd of cmds) {
     if (!isCommandEnabled(cmd, ctx)) continue

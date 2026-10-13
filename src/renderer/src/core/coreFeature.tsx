@@ -32,8 +32,8 @@ import {
   closeAllDocuments,
   closeDocument,
   openFileDialog,
-  openPaths,
   quitApp,
+  revertDocument,
   saveDocument,
   setTool
 } from '../app/actions'
@@ -96,12 +96,8 @@ const commands: CommandDefinition[] = [
     enabled: (ctx) => !!ctx.doc?.state.filePath && ctx.doc.state.dirty,
     run: async (ctx) => {
       const d = doc(ctx)
-      const path = d.state.filePath!
       if (!(await confirm({ title: 'Revert', message: `Discard all changes to “${d.state.title}” since it was last saved?`, confirmLabel: 'Revert', danger: true }))) return
-      d.set({ dirty: false })
-      d.engine.terminate()
-      useApp.setState((s) => ({ docs: s.docs.filter((x) => x.id !== d.id) }))
-      await openPaths([path])
+      await revertDocument(d)
     }
   },
   { id: 'file.close', label: 'Close', icon: X, shortcut: 'Mod+W', run: (ctx) => void closeDocument(doc(ctx)) },
@@ -112,7 +108,8 @@ const commands: CommandDefinition[] = [
     enabled: (ctx) => !!ctx.doc?.state.filePath,
     run: (ctx) => void invoke('shell:showItemInFolder', doc(ctx).state.filePath!)
   },
-  { id: 'file.newWindow', label: 'New Window', shortcut: 'Mod+Shift+N', requiresDocument: false, run: () => void invoke('window:new') },
+  // Acrobat has no shortcut for New Window; Shift+Ctrl/Cmd+N is Go to Page.
+  { id: 'file.newWindow', label: 'New Window', requiresDocument: false, run: () => void invoke('window:new') },
   { id: 'app.quit', label: isMac ? 'Quit Fartcrobat' : 'Exit', shortcut: 'Mod+Q', requiresDocument: false, run: () => quitApp() },
   { id: 'app.preferences', label: 'Preferences…', icon: Settings, shortcut: 'Mod+K', requiresDocument: false, run: () => openPreferences(), keywords: ['settings', 'options'] },
 
@@ -195,7 +192,7 @@ const commands: CommandDefinition[] = [
     run: async () => {
       const on = !(await invoke('window:isFullScreen'))
       await invoke('window:setFullScreen', on)
-      useApp.setState({ fullScreen: on, readMode: on })
+      useApp.setState({ fullScreen: on, readMode: on && !!getActiveDoc() })
     }
   },
   {
@@ -240,7 +237,7 @@ const commands: CommandDefinition[] = [
   {
     id: 'nav.goTo',
     label: 'Go to Page…',
-    shortcut: 'Mod+Shift+P',
+    shortcut: ['Mod+Shift+N', 'Mod+Shift+P'],
     run: async (ctx) => {
       const d = doc(ctx)
       const v = await prompt({

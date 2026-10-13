@@ -2,9 +2,9 @@ import { FileText, Home, Menu as MenuIcon, Plus, Search, X } from 'lucide-react'
 import { useApp } from '../app/store'
 import { activateDocument, closeDocument, openFileDialog } from '../app/actions'
 import { useDocState, type DocumentModel } from '../document/DocumentModel'
-import { resolveMenus, commandLabel, isCommandEnabled, displayShortcut, runCommand } from '../app/commands'
+import { resolveMenus, commandContext, commandLabel, isCommandEnabled, displayShortcut, runCommand } from '../app/commands'
 import { DropdownMenu } from '../ui/Menu'
-import type { ContextMenuItem } from '../app/registry'
+import type { CommandDefinition, ContextMenuItem } from '../app/registry'
 
 function Tab({ doc, active }: { doc: DocumentModel; active: boolean }) {
   const title = useDocState(doc, (s) => s.title)
@@ -42,7 +42,15 @@ function Tab({ doc, active }: { doc: DocumentModel; active: boolean }) {
   )
 }
 
-/** The hamburger "Menu" with the same structure as the native menu bar. */
+function safeChecked(cmd: CommandDefinition): boolean {
+  try {
+    return !!cmd.checked?.(commandContext())
+  } catch {
+    return false
+  }
+}
+
+/** The hamburger "Menu" with the same structure as the native menu bar, check marks included. */
 function appMenuItems(): ContextMenuItem[] {
   return resolveMenus().map((menu) => ({
     id: `menu-${menu.id}`,
@@ -59,6 +67,7 @@ function appMenuItems(): ContextMenuItem[] {
           icon: cmd.icon,
           shortcut: shortcut ? displayShortcut(shortcut) : undefined,
           disabled: !isCommandEnabled(cmd),
+          checked: cmd.checked ? safeChecked(cmd) : undefined,
           run: () => void runCommand(cmd.id)
         }
         if (it.submenu) {

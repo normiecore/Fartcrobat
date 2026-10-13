@@ -6,7 +6,7 @@ import './styles/shell.css'
 import './styles/viewer.css'
 import { loadFeatures, registry } from './app/registry'
 import { getActiveDoc, useApp } from './app/store'
-import { handleShortcut, runCommand, scheduleMenuUpdate } from './app/commands'
+import { commandsAllowed, handleShortcut, runCommand, scheduleMenuUpdate } from './app/commands'
 import { openNewDocument, openPaths, quitApp, refreshRecent, replaceDocumentBytes } from './app/actions'
 import { invoke, onMainEvent } from './platform'
 import { authorName, coreFeature } from './core/coreFeature'
@@ -41,7 +41,7 @@ async function boot() {
     if (e.code === 'Space' && !e.repeat) {
       const t = e.target as HTMLElement
       const typing = t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(t.tagName)
-      if (!typing && getActiveDoc() && !useApp.getState().dialogs.length) {
+      if (!typing && getActiveDoc() && commandsAllowed()) {
         e.preventDefault()
         useApp.setState({ spaceHand: true })
         return
@@ -55,7 +55,10 @@ async function boot() {
   window.addEventListener('blur', () => useApp.setState({ spaceHand: false }))
 
   onMainEvent('app:openFiles', (paths) => void openPaths(paths))
-  onMainEvent('menu:command', (id) => void runCommand(id))
+  // Like keyboard shortcuts, menu commands wait until a dialog or a long operation is finished.
+  onMainEvent('menu:command', (id) => {
+    if (commandsAllowed()) void runCommand(id)
+  })
   onMainEvent('app:beforeQuit', () => void quitApp())
   onMainEvent('window:fullScreenChanged', (on) => useApp.setState({ fullScreen: on, readMode: on ? useApp.getState().readMode : false }))
 
@@ -68,6 +71,11 @@ async function boot() {
     scheduleMenuUpdate()
   }
   useApp.subscribe((s, prev) => {
+    // Read Mode and Full Screen show a document; Home always has its top bar.
+    if (s.activeDocId === null && prev.activeDocId !== null && (s.readMode || s.fullScreen)) {
+      if (s.fullScreen) void invoke('window:setFullScreen', false).catch(() => {})
+      useApp.setState({ readMode: false, fullScreen: false })
+    }
     if (s.activeDocId !== prev.activeDocId || s.docs !== prev.docs) {
       unsubDoc?.()
       const doc = getActiveDoc()
