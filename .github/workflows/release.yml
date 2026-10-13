@@ -8,7 +8,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -20,7 +20,7 @@ jobs:
             script: dist:win
           - os: macos-latest
             script: dist:mac
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             script: dist:linux
     runs-on: ${{ matrix.os }}
     steps:
@@ -41,7 +41,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       - name: Smoke-test the packaged app
         # Opens, renders, searches and runs OCR in the packaged build (no node_modules, asar).
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-24.04'
         run: xvfb-run -a npx playwright test tests/e2e/smoke.spec.ts tests/e2e/ocr.spec.ts
         env:
           FARTCROBAT_EXECUTABLE: release/linux-unpacked/fartcrobat
@@ -60,7 +60,9 @@ jobs:
   publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

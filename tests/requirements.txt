@@ -1,0 +1,4 @@
+# Python packages some tests use to check Fartcrobat's output with independent tools.
+# CI installs them (pip install -r tests/requirements.txt); without them those checks are skipped.
+pypdf==6.17.0
+reportlab==5.0.1
