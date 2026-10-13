@@ -128,6 +128,8 @@ export interface ContextMenuItem {
   shortcut?: string
   disabled?: boolean
   danger?: boolean
+  /** Shows a check mark (true) or room for one (false): an on/off item such as a view mode. */
+  checked?: boolean
   run?: () => void
   separator?: boolean
   submenu?: ContextMenuItem[]

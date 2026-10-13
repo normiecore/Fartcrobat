@@ -128,8 +128,16 @@ test('Ctrl+Shift+N goes to a page, as in Acrobat', async () => {
     await page.keyboard.press('Control+Shift+N')
     const dialog = page.locator('.ui-dialog', { has: page.locator('h2', { hasText: 'Go to page' }) })
     await expect(dialog).toBeVisible()
+    await page.screenshot({ path: 'test-results/core-shell-go-to-page.png' })
     await page.keyboard.press('Escape')
     await page.waitForTimeout(300)
+    expect(app.windows().length).toBe(1)
+    // And it goes to the page typed.
+    await page.keyboard.press('Control+Shift+N')
+    await page.keyboard.press('Control+a')
+    await page.keyboard.type('4')
+    await page.keyboard.press('Enter')
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(3)
     expect(app.windows().length).toBe(1)
   } finally {
     await app.close()

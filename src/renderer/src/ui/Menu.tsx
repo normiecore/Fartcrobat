@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { Check, ChevronRight } from 'lucide-react'
 import type { ContextMenuItem } from '../app/registry'
 
 /** A vertical menu list (used by context menus and dropdowns). */
@@ -18,7 +18,8 @@ export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose
           >
             <button
               type="button"
-              role="menuitem"
+              role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+              aria-checked={item.checked}
               className={`ui-menu-item ${item.danger ? 'is-danger' : ''}`}
               disabled={item.disabled}
               onClick={() => {
@@ -30,7 +31,9 @@ export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose
                 item.run?.()
               }}
             >
-              <span className="ui-menu-icon">{item.icon && <item.icon size={16} />}</span>
+              <span className="ui-menu-icon">
+                {item.checked ? <Check size={16} className="ui-menu-check" /> : item.icon && <item.icon size={16} />}
+              </span>
               <span className="ui-menu-label">{item.label}</span>
               {item.shortcut && <span className="ui-menu-shortcut">{item.shortcut}</span>}
               {item.submenu && <ChevronRight size={14} />}
@@ -63,7 +66,11 @@ export function FloatingAt({ x, y, children, onClose }: { x: number; y: number; 
   }, [x, y])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      // Closing the menu is all Escape does: not also leave Full Screen or reset the tool.
+      e.preventDefault()
+      e.stopPropagation()
+      onClose()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)

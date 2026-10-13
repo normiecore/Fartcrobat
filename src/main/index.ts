@@ -1,7 +1,8 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, shell } from 'electron'
 import { existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { userInfo } from 'node:os'
-import { basename, dirname, extname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
+import { filesFromArgv } from './args'
 import type { MainContext, MainFeatureModule } from './context'
 import { defaultAppStatus, setDefaultApp } from './defaultApp'
 import { handle, send } from './ipc'
@@ -14,26 +15,8 @@ import { allWindows, confirmClose, createWindow, currentWindow, setQuitting } fr
 app.setName('Fartcrobat')
 if (process.env.FARTCROBAT_USER_DATA) app.setPath('userData', process.env.FARTCROBAT_USER_DATA)
 
-const OPENABLE = new Set([
-  '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tif', '.tiff', '.webp', '.xps', '.oxps', '.epub', '.mobi',
-  '.fb2', '.cbz', '.svg', '.txt', '.docx', '.xlsx', '.pptx', '.html', '.htm', '.xhtml'
-])
-
 /** Files given on the command line or by the OS before the window was ready. */
 const pendingFiles: string[] = []
-
-function filesFromArgv(argv: string[]): string[] {
-  return argv
-    .slice(1)
-    .filter((a) => !a.startsWith('-') && OPENABLE.has(extname(a).toLowerCase()))
-    .filter((a) => {
-      try {
-        return statSync(a).isFile()
-      } catch {
-        return false
-      }
-    })
-}
 
 function openFiles(paths: string[]) {
   if (!paths.length) return
@@ -51,7 +34,7 @@ function openFiles(paths: string[]) {
 if (!process.env.FARTCROBAT_MULTI_INSTANCE && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', (_e, argv) => openFiles(filesFromArgv(argv)))
+  app.on('second-instance', (_e, argv, workingDirectory) => openFiles(filesFromArgv(argv, workingDirectory || process.cwd())))
 }
 
 app.on('open-file', (e, path) => {
@@ -61,7 +44,7 @@ app.on('open-file', (e, path) => {
 })
 
 registerAppScheme()
-pendingFiles.push(...filesFromArgv(process.argv))
+pendingFiles.push(...filesFromArgv(process.argv, process.cwd()))
 if (store().prefs.hardwareAcceleration === false) app.disableHardwareAcceleration()
 
 function atomicWrite(path: string, data: Uint8Array) {

@@ -119,8 +119,12 @@ export function CommandPalette() {
               setSel(0)
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') close()
-              else if (e.key === 'ArrowDown') {
+              if (e.key === 'Escape') {
+                // Closing the palette is all Escape does: not also leave Read Mode or reset the tool.
+                e.preventDefault()
+                e.stopPropagation()
+                close()
+              } else if (e.key === 'ArrowDown') {
                 e.preventDefault()
                 setSel((s) => Math.min(all.length - 1, s + 1))
               } else if (e.key === 'ArrowUp') {

@@ -52,6 +52,39 @@ describe('marking a document saved', () => {
     expect(await e.doc.isDirty()).toBe(true)
   })
 
+  it('works with incremental saves, which reopen the document from the saved bytes', async () => {
+    const e = await openFixture('text.pdf')
+    const pages = e.ops<typeof pagesOps>('pages')
+    await pages.rotate([0], 90)
+    const first = await e.doc.saveWithVersion({ mode: 'incremental' })
+    await e.doc.markSaved('text.pdf', first.version)
+    expect(await e.doc.isDirty()).toBe(false)
+
+    await pages.rotate([1], 90)
+    const second = await e.doc.saveWithVersion({ mode: 'incremental' })
+    await pages.rotate([2], 90)
+    await e.doc.markSaved('text.pdf', second.version)
+    expect(await e.doc.isDirty()).toBe(true)
+  })
+
+  it('queries and empty operations during the write do not count as edits', async () => {
+    const e = await openFixture('text.pdf')
+    await e.ops<typeof pagesOps>('pages').rotate([0], 90)
+    const { version } = await e.doc.saveWithVersion({})
+    await e.doc.info()
+    await e.doc.undo()
+    await e.doc.redo()
+    // Undo + redo lands on the same content, but the engine cannot know the file matches it.
+    await e.doc.markSaved('text.pdf', version)
+    expect(await e.doc.isDirty()).toBe(true)
+
+    const again = await e.doc.saveWithVersion({})
+    await e.doc.info()
+    await e.doc.journal()
+    await e.doc.markSaved('text.pdf', again.version)
+    expect(await e.doc.isDirty()).toBe(false)
+  })
+
   it('markSaved without a version keeps its old meaning', async () => {
     const e = await openFixture('text.pdf')
     await e.ops<typeof pagesOps>('pages').rotate([0], 90)

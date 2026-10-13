@@ -10,6 +10,13 @@ async function selectWord(page: Page, word: string) {
   }, word)
 }
 
+function searchFinished(page: Page) {
+  return page.evaluate(() => {
+    const s = (window as any).__fartcrobat.getActiveDoc().state.search
+    return !!s.query && !s.running
+  })
+}
+
 test('Ctrl+F with selected text shows that text in the find box and Enter keeps the results', async () => {
   const { app, page } = await launch()
   try {
@@ -18,9 +25,12 @@ test('Ctrl+F with selected text shows that text in the find box and Enter keeps 
     const input = page.getByLabel('Find in document')
 
     await selectWord(page, 'Chapter')
-    await runCommand(page, 'edit.find')
-    await expect.poll(async () => (await activeDocState(page))?.search.hits ?? 0).toBeGreaterThan(1)
+    await page.keyboard.press('Control+f')
+    await expect.poll(() => searchFinished(page)).toBe(true)
+    expect((await activeDocState(page))?.search.hits ?? 0).toBeGreaterThan(1)
     await expect(input).toHaveValue('Chapter')
+    await expect(page.locator('.shell-findbar-count')).toHaveText(/^1 of \d+$/)
+    await page.screenshot({ path: 'test-results/core-shell-find-selection.png' })
     const hits = (await activeDocState(page))!.search.hits
     await input.press('Enter')
     await page.waitForTimeout(300)
