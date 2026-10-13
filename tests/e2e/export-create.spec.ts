@@ -113,10 +113,15 @@ test('Export a PDF: Word, images to a folder, text from the menu, keyboard and d
     await expect(panel(page).getByRole('radio', { name: /HTML Web Page/ })).toHaveAttribute('aria-checked', 'true')
     await expect(panel(page).getByText('Exact page layout')).toBeVisible()
 
-    // ---- File > Export To > Text (Plain) from the command: all pages, plain text
+    // ---- Menu > File > Export To > Text (Plain): all pages, plain text
     const txt = join(dir, 'Report.txt')
     await stubSaveDialog(app, txt)
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('export.text'))
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await page.getByRole('menuitem', { name: 'File' }).hover()
+    await page.getByRole('menuitem', { name: 'Export To' }).hover()
+    await expect(page.getByRole('menuitem', { name: /Microsoft Word Document/ })).toBeVisible()
+    await shot(page, 'menu-export-to')
+    await page.getByRole('menuitem', { name: /Text \(Plain\)/ }).click()
     await expect(page.locator('.toast', { hasText: 'Exported “Report.txt”' })).toBeVisible({ timeout: 30000 })
     const text = readFileSync(txt, 'utf8')
     expect(text).toContain('Chapter 1')
@@ -206,6 +211,16 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     expect(state?.pageCount).toBe(2)
     expect(await pageText(page, 1)).toContain('Quarterly report')
 
+    // ---- a password-protected PDF among the files asks for its password
+    await stubOpenDialog(app, [fixturePath('encrypted.pdf'), fixturePath('scan.png')])
+    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromFile'))
+    await expect(page.getByRole('heading', { name: 'Password required' })).toBeVisible({ timeout: 30000 })
+    await expect(page.getByText('“encrypted.pdf” is protected.')).toBeVisible()
+    await page.keyboard.type('secret')
+    await page.keyboard.press('Enter')
+    await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(3)
+    expect((await activeDocState(page))?.pageCount).toBe(2)
+
     // ---- Blank page: A4 landscape, 3 pages
     await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.blank'))
     await expect(page.getByTestId('create-view')).toBeVisible()
@@ -214,7 +229,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await page.getByLabel('Number of pages').fill('3')
     await shot(page, 'blank-form')
     await page.getByTestId('create-blank').click()
-    await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(3)
+    await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(4)
     const size = await page.evaluate(() => {
       const d = (window as any).__fartcrobat.getActiveDoc()
       return { n: d.state.info.pageCount, w: Math.round(d.state.info.pages[0].width), h: Math.round(d.state.info.pages[0].height), title: d.state.title }
@@ -227,7 +242,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await stubOpenDialog(app, [fixturePath('export-create/sample.html')])
     await shot(page, 'html-form')
     await page.getByTestId('create-select').click()
-    await expect.poll(() => docCount(page), { timeout: 60000 }).toBe(4)
+    await expect.poll(() => docCount(page), { timeout: 60000 }).toBe(5)
     expect((await activeDocState(page))?.title).toBe('sample.pdf')
     expect(await pageText(page, 0)).toContain('Sample HTML Page')
 
@@ -237,11 +252,11 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
       await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(bytes)], { type: 'image/png' }) })])
     }, png)
     await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromClipboard'))
-    await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(5)
+    await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(6)
     expect(await activeDocState(page)).toMatchObject({ title: 'Clipboard.pdf', pageCount: 1, dirty: true })
     await app.evaluate(async ({ clipboard }) => clipboard.writeText('Copied from the clipboard'))
     await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromClipboard'))
-    await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(6)
+    await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(7)
     expect(await pageText(page, 0)).toContain('Copied from the clipboard')
     await app.evaluate(({ clipboard }) => clipboard.clear())
     await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromClipboard'))
@@ -249,7 +264,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
 
     // ---- an Office file opened like any file is converted with LibreOffice
     await openPath(page, fixturePath('export-create/sample.docx'))
-    await expect.poll(() => docCount(page), { timeout: 90000 }).toBe(7)
+    await expect.poll(() => docCount(page), { timeout: 90000 }).toBe(8)
     state = await activeDocState(page)
     expect(state?.title).toBe('sample.pdf')
     expect(state?.dirty).toBe(true)

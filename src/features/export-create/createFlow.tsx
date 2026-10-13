@@ -124,6 +124,9 @@ async function buildPdf(
           const name = m[1] ?? m[2]
           const part = parts.find((p) => p.kind === 'file' && p.name === name)
           if (!part || part.kind !== 'file') throw err
+          // The progress window would cover the question: put it away while asking.
+          const progress = useApp.getState().progress
+          useApp.setState({ progress: null })
           const pw = await prompt({
             title: 'Password required',
             message: code === 'WRONG_PASSWORD' ? `The password for “${name}” is incorrect. Try again.` : `“${name}” is protected. Enter the document open password.`,
@@ -131,6 +134,7 @@ async function buildPdf(
             password: true,
             okLabel: 'Open'
           })
+          useApp.setState({ progress })
           if (pw === null) throw new Cancelled()
           part.password = pw
           continue
