@@ -24,6 +24,8 @@ export interface RecognizeFormState {
   setScope: (s: PageScope) => void
   range: string
   setRange: (s: string) => void
+  /** What is wrong with the page range (when "Pages" is chosen). */
+  rangeError: string | null
   /** The request, or a message saying what is wrong with the options. */
   request: RecognizeRequest | string
 }
@@ -43,21 +45,21 @@ export function useRecognizeForm(doc: DocumentModel, initialScope: PageScope = '
     if (!useLanguages.getState().loaded) void refreshLanguages()
   }, [])
 
+  const parsed = useMemo(() => (scope === 'range' ? parsePageRange(range, pageCount) : null), [scope, range, pageCount])
+  const rangeError = typeof parsed === 'string' ? parsed : null
+
   const request = useMemo<RecognizeRequest | string>(() => {
     let pages: number[]
     if (scope === 'all') pages = [...Array(pageCount).keys()]
     else if (scope === 'current') pages = [Math.min(currentPage, pageCount - 1)]
-    else {
-      const r = parsePageRange(range, pageCount)
-      if (typeof r === 'string') return r
-      pages = r
-    }
+    else if (typeof parsed === 'string' || !parsed) return parsed ?? 'Enter the pages to recognize'
+    else pages = parsed
     if (!languagesLoaded) return 'Loading the installed languages…'
     const language = isAvailable(prefs.ocrLanguage, installed) ? prefs.ocrLanguage : BUNDLED_LANGUAGE
     return { pages, language, dpi: settings.dpi, skipPagesWithText: settings.skipPagesWithText }
-  }, [scope, range, pageCount, currentPage, prefs.ocrLanguage, installed, languagesLoaded, settings.dpi, settings.skipPagesWithText])
+  }, [scope, parsed, pageCount, currentPage, prefs.ocrLanguage, installed, languagesLoaded, settings.dpi, settings.skipPagesWithText])
 
-  return { scope, setScope, range, setRange, request }
+  return { scope, setScope, range, setRange, rangeError, request }
 }
 
 /** Language picker with "Add language…". */
@@ -110,7 +112,7 @@ export function RecognizeFields({ doc, form }: { doc: DocumentModel; form: Recog
   const skip = useOcrSettings((s) => s.skipPagesWithText)
   const pageCount = useDocState(doc, (s) => s.info.pageCount)
   const currentPage = useDocState(doc, (s) => s.currentPage)
-  const rangeError = form.scope === 'range' && typeof form.request === 'string' ? form.request : null
+  const rangeError = form.rangeError
   return (
     <div className={`${P}-fields`}>
       <fieldset className={`${P}-fieldset`}>
@@ -146,7 +148,7 @@ export function RecognizeFields({ doc, form }: { doc: DocumentModel; form: Recog
         )}
         {rangeError && <span className="ui-field-error">{rangeError}</span>}
       </fieldset>
-      <Field label="Document language">
+      <Field label="Document language" hint="English is included. For another language, choose “Add language…” and pick its language file.">
         <LanguageSelect />
       </Field>
       <Field label="Resolution" hint="Higher resolutions read small print better but take longer.">
