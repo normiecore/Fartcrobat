@@ -1,6 +1,6 @@
 import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { AppearanceContent, SignRequest, SignatureFieldInfo } from './types'
-import { renderAppearancePng } from './worker/appearance'
+import { renderAppearancePng, textsNeedingRaster } from './worker/appearance'
 import { listSignatureFields } from './worker/fields'
 import { clearSignatureField, signCapability, signDocument } from './worker/sign'
 import { validateSignatures } from './worker/validate'
@@ -28,6 +28,11 @@ export default defineOps('digital-signatures', {
     if (!Number.isInteger(end) || end <= 0 || end > src.length) throw new EngineError('That revision is not part of this file', 'BAD_REVISION')
     const bytes = src.slice(0, end)
     return withTransfer(bytes, [bytes.buffer])
+  },
+
+  /** Texts of an appearance that no font in the engine can draw (the UI draws them as images). */
+  textsNeedingRaster(s, content: AppearanceContent): string[] {
+    return textsNeedingRaster(s.mupdf, content)
   },
 
   /** PNG preview of a signature appearance of the given size (points) at `scale` pixels per point. */

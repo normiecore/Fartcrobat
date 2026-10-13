@@ -552,3 +552,56 @@ test('certify with a visible signature placed from the keyboard; no changes allo
     await app.close()
   }
 })
+
+test('signer names in scripts without a built-in font (Arabic) and CJK show in the appearance', async () => {
+  const { app, page } = await launch()
+  const out = mkdtempSync(join(tmpdir(), 'fc-digsig-e2e-'))
+  const signedPath = join(out, 'arabic_signed.pdf')
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await stubSaveDialog(app, signedPath)
+    await runCommand(page, 'sign.digitallySign')
+    await expect(page.locator('.fc-digital-signatures-toolbar')).toBeVisible()
+    await page.getByRole('button', { name: 'Place at bottom of page' }).click()
+    const dlg = dialog(page, 'Sign with a Digital ID')
+    await expect(dlg).toBeVisible()
+    await dlg.getByRole('button', { name: 'Create a Digital ID' }).click()
+    await fillCreateIdDialog(page, 'محمد علي', 'm.ali@example.com')
+    const create = dialog(page, 'Create a Digital ID')
+    await create.getByRole('button', { name: 'Create', exact: true }).click()
+    await expect(create).toBeHidden({ timeout: 30_000 })
+    await dlg.getByRole('textbox', { name: 'Location' }).fill('東京')
+    const preview = dlg.locator('.fc-digital-signatures-preview img')
+    await expect(preview).toBeVisible()
+    await page.waitForTimeout(500)
+    // The preview draws the Arabic name: its left half has dark pixels.
+    const dark = await preview.evaluate(async (img: HTMLImageElement) => {
+      await img.decode()
+      const c = document.createElement('canvas')
+      c.width = img.naturalWidth
+      c.height = img.naturalHeight
+      const ctx = c.getContext('2d')!
+      ctx.drawImage(img, 0, 0)
+      const d = ctx.getImageData(0, 0, Math.floor(c.width * 0.45), c.height).data
+      let n = 0
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++
+      return n
+    })
+    expect(dark).toBeGreaterThan(200)
+    await dlg.screenshot({ path: `${SHOTS}/digital-signatures-arabic-dialog.png` })
+    await dlg.getByRole('button', { name: 'Sign', exact: true }).click()
+    await expect.poll(async () => (await docInfo(page))?.filePath, { timeout: 30_000 }).toBe(signedPath)
+    const text = readFileSync(signedPath).toString('latin1')
+    expect(text).toContain('/FcTxt1')
+    await expect(page.locator('.fc-digital-signatures-entry')).toContainText('Signed by محمد علي')
+    const field = page.locator('.viewer-page[data-page-index="0"] .fc-digital-signatures-field.is-signed')
+    await field.scrollIntoViewIfNeeded()
+    await runCommand(page, 'view.actualSize')
+    await field.scrollIntoViewIfNeeded()
+    await page.waitForTimeout(500)
+    await field.screenshot({ path: `${SHOTS}/digital-signatures-arabic-appearance.png` })
+  } finally {
+    await app.close()
+  }
+})

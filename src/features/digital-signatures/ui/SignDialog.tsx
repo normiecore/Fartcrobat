@@ -5,6 +5,7 @@ import { WrongPasswordError } from '../lib/pkcs12'
 import { parseCertificate } from '../lib/x509'
 import type { AppearanceContent, AppearanceOptions, DigitalIdRecord, MdpPermission, SignRequest, SignTarget } from '../types'
 import { idStatus, recordCertificate, unlockDigitalId } from './ids'
+import { withRasterText } from './rasterText'
 import { importDigitalIdFlow, openCreateIdDialog } from './IdDialogs'
 import { DEFAULT_PREFS, loadSavedSignatureImage, loadSignPrefs, REASONS, saveSignPrefs, type SignPrefs } from './prefs'
 import { sigOps, useSigStore } from './store'
@@ -29,8 +30,8 @@ function AppearancePreview({ doc, content, size }: { doc: DocumentModel; content
     let alive = true
     let made: string | null = null
     const t = setTimeout(() => {
-      sigOps(doc)
-        .previewAppearance(content, size.w, size.h, scale * (window.devicePixelRatio || 1))
+      withRasterText(doc, content)
+        .then((full) => sigOps(doc).previewAppearance(full, size.w, size.h, scale * (window.devicePixelRatio || 1)))
         .then((png) => {
           if (!alive) return
           made = URL.createObjectURL(new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' }))
@@ -189,13 +190,14 @@ export function SignDialog({
       const id = await unlockDigitalId(rec, password)
       const p: SignPrefs = { ...(prefs ?? DEFAULT_PREFS), lastIdId: rec.id, reason, location, contactInfo, appearance, subFilter }
       void saveSignPrefs(p)
+      const finalAppearance = size ? await withRasterText(doc, { ...content, name: rec.name }) : { ...content, name: rec.name }
       onDone({
         request: {
           mode,
           target,
           key: { pkcs8: id.pkcs8, alg: id.keyAlg },
           chain: id.chain,
-          appearance: { ...content, name: rec.name },
+          appearance: finalAppearance,
           reason,
           location,
           contactInfo,

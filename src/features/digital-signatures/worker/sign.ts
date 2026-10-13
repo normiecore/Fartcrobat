@@ -248,7 +248,7 @@ export async function signDocument(s: Session, req: SignRequest): Promise<SignRe
   if (began) {
     try {
       prepared = prepareSignature(m, live, req, time, size, s)
-      const buf = live.saveToBuffer('incremental')
+      const buf = live.saveToBuffer('incremental,compress')
       bytes = buf.asUint8Array().slice()
       buf.destroy()
     } finally {
@@ -271,7 +271,7 @@ export async function signDocument(s: Session, req: SignRequest): Promise<SignRe
     const scratch = new m.PDFDocument(full)
     try {
       prepared = prepareSignature(m, scratch, req, time, size)
-      const buf = scratch.saveToBuffer('incremental')
+      const buf = scratch.saveToBuffer('incremental,compress')
       bytes = buf.asUint8Array().slice()
       buf.destroy()
     } finally {

@@ -53,6 +53,21 @@ export interface AppearanceOptions {
   showDistinguishedName: boolean
 }
 
+/**
+ * A line of text drawn by the UI with the system fonts, for scripts MuPDF has no font for
+ * (Arabic, Hebrew, Indic scripts...). The PNG shows black text on a transparent background.
+ */
+export interface RasterText {
+  png: Uint8Array
+  /** Image size in pixels. */
+  width: number
+  height: number
+  /** Font size the text was drawn at, in pixels. */
+  fontPx: number
+  /** Distance from the top of the image to the baseline, in pixels. */
+  ascentPx: number
+}
+
 export interface AppearanceContent {
   options: AppearanceOptions
   /** Signer name (certificate common name). */
@@ -63,6 +78,8 @@ export interface AppearanceContent {
   /** Signing time (ms since epoch). */
   time: number
   certify?: boolean
+  /** Images of texts no available font can draw, keyed by the exact text (see textsNeedingRaster). */
+  rasterText?: Record<string, RasterText>
 }
 
 export type SignTarget =

@@ -512,6 +512,77 @@ describe.skipIf(!hasTool('openssl', ['version']))('Digital ID files made by othe
   }
 })
 
+describe('names in other scripts', () => {
+  const pageText = (bytes: Uint8Array) => {
+    const doc = new mupdf.PDFDocument(bytes)
+    try {
+      return doc.loadPage(0).toDisplayList(true).toStructuredText('preserve-whitespace').asText()
+    } finally {
+      doc.destroy()
+    }
+  }
+
+  for (const [label, name] of [
+    ['Chinese', '王小明'],
+    ['Japanese', '山田 はなこ'],
+    ['Korean', '김민준'],
+    ['Cyrillic', 'Анна Иванова']
+  ] as const) {
+    it(`draws a ${label} signer name with a small embedded font subset`, async () => {
+      const e = await openFixture('text.pdf')
+      const sig = e.ops<typeof sigOps>('digital-signatures')
+      const content = appearance(name)
+      expect(await sig.textsNeedingRaster(content)).toEqual([])
+      const before = fixture('text.pdf').length
+      const { bytes } = await sig.sign(request(rsaId, { appearance: content }))
+      // Only the glyphs used are embedded (a whole CJK font would add megabytes).
+      expect(bytes.length - before).toBeLessThan(80_000)
+      const shown = pageText(bytes)
+      for (const word of name.split(' ')) expect(shown).toContain(word)
+      const r = (await validateBytes(bytes)).signatures[0]
+      expect(r.integrity && r.signatureValid).toBe(true)
+    })
+  }
+
+  it('draws text no font covers (Arabic) from the images the UI provides', async () => {
+    const e = await openFixture('text.pdf')
+    const sig = e.ops<typeof sigOps>('digital-signatures')
+    const name = 'محمد علي'
+    const content = appearance(name)
+    content.location = 'القاهرة, Egypt'
+    const missing = await sig.textsNeedingRaster(content)
+    // Only the runs no font can draw; the label and the Latin words stay text.
+    expect(missing).toEqual([name, 'القاهرة,'])
+    // Stand-ins for the UI's canvas drawings: solid dark bars of the right proportions.
+    const bar = (w: number) => {
+      const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, w, 120], true)
+      pix.clear(0)
+      for (let y = 20; y < 100; y++) for (let x = 4; x < w - 4; x++) pix.getPixels().set([20, 20, 20, 255], (y * w + x) * 4)
+      const png = pix.asPNG().slice()
+      pix.destroy()
+      return { png, width: w, height: 120, fontPx: 96, ascentPx: 90 }
+    }
+    content.rasterText = { [missing[0]]: bar(300), [missing[1]]: bar(240) }
+    const preview = await sig.previewAppearance(content, 240, 80, 1)
+    const pm = new mupdf.Image(preview).toPixmap()
+    const px = pm.getPixels()
+    const alphaAt = (x: number, y: number) => px[y * pm.getStride() + x * pm.getNumberOfComponents() + 3]
+    // The large name on the left is the dark bar.
+    expect(alphaAt(55, 40)).toBeGreaterThan(200)
+    const { bytes } = await sig.sign(request(rsaId, { appearance: content }))
+    const text = Buffer.from(bytes).toString('latin1')
+    expect(text).toContain('/FcTxt1')
+    expect(text).toContain('/FcTxt2')
+    expect(text).not.toContain('/FcTxt3')
+    const doc = new mupdf.PDFDocument(bytes)
+    const shown = doc.loadPage(0).toDisplayList(true).toStructuredText('preserve-whitespace').asText()
+    doc.destroy()
+    expect(shown).toContain('Digitally signed by')
+    expect(shown).toContain('Egypt')
+    expect((await validateBytes(bytes)).signatures[0].integrity).toBe(true)
+  })
+})
+
 describe('rotated pages', () => {
   for (const degrees of [90, 180, 270]) {
     it(`signs a box drawn on a page rotated by ${degrees}°: same place, upright text`, async () => {
