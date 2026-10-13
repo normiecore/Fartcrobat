@@ -54,12 +54,27 @@ async function pagePoint(page: Page, pageIndex: number, x: number, y: number) {
   )
 }
 
+/** Scrolls page point (0, y) to the top of the view and waits until the view is there. */
 async function scrollTo(page: Page, pageIndex: number, y: number) {
   await page.evaluate(
     ({ pageIndex, y }) => (window as any).__fartcrobat.getActiveDoc().view.goToPage(pageIndex, { x: 0, y }),
     { pageIndex, y }
   )
-  await page.waitForTimeout(150)
+  // the viewer scrolls on its next render; page points measured before that would miss
+  await expect
+    .poll(() =>
+      page.evaluate(
+        ({ pageIndex, y }) => {
+          const d = (window as any).__fartcrobat.getActiveDoc()
+          const vp = d.view.getViewportElement().getBoundingClientRect()
+          const b = document.querySelector(`.viewer-page[data-page-index="${pageIndex}"]`)!.getBoundingClientRect()
+          const top = b.top + y * d.state.zoom * (96 / 72) - vp.top
+          return top >= 0 && top <= 20 && b.left >= vp.left && b.left < vp.right
+        },
+        { pageIndex, y }
+      )
+    )
+    .toBe(true)
 }
 
 async function dragOnPage(page: Page, pageIndex: number, from: [number, number], to: [number, number]) {
@@ -358,16 +373,20 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await scrollTo(page, 0, 520)
 
     // three text fields: two placed with a click (default size 150 x 22), one drawn
-    const addText = page.getByRole('button', { name: 'Add text field' }).first()
+    // (exact: while the last step is adding a field, the toolbar also has "Undo Add Text Field")
+    const addText = page.getByRole('button', { name: 'Add text field', exact: true }).first()
     await addText.click()
     await clickOnPage(page, 0, [80, 560])
     const name = page.getByRole('textbox', { name: 'Field name' })
     await name.fill('price')
     await name.press('Enter')
+    // the rename is saved and its box, which covers the next spot, is gone
+    await expect(name).toBeHidden()
     await addText.click()
     await clickOnPage(page, 0, [95, 600])
     await name.fill('qty')
     await name.press('Enter')
+    await expect(name).toBeHidden()
     await addText.click()
     await dragOnPage(page, 0, [300, 640], [420, 664])
     await name.fill('total')
