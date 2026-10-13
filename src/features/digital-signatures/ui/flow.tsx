@@ -25,6 +25,9 @@ export interface StartSigningOptions {
   mode: 'sign' | 'certify'
   target: SignTarget
   permission?: 1 | 2 | 3
+  /** Prefilled in the Sign dialog instead of the last ones used (agent access). */
+  reason?: string
+  location?: string
 }
 
 function suggestedPath(doc: DocumentModel): string {
@@ -86,7 +89,16 @@ export async function startSigning(doc: DocumentModel, opts: StartSigningOptions
           })()
         : null
   const result = await openDialog<SignDialogResult>((close) => (
-    <SignDialog doc={doc} mode={opts.mode} target={opts.target} size={size} initialPermission={opts.permission ?? 2} onDone={close} />
+    <SignDialog
+      doc={doc}
+      mode={opts.mode}
+      target={opts.target}
+      size={size}
+      initialPermission={opts.permission ?? 2}
+      initialReason={opts.reason}
+      initialLocation={opts.location}
+      onDone={close}
+    />
   ))
   if (!result) return false
 
