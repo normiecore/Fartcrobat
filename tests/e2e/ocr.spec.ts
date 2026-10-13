@@ -211,12 +211,32 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     expect(await pageText(0)).toBe('')
 
     // Stop after the first page: the pages already recognized are kept, in one undo step.
+    // The next pages are held back until Stop is clicked: a fast machine would otherwise finish
+    // all of them before the test sees exactly one done.
+    await page.evaluate(() => {
+      const w = window as any
+      const engine = w.__fartcrobat.getActiveDoc().engine
+      const call = engine.call.bind(engine)
+      let renders = 0
+      const gate = new Promise<void>((resolve) => (w.__releaseOcr = resolve))
+      engine.call = async (method: string, args: unknown[], opts: unknown) => {
+        if (method === 'ocr.renderPage' && renders++ > 0) await gate
+        return call(method, args, opts)
+      }
+      w.__restoreOcr = () => (engine.call = call)
+    })
     await fire(page, 'ocr.recognize')
     dialog = dialogTitled(page, 'Recognize Text')
     await expect(dialog.getByRole('checkbox', { name: 'Skip pages that already have text' })).not.toBeChecked()
     await page.getByTestId('ocr-dialog-recognize').click()
     await expect(progress.locator('.fc-ocr-progress-page.is-done')).toHaveCount(1, { timeout: 60_000 })
     await progress.getByRole('button', { name: /Stop and keep/ }).click()
+    // the run notices Stop once the page it is waiting for arrives
+    await page.evaluate(() => {
+      const w = window as any
+      w.__restoreOcr()
+      w.__releaseOcr()
+    })
     await expect(progress).toBeHidden()
     await expect(page.locator('.toast').filter({ hasText: /^Stopped\. Recognized \d+ words on [12] pages?\./ })).toBeVisible()
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Recognize Text')
