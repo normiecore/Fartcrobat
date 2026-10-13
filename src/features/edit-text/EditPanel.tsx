@@ -11,6 +11,7 @@ import {
   PanelTop,
   ScanText,
   ShieldAlert,
+  TriangleAlert,
   TextCursorInput,
   Type,
   Wallpaper,
@@ -192,6 +193,19 @@ function LockedNote({ doc }: { doc: DocumentModel }) {
   )
 }
 
+/** Note shown for signed documents: changing their content invalidates the signatures. */
+function SignedNote({ doc }: { doc: DocumentModel }) {
+  const signed = useDocState(doc, (s) => s.info.signatureCount > 0)
+  const locked = useDocState(doc, (s) => s.info.permissions?.edit === false)
+  if (!signed || locked) return null
+  return (
+    <div className="fc-edit-text-note" role="note">
+      <TriangleAlert size={16} aria-hidden />
+      <p>This document is signed. Changing its text makes the existing signatures invalid.</p>
+    </div>
+  )
+}
+
 export function EditPanel({ doc }: { doc: DocumentModel | null }) {
   const toolId = useApp((s) => s.toolId)
   const editing = useEditText((s) => !!s.session)
@@ -201,6 +215,7 @@ export function EditPanel({ doc }: { doc: DocumentModel | null }) {
     <ToolPanelFrame title="Edit a PDF">
       <div className="fc-edit-text-panel" data-fc-edit-text-keep>
         {doc && <LockedNote doc={doc} />}
+        {doc && <SignedNote doc={doc} />}
         <Section title="Edit and add">
           {content.map((e) => {
             const tool = registry.tools.get(e.id)

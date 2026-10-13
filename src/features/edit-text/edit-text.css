@@ -268,5 +268,8 @@
   color: var(--warning);
 }
 .fc-edit-text-note p {
-  margin: 0 0 6px;
+  margin: 0;
+}
+.fc-edit-text-note p + button {
+  margin-top: 6px;
 }

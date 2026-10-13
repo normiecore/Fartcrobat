@@ -642,6 +642,12 @@ test('a document that does not allow changes asks for its permissions password f
     await page.keyboard.type('Unlocked')
     await page.keyboard.press('Control+Enter')
     await expect.poll(() => pageText(page)).toContain('Unlocked')
+
+    // a signed document: editing is allowed, with a word about the signatures
+    await openFile(page, fixturePath('forms-fill/signed.pdf'))
+    await waitForRender(page)
+    await expect(page.locator('.fc-edit-text-note')).toContainText('signatures invalid')
+    await shot(page, '27-signed-document')
   } finally {
     await app.close()
   }
