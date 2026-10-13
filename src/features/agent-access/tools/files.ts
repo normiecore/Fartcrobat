@@ -16,7 +16,7 @@ import {
 import type exportOps from '@features/export-create/engine'
 import { ExportCancelled, runExport, type ExportEngine } from '@features/export-create/exporter'
 import { DEFAULT_EXPORT_OPTIONS, FORMAT_INFO, type ExportFormat, type ExportOptions } from '@features/export-create/shared'
-import { openAsNewDocument } from '@features/organize-pages/actions'
+import { openAsNewDocument, openExtractedPages } from '@features/organize-pages/actions'
 import { binderName } from '@features/organize-pages/CombineDialog'
 import type organizeOps from '@features/organize-pages/engine'
 import type { SourceRef } from '@features/organize-pages/engine'
@@ -304,7 +304,8 @@ const extractPages: ToolHandler = async (args, ctx) => {
     ctx.audit({ document: auditName(doc), summary: `extracted ${what} to ${target}` })
     return { data: { path: target, pageCount: pages.length } }
   }
-  const opened = await withAttention(() => openAsNewDocument(bytes, `Pages from ${stripExtension(doc.state.title)}.pdf`))
+  // A protected source gives protected pages: the new tab opens with the source's password.
+  const opened = await withAttention(() => openExtractedPages(doc, bytes, `Pages from ${stripExtension(doc.state.title)}.pdf`))
   if (!opened) throw new ToolError('failed', 'The extracted pages could not be opened in a new tab (the password prompt was cancelled, or Fartcrobat showed the person why).')
   ctx.audit({ document: auditName(doc), summary: `extracted ${what} to a new tab` })
   return { data: { ...describeDoc(ctx, opened), source: describeDoc(ctx, doc).handle } }
@@ -342,18 +343,22 @@ const combineFiles: ToolHandler = async (args, ctx) => {
       if (!probe) throw cancelled(ctx, null, `password prompt for ${path} cancelled`, `Nothing was combined: the person cancelled the password prompt for ${file.name}.`)
       sources.push({ data: file.bytes, fileName: file.engineName, password: probe.password, title: stripExtension(file.name) })
     }
-    const bytes = await engineTask('Could not combine the files', () => ops.combine(sources, { bookmarks: true, keepBookmarks: true }))
+    const { bytes, protection } = await engineTask('Could not combine the files', () =>
+      ops.combineWithProtection(sources, { bookmarks: true, keepBookmarks: true })
+    )
     throwIfAborted(ctx)
     if (target) {
       await write(target, bytes)
       ctx.audit({ document: target, summary: `combined ${paths.length} files to ${target}` })
-      return { data: { path: target, files: paths.length } }
+      return { data: { path: target, files: paths.length, protectedLike: protection?.fileName ?? null } }
     }
     const name = binderName(useApp.getState().docs.map((d) => d.state.title))
-    const opened = await withAttention(() => openAsNewDocument(bytes, name))
+    // When a file was protected, the result has its protection and opens with its password.
+    const password = protection ? sources[protection.index]?.password : undefined
+    const opened = await withAttention(() => openAsNewDocument(bytes, name, { password }))
     if (!opened) throw new ToolError('failed', 'The combined file could not be opened in a new tab (Fartcrobat showed the person why).')
     ctx.audit({ document: auditName(opened), summary: `combined ${paths.length} files into a new tab` })
-    return { data: { ...describeDoc(ctx, opened), files: paths.length } }
+    return { data: { ...describeDoc(ctx, opened), files: paths.length, protectedLike: protection?.fileName ?? null } }
   } finally {
     engine.terminate()
   }
