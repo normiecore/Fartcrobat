@@ -24,7 +24,7 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "fixtures": "node scripts/make-fixtures.mjs",
+    "fixtures": "python3 scripts/make_fixtures.py",
     "e2e": "npm run build && playwright test",
     "dist": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux",
