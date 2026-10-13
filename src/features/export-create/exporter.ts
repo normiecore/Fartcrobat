@@ -76,7 +76,7 @@ async function pageBackgrounds(engine: ExportEngine, layout: DocLayout, job: Exp
     const page = layout.pages[k]
     if (!all && !page.graphics) continue
     job.onProgress?.(from + ((to - from) * k) / n, `Drawing page ${k + 1} of ${n}…`)
-    const pic = await engine.picture(page.index, { dpi: PICTURE_DPI, text: false, format: 'auto', skipLines: page.decorations })
+    const pic = await engine.picture(page.index, { dpi: PICTURE_DPI, text: false, format: 'auto', skipLines: page.decorations, erase: page.erase })
     page.background = { x0: 0, y0: 0, x1: page.width, y1: page.height, block: -1, data: pic.data, mime: pic.mime, width: pic.width, height: pic.height }
   }
 }
@@ -129,7 +129,8 @@ export async function runExport(engine: ExportEngine, job: ExportJob): Promise<E
           text: !editable,
           format: editable ? 'auto' : 'jpeg',
           quality: 88,
-          skipLines: editable ? layout.pages[k].decorations : undefined
+          skipLines: editable ? layout.pages[k].decorations : undefined,
+          erase: editable ? layout.pages[k].erase : undefined
         })
         pictures.push({ data: pic.data, mime: pic.mime })
         if (!editable) {
@@ -145,7 +146,7 @@ export async function runExport(engine: ExportEngine, job: ExportJob): Promise<E
       return file(await buildPptx(layout, o.powerpoint, meta, pictures))
     }
     case 'html': {
-      const { buildPageHtml, buildFlowingHtml } = await import('./builders/html')
+      const { buildPageHtml, buildFlowingHtml, positionedPageHtml } = await import('./builders/html')
       let html: string
       if (o.html.layout === 'page') {
         const pages = []
@@ -153,11 +154,16 @@ export async function runExport(engine: ExportEngine, job: ExportJob): Promise<E
           check(job)
           job.onProgress?.((0.9 * k) / n, `Reading page ${k + 1} of ${n}…`)
           const index = job.pages[k]
-          const content = o.html.images ? await engine.content(index, { images: false }) : null
-          const graphics = !!content && (content.images.length > 0 || content.rules.length > 0 || content.fills.length > 0 || content.drawings.length > 0)
+          const content = await engine.content(index, { images: false })
+          // A scan with recognized text: the text is written from the page's content, over the
+          // picture of the scan without that text.
+          const recognized = !!content.erase
+          const graphics =
+            o.html.images &&
+            (recognized || content.images.length > 0 || content.rules.length > 0 || content.fills.length > 0 || content.drawings.length > 0)
           // With a picture of the graphics behind the text, the page's images are in that picture.
-          const pageHtml = await engine.html(index, { images: o.html.images && !graphics })
-          const background = graphics ? await engine.picture(index, { dpi: PICTURE_DPI, text: false, format: 'auto' }) : undefined
+          const pageHtml = recognized ? positionedPageHtml(content, index + 1) : await engine.html(index, { images: o.html.images && !graphics })
+          const background = graphics ? await engine.picture(index, { dpi: PICTURE_DPI, text: false, format: 'auto', erase: content.erase }) : undefined
           pages.push({ html: pageHtml, background })
         }
         html = buildPageHtml(pages, { title: job.title, lang: job.lang })

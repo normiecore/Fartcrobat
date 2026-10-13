@@ -93,6 +93,8 @@ export interface XDrawing {
   y1: number
   /** Has curves, slanted lines or gradients (a chart or diagram), not only filled rectangles. */
   art: boolean
+  /** Cut from a scan whose text was recognized: what the recognition did not read as text. */
+  scan?: boolean
 }
 
 /** A comment (sticky note, highlight with a note, reply...) on the page. */
@@ -130,6 +132,11 @@ export interface PageContent {
   /** Underlines and strike-through lines of the text (the runs carry them as styles). */
   decorations: Box[]
   comments: XComment[]
+  /**
+   * Where recognized text is printed on a scanned image of the page: erased from pictures of the
+   * page that get the text as editable text on top. The scan itself is not in `images`.
+   */
+  erase?: Box[]
 }
 
 export const FONT_BOLD = 1
@@ -152,4 +159,26 @@ export interface PageRaster {
   /** 1 (gray) or 3 (RGB), no alpha. */
   channels: 1 | 3
   pixels: Uint8Array
+}
+
+/** Groups overlapping or nearby boxes into areas. */
+export function clusterBoxes(boxes: Box[], gap: number): Box[] {
+  let list = boxes.map((b) => [...b] as Box)
+  let merged = true
+  while (merged) {
+    merged = false
+    const out: Box[] = []
+    for (const b of list) {
+      const hit = out.find((o) => b[0] <= o[2] + gap && b[2] >= o[0] - gap && b[1] <= o[3] + gap && b[3] >= o[1] - gap)
+      if (hit) {
+        hit[0] = Math.min(hit[0], b[0])
+        hit[1] = Math.min(hit[1], b[1])
+        hit[2] = Math.max(hit[2], b[2])
+        hit[3] = Math.max(hit[3], b[3])
+        merged = true
+      } else out.push(b)
+    }
+    list = out
+  }
+  return list
 }

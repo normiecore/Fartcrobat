@@ -4,7 +4,9 @@
  */
 import type * as MuPDF from 'mupdf'
 import type { Session } from '@engine/session'
+import { analyzeScans, eraseAreas, type HiddenLine } from './scan'
 import {
+  clusterBoxes,
   FONT_BOLD,
   FONT_ITALIC,
   FONT_MONO,
@@ -34,6 +36,8 @@ export interface ExtractOptions {
 
 /** Stop collecting vector paths after this many (maps and charts can hold hundreds of thousands). */
 const MAX_PATHS = 20000
+/** Invisible glyphs recorded per page at most. */
+const MAX_HIDDEN = 100000
 
 export function colorToInt(c: ArrayLike<number> | undefined): number {
   if (!c || c.length === 0) return 0
@@ -130,32 +134,13 @@ function asRectangle(points: PathPoint[]): Rect | null {
   return [Math.min(...x), Math.min(...y), Math.max(...x), Math.max(...y)]
 }
 
-/** Groups overlapping or nearby boxes into areas. */
-export function clusterBoxes(boxes: Rect[], gap: number): Rect[] {
-  let list = boxes.map((b) => [...b] as Rect)
-  let merged = true
-  while (merged) {
-    merged = false
-    const out: Rect[] = []
-    for (const b of list) {
-      const hit = out.find((o) => b[0] <= o[2] + gap && b[2] >= o[0] - gap && b[1] <= o[3] + gap && b[3] >= o[1] - gap)
-      if (hit) {
-        hit[0] = Math.min(hit[0], b[0])
-        hit[1] = Math.min(hit[1], b[1])
-        hit[2] = Math.max(hit[2], b[2])
-        hit[3] = Math.max(hit[3], b[3])
-        merged = true
-      } else out.push(b)
-    }
-    list = out
-  }
-  return list
-}
 
 interface Vectors {
   rules: XRule[]
   fills: XFill[]
   drawings: XDrawing[]
+  /** Origins (x, y pairs) of the glyphs drawn invisibly: recognized text over a scan. */
+  hidden: number[]
 }
 
 function collectVectors(s: Session, pageIndex: number, width: number, height: number): Vectors {
@@ -165,6 +150,7 @@ function collectVectors(s: Session, pageIndex: number, width: number, height: nu
   const fills: XFill[] = []
   const art: Rect[] = []
   const artFlags: boolean[] = []
+  const hidden: number[] = []
   let count = 0
   const addRule = (x0: number, y0: number, x1: number, y1: number, w: number, color: number): boolean => {
     const dx = Math.abs(x1 - x0)
@@ -222,6 +208,14 @@ function collectVectors(s: Session, pageIndex: number, width: number, height: nu
         artFlags.push(true)
       }
     },
+    ignoreText(text, ctm) {
+      if (hidden.length >= 2 * MAX_HIDDEN) return
+      text.walk({
+        showGlyph(_font, trm) {
+          hidden.push(...apply(ctm as Matrix, trm[4], trm[5]))
+        }
+      })
+    },
     fillShade(shade, ctm) {
       if (++count > MAX_PATHS) return
       try {
@@ -255,7 +249,7 @@ function collectVectors(s: Session, pageIndex: number, width: number, height: nu
       y1: r[3],
       art: art.some((a, i) => artFlags[i] && a[0] >= r[0] - 1 && a[1] >= r[1] - 1 && a[2] <= r[2] + 1 && a[3] <= r[3] + 1)
     }))
-  return { rules: mergeRules(rules), fills, drawings }
+  return { rules: mergeRules(rules), fills, drawings, hidden }
 }
 
 /** Joins collinear rules that touch (borders drawn cell by cell) and drops duplicates. */
@@ -290,6 +284,8 @@ export function mergeRules(rules: XRule[]): XRule[] {
 
 export interface RawChar {
   c: string
+  /** Origin of the glyph. */
+  ox: number
   x0: number
   x1: number
   y0: number
@@ -309,6 +305,12 @@ export interface RawLine {
   bbox: Rect
   rotated: boolean
   chars: RawChar[]
+  /** Direction of the writing. */
+  dir?: [number, number]
+  /** Drawn invisibly (recognized text). */
+  hidden?: boolean
+  /** Of hidden lines: the box of the words as recognized (`bbox` gets the type's box). */
+  ink?: Rect
 }
 
 const SPACES = new Set([' ', '\t', '\u00a0', '\u2002', '\u2003', '\u2009', '\u202f'])
@@ -477,6 +479,167 @@ export function buildLines(rawLines: RawLine[]): XLine[] {
     out.push(l)
   }
   return out
+}
+
+/** Lookup of the invisible glyph origins (1-point cells). */
+function hiddenCells(hidden: number[]): (x: number, y: number) => boolean {
+  const cells = new Set<string>()
+  for (let i = 0; i + 1 < hidden.length; i += 2) cells.add(`${Math.floor(hidden[i])},${Math.floor(hidden[i + 1])}`)
+  return (x, y) => {
+    for (const dx of [-0.3, 0.3]) for (const dy of [-0.3, 0.3]) if (cells.has(`${Math.floor(x + dx)},${Math.floor(y + dy)}`)) return true
+    return false
+  }
+}
+
+/** Letters reaching up to the capital height or higher, and letters (or marks) going below the baseline. */
+const ASCENDING = /[\p{Lu}\p{N}bdfhklt!?&%$#@()[\]{}/\\|ßàáâãäåèéêëìíîïòóôõöùúûüýÿ]/u
+const DESCENDING = /[gjpqyQ()[\]{}çµ]/
+/** Commas reach less far down. */
+const COMMA = /[,;]/
+
+/** Width of `text` in a built-in font, at size 1. */
+function textWidth(font: MuPDF.Font, text: string, cache: Map<string, number>): number {
+  let w = 0
+  for (const ch of text) {
+    let a = cache.get(ch)
+    if (a === undefined) {
+      try {
+        a = font.advanceGlyph(font.encodeCharacter(ch.codePointAt(0)!))
+      } catch {
+        a = 0.5
+      }
+      cache.set(ch, a)
+    }
+    w += a
+  }
+  return w
+}
+
+/**
+ * Marks the lines drawn invisibly (the recognized text of a scan) and gives them what the
+ * recognition does not record. Size: words are boxed around their ink, so their height depends on
+ * their letters ("in" is smaller than "Quarterly"); the line's ascender height is measured instead
+ * (from its baseline to the top of its tall letters). Font: serif or sans serif, whichever prints
+ * the line at its width. Level lines get one baseline (words with descenders sit lower).
+ * Returns the marked lines.
+ */
+export function markHidden(m: Mupdf, lines: RawLine[], hidden: number[]): RawLine[] {
+  if (!hidden.length) return []
+  const isHidden = hiddenCells(hidden)
+  const found: { line: RawLine; words: RawChar[][]; size: number; base: number; level: boolean }[] = []
+  for (const line of lines) {
+    const ink = line.chars.filter((c) => !isSpace(c.c))
+    if (!ink.length || ink.filter((c) => isHidden(c.ox, c.oy)).length * 2 <= ink.length) continue
+    line.hidden = true
+    line.ink = [...line.bbox]
+    const words: RawChar[][] = [[]]
+    for (const c of line.chars) {
+      if (!isSpace(c.c)) words[words.length - 1].push(c)
+      else if (words[words.length - 1].length) words.push([])
+    }
+    if (!words[words.length - 1].length) words.pop()
+    const [dx, dy] = line.dir ?? [1, 0]
+    // Distance across the line (y on a level line), so slightly skewed lines measure right too.
+    const across = (x: number, y: number) => -dy * x + dx * y
+    // Each word's box is around its ink: how far that reaches above and below the baseline (in
+    // type sizes) depends on the letters, which are known. Words sharing one box (Recognize Text
+    // gives all words of a line the line's height) are measured together.
+    const groups = new Map<string, { top: number; bottom: number; text: string }>()
+    for (const w of words) {
+      const top = across((w[0].x0 + w[0].x1) / 2, w[0].y0)
+      const bottom = across(w[0].ox, w[0].oy)
+      const key = `${Math.round(top * 2)}:${Math.round(bottom * 2)}`
+      const g = groups.get(key)
+      const text = w.map((c) => c.c).join('')
+      if (g) g.text += ' ' + text
+      else groups.set(key, { top, bottom, text })
+    }
+    const sizes: number[] = []
+    const bases: number[] = []
+    for (const { top, bottom, text } of groups.values()) {
+      if (!/[\p{L}\p{N}]/u.test(text)) continue
+      const above = ASCENDING.test(text) ? 0.72 : 0.5
+      const below = DESCENDING.test(text) ? 0.21 : COMMA.test(text) ? 0.15 : 0
+      const size = (bottom - top) / (above + below)
+      if (!(size > 0)) continue
+      sizes.push(size)
+      bases.push(bottom - below * size)
+    }
+    const median = (list: number[]) => list.sort((a, b) => a - b)[list.length >> 1]
+    let size = sizes.length ? median(sizes) : 0
+    let base = bases.length ? median(bases) : across(ink[0].ox, ink[0].oy)
+    const tallest = Math.max(...ink.map((c) => c.size))
+    if (!(size > 0) || size > 2 * tallest) {
+      size = tallest / 0.93
+      base = across(ink[0].ox, ink[0].oy)
+    }
+    found.push({ line, words, size, base, level: Math.abs(dy) < 0.01 && !line.rotated })
+  }
+  if (!found.length) return []
+  // Lines of about the same size (within 10%) are one size: the body text, the headings.
+  found.sort((a, b) => a.size - b.size)
+  const groupOf = new Map<RawLine, number>()
+  for (let i = 0, g = 0; i < found.length; g++) {
+    let j = i + 1
+    while (j < found.length && found[j].size <= found[i].size * 1.1) j++
+    const size = Math.max(4, Math.round(found[(i + j) >> 1].size * 2) / 2)
+    for (let k = i; k < j; k++) {
+      found[k].size = size
+      groupOf.set(found[k].line, g)
+    }
+    i = j
+  }
+  // Serif or sans serif, for each size of text: the built-in Times and Helvetica measured against
+  // the printed width of the words (not the spaces, wider in justified lines).
+  const fonts = { serif: new m.Font('Times-Roman'), sans: new m.Font('Helvetica') }
+  const caches = { serif: new Map<string, number>(), sans: new Map<string, number>() }
+  try {
+    type Tally = { width: number; serif: number; sans: number; chars: number }
+    const tally = (): Tally => ({ width: 0, serif: 0, sans: 0, chars: 0 })
+    const all = tally()
+    const groups = new Map<number, Tally>()
+    for (const f of found) {
+      const [dx, dy] = f.line.dir ?? [1, 0]
+      const along = (x: number, y: number) => dx * x + dy * y
+      const g = groups.get(groupOf.get(f.line)!) ?? tally()
+      groups.set(groupOf.get(f.line)!, g)
+      for (const w of f.words) {
+        const text = w.map((c) => c.c).join('')
+        const width = along(w[w.length - 1].x1, w[0].oy) - along(w[0].x0, w[0].oy)
+        const serif = textWidth(fonts.serif, text, caches.serif) * f.size
+        const sans = textWidth(fonts.sans, text, caches.sans) * f.size
+        if (!(width > 0) || !(serif > 0) || !(sans > 0)) continue
+        for (const t of [g, all]) {
+          t.width += width
+          t.serif += serif
+          t.sans += sans
+          t.chars += w.length
+        }
+      }
+    }
+    const isSerif = (t: Tally) => t.chars > 0 && Math.abs(Math.log(t.width / t.serif)) < Math.abs(Math.log(t.width / t.sans))
+    const pageSerif = isSerif(all)
+    for (const f of found) {
+      const g = groups.get(groupOf.get(f.line)!)!
+      // A few characters say little: they follow the page.
+      const serif = g.chars >= 12 ? isSerif(g) : pageSerif
+      for (const c of f.line.chars) {
+        c.size = f.size
+        // The glyph-less font of recognized text has fixed widths; the text is not monospaced.
+        if (/^glyph-?less/i.test(c.font)) c.flags = serif ? FONT_SERIF : 0
+        if (f.level) {
+          c.oy = f.base
+          c.y0 = f.base - 0.9 * f.size
+          c.y1 = f.base + 0.25 * f.size
+        }
+      }
+      if (f.level) f.line.bbox = [f.line.bbox[0], f.base - 0.9 * f.size, f.line.bbox[2], f.base + 0.25 * f.size]
+    }
+  } finally {
+    fonts.serif.destroy()
+    fonts.sans.destroy()
+  }
+  return found.map((f) => f.line)
 }
 
 /**
@@ -798,6 +961,18 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
     return undefined
   }
   const maxDpi = opts.maxImageDpi ?? 300
+  const vectors = collectVectors(s, pageIndex, width, height)
+  /** Images with recognized text on them: scans, exported as their text (see scan.ts). */
+  const scans: Rect[] = []
+  const isScan = (b: Rect) => {
+    let n = 0
+    for (let i = 0; i + 1 < vectors.hidden.length && n < 4; i += 2) {
+      const x = vectors.hidden[i]
+      const y = vectors.hidden[i + 1]
+      if (x >= b[0] && x <= b[2] && y >= b[1] && y <= b[3]) n++
+    }
+    return n >= 4
+  }
   const rawLines: RawLine[] = []
   const images: XImage[] = []
   const fonts = new Map<number, { name: string; flags: number }>()
@@ -816,6 +991,10 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
         const h = b[3] - b[1]
         // Skip slivers and images entirely off the page.
         if (w < 3 || h < 3 || w * h < 36 || b[2] <= 0 || b[3] <= 0 || b[0] >= width || b[1] >= height) return
+        if (vectors.hidden.length && isScan(b)) {
+          scans.push(b)
+          return
+        }
         if (opts.images === false) {
           // Where the images are, without their pixels.
           images.push({ x0: b[0], y0: b[1], x1: b[2], y1: b[3], block, data: new Uint8Array(0), mime: 'image/png', width: 0, height: 0 })
@@ -834,6 +1013,7 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
           block: blockIndex,
           bbox: bbox as Rect,
           rotated: Math.abs(dir[0] - 1) > 0.05 || Math.abs(dir[1]) > 0.05,
+          dir: [dir[0], dir[1]],
           chars: []
         }
         rawLines.push(current)
@@ -853,6 +1033,7 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
         const y1 = Math.max(q[1], q[3], q[5], q[7])
         current.chars.push({
           c,
+          ox: origin[0],
           x0,
           x1,
           y0,
@@ -876,12 +1057,17 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
     stext.destroy()
     list.destroy()
   }
-  const vectors = collectVectors(s, pageIndex, width, height)
   const textLines = rawLines.filter((l) => l.chars.some((c) => !isSpace(c.c)))
-  const decorations = decorateChars(textLines, vectors.rules)
-  const rules = vectors.rules.filter((r) => !decorations.has(r))
+  const hiddenLines = markHidden(s.mupdf, textLines, vectors.hidden)
+  // The ruled lines and pictures of scans whose text was recognized.
+  const scan = scans.length && hiddenLines.length ? analyzeScans(s, pageIndex, scans, hiddenLines.map(hiddenLine)) : null
+  const allRules = scan ? mergeRules([...vectors.rules, ...scan.rules]) : vectors.rules
+  const decorations = decorateChars(textLines, allRules)
+  const rules = allRules.filter((r) => !decorations.has(r))
   const lines = buildLines(textLines)
   const decorationBoxes = [...decorations].map((r): [number, number, number, number] => [r.x0, r.y0 - r.width / 2, r.x1, r.y1 + r.width / 2])
+  // Underlines found on a scan are drawn by the text now.
+  const scanDecorations = scan ? decorationBoxes.filter((d) => scans.some((sc) => d[0] >= sc[0] && d[2] <= sc[2] && d[1] >= sc[1] && d[3] <= sc[3])) : []
   return {
     index: pageIndex,
     width,
@@ -890,11 +1076,21 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
     images,
     rules,
     fills: vectors.fills,
-    drawings: vectors.drawings,
+    drawings: scan ? [...vectors.drawings, ...scan.pictures] : vectors.drawings,
     links,
     decorations: decorationBoxes,
-    comments: readComments(s, pageIndex)
+    comments: readComments(s, pageIndex),
+    ...(scan ? { erase: [...scan.erase, ...scanDecorations.map((d): Rect => [d[0] - 1, d[1] - 1, d[2] + 1, d[3] + 1])] } : {})
   }
+}
+
+function hiddenLine(l: RawLine): HiddenLine {
+  const a = l.ink ?? l.bbox
+  const b = l.bbox
+  // Both the words as recognized and the type's box (descenders, accents).
+  const box: Rect = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]
+  const text = l.chars.map((c) => c.c).join('')
+  return { bbox: box, chars: text.replace(/\s+/g, '').length, words: text.split(/\s+/).filter(Boolean).length }
 }
 
 // ---- rendering without text (PowerPoint backgrounds) --------------------------------------
@@ -956,13 +1152,14 @@ export function withoutTextDevice(m: Mupdf, target: MuPDF.Device, skipLines: Rec
 
 /**
  * Renders a page (or the `clip` area of it, in page space) at `dpi`, with or without its text, as
- * an opaque pixmap (caller destroys it). Comments and form fields are included.
+ * an opaque pixmap (caller destroys it). Comments and form fields are included. `erase` areas are
+ * painted with the colour around them (recognized text on a scan, under editable text).
  */
 export function renderArea(
   s: Session,
   pageIndex: number,
   dpi: number,
-  opts: { text?: boolean; grayscale?: boolean; clip?: Rect; skipLines?: Rect[] } = {}
+  opts: { text?: boolean; grayscale?: boolean; clip?: Rect; skipLines?: Rect[]; erase?: Rect[] } = {}
 ): MuPDF.Pixmap {
   const m = s.mupdf
   const page = s.page(pageIndex)
@@ -1000,12 +1197,13 @@ export function renderArea(
     if (dev !== draw) dev.destroy()
     draw.destroy()
   }
+  if (opts.erase?.length) eraseAreas(pix, opts.erase, scale, [b[0], b[1]])
   return pix
 }
 
 /** PNG for graphics, JPEG for photographs. */
 export function encodeAuto(pix: MuPDF.Pixmap): { data: Uint8Array; mime: 'image/png' | 'image/jpeg' } {
-  const n = pix.getNumberOfComponents() + pix.getAlpha()
+  const n = pix.getNumberOfComponents()
   if (!pix.getAlpha() && looksLikePhoto(pix.getPixels(), n, pix.getWidth() * pix.getHeight())) return { data: pix.asJPEG(85).slice(), mime: 'image/jpeg' }
   return { data: pix.asPNG().slice(), mime: 'image/png' }
 }

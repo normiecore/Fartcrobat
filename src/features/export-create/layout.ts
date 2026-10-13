@@ -159,6 +159,8 @@ export interface LPage {
   graphics: boolean
   /** Underlines and strike-through lines of the text, to leave out of a background picture. */
   decorations: [number, number, number, number][]
+  /** Recognized text on a scan, to erase from a background picture (PageContent.erase). */
+  erase: [number, number, number, number][]
 }
 
 export interface LayoutOptions {
@@ -1073,9 +1075,11 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
         // A coloured box behind text: keep the text editable and leave the box out.
         if (inside.length) continue
       } else if (chars <= 300) {
-        // A chart or diagram with its labels: labels just outside the artwork belong to it too.
+        // A chart or diagram with its labels: labels just outside the artwork belong to it too
+        // (not next to what is cut from a scan: that text was recognized as text).
         const labels = remaining.filter(
           (l) =>
+            !d.scan &&
             !inside.includes(l) &&
             l.x1 >= d.x0 - 6 &&
             l.x0 <= d.x1 + 6 &&
@@ -1207,7 +1211,16 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
   // Indents were measured from the leftmost text; express them from the margin.
   for (const el of elements) if (el.kind === 'paragraph') el.indent = Math.max(0, el.indent + left - margins.left)
   const graphics = content.images.length > 0 || content.rules.length > 0 || content.fills.length > 0 || content.drawings.length > 0
-  return { index: content.index, width: content.width, height: content.height, margins, elements, graphics, decorations: content.decorations ?? [] }
+  return {
+    index: content.index,
+    width: content.width,
+    height: content.height,
+    margins,
+    elements,
+    graphics,
+    decorations: content.decorations ?? [],
+    erase: content.erase ?? []
+  }
 }
 
 /**

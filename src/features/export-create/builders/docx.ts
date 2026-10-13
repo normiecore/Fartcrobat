@@ -438,7 +438,7 @@ function framedParagraph(el: LParagraph, opts: WordOptions, comments?: Comments,
   if (el.list && runs.length) runs.unshift({ ...runs[0], text: el.list.marker + '\t', link: undefined, underline: false })
   const width = el.x1 - el.x0
   // Fonts in Word are rarely the exact ones of the PDF: leave room so lines do not wrap.
-  const slack = Math.max(6, width * 0.08)
+  const slack = Math.max(6, width * 0.08, 2 * el.size)
   const x = el.align === 'right' ? el.x0 - slack : el.align === 'center' ? el.x0 - slack / 2 : el.x0
   return new Paragraph({
     children: comments ? comments.wrap(el, pageIndex, runChildren(runs)) : runChildren(runs),

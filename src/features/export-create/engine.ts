@@ -159,11 +159,13 @@ export default defineOps('export-create', {
       quality?: number
       /** Lines to leave out with the text (underlines drawn by the text boxes themselves). */
       skipLines?: [number, number, number, number][]
+      /** Recognized text on a scan, painted over with the paper around it (PageContent.erase). */
+      erase?: [number, number, number, number][]
     }
   ) {
     let pix
     try {
-      pix = renderArea(s, pageIndex, opts.dpi, { text: opts.text, clip: opts.clip, skipLines: opts.skipLines })
+      pix = renderArea(s, pageIndex, opts.dpi, { text: opts.text, clip: opts.clip, skipLines: opts.skipLines, erase: opts.erase })
     } catch (err) {
       throw renderError(err, pageIndex, opts.dpi)
     }

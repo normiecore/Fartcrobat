@@ -3,7 +3,8 @@
  * every page exactly as laid out in the PDF (MuPDF's positioned HTML over a picture of the page's
  * graphics); 'flowing' writes a reflowable page with headings, paragraphs, lists and tables.
  */
-import { cssFontStack } from '../fonts'
+import { FONT_BOLD, FONT_ITALIC, segmentText, type PageContent } from '../content'
+import { cssFontStack, fontFamily } from '../fonts'
 import { flowRuns, linedRuns, type DocLayout, type LCell, type LElement, type LParagraph, type LRun, type LTable } from '../layout'
 import { escapeHtml, toBase64 } from './encoding'
 
@@ -36,6 +37,38 @@ const PAGE_CSS = `body { margin: 0; padding: 16px 0; background: #e3e3e3; }
   body { padding: 0; background: none; }
   .page { margin: 0; box-shadow: none; break-after: page; }
 }`
+
+const fmt = (v: number) => (Math.round(v * 10) / 10).toFixed(1)
+
+/**
+ * A page's text as positioned HTML in the same form as MuPDF's (a <div> of absolutely placed
+ * lines), written from the page's content: for recognized text, whose words MuPDF writes in
+ * the recognition's glyph-less font and at the height of each word.
+ */
+export function positionedPageHtml(content: PageContent, pageNumber: number): string {
+  const out = [`<div id="page${pageNumber}" class="page" style="width:${fmt(content.width)}pt;height:${fmt(content.height)}pt">`]
+  for (const line of content.lines) {
+    for (const seg of line.segments) {
+      if (!segmentText(seg).trim()) continue
+      const size = seg.runs[0].size
+      // The line box is one type size high; the baseline sits about 84% down it.
+      const top = seg.baseline - 0.84 * size
+      const spans = seg.runs.map((r) => {
+        const style = [`font-family:${cssFontStack(fontFamily(r.font, r.flags), r.flags).replace(/"/g, "'")}`, `font-size:${fmt(r.size)}pt`]
+        if (r.color !== 0) style.push(`color:${hex(r.color)}`)
+        if (r.flags & FONT_BOLD) style.push('font-weight:bold')
+        if (r.flags & FONT_ITALIC) style.push('font-style:italic')
+        const deco = [r.underline ? 'underline' : '', r.strike ? 'line-through' : ''].filter(Boolean).join(' ')
+        if (deco) style.push(`text-decoration:${deco}`)
+        const html = `<span style="${style.join(';')}">${escapeHtml(r.text)}</span>`
+        return r.link ? `<a href="${escapeHtml(r.link)}">${html}</a>` : html
+      })
+      out.push(`<p style="top:${fmt(top)}pt;left:${fmt(seg.x0)}pt;line-height:${fmt(size)}pt">${spans.join('')}</p>`)
+    }
+  }
+  out.push('</div>')
+  return out.join('\n')
+}
 
 export interface HtmlPage {
   /** MuPDF's HTML for the page (a positioned <div>). */

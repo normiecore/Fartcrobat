@@ -67,8 +67,8 @@ const STYLE_ABBREVIATIONS = /[-_,\s](Bd|It|BdIt|BoldIt|Bi|Lt|Md|Rg|Std|Pro|bold|
 /** The font family to use in an editable document for a font name found in a PDF. */
 export function fontFamily(pdfName: string, flags = 0): string {
   const name = (pdfName || '').replace(/^[A-Z]{6}\+/, '').trim()
-  // Generated names ("F1", "T1_0", "Type3") carry no family.
-  if (!name || /^(F|T|TT|C|R)\d+(_\d+)?$/i.test(name) || /^type3/i.test(name)) return fallbackFamily(flags)
+  // Generated names ("F1", "T1_0", "Type3") and the glyph-less font of recognized text carry no family.
+  if (!name || /^(F|T|TT|C|R)\d+(_\d+)?$/i.test(name) || /^type3/i.test(name) || /^glyph-?less/i.test(name)) return fallbackFamily(flags)
   const exact = KNOWN[name.toLowerCase().replace(/[^a-z]/g, '')]
   if (exact) return exact
   let base = name.split(/[,+]/)[0]

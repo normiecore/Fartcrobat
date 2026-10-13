@@ -7,9 +7,14 @@ import JSZip from 'jszip'
 import { describe, expect, it } from 'vitest'
 import { createLocalEngine } from '@engine/local'
 import type docOps from '@engine/ops/doc'
+import type textOps from '@engine/ops/text'
+import type ocrOps from '@features/ocr/engine'
+import type { OcrLine, OcrPageResult } from '@features/ocr/types'
+import { rectToQuad, type Rect } from '@shared/geometry'
 import type exportOps from '../../src/features/export-create/engine'
 import { runExport, type ExportEngine } from '../../src/features/export-create/exporter'
 import { analyzeDocument, flowRuns, plainText, type LImage, type LParagraph, type LTable } from '../../src/features/export-create/layout'
+import { eraseAreas } from '../../src/features/export-create/scan'
 import { DEFAULT_EXPORT_OPTIONS, normalizeExportOptions, type ExportOptions } from '../../src/features/export-create/shared'
 import { fixture, openFixture } from './helpers'
 
@@ -539,5 +544,167 @@ describe('Create a PDF', () => {
   it('refuses to build nothing', async () => {
     const engine = await createLocalEngine()
     await expect(createOps(engine).build([])).rejects.toThrow(/Nothing to create/)
+  })
+})
+
+// ---- scans with recognized text ------------------------------------------------------------
+
+/**
+ * A "scan" of a fixture (its pages as 150 dpi pictures) with the invisible text layer Recognize
+ * Text writes over it. As from Tesseract, every word of a line is boxed from the top of the line's
+ * tallest letters to the bottom of its lowest ones. `keep` leaves lines unread.
+ */
+async function recognizedScan(name: string, keep: (line: string, page: number) => boolean = () => true) {
+  const src = await openFixture(name)
+  const x = src.ops<Ops>('export-create')
+  const t = src.ops<typeof textOps>('text')
+  const parts = []
+  const results: OcrPageResult[] = []
+  for (let p = 0; p < src.info.pageCount; p++) {
+    parts.push({ kind: 'file' as const, name: `page${p + 1}.png`, data: await x.image(p, { dpi: 150, format: 'png' }) })
+    const typeset = (await x.content(p, { images: false })).lines
+    const pt = await t.page(p)
+    const lines: OcrLine[] = []
+    for (const [start, text] of pt.text.split('\n').reduce<[number, string][]>((acc, l) => {
+      const from = acc.length ? acc[acc.length - 1][0] + acc[acc.length - 1][1].length + 1 : 0
+      return [...acc, [from, l]]
+    }, [])) {
+      if (!text.trim() || !keep(text, p)) continue
+      const words: { text: string; rect: Rect }[] = []
+      const re = /\S+/g
+      let m: RegExpExecArray | null
+      while ((m = re.exec(text))) {
+        const xs: number[] = []
+        const ys: number[] = []
+        for (let k = start + m.index; k < start + m.index + m[0].length; k++) {
+          const q = pt.quads.slice(k * 8, k * 8 + 8)
+          xs.push(q[0], q[2], q[4], q[6])
+          ys.push(q[1], q[3], q[5], q[7])
+        }
+        words.push({ text: m[0], rect: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] })
+      }
+      const cy = (words[0].rect[1] + words[0].rect[3]) / 2
+      const line = typeset.find((l) => cy >= l.y0 - 1 && cy <= l.y1 + 1)!
+      const top = line.baseline - (/[A-Z0-9bdfhklt$%()]/.test(text) ? 0.72 : 0.5) * line.size
+      const bottom = line.baseline + (/[gjpqy()]/.test(text) ? 0.21 : /[,;]/.test(text) ? 0.15 : 0) * line.size
+      lines.push({ words: words.map((w) => ({ text: w.text, quad: rectToQuad([w.rect[0], top, w.rect[2], bottom]) })) })
+    }
+    results.push({ page: p, lines })
+  }
+  const engine = await createLocalEngine()
+  const bytes = await engine.ops<Ops>('export-create').build(parts, { image: { pageSize: 'image', margin: 0, autoRotate: false } })
+  const res = await engine.ops<typeof docOps>('doc').open(bytes, { fileName: 'scan.pdf' })
+  if (!res.ok) throw new Error('scan needs a password')
+  await engine.ops<typeof ocrOps>('ocr').addTextLayer(results)
+  const ops = engine.ops<Ops>('export-create')
+  const pages = Array.from({ length: res.info.pageCount }, (_, i) => i)
+  const run = async (patch: Partial<ExportOptions>) => {
+    const r = await runExport(ops as unknown as ExportEngine, { options: normalizeExportOptions({ ...DEFAULT_EXPORT_OPTIONS, ...patch }), pages, title: 'Scan', baseName: 'Scan' })
+    if (r.kind !== 'file') throw new Error('expected one file')
+    return r.data
+  }
+  return { ops, pages, run, original: x }
+}
+
+const overlapShare = (a: Rect, b: Rect) =>
+  (Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]))) / ((b[2] - b[0]) * (b[3] - b[1]))
+
+describe('scans with recognized text', () => {
+  it('reads the recognized text with its sizes, the ruled lines and the pictures of the scan', async () => {
+    const scan = await recognizedScan('export-create/rich.pdf')
+    const page1 = await scan.ops.content(0, { images: true })
+    // The scan is not an image of the page: its text is the page's text.
+    expect(page1.images).toHaveLength(0)
+    expect(page1.erase!.length).toBeGreaterThan(15)
+    const line = (start: string) => page1.lines.find((l) => l.segments.map((sg) => sg.runs.map((r) => r.text).join('')).join(' ').startsWith(start))!
+    expect(line('Annual Report 2025').size).toBeCloseTo(26, -0.5)
+    expect(line('This report summarises').size).toBeCloseTo(11, 0)
+    // Times in the original: serif text.
+    expect(line('This report summarises').segments[0].runs[0].flags & 8).toBe(8)
+    // The chart (an image in the original) is cut out of the scan as a picture.
+    const chart = (await scan.original.content(0, { images: false })).images[0]
+    const pictures = page1.drawings.filter((d) => d.scan)
+    // (the bars and the axis: the image's white margins are paper).
+    const box: Rect = [chart.x0, chart.y0, chart.x1, chart.y1]
+    expect(pictures.filter((d) => overlapShare(box, [d.x0, d.y0, d.x1, d.y1]) > 0.98 && overlapShare([d.x0, d.y0, d.x1, d.y1], box) > 0.6)).toHaveLength(1)
+    // Page 2: the table's borders, found on the scan, make a table of the recognized cells again.
+    const layout = analyzeDocument(await Promise.all(scan.pages.map((p) => scan.ops.content(p, { images: false }))))
+    const table = layout.pages[1].elements.find((e): e is LTable => e.kind === 'table')!
+    expect(table).toMatchObject({ rows: 5, cols: 4, ruled: true })
+  })
+
+  it('exports the text once: no picture of the scan under it', async () => {
+    const scan = await recognizedScan('export-create/rich.pdf')
+    // Word, flowing: paragraphs, the chart as the only picture, the table as a Word table.
+    const zip = await JSZip.loadAsync(await scan.run({ format: 'word' }))
+    const xml = await zip.file('word/document.xml')!.async('string')
+    expect(xml).toContain('This report summarises the results of the past year.')
+    expect(xml.match(/<w:tbl>/g)).toHaveLength(1)
+    expect(xml).toContain('$12,500.00')
+    const media = Object.keys(zip.files).filter((f) => f.startsWith('word/media/') && !f.endsWith('/'))
+    expect(media).toHaveLength(1)
+    // Text: each sentence once.
+    const plain = new TextDecoder().decode(await scan.run({ format: 'text', text: { pageBreaks: false, layout: 'paragraphs' } }))
+    expect(plain.match(/Thank you for reading/g)).toHaveLength(1)
+    // HTML with the exact layout: the text in real fonts at one size per line, over the scan
+    // without its text.
+    const html = new TextDecoder().decode(await scan.run({ format: 'html' }))
+    expect(html).not.toContain('GlyphLessFont')
+    expect(html).toContain('This report summarises the results of the past year.')
+    expect(html.match(/class="background"/g)).toHaveLength(2)
+  })
+
+  it('keeps what the recognition did not read: an unread table becomes a picture of the table', async () => {
+    const scan = await recognizedScan('export-create/rich.pdf', (line, page) => page !== 1 || /Regional Results|Thank you/.test(line))
+    const page2 = await scan.ops.content(1, { images: false })
+    const tableBox: Rect = [72, 90, 513, 203]
+    expect(page2.drawings.some((d) => d.scan && overlapShare([d.x0, d.y0, d.x1, d.y1], tableBox) > 0.95)).toBe(true)
+    // Its borders are in that picture, not an empty table.
+    expect(page2.rules.filter((r) => overlapShare([r.x0, r.y0 - 0.5, r.x1, r.y1 + 0.5], tableBox) > 0.5)).toHaveLength(0)
+    expect(page2.lines.map((l) => l.segments.map((sg) => sg.runs.map((r) => r.text).join('')).join(' '))).toEqual(['Regional Results', 'Thank you for reading.'])
+  })
+
+  it('sizes the words of scanned-pages.pdf and leaves the scan out of Word', async () => {
+    const e = await openFixture('ocr/scanned-pages.pdf')
+    const json = JSON.parse(readFileSync(join(__dirname, '../fixtures/ocr/scanned-pages.json'), 'utf8')) as { words: Record<string, { text: string; rect: Rect }[]> }
+    // Each line's words boxed as Tesseract does (to the line's height).
+    const lines: OcrLine[] = []
+    for (const w of json.words[0]) {
+      const last = lines[lines.length - 1]
+      if (last && Math.abs(last.words[0].quad[5] - w.rect[3]) < 8) last.words.push({ text: w.text, quad: rectToQuad(w.rect) })
+      else lines.push({ words: [{ text: w.text, quad: rectToQuad(w.rect) }] })
+    }
+    for (const l of lines) {
+      const top = Math.min(...l.words.map((w) => w.quad[1]))
+      const bottom = Math.max(...l.words.map((w) => w.quad[5]))
+      for (const w of l.words) w.quad = rectToQuad([w.quad[0], top, w.quad[2], bottom])
+    }
+    await e.ops<typeof ocrOps>('ocr').addTextLayer([{ page: 0, lines }])
+    const c = await e.ops<Ops>('export-create').content(0, { images: true })
+    // DejaVu Sans, 40 px at 150 dpi: 19.2 pt.
+    for (const l of c.lines) expect(Math.abs(l.size - 19.2)).toBeLessThan(1.6)
+    expect(c.images).toHaveLength(0)
+    const engine = e.ops<Ops>('export-create') as unknown as ExportEngine
+    const r = await runExport(engine, { options: normalizeExportOptions({ ...DEFAULT_EXPORT_OPTIONS, format: 'word' }), pages: [0], title: 'Scan', baseName: 'Scan' })
+    const zip = await JSZip.loadAsync((r as { data: Uint8Array }).data)
+    expect(Object.keys(zip.files).filter((f) => f.startsWith('word/media/') && !f.endsWith('/'))).toHaveLength(0)
+    const xml = await zip.file('word/document.xml')!.async('string')
+    expect(xml).toContain('Revenue grew in every region.')
+    expect(xml).not.toContain('GlyphLess')
+  })
+
+  it('paints erased areas with the colour around them', async () => {
+    const mupdf = await import('mupdf')
+    const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 40, 20], false)
+    pix.clear(255)
+    const px = pix.getPixels()
+    // Cream paper with a dark word in the middle.
+    for (let i = 0; i < px.length; i += 3) px.set([250, 240, 200], i)
+    for (let y = 8; y < 12; y++) for (let x = 10; x < 30; x++) px.set([20, 20, 20], (y * 40 + x) * 3)
+    // Page space at 144 dpi: the word is at 5..15 x 4..6 points.
+    eraseAreas(pix, [[4.5, 3.5, 15.5, 6.5]], 2, [0, 0])
+    const after = pix.getPixels()
+    expect(Array.from(after.slice((10 * 40 + 20) * 3, (10 * 40 + 20) * 3 + 3))).toEqual([250, 240, 200])
+    pix.destroy()
   })
 })
