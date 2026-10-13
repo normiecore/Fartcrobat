@@ -82,7 +82,10 @@ function DocMessageBar({ doc }: { doc: DocumentModel }) {
     setHost(document.querySelector<HTMLElement>('.shell-docarea'))
   }, [readMode, docView])
 
-  if (!host?.isConnected || readMode || docView || !show || dismissed.has(doc.id)) return null
+  // While a form is being edited (Prepare a form) the fill bar would only get in the way and shift
+  // the page under the pointer, as Acrobat also hides it there.
+  const editingForm = groupId === 'prepareform' || groupId === 'requestsign'
+  if (!host?.isConnected || readMode || docView || editingForm || !show || dismissed.has(doc.id)) return null
   if (!summary || summary.fillable === 0) return null
   const canFill = info.permissions.form !== false || info.permissions.annotate !== false
   const message = info.hasXfa
