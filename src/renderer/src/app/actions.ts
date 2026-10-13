@@ -240,22 +240,36 @@ async function rememberView(doc: DocumentModel) {
   } catch {}
 }
 
+/**
+ * Asks whether to save an unsaved document before it closes, and saves it when asked to.
+ * Returns false when the user cancelled (or the save failed or was cancelled).
+ */
+async function settleUnsavedChanges(doc: DocumentModel): Promise<boolean> {
+  if (!doc.state.dirty) return true
+  useApp.setState({ activeDocId: doc.id })
+  const answer = await ask({
+    title: 'Save changes?',
+    message: `Do you want to save changes to “${doc.state.title}” before closing?`,
+    buttons: [
+      { id: 'discard', label: "Don't Save", variant: 'quiet' },
+      { id: 'cancel', label: 'Cancel' },
+      { id: 'save', label: 'Save', variant: 'primary' }
+    ]
+  })
+  if (answer === null || answer === 'cancel') return false
+  if (answer === 'save' && !(await saveDocument(doc))) return false
+  return true
+}
+
 /** Closes a tab, asking to save unsaved changes. Returns false if the user cancelled. */
 export async function closeDocument(doc: DocumentModel): Promise<boolean> {
-  if (doc.state.dirty) {
-    useApp.setState({ activeDocId: doc.id })
-    const answer = await ask({
-      title: 'Save changes?',
-      message: `Do you want to save changes to “${doc.state.title}” before closing?`,
-      buttons: [
-        { id: 'discard', label: "Don't Save", variant: 'quiet' },
-        { id: 'cancel', label: 'Cancel' },
-        { id: 'save', label: 'Save', variant: 'primary' }
-      ]
-    })
-    if (answer === null || answer === 'cancel') return false
-    if (answer === 'save' && !(await saveDocument(doc))) return false
-  }
+  if (!(await settleUnsavedChanges(doc))) return false
+  await removeDocument(doc)
+  return true
+}
+
+/** Closes a tab without asking. */
+async function removeDocument(doc: DocumentModel) {
   await rememberView(doc)
   useApp.setState((s) => {
     const idx = s.docs.findIndex((d) => d.id === doc.id)
@@ -265,7 +279,6 @@ export async function closeDocument(doc: DocumentModel): Promise<boolean> {
     return { docs, activeDocId }
   })
   doc.close()
-  return true
 }
 
 /** Closes every tab (asking about unsaved ones). Returns false if the user cancelled. */
@@ -276,8 +289,52 @@ export async function closeAllDocuments(): Promise<boolean> {
   return true
 }
 
+/**
+ * Quits the app (File > Exit, Cmd+Q). The main process asks every window, one at a time, about
+ * its unsaved documents (see answerCloseRequest) and quits once all of them agreed.
+ */
 export async function quitApp() {
-  if (await closeAllDocuments()) await invoke('app:quitConfirmed')
+  await invoke('app:quit')
+}
+
+let closeRequest: Promise<void> | null = null
+
+/**
+ * Answers the main process asking whether this window may close (closing the window, quitting).
+ * Unsaved documents are asked about first, one by one; only when none was cancelled are the
+ * tabs closed, so cancelling leaves every tab open. Repeated requests while the questions are
+ * on screen share the same answer instead of stacking dialogs.
+ */
+export function answerCloseRequest(): Promise<void> {
+  if (closeRequest) return closeRequest
+  closeRequest = (async () => {
+    let ok = true
+    try {
+      // Every unsaved tab, in tab order (also tabs opened while the questions were showing).
+      const settled = new Set<DocumentModel>()
+      for (;;) {
+        const next = useApp.getState().docs.find((d) => d.state.dirty && !settled.has(d))
+        if (!next) break
+        if (!(await settleUnsavedChanges(next))) {
+          ok = false
+          break
+        }
+        settled.add(next)
+      }
+      if (ok) for (const doc of [...useApp.getState().docs]) await removeDocument(doc)
+    } catch (err) {
+      ok = false
+      showError(err, 'Could not close the window')
+    }
+    try {
+      await invoke(ok ? 'app:quitConfirmed' : 'app:quitCancelled')
+    } catch (err) {
+      showError(err)
+    }
+  })().finally(() => {
+    closeRequest = null
+  })
+  return closeRequest
 }
 
 // ---- UI state -------------------------------------------------------------------------------

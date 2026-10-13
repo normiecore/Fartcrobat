@@ -31,7 +31,9 @@ jobs:
           cache: npm
       - run: npm ci
       - name: Build installers
-        run: npm run ${{ matrix.script }}
+        # macOS builds are ad-hoc signed (electron-builder.yml) unless a Developer ID certificate
+        # is provided in CSC_LINK: then an empty identity lets electron-builder find and use it.
+        run: npm run ${{ matrix.script }} -- ${{ matrix.os == 'macos-latest' && secrets.CSC_LINK != '' && '-c.mac.identity=' || '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Optional code signing: add these secrets to sign installers.

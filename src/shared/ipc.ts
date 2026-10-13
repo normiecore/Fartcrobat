@@ -26,10 +26,17 @@ export interface IpcApi {
   'file:write': (path: string, data: Uint8Array) => void
   'file:exists': (path: string) => boolean
   'file:stat': (path: string) => { size: number; mtimeMs: number } | null
+  /** A path for `name` in a new private temporary folder (removed when the app quits). */
   'file:tempPath': (name: string) => string
   'app:launchFiles': () => string[]
   'app:systemInfo': () => SystemInfo
+  /** Quits the app: every window is asked about unsaved documents first (File > Exit, Cmd+Q). */
+  'app:quit': () => void
+  /** The renderer's answer to app:beforeQuit: its documents are closed, the window may close. */
   'app:quitConfirmed': () => void
+  /** The renderer's answer to app:beforeQuit: the user cancelled, keep the window (and the app) open. */
+  'app:quitCancelled': () => void
+  /** Restarts the app through the normal quit flow (settings are saved first). */
   'app:relaunch': () => void
   'prefs:get': () => Preferences
   'prefs:set': (patch: Partial<Preferences>) => Preferences
@@ -44,8 +51,16 @@ export interface IpcApi {
   'window:setFullScreen': (on: boolean) => void
   'window:isFullScreen': () => boolean
   'window:new': () => void
+  /** The files this window has open (reopened if its renderer crashes). */
+  'window:setOpenFiles': (paths: string[]) => void
+  /** Runs a native text-editing command in this window's focused text field. */
+  'window:editCommand': (action: EditCommand) => void
   'shell:openExternal': (url: string) => void
   'shell:showItemInFolder': (path: string) => void
+  /**
+   * Opens a file or folder with the system's default app. Returns an error message ('' on
+   * success); programs and scripts (.exe, .js, .app, .desktop...) are refused.
+   */
   'shell:openPath': (path: string) => string
   'defaultApp:status': () => DefaultAppStatus
   'defaultApp:set': () => DefaultAppStatus
@@ -63,6 +78,9 @@ export interface IpcEvents {
   'app:beforeQuit': () => void
   'window:fullScreenChanged': (on: boolean) => void
 }
+
+/** Native text-editing commands (the Edit menu acting on a focused text field). */
+export type EditCommand = 'undo' | 'redo' | 'cut' | 'copy' | 'paste' | 'delete' | 'selectAll'
 
 export type IpcChannel = keyof IpcApi
 export type IpcArgs<K extends IpcChannel> = Parameters<IpcApi[K]>

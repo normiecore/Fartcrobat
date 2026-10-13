@@ -7,7 +7,9 @@ import './styles/viewer.css'
 import { loadFeatures, registry } from './app/registry'
 import { getActiveDoc, useApp } from './app/store'
 import { handleShortcut, runCommand, scheduleMenuUpdate } from './app/commands'
-import { openNewDocument, openPaths, quitApp, refreshRecent, replaceDocumentBytes } from './app/actions'
+import { answerCloseRequest, openNewDocument, openPaths, refreshRecent, replaceDocumentBytes } from './app/actions'
+import { runMenuCommand, trackTextFieldFocus } from './app/editing'
+import { reportOpenFiles } from './app/windowState'
 import { invoke, onMainEvent } from './platform'
 import { authorName, coreFeature } from './core/coreFeature'
 import { AppShell } from './shell/AppShell'
@@ -55,8 +57,8 @@ async function boot() {
   window.addEventListener('blur', () => useApp.setState({ spaceHand: false }))
 
   onMainEvent('app:openFiles', (paths) => void openPaths(paths))
-  onMainEvent('menu:command', (id) => void runCommand(id))
-  onMainEvent('app:beforeQuit', () => void quitApp())
+  onMainEvent('menu:command', (id) => void runMenuCommand(id))
+  onMainEvent('app:beforeQuit', () => void answerCloseRequest())
   onMainEvent('window:fullScreenChanged', (on) => useApp.setState({ fullScreen: on, readMode: on ? useApp.getState().readMode : false }))
 
   // Window title and native menu follow the active document.
@@ -87,6 +89,8 @@ async function boot() {
     </StrictMode>
   )
   refreshChrome()
+  trackTextFieldFocus()
+  reportOpenFiles()
   void refreshRecent()
   const launch = await invoke('app:launchFiles').catch(() => [] as string[])
   if (launch.length) await openPaths(launch)

@@ -12,6 +12,7 @@
     "src/engine/**/*",
     "src/features/**/*",
     "src/preload/api.d.ts",
+    "src/main/util/**/*",
     "tests/engine/**/*"
   ],
   "exclude": ["src/features/*/main.ts", "src/features/*/main/**/*"]
