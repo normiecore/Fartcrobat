@@ -209,7 +209,7 @@ export default defineFeature({
     },
     {
       id: LINK_TOOL,
-      label: 'Add/edit link',
+      label: 'Add/Edit Web or Document Link',
       icon: Link2,
       cursor: 'crosshair',
       layer: LinkToolLayer,
