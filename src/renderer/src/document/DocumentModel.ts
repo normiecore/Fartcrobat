@@ -398,13 +398,7 @@ export class DocumentModel {
     const hit = this.state.search.hits[index]
     if (!hit) return
     this.set({ search: { ...this.state.search, active: index } })
-    let t: PageText
-    try {
-      t = await this.pageText(hit.page)
-    } catch (err) {
-      if (this.closed) return
-      throw err
-    }
+    const t = await this.pageText(hit.page)
     // Find Next, a newer search or an edit may have moved on while the text loaded.
     const s = this.state.search
     if (this.closed || s.hits[s.active] !== hit) return

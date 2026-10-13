@@ -1,8 +1,8 @@
 // DocumentModel change handling, driven by a fake engine (no worker, no DOM).
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { ChangeSet, DocInfo, JournalState } from '@shared/types'
 import { DocumentModel } from '@renderer/document/DocumentModel'
-import type { EngineClient } from '@renderer/engine/EngineClient'
+import { EngineCallError, type EngineClient } from '@renderer/engine/EngineClient'
 
 const journal = (position: number): JournalState => ({
   canUndo: position > 0,
@@ -67,6 +67,9 @@ class FakeEngine {
   private listeners = new Set<(cs: ChangeSet) => void>()
   pendingInfo: ((info: DocInfo) => void)[] = []
   facts: Omit<DocInfo, 'pages'> = docInfo('Original')
+  /** Makes facts() wait for fail() or terminate(), like info() always does. */
+  holdFacts = false
+  private waiting = new Set<(err: Error) => void>()
   onChanges(l: (cs: ChangeSet) => void) {
     this.listeners.add(l)
     return () => this.listeners.delete(l)
@@ -76,17 +79,30 @@ class FakeEngine {
       {},
       {
         get: (_t, method) => () => {
-          if (method === 'info') return new Promise<DocInfo>((resolve) => this.pendingInfo.push(resolve))
-          if (method === 'facts') return Promise.resolve(this.facts)
+          if (method === 'info') return this.wait<DocInfo>((resolve) => this.pendingInfo.push(resolve))
+          if (method === 'facts') return this.holdFacts ? this.wait(() => {}) : Promise.resolve(this.facts)
           return Promise.resolve(null)
         }
       }
     )
   }
+  private wait<T>(keep: (resolve: (v: T) => void) => void): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      keep(resolve)
+      this.waiting.add(reject)
+    })
+  }
   emit(cs: ChangeSet) {
     for (const l of this.listeners) l(cs)
   }
-  terminate() {}
+  /** Fails every call still waiting for a reply. */
+  fail(err: Error) {
+    for (const reject of this.waiting) reject(err)
+    this.waiting.clear()
+  }
+  terminate() {
+    this.fail(new EngineCallError('Document is closed', 'CLOSED'))
+  }
 }
 
 const tick = () => new Promise((r) => setTimeout(r, 0))
@@ -141,5 +157,28 @@ describe('DocumentModel change handling', () => {
     engine.emit(changes({ dirty: true }))
     await tick()
     expect(doc.state.dirty).toBe(true)
+  })
+
+  it('says nothing about refreshes a closed document no longer gets, and reports them while it is open', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      for (const closed of [true, false]) {
+        const engine = new FakeEngine()
+        engine.holdFacts = true
+        const doc = new DocumentModel(engine as unknown as EngineClient, docInfo('Original'), {
+          title: 'a.pdf',
+          filePath: '/a.pdf'
+        })
+        // A page was added (new DocInfo) and the file was saved (new facts) just before closing.
+        engine.emit(changes({ structure: true, all: true, journal: journal(1) }))
+        engine.emit(changes({ document: true, journal: journal(1) }))
+        if (closed) doc.close()
+        else engine.fail(new EngineCallError('MuPDF error: broken xref', 'MUPDF'))
+        await tick()
+        expect(errors).toHaveBeenCalledTimes(closed ? 0 : 2)
+      }
+    } finally {
+      errors.mockRestore()
+    }
   })
 })

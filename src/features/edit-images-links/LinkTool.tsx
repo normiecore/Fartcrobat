@@ -159,7 +159,7 @@ export function LinkToolLayer({ doc, pageIndex, geometry }: PageLayerProps) {
           else if (JSON.stringify(match) !== JSON.stringify(cur.data)) selectLink(doc, pageIndex, match)
         }
       })
-      .catch((err) => console.warn('Could not list links', err))
+      .catch((err) => !doc.isClosed && console.warn('Could not list links', err))
     return () => {
       alive = false
     }
