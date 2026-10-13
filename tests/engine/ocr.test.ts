@@ -12,6 +12,7 @@ import { effectiveDpi, samplePages } from '@features/ocr/engine'
 import { CidEncoder, cidToGidMapFlate, glyphLessFontProgram } from '@features/ocr/glyphless'
 import { OCR_MARK_KEY } from '@features/ocr/textLayer'
 import type { OcrLine } from '@features/ocr/types'
+import { searchPage } from '@renderer/document/textModel'
 import { openFixture, roundTrip, type OpenedEngine } from './helpers'
 
 const ocr = (e: OpenedEngine) => e.ops<typeof ocrOps>('ocr')
@@ -205,10 +206,10 @@ describe('ocr engine: invisible text layer', () => {
     const t = await text(e).page(0)
     expectRectClose(wordRect(t, 'Ελληνικά'), [140, 72, 230, 90])
     expectRectClose(wordRect(t, '日本語'), [320, 72, 370, 90])
-    // Search works on non-Latin text.
-    const st = e.session.page(0).toStructuredText('preserve-whitespace')
-    expect(st.search('Привет').length).toBe(1)
-    st.destroy()
+    // Find (Ctrl+F) works on non-Latin text.
+    expect(searchPage(t, 'привет')).toHaveLength(1)
+    expect(searchPage(t, 'ελληνικά')).toHaveLength(1)
+    expect(searchPage(t, '日本')).toHaveLength(1)
   })
 
   it('replaces an earlier OCR layer instead of adding a second one', async () => {

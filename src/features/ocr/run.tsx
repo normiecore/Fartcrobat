@@ -31,6 +31,8 @@ interface RunState {
   title: string
   phase: Phase
   pages: PageProgress[]
+  /** Progress of writing the text layer (applying phase), 0..1. */
+  applied: number
   language: string
   dpi: number
   cancel: (() => void) | null
@@ -44,6 +46,7 @@ export const useRun = create<RunState>(() => ({
   title: '',
   phase: 'starting',
   pages: [],
+  applied: 0,
   language: 'eng',
   dpi: 300,
   cancel: null,
@@ -98,6 +101,7 @@ function ProgressDialog({ close }: { close: () => void }) {
   else if (current) status = `Page ${current.page + 1} (${position} of ${total}): ${STATE_LABEL[current.state].toLowerCase()}`
   else status = 'Finishing…'
   const remaining = total - finished
+  const shown = run.phase === 'applying' ? run.applied : fraction
   return (
     <Dialog
       title="Recognizing text"
@@ -124,14 +128,14 @@ function ProgressDialog({ close }: { close: () => void }) {
         </span>
       </div>
       <div
-        className={`progress-bar ${run.phase === 'starting' || run.phase === 'applying' ? 'is-indeterminate' : ''}`}
+        className={`progress-bar ${run.phase === 'starting' ? 'is-indeterminate' : ''}`}
         role="progressbar"
         aria-label="Overall progress"
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={Math.round(fraction * 100)}
+        aria-valuenow={Math.round(shown * 100)}
       >
-        <div style={{ width: run.phase === 'recognizing' ? `${Math.round(fraction * 100)}%` : '30%' }} />
+        <div style={{ width: run.phase === 'starting' ? '30%' : `${Math.round(shown * 100)}%` }} />
       </div>
       <div className={`${P}-progress-status`} aria-live="polite" data-testid="ocr-progress-status">
         {status}
@@ -235,6 +239,7 @@ export async function recognizeText(doc: DocumentModel, req: RecognizeRequest): 
     language: req.language,
     dpi: req.dpi,
     pages: req.pages.map((page) => ({ page, state: 'waiting', fraction: 0 })),
+    applied: 0,
     cancel: () => controller.abort(),
     stop: () => {
       keep = true
@@ -265,7 +270,8 @@ export async function recognizeText(doc: DocumentModel, req: RecognizeRequest): 
     }
     if (doc.isClosed) return null
     useRun.setState({ phase: 'applying', cancel: null, stop: null })
-    const applied = run.results.length ? await ocrOpsOf(doc).addTextLayer(run.results) : []
+    const writer = doc.ops<typeof ocrOps>('ocr', { onProgress: (f) => useRun.setState({ applied: f }) })
+    const applied = run.results.length ? await writer.addTextLayer(run.results) : []
     if (applied.some((a) => a.words > 0)) markRecognized(doc)
     const { message, kind } = summarize(run, applied)
     if (message) {

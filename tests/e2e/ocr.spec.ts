@@ -45,12 +45,12 @@ test('scanned document: message bar, recognize text, search, select and copy', a
     expect((await activeDocState(page))?.search.hits).toBe(0)
     await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().cancelSearch())
 
-    // Recognize text from the Scan & OCR panel (opened from the bar's Options…).
+    // The bar's Options… opens the Scan & OCR panel; its Recognize text runs with one click.
     await bar.getByRole('button', { name: 'Options…' }).click()
     await expect(page.locator('.ui-panel-header h3', { hasText: 'Scan & OCR' })).toBeVisible()
     await expect(page.getByTestId('ocr-status')).toContainText('1 page has no searchable text')
     await shot(page, 'panel')
-    await page.getByTestId('ocr-recognize').click()
+    await bar.getByRole('button', { name: 'Recognize text' }).click()
     const progress = page.locator('.fc-ocr-progress')
     await expect(progress).toBeVisible()
     await shot(page, 'progress')
@@ -129,7 +129,10 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
   copyFileSync(join(ROOT, 'node_modules/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz'), langFile)
   const { app, page } = await launch()
   try {
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
+    await page.evaluate(async () => {
+      const prefs = await (window as any).api.invoke('prefs:set', { theme: 'dark' })
+      ;(window as any).__fartcrobat.useApp.setState({ prefs })
+    })
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     await openFile(page, fixturePath('ocr/scanned-pages.pdf'))
     await waitForRender(page)
@@ -207,6 +210,28 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     expect((await activeDocState(page))?.journal.undoLabel ?? null).toBeNull()
     expect(await pageText(0)).toBe('')
 
+    // Stop after the first page: the pages already recognized are kept, in one undo step.
+    await fire(page, 'ocr.recognize')
+    dialog = dialogTitled(page, 'Recognize Text')
+    await expect(dialog.getByRole('checkbox', { name: 'Skip pages that already have text' })).not.toBeChecked()
+    await page.getByTestId('ocr-dialog-recognize').click()
+    await expect(progress.locator('.fc-ocr-progress-page.is-done')).toHaveCount(1, { timeout: 60_000 })
+    await progress.getByRole('button', { name: /Stop and keep/ }).click()
+    await expect(progress).toBeHidden()
+    await expect(page.locator('.toast').filter({ hasText: /^Stopped\. Recognized \d+ words on [12] pages?\./ })).toBeVisible()
+    expect((await activeDocState(page))?.journal.undoLabel).toBe('Recognize Text')
+    const recognizedPages = await page.evaluate(async () =>
+      (await (window as any).__fartcrobat.getActiveDoc().ops('ocr').status()).filter((s: any) => s.hasOcrLayer).length
+    )
+    expect(recognizedPages).toBeGreaterThanOrEqual(1)
+    expect(recognizedPages).toBeLessThan(4)
+    await page.keyboard.press('Control+Z')
+    await expect.poll(async () => (await activeDocState(page))?.journal.undoLabel ?? null).toBeNull()
+    await dialogTitled(page, 'Recognize Text').waitFor({ state: 'detached' })
+    await fire(page, 'ocr.recognize')
+    await dialogTitled(page, 'Recognize Text').getByRole('checkbox', { name: 'Skip pages that already have text' }).check()
+    await dialogTitled(page, 'Recognize Text').getByRole('button', { name: 'Cancel' }).click()
+
     // Preferences > OCR: add a language file, make it the default.
     await app.evaluate(({ dialog }, p) => {
       ;(dialog as any).showOpenDialog = async () => ({ canceled: false, filePaths: [p] })
@@ -231,7 +256,7 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     await page.getByTestId('ocr-dialog-recognize').click()
     await expect(progress).toContainText('French')
     await expect(progress).toBeHidden({ timeout: 60_000 })
-    await expect(page.locator('.toast').filter({ hasText: /Recognized \d+ words on 1 page/ })).toBeVisible()
+    await expect(page.locator('.toast').filter({ hasText: /^Recognized \d+ words on 1 page/ })).toBeVisible()
     expect(await pageText(0)).toContain('Quarterly Report')
 
     // The Scan & OCR panel in the dark theme, with Remove recognized text.
@@ -244,6 +269,16 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     await expect(page.getByTestId('ocr-status')).not.toContainText('recognized text')
     expect(await pageText(0)).toBe('')
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Remove Recognized Text')
+
+    // Removing the added language falls back to English.
+    await fire(page, 'app.preferences')
+    const prefs2 = dialogTitled(page, 'Preferences')
+    await prefs2.getByRole('button', { name: 'OCR', exact: true }).click()
+    await prefs2.getByRole('button', { name: 'Remove French' }).click()
+    await expect(prefs2.getByRole('list', { name: 'Recognition languages' })).not.toContainText('French')
+    await expect(prefs2.getByText('French is no longer installed; English is used.')).toBeVisible()
+    await expect(prefs2.getByRole('combobox', { name: 'Document language' })).toHaveValue('eng')
+    await prefs2.getByRole('button', { name: 'Done' }).click()
   } finally {
     await app.close()
   }

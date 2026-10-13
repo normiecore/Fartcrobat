@@ -9,34 +9,71 @@ import type { PageOcrStatus } from './types'
 
 const P = 'fc-ocr'
 
-/** Page statuses, refreshed whenever the document changes. */
+/** Pages whose status is read per engine call, so page renders get a turn in between. */
+const STATUS_CHUNK = 25
+
+/**
+ * Page statuses, kept up to date: all pages when the panel opens or the page structure changes,
+ * only the changed pages after an edit.
+ */
 function usePageStatuses(doc: DocumentModel): PageOcrStatus[] | null {
-  const [tick, setTick] = useState(0)
   const [statuses, setStatuses] = useState<PageOcrStatus[] | null>(null)
   const pageCount = useDocState(doc, (s) => s.info.pageCount)
-  // Every engine reply carries a change set; only real page changes need a new status.
-  useEffect(
-    () =>
-      doc.onChange((cs) => {
-        if (cs.all || cs.structure || cs.pages.length) setTick((t) => t + 1)
-      }),
-    [doc]
-  )
   useEffect(() => {
     let alive = true
-    const timer = window.setTimeout(() => {
-      ocrOpsOf(doc)
-        .status()
-        .then((s) => alive && setStatuses(s))
-        .catch((err) => {
-          if (alive && !doc.isClosed) console.warn('Could not read the page status', err)
-        })
-    }, 150)
+    let current: PageOcrStatus[] = []
+    const dirty = new Set<number>()
+    let all = true
+    let busy = false
+    let timer = 0
+    const refresh = async () => {
+      if (busy || !alive) return
+      busy = true
+      try {
+        while (alive && (all || dirty.size)) {
+          const n = doc.pageCount
+          let pages: number[]
+          if (all) {
+            all = false
+            dirty.clear()
+            pages = [...Array(n).keys()]
+            current = []
+          } else {
+            pages = [...dirty].filter((p) => p < n)
+            dirty.clear()
+          }
+          for (let i = 0; i < pages.length && alive && !all; i += STATUS_CHUNK) {
+            const got = await ocrOpsOf(doc).status(pages.slice(i, i + STATUS_CHUNK))
+            const byPage = new Map(current.map((st) => [st.page, st]))
+            for (const st of got) byPage.set(st.page, st)
+            current = [...byPage.values()].filter((st) => st.page < doc.pageCount).sort((a, b) => a.page - b.page)
+          }
+          if (alive && !all && current.length === doc.pageCount) setStatuses(current)
+        }
+      } catch (err) {
+        if (alive && !doc.isClosed) console.warn('Could not read the page status', err)
+      } finally {
+        busy = false
+      }
+    }
+    const schedule = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => void refresh(), 150)
+    }
+    // Every engine reply carries a change set; only real page changes need a new status.
+    const off = doc.onChange((cs) => {
+      if (cs.all || cs.structure) all = true
+      else if (cs.pages.length) for (const p of cs.pages) dirty.add(p)
+      else return
+      schedule()
+    })
+    schedule()
     return () => {
       alive = false
       window.clearTimeout(timer)
+      off()
     }
-  }, [doc, tick, pageCount])
+  }, [doc, pageCount])
   return statuses
 }
 

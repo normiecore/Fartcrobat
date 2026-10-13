@@ -150,12 +150,13 @@ export function RecognizeFields({ doc, form }: { doc: DocumentModel; form: Recog
       <Field label="Resolution" hint="Higher resolutions read small print better but take longer.">
         <DpiSelect />
       </Field>
-      <Field label="Output">
+      <div className="ui-field">
+        <span className="ui-field-label">Output</span>
         <span className={`${P}-output`}>
           <b>Searchable image</b> — the pages look exactly the same; an invisible text layer makes them searchable and
           selectable.
         </span>
-      </Field>
+      </div>
       <Checkbox
         checked={skip}
         onChange={(v) => void setOcrSettings({ skipPagesWithText: v })}
