@@ -21,6 +21,24 @@ export function charRect(t: PageText, i: number): Rect {
   return quadToRect(charQuad(t, i))
 }
 
+// A character outside the BMP (emoji, CJK Extension B...) takes two UTF-16 units of the text;
+// ranges must never start or end between them.
+
+/** True when index i falls between the two units of one character. */
+function splitsChar(text: string, i: number): boolean {
+  return i > 0 && text.codePointAt(i - 1)! > 0xffff
+}
+
+/** Index just after the character starting at i. */
+function charEnd(text: string, i: number): number {
+  return i + (text.codePointAt(i)! > 0xffff ? 2 : 1)
+}
+
+/** The character that ends just before index i (i > 0). */
+function charBefore(text: string, i: number): string {
+  return text.slice(splitsChar(text, i - 1) ? i - 2 : i - 1, i)
+}
+
 function lineIndexOf(t: PageText, charIndex: number): number {
   let lo = 0
   let hi = t.lines.length - 1
@@ -130,11 +148,12 @@ export function charIndexAt(t: PageText, p: Point): number {
 export function wordAt(t: PageText, index: number): { start: number; end: number } | null {
   if (index < 0 || index >= t.text.length) return null
   const isWord = (c: string) => /[\p{L}\p{N}_'’-]/u.test(c)
-  if (!isWord(t.text[index])) return { start: index, end: index + 1 }
+  if (splitsChar(t.text, index)) index--
   let s = index
-  let e = index + 1
-  while (s > 0 && isWord(t.text[s - 1])) s--
-  while (e < t.text.length && isWord(t.text[e])) e++
+  let e = charEnd(t.text, index)
+  if (!isWord(t.text.slice(s, e))) return { start: s, end: e }
+  while (s > 0 && isWord(charBefore(t.text, s))) s -= charBefore(t.text, s).length
+  while (e < t.text.length && isWord(t.text.slice(e, charEnd(t.text, e)))) e = charEnd(t.text, e)
   return { start: s, end: e }
 }
 
@@ -283,8 +302,8 @@ export function searchPage(t: PageText, query: string, opts: SearchOptions = {})
     const e = s + q.length
     from = s + 1
     if (opts.wholeWords) {
-      const before = s > 0 ? n.text[s - 1] : ' '
-      const after = e < n.text.length ? n.text[e] : ' '
+      const before = s > 0 ? charBefore(n.text, s) : ' '
+      const after = e < n.text.length ? n.text.slice(e, charEnd(n.text, e)) : ' '
       if (WORD.test(before) || WORD.test(after)) continue
     }
     hits.push({ page: t.pageIndex, start: n.start[s], end: n.end[e - 1] })
@@ -295,9 +314,13 @@ export function searchPage(t: PageText, query: string, opts: SearchOptions = {})
 /** A short excerpt around a hit, for result lists. */
 export function hitContext(t: PageText, hit: SearchHit, radius = 40): { before: string; match: string; after: string } {
   const clean = (s: string) => s.replace(/\s+/g, ' ')
+  let a = Math.max(0, hit.start - radius)
+  let b = hit.end + radius
+  if (splitsChar(t.text, a)) a--
+  if (splitsChar(t.text, b)) b++
   return {
-    before: clean(t.text.slice(Math.max(0, hit.start - radius), hit.start)).trimStart(),
+    before: clean(t.text.slice(a, hit.start)).trimStart(),
     match: clean(t.text.slice(hit.start, hit.end)),
-    after: clean(t.text.slice(hit.end, hit.end + radius)).trimEnd()
+    after: clean(t.text.slice(hit.end, b)).trimEnd()
   }
 }
