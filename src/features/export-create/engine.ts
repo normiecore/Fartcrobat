@@ -151,11 +151,19 @@ export default defineOps('export-create', {
   picture(
     s,
     pageIndex: number,
-    opts: { dpi: number; text: boolean; clip?: [number, number, number, number]; format?: 'auto' | 'jpeg'; quality?: number }
+    opts: {
+      dpi: number
+      text: boolean
+      clip?: [number, number, number, number]
+      format?: 'auto' | 'jpeg'
+      quality?: number
+      /** Lines to leave out with the text (underlines drawn by the text boxes themselves). */
+      skipLines?: [number, number, number, number][]
+    }
   ) {
     let pix
     try {
-      pix = renderArea(s, pageIndex, opts.dpi, { text: opts.text, clip: opts.clip })
+      pix = renderArea(s, pageIndex, opts.dpi, { text: opts.text, clip: opts.clip, skipLines: opts.skipLines })
     } catch (err) {
       throw renderError(err, pageIndex, opts.dpi)
     }

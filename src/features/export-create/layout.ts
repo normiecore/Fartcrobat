@@ -154,6 +154,8 @@ export interface LPage {
   background?: XImage
   /** The page has pictures, artwork, rules or shading (worth a background picture). */
   graphics: boolean
+  /** Underlines and strike-through lines of the text, to leave out of a background picture. */
+  decorations: [number, number, number, number][]
 }
 
 export interface LayoutOptions {
@@ -1201,7 +1203,7 @@ export function analyzePage(content: PageContent, bodySize: number, opts: Layout
   // Indents were measured from the leftmost text; express them from the margin.
   for (const el of elements) if (el.kind === 'paragraph') el.indent = Math.max(0, el.indent + left - margins.left)
   const graphics = content.images.length > 0 || content.rules.length > 0 || content.fills.length > 0 || content.drawings.length > 0
-  return { index: content.index, width: content.width, height: content.height, margins, elements, graphics }
+  return { index: content.index, width: content.width, height: content.height, margins, elements, graphics, decorations: content.decorations ?? [] }
 }
 
 /**

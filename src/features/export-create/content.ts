@@ -110,6 +110,8 @@ export interface PageContent {
   fills: XFill[]
   drawings: XDrawing[]
   links: XLink[]
+  /** Underlines and strike-through lines of the text (the runs carry them as styles). */
+  decorations: Box[]
 }
 
 export const FONT_BOLD = 1

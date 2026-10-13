@@ -811,7 +811,8 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
   const decorations = decorateChars(textLines, vectors.rules)
   const rules = vectors.rules.filter((r) => !decorations.has(r))
   const lines = buildLines(textLines)
-  return { index: pageIndex, width, height, lines, images, rules, fills: vectors.fills, drawings: vectors.drawings, links }
+  const decorationBoxes = [...decorations].map((r): [number, number, number, number] => [r.x0, r.y0 - r.width / 2, r.x1, r.y1 + r.width / 2])
+  return { index: pageIndex, width, height, lines, images, rules, fills: vectors.fills, drawings: vectors.drawings, links, decorations: decorationBoxes }
 }
 
 // ---- rendering without text (PowerPoint backgrounds) --------------------------------------
@@ -820,12 +821,24 @@ export function extractPageContent(s: Session, pageIndex: number, opts: ExtractO
  * A device that passes everything except visible text to `target`: the page as a background
  * picture for editable text boxes. Text that only clips or builds a mask is kept.
  */
-export function withoutTextDevice(m: Mupdf, target: MuPDF.Device): MuPDF.Device {
+export function withoutTextDevice(m: Mupdf, target: MuPDF.Device, skipLines: Rect[] = []): MuPDF.Device {
   let maskDepth = 0
   const t = target as any
+  /** Underlines and strike-through lines of the text are left out too (the text boxes draw their own). */
+  const skip = (path: MuPDF.Path, ctm: Matrix) => {
+    if (!skipLines.length || maskDepth > 0) return false
+    const b = walkPath(path, ctm).bbox
+    if (!b || b[3] - b[1] > 3.5) return false
+    const w = Math.max(0.1, b[2] - b[0])
+    return skipLines.some((r) => Math.abs((b[1] + b[3]) / 2 - (r[1] + r[3]) / 2) <= 1.5 && Math.min(b[2], r[2]) - Math.max(b[0], r[0]) >= 0.8 * w)
+  }
   const callbacks: Record<string, (...args: any[]) => any> = {
-    fillPath: (p, eo, ctm, cs, color, alpha) => t.fillPath(p, eo, ctm, cs, color, alpha),
-    strokePath: (p, st, ctm, cs, color, alpha) => t.strokePath(p, st, ctm, cs, color, alpha),
+    fillPath: (p, eo, ctm, cs, color, alpha) => {
+      if (!skip(p, ctm)) t.fillPath(p, eo, ctm, cs, color, alpha)
+    },
+    strokePath: (p, st, ctm, cs, color, alpha) => {
+      if (!skip(p, ctm)) t.strokePath(p, st, ctm, cs, color, alpha)
+    },
     clipPath: (p, eo, ctm) => t.clipPath(p, eo, ctm),
     clipStrokePath: (p, st, ctm) => t.clipStrokePath(p, st, ctm),
     fillText: (text, ctm, cs, color, alpha) => {
@@ -867,7 +880,7 @@ export function renderArea(
   s: Session,
   pageIndex: number,
   dpi: number,
-  opts: { text?: boolean; grayscale?: boolean; clip?: Rect } = {}
+  opts: { text?: boolean; grayscale?: boolean; clip?: Rect; skipLines?: Rect[] } = {}
 ): MuPDF.Pixmap {
   const m = s.mupdf
   const page = s.page(pageIndex)
@@ -891,7 +904,7 @@ export function renderArea(
   const pix = new m.Pixmap(opts.grayscale ? m.ColorSpace.DeviceGray : m.ColorSpace.DeviceRGB, region, false)
   pix.clear(255)
   const draw = new m.DrawDevice([scale, 0, 0, scale, -b[0] * scale, -b[1] * scale], pix)
-  const dev = opts.text === false ? withoutTextDevice(m, draw) : draw
+  const dev = opts.text === false ? withoutTextDevice(m, draw, opts.skipLines) : draw
   try {
     page.runPageContents(dev, m.Matrix.identity)
     page.runPageAnnots(dev, m.Matrix.identity)

@@ -76,7 +76,7 @@ async function pageBackgrounds(engine: ExportEngine, layout: DocLayout, job: Exp
     const page = layout.pages[k]
     if (!all && !page.graphics) continue
     job.onProgress?.(from + ((to - from) * k) / n, `Drawing page ${k + 1} of ${n}…`)
-    const pic = await engine.picture(page.index, { dpi: PICTURE_DPI, text: false, format: 'auto' })
+    const pic = await engine.picture(page.index, { dpi: PICTURE_DPI, text: false, format: 'auto', skipLines: page.decorations })
     page.background = { x0: 0, y0: 0, x1: page.width, y1: page.height, block: -1, data: pic.data, mime: pic.mime, width: pic.width, height: pic.height }
   }
 }
@@ -124,7 +124,13 @@ export async function runExport(engine: ExportEngine, job: ExportJob): Promise<E
       for (let k = 0; k < n; k++) {
         check(job)
         job.onProgress?.(0.4 + (0.45 * k) / n, `Drawing slide ${k + 1} of ${n}…`)
-        const pic = await engine.picture(job.pages[k], { dpi: editable ? PICTURE_DPI : 200, text: !editable, format: editable ? 'auto' : 'jpeg', quality: 88 })
+        const pic = await engine.picture(job.pages[k], {
+          dpi: editable ? PICTURE_DPI : 200,
+          text: !editable,
+          format: editable ? 'auto' : 'jpeg',
+          quality: 88,
+          skipLines: editable ? layout.pages[k].decorations : undefined
+        })
         pictures.push({ data: pic.data, mime: pic.mime })
         if (!editable) {
           // Page sizes for the slides.
@@ -206,5 +212,5 @@ export async function runExport(engine: ExportEngine, job: ExportJob): Promise<E
 }
 
 function emptyContent(index: number): PageContent {
-  return { index, width: 612, height: 792, lines: [], images: [], rules: [], fills: [], drawings: [], links: [] }
+  return { index, width: 612, height: 792, lines: [], images: [], rules: [], fills: [], drawings: [], links: [], decorations: [] }
 }
