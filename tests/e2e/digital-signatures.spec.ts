@@ -337,6 +337,20 @@ test('sign an existing signature field, creating the Digital ID from the sign di
     await page.waitForTimeout(300)
     await signedField.screenshot({ path: `${SHOTS}/digital-signatures-field-appearance.png` })
 
+    // Right-click the signature: Acrobat's signature context menu. Clear Signature is undoable.
+    await signedField.click({ button: 'right' })
+    await expect(page.getByRole('menuitem', { name: 'Show Signature Properties…' })).toBeVisible()
+    await page.screenshot({ path: `${SHOTS}/digital-signatures-context-menu.png` })
+    await page.getByRole('menuitem', { name: 'Clear Signature' }).click()
+    const confirmDlg = dialog(page, 'Clear signature?')
+    await confirmDlg.getByRole('button', { name: 'Clear Signature' }).click()
+    await expect(rightPanel.locator('.fc-digital-signatures-entry.is-unsigned')).toContainText('Approver')
+    await expect(page.locator('.fc-digital-signatures-bar')).toHaveCount(0)
+    expect((await docInfo(page))?.dirty).toBe(true)
+    await runCommand(page, 'edit.undo')
+    await expect(rightPanel.locator('.fc-digital-signatures-entry')).toContainText('Signed by Ana Approver')
+    expect((await docInfo(page))?.dirty).toBe(false)
+
     // Tamper with one byte inside the signed range and open the copy: the signature is invalid.
     const bytes = readFileSync(signedPath)
     const m = /\/ByteRange\s*\[\s*(\d+)\s+(\d+)/.exec(bytes.toString('latin1'))!

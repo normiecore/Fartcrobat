@@ -70,11 +70,10 @@ function contextItems(doc: DocumentModel, pageIndex: number, point: [number, num
   if (!report) return []
   const inside = (r: [number, number, number, number]) => point[0] >= r[0] && point[0] <= r[2] && point[1] >= r[1] && point[1] <= r[3]
   const signed = report.signatures.find((s) => s.page === pageIndex && !s.invisible && inside(s.rect))
-  if (signed) return [{ id: 'dsig-sep', label: '', separator: true }, ...signatureMenuItems(doc, signed, report.locked)]
+  if (signed) return signatureMenuItems(doc, signed, report.locked)
   const unsigned = report.unsigned.find((f) => f.page === pageIndex && !f.invisible && inside(f.rect))
   if (unsigned) {
     return [
-      { id: 'dsig-sep', label: '', separator: true },
       {
         id: 'dsig-sign-field',
         label: 'Sign Document…',

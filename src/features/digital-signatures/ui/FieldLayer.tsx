@@ -1,7 +1,9 @@
-import { registry, type PageLayerProps } from '@renderer/sdk'
+import { FileSignature } from 'lucide-react'
+import { registry, showContextMenu, type PageLayerProps } from '@renderer/sdk'
 import { signatureStatus } from '../status'
 import { startSigning } from './flow'
 import { openSignatureProperties } from './Properties'
+import { signatureMenuItems } from './SignaturesPanel'
 import { useDocSignatures, useTrustedSet } from './store'
 
 /** forms-fill handles clicks on unsigned signature fields (it dispatches 'fartcrobat:sign-field'). */
@@ -34,6 +36,11 @@ export function SignatureFieldLayer({ doc, pageIndex, geometry }: PageLayerProps
             aria-label={`Signature ${s.fieldName}: ${st.title}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => openSignatureProperties(doc, s.fieldName)}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              showContextMenu(e.clientX, e.clientY, signatureMenuItems(doc, s, report.locked))
+            }}
           />
         )
       })}
@@ -48,6 +55,19 @@ export function SignatureFieldLayer({ doc, pageIndex, geometry }: PageLayerProps
             aria-label={`Sign ${f.name}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => void startSigning(doc, { mode: 'sign', target: { kind: 'field', name: f.name } })}
+            onContextMenu={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              showContextMenu(e.clientX, e.clientY, [
+                {
+                  id: 'sign',
+                  label: 'Sign Document…',
+                  icon: FileSignature,
+                  disabled: report.locked,
+                  run: () => void startSigning(doc, { mode: 'sign', target: { kind: 'field', name: f.name } })
+                }
+              ])
+            }}
           >
             <span>Click to sign</span>
           </button>
