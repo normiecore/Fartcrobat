@@ -16,6 +16,7 @@ import {
 import {
   defineFeature,
   displayShortcut,
+  showError,
   useApp,
   type CommandContext,
   type CommandDefinition,
@@ -300,6 +301,8 @@ export default defineFeature({
   settings: [{ id: 'reading', label: 'Reading', order: 70, component: ReadingSettings }],
   globals: [NavigationGlobal],
   onDocumentOpen: (d) => {
-    void applyInitialView(d).catch((err) => console.warn('Could not apply the initial view', err))
+    void applyInitialView(d).catch((err) => {
+      if (!d.isClosed) showError(err, "Could not apply the document's initial view")
+    })
   }
 })

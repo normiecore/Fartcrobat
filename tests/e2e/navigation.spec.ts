@@ -535,6 +535,19 @@ test('read out loud and the View menu entries', async () => {
     await runCommand(page, 'view.showHide.navigationPanes')
     await expect(page.locator('.shell-rightpanel', { hasText: 'Bookmarks' })).toBeVisible()
 
+    // hamburger menu: View > Read Out Loud and View > Show/Hide
+    await page.getByRole('button', { name: 'Menu' }).click()
+    await page.getByRole('menuitem', { name: 'View', exact: true }).hover()
+    await page.getByRole('menuitem', { name: 'Read Out Loud', exact: true }).hover()
+    await expect(page.getByRole('menuitem', { name: /Read To End of Document/ })).toBeVisible()
+    await shot(page, 'menu-read-out-loud')
+    await page.getByRole('menuitem', { name: 'Show/Hide', exact: true }).hover()
+    await expect(page.getByRole('menuitem', { name: /Page Thumbnails/ })).toBeVisible()
+    await shot(page, 'menu-show-hide')
+    await page.getByRole('menuitem', { name: /Page Thumbnails/ }).click()
+    await expect(page.locator('.shell-rightpanel', { hasText: 'Page Thumbnails' })).toBeVisible()
+    await runCommand(page, 'view.showHide.bookmarks')
+
     const voices = await page.evaluate(
       () =>
         new Promise<number>((resolve) => {

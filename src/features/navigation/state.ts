@@ -77,7 +77,7 @@ export function loadNavSettings(): Promise<void> {
           reading: { ...DEFAULT_READING, ...((reading as Partial<ReadingSettings> | undefined) ?? {}) }
         })
       } catch (err) {
-        console.warn('Could not load navigation settings', err)
+        showError(err, 'Could not load your navigation and reading settings')
       } finally {
         useNavSettings.setState({ loaded: true })
       }

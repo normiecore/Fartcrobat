@@ -109,7 +109,7 @@ export async function refreshInfo(doc: DocumentModel) {
     const info = await doc.core.doc.info()
     if (!doc.isClosed) doc.set({ info })
   } catch (err) {
-    console.warn('Could not refresh document info', err)
+    showError(err, 'Could not refresh the document information')
   }
 }
 
