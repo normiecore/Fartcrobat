@@ -7,10 +7,10 @@ const popups: { close: () => void; dialogs: number }[] = []
 const openDialogs = () => document.querySelectorAll('.ui-dialog[aria-modal="true"]').length
 
 /**
- * Escape closes the innermost open popup (menu, submenu, colour picker...) and does nothing else.
- * main.tsx registers this before any other key listener, so neither the features' own Escape
- * handling nor the app's shortcuts (which would drop the current tool) see that key press. A
- * dialog opened over the popup keeps its Escape.
+ * Escape closes the innermost open popup (a menu with its submenus, a colour picker...) and does
+ * nothing else. main.tsx registers this before any other key listener: one added when the popup
+ * opens would run after the features' own Escape handling, which may already have left the tool.
+ * A dialog opened over the popup keeps its Escape.
  */
 export function handlePopupEscape(e: KeyboardEvent) {
   const top = popups[popups.length - 1]
@@ -71,9 +71,7 @@ export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose
               {item.shortcut && <span className="ui-menu-shortcut">{item.shortcut}</span>}
               {item.submenu && <ChevronRight size={14} />}
             </button>
-            {item.submenu && openSub === item.id && (
-              <Submenu items={item.submenu} onClose={onClose} onEscape={() => setOpenSub(null)} />
-            )}
+            {item.submenu && openSub === item.id && <Submenu items={item.submenu} onClose={onClose} />}
           </div>
         )
       )}
@@ -83,13 +81,11 @@ export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose
 
 /**
  * A submenu opened to the right of its item. It flips to the left when there is no room on the
- * right and moves up (or scrolls) so it never extends past the bottom of the window. Escape closes
- * only the submenu.
+ * right and moves up (or scrolls) so it never extends past the bottom of the window.
  */
-function Submenu({ items, onClose, onEscape }: { items: ContextMenuItem[]; onClose: () => void; onEscape: () => void }) {
+function Submenu({ items, onClose }: { items: ContextMenuItem[]; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const [style, setStyle] = useState<React.CSSProperties>({ visibility: 'hidden' })
-  usePopupEscape(true, onEscape)
   useLayoutEffect(() => {
     const el = ref.current
     const parent = el?.parentElement

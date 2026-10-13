@@ -64,13 +64,9 @@ test('Escape closes the innermost popup first and nothing else sees it', async (
     })
     const escapesSeen = () => page.evaluate(() => (window as any).__escapes as number)
 
-    // A submenu closes on its own first.
     await page.locator('.shell-menu-btn').click()
     await menuItem(page, /^View$/).hover()
     await expect(page.locator('.ui-submenu')).toBeVisible()
-    await page.keyboard.press('Escape')
-    await expect(page.locator('.ui-submenu')).toHaveCount(0)
-    await expect(menuItem(page, /^View$/)).toBeVisible()
 
     // A context menu opened over the menu closes alone.
     await page.evaluate(() =>
@@ -79,7 +75,7 @@ test('Escape closes the innermost popup first and nothing else sees it', async (
     await expect(menuItem(page, 'Only item')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(menuItem(page, 'Only item')).toHaveCount(0)
-    await expect(menuItem(page, /^View$/)).toBeVisible()
+    await expect(page.locator('.ui-submenu')).toBeVisible()
     expect(await escapesSeen()).toBe(0)
 
     // A dialog opened over the menu keeps its Escape.
@@ -89,6 +85,7 @@ test('Escape closes the innermost popup first and nothing else sees it', async (
     await expect(page.locator('.ui-dialog')).toHaveCount(0)
     await expect(menuItem(page, /^View$/)).toBeVisible()
 
+    // The menu closes with its submenu.
     const seen = await escapesSeen()
     await page.keyboard.press('Escape')
     await expect(page.locator('.ui-menu')).toHaveCount(0)
