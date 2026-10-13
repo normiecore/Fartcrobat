@@ -6,7 +6,7 @@
  * (descent 0) to 1 em above it (ascent 1000), so a word drawn at font size H with horizontal
  * scaling covers exactly the box it was fitted to, in MuPDF and in other viewers.
  *
- * The embedded TrueType program is generated here (two empty glyphs); all CIDs map to glyph 1
+ * The embedded TrueType program is generated here (two glyphs, no outlines); all CIDs map to glyph 1
  * through CIDToGIDMap because some viewers refuse to select text drawn with glyph 0 (.notdef).
  */
 
@@ -90,7 +90,7 @@ function nameTable(): Uint8Array {
 
 let fontProgram: Uint8Array | null = null
 
-/** A minimal, valid TrueType font with two empty glyphs (500 wide, ascent 1000, descent 0). */
+/** A minimal, valid TrueType font with two glyphs without outlines (500 wide, ascent 1000, descent 0). */
 export function glyphLessFontProgram(): Uint8Array {
   if (fontProgram) return fontProgram
   const tables: Record<string, Uint8Array> = {}
@@ -130,8 +130,10 @@ export function glyphLessFontProgram(): Uint8Array {
     .done()
   tables['maxp'] = new Writer().u32(0x00010000).u16(2).u16(0).u16(0).u16(0).u16(0).u16(1).zeros(16).done()
   tables['hmtx'] = new Writer().u16(GLYPH_WIDTH).i16(0).u16(GLYPH_WIDTH).i16(0).done()
-  tables['loca'] = new Writer().u16(0).u16(0).u16(0).done()
-  tables['glyf'] = new Uint8Array(0)
+  // Glyph 0 (.notdef) is empty; glyph 1 is a simple glyph without contours (no outline), so the
+  // glyf table is not empty (some font checkers reject an empty one).
+  tables['loca'] = new Writer().u16(0).u16(0).u16(6).done()
+  tables['glyf'] = new Writer().i16(0).i16(0).i16(0).i16(0).i16(0).u16(0).done()
   // cmap: a single empty format 4 subtable (CIDToGIDMap selects the glyphs).
   tables['cmap'] = new Writer()
     .u16(0)
