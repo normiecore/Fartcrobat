@@ -1,0 +1,650 @@
+/* Fill & Sign */
+
+/* ---- page layer ---- */
+.fc-fill-sign-layer {
+  pointer-events: none;
+}
+.fc-fill-sign-layer.is-creating {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+.fc-fill-sign-layer.is-creating.is-text,
+.fc-fill-sign-layer.is-creating.is-date {
+  cursor: text;
+}
+/* Items stay reachable when they sit on a form field (the form field layer is stacked above). */
+.fc-fill-sign-item {
+  position: absolute;
+  z-index: 1;
+  pointer-events: auto;
+  cursor: move;
+  border-radius: 2px;
+  outline: none;
+}
+.fc-fill-sign-item:hover:not(.is-selected):not(.is-editing) {
+  box-shadow: 0 0 0 1px rgba(20, 115, 230, 0.55);
+  background: rgba(20, 115, 230, 0.05);
+}
+.fc-fill-sign-item:focus-visible {
+  box-shadow: var(--focus);
+}
+.fc-fill-sign-item.is-locked {
+  cursor: default;
+}
+.fc-fill-sign-frame {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border: 1.5px solid var(--accent);
+  border-radius: 3px;
+}
+.fc-fill-sign-frame.is-dragging {
+  border-style: dashed;
+}
+.fc-fill-sign-handle {
+  position: absolute;
+  z-index: 2;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: var(--accent);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.fc-fill-sign-handle.is-horizontal {
+  cursor: ew-resize;
+}
+.fc-fill-sign-handle.is-vertical {
+  cursor: ns-resize;
+}
+.fc-fill-sign-preview {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  transform-origin: 0 0;
+}
+.fc-fill-sign-preview.is-inverted,
+.fc-fill-sign-textarea.is-inverted {
+  filter: invert(1) hue-rotate(180deg);
+}
+.fc-fill-sign-ghost {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  opacity: 0.45;
+  overflow: visible;
+}
+.fc-fill-sign-place {
+  cursor: crosshair;
+}
+.fc-fill-sign-ghost-signature {
+  position: absolute;
+  pointer-events: none;
+  transform-origin: 0 0;
+  opacity: 0.75;
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+  user-select: none;
+}
+.fc-fill-sign-ghost-signature.is-in-field {
+  opacity: 0.9;
+  outline-color: transparent;
+}
+/* A signature field the signature snaps into while it is being placed. */
+.fc-fill-sign-place-field {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid var(--accent);
+  border-radius: 2px;
+  background: rgba(20, 115, 230, 0.08);
+}
+
+/* ---- inline text editor ---- */
+.fc-fill-sign-editor {
+  position: absolute;
+  transform-origin: 0 0;
+  z-index: 5;
+}
+.fc-fill-sign-textarea {
+  position: absolute;
+  left: 0;
+  display: block;
+  margin: 0;
+  padding: 0;
+  border: none;
+  outline: 1px dashed var(--accent);
+  outline-offset: 2px;
+  background: rgba(20, 115, 230, 0.06);
+  resize: none;
+  overflow: hidden;
+  white-space: pre;
+  field-sizing: content;
+  user-select: text;
+  caret-color: var(--accent);
+  letter-spacing: 0;
+  font-kerning: none;
+  box-shadow: none !important;
+}
+.fc-fill-sign-textarea.is-frozen {
+  outline-color: transparent;
+  background: transparent;
+  caret-color: transparent;
+}
+
+/* ---- mini toolbar above the selected item ---- */
+.fc-fill-sign-minibar {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  height: 36px;
+  padding: 3px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+  white-space: nowrap;
+}
+.fc-fill-sign-minibar button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+}
+.fc-fill-sign-minibar button:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.fc-fill-sign-minibar button:disabled {
+  opacity: 0.4;
+}
+.fc-fill-sign-minibar button.is-danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+.fc-fill-sign-minibar button.is-on {
+  color: var(--accent-text);
+  background: var(--bg-active);
+}
+.fc-fill-sign-minibar-wide {
+  min-width: 40px !important;
+}
+.fc-fill-sign-minibar-sep {
+  width: 1px;
+  height: 20px;
+  margin: 0 3px;
+  background: var(--border);
+}
+.fc-fill-sign-colordot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(128, 128, 128, 0.6);
+}
+
+/* ---- contextual toolbar ---- */
+.fc-fill-sign-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: fc-fill-sign-bar;
+}
+.fc-fill-sign-toolbar > :not(.fc-fill-sign-hint):not(.fc-fill-sign-spacer) {
+  flex-shrink: 0;
+}
+.fc-fill-sign-signbtn {
+  gap: 6px;
+}
+.fc-fill-sign-signbtn > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.fc-fill-sign-size {
+  min-width: 42px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-fill-sign-colors,
+.fc-fill-sign-inks {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+.fc-fill-sign-ink {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(128, 128, 128, 0.5);
+}
+.fc-fill-sign-ink.is-active {
+  box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--accent);
+}
+.fc-fill-sign-hint {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 8px;
+  font-size: var(--fs-sm);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-fill-sign-spacer {
+  flex: 1;
+}
+.fc-fill-sign-place-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.fc-fill-sign-toolbar > .fc-fill-sign-place-text {
+  flex-shrink: 1;
+}
+/* Narrow windows (or a side panel open): keep every control reachable without scrolling. */
+@container fc-fill-sign-bar (max-width: 780px) {
+  .fc-fill-sign-hint {
+    display: none;
+  }
+}
+@container fc-fill-sign-bar (max-width: 660px) {
+  .fc-fill-sign-signbtn-label,
+  .fc-fill-sign-place-long {
+    display: none;
+  }
+}
+@container fc-fill-sign-bar (max-width: 560px) {
+  .fc-fill-sign-size,
+  .fc-fill-sign-close {
+    display: none;
+  }
+  .fc-fill-sign-toolbar > .shell-sep {
+    margin: 0 2px;
+  }
+}
+.fc-fill-sign-place-thumb {
+  height: 26px;
+  max-width: 120px;
+  object-fit: contain;
+  padding: 2px 6px;
+  margin-right: 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* ---- tool panel ---- */
+.fc-fill-sign-panel {
+  display: flex;
+  flex-direction: column;
+}
+.fc-fill-sign-bigbtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 4px 0 6px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elev);
+  text-align: left;
+}
+.fc-fill-sign-bigbtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.fc-fill-sign-bigbtn:disabled {
+  opacity: 0.5;
+}
+.fc-fill-sign-bigbtn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #7a4fe0;
+  color: #fff;
+  flex-shrink: 0;
+}
+.fc-fill-sign-bigbtn-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.fc-fill-sign-bigbtn-label {
+  font-weight: 700;
+  font-size: var(--fs-lg);
+}
+.fc-fill-sign-bigbtn-desc {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-fill-sign-panel-saved {
+  display: flex;
+  gap: 8px;
+  padding: 0 4px 4px;
+}
+.fc-fill-sign-panel-saved button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-width: 0;
+  max-width: 60%;
+  padding: 3px 8px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.fc-fill-sign-panel-saved button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.fc-fill-sign-panel-saved button:disabled {
+  opacity: 0.5;
+}
+.fc-fill-sign-panel-saved img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+.fc-fill-sign-tip {
+  display: flex;
+  gap: 8px;
+  margin: 8px 4px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.fc-fill-sign-tip svg {
+  flex-shrink: 0;
+  color: var(--warning);
+}
+.fc-fill-sign-tip b {
+  color: var(--text);
+}
+
+/* ---- Sign yourself menu ---- */
+.fc-fill-sign-menu {
+  width: 290px;
+}
+.fc-fill-sign-menu-title {
+  padding: 6px 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+.fc-fill-sign-saved {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+}
+.fc-fill-sign-saved-use {
+  flex: 1;
+  height: 56px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.fc-fill-sign-saved-use:hover,
+.fc-fill-sign-saved-use:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--focus);
+}
+.fc-fill-sign-saved-use img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+.fc-fill-sign-menu .ui-menu-item:focus-visible {
+  background: var(--bg-active);
+}
+.fc-fill-sign-menu-target {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 4px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--bg-active);
+  color: var(--accent-text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.fc-fill-sign-menu-target svg {
+  flex-shrink: 0;
+}
+
+/* ---- create signature dialog ---- */
+.fc-fill-sign-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.fc-fill-sign-tabs {
+  display: inline-flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-fill-sign-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.fc-fill-sign-tabs button:hover {
+  color: var(--text);
+}
+.fc-fill-sign-tabs button.is-active {
+  color: var(--accent-text);
+  border-bottom-color: var(--accent);
+}
+.fc-fill-sign-tabpanel {
+  min-height: 240px;
+}
+.fc-fill-sign-fonts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.fc-fill-sign-font {
+  height: 76px;
+  padding: 0 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 34px;
+  line-height: 1;
+}
+.fc-fill-sign-font.is-placeholder {
+  opacity: 0.45;
+}
+.fc-fill-sign-font:hover {
+  border-color: var(--accent);
+}
+.fc-fill-sign-font.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.fc-fill-sign-drawwrap {
+  position: relative;
+  height: 220px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+}
+.fc-fill-sign-drawpad {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+.fc-fill-sign-drawline {
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  bottom: 56px;
+  border-bottom: 1px solid #c8c8c8;
+  pointer-events: none;
+}
+.fc-fill-sign-drawhint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 64px;
+  text-align: center;
+  color: #8a8a8a;
+  pointer-events: none;
+}
+.fc-fill-sign-clear {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  color: #333;
+}
+.fc-fill-sign-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 220px;
+  padding: 12px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius);
+  text-align: center;
+  background-color: #fff;
+  background-image:
+    linear-gradient(45deg, #f0f0f0 25%, transparent 25%), linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f0f0f0 75%), linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  color: #333;
+}
+.fc-fill-sign-drop .ui-btn {
+  background: #fff;
+  color: #222;
+  border-color: #b3b3b3;
+}
+.fc-fill-sign-drop .ui-btn:hover {
+  background: #f0f0f0;
+}
+.fc-fill-sign-drop.is-over {
+  border-color: var(--accent);
+  background-color: #eef5ff;
+}
+.fc-fill-sign-drop-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: #444;
+}
+.fc-fill-sign-drop-hint .shell-muted {
+  color: #6e6e6e;
+}
+.fc-fill-sign-picked {
+  max-height: 140px;
+  max-width: 100%;
+  object-fit: contain;
+}
+.fc-fill-sign-dialog-save {
+  margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ---- preferences ---- */
+.fc-fill-sign-settings-intro {
+  margin: 0 0 12px;
+  line-height: 1.45;
+}
+.fc-fill-sign-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.fc-fill-sign-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.fc-fill-sign-card-title {
+  font-weight: 700;
+}
+.fc-fill-sign-card-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  padding: 6px;
+  border-radius: 4px;
+  background: #fff;
+  border: 1px solid var(--border);
+}
+.fc-fill-sign-card-preview.is-empty {
+  background: var(--bg-sunken);
+}
+.fc-fill-sign-card-preview img {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+}
+.fc-fill-sign-card-actions {
+  display: flex;
+  gap: 6px;
+}
