@@ -83,8 +83,8 @@ export function AppShell() {
                   <DocumentView key={doc.id} doc={doc} />
                 ) : (
                   <>
-                    {findBarOpen && <FindBar key={doc.id} doc={doc} />}
-                    <Viewer key={doc.id} doc={doc} />
+                    {findBarOpen && <FindBar key={`find-${doc.id}`} doc={doc} />}
+                    <Viewer key={`view-${doc.id}`} doc={doc} />
                   </>
                 )}
                 {readMode && <ReadModeBar doc={doc} />}
