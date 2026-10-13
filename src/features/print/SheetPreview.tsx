@@ -32,7 +32,6 @@ export function SheetPreview({
   const token = useRef(0)
   const cache = useMemo(() => new PageImageCache(doc, content, grayscale, 48), [doc, content, grayscale])
   const [box, setBox] = useState({ w: 0, h: 0 })
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [shown, setShown] = useState(false)
 
@@ -52,22 +51,26 @@ export function SheetPreview({
   const cssW = sheet ? Math.max(1, Math.round(sheet.width * fit)) : 0
   const cssH = sheet ? Math.max(1, Math.round(sheet.height * fit)) : 0
 
+  // What the canvas should show. The preview is busy from the very render in which this changes
+  // until a draw of it has finished, so the canvas is never reported ready while it still shows
+  // the previous settings (setting a busy flag from the effect left a gap of a few milliseconds).
+  const request = useMemo(() => (sheet && fit > 0 ? { sheet, fit, cache, saveInk } : null), [sheet, fit, cache, saveInk])
+  const [settled, setSettled] = useState<typeof request>(null)
+  const busy = request !== null && settled !== request
+
   useEffect(() => {
     const my = ++token.current
-    if (!sheet || fit <= 0) {
-      setBusy(false)
-      return
-    }
-    setBusy(true)
+    if (!request) return
     const timer = setTimeout(async () => {
       const dpr = window.devicePixelRatio || 1
-      const k = fit * dpr
+      const k = request.fit * dpr
+      const { width, height } = request.sheet
       try {
-        const off = new OffscreenCanvas(Math.max(1, Math.round(sheet.width * k)), Math.max(1, Math.round(sheet.height * k)))
+        const off = new OffscreenCanvas(Math.max(1, Math.round(width * k)), Math.max(1, Math.round(height * k)))
         const octx = off.getContext('2d')
         if (!octx) throw new Error('Could not draw the preview')
-        await drawSheet(octx, sheet, k, (page, scale) => cache.get(page, scale), {
-          saveInk,
+        await drawSheet(octx, request.sheet, k, (page, scale) => request.cache.get(page, scale), {
+          saveInk: request.saveInk,
           cancelled: () => token.current !== my
         })
         if (token.current !== my) return
@@ -78,15 +81,15 @@ export function SheetPreview({
         canvas.getContext('2d')!.drawImage(off, 0, 0)
         setError(null)
         setShown(true)
-        setBusy(false)
+        setSettled(request)
       } catch (err) {
         if (err instanceof PrintCancelled || token.current !== my) return
         setError(err instanceof Error ? err.message : String(err))
-        setBusy(false)
+        setSettled(request)
       }
     }, 40)
     return () => clearTimeout(timer)
-  }, [sheet, fit, cache, saveInk])
+  }, [request])
 
   const text = message ?? error
   return (
