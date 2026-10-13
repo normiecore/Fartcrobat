@@ -17,11 +17,22 @@ export interface App {
   userData: string
 }
 
-/** Launches the built app (run `npm run build` first) with a throwaway profile. */
+/**
+ * Launches the built app (run `npm run build` first) with a throwaway profile. Set
+ * FARTCROBAT_EXECUTABLE to a packaged app (e.g. release/linux-unpacked/fartcrobat) to test that instead.
+ */
 export async function launch(files: string[] = [], env: Record<string, string> = {}): Promise<App> {
   const userData = mkdtempSync(join(tmpdir(), 'fartcrobat-e2e-'))
+  const packaged = process.env.FARTCROBAT_EXECUTABLE
   const app = await electron.launch({
-    args: [join(ROOT, 'out/main/index.js'), '--no-sandbox', '--disable-gpu', ...(process.env.EXTRA_ARGS ? process.env.EXTRA_ARGS.split(' ') : []), ...files],
+    ...(packaged ? { executablePath: resolve(ROOT, packaged) } : {}),
+    args: [
+      ...(packaged ? [] : [join(ROOT, 'out/main/index.js')]),
+      '--no-sandbox',
+      '--disable-gpu',
+      ...(process.env.EXTRA_ARGS ? process.env.EXTRA_ARGS.split(' ') : []),
+      ...files
+    ],
     env: {
       ...process.env,
       FARTCROBAT_USER_DATA: userData,
