@@ -19,7 +19,7 @@ import {
   type ToolHandler
 } from './common'
 import { idList, optBoolean, optString, pagesPhrase, plural } from './act-common'
-import { cancelled, checked, commitTyping, engineTask, handoff, paragraphs, requireConfirmation, undoLabel } from './act-runtime'
+import { cancelled, checked, commitTyping, engineTask, handoff, paragraphs, requireConfirmation, showDocument, undoLabel } from './act-runtime'
 
 /** Smallest new signature box (points): smaller ones cannot show a readable signature. */
 const MIN_SIGNATURE_BOX = { w: 36, h: 18 }
@@ -121,6 +121,7 @@ const signDocument: ToolHandler = async (args, ctx) => {
     )
   }
   await commitTyping()
+  showDocument(doc)
   const signedOk = await handoff(ctx, () => startSigning(doc, { mode: certify ? 'certify' : 'sign', target, reason, location }))
   if (!signedOk)
     throw cancelled(
@@ -156,6 +157,7 @@ const protectDocumentTool: ToolHandler = async (args, ctx) => {
   const restrictEditing = checked(() => optBoolean(args.restrict_editing, 'restrict_editing')) ?? false
   if (!requireOpenPassword && !restrictEditing) throw new ToolError('invalid_args', 'Choose require_open_password, restrict_editing or both')
   await commitTyping()
+  showDocument(doc)
   const done = await handoff(ctx, () =>
     protectDocument(doc, { mode: requireOpenPassword ? 'password' : 'restrict', initial: { requireOpenPassword, restrictEditing } })
   )

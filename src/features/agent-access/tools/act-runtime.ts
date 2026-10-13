@@ -63,6 +63,11 @@ export async function commitTyping() {
   if (hasActiveEditors()) await commitActiveEditors()
 }
 
+/** Brings a document's tab to the front, so the person sees which document a question is about. */
+export function showDocument(doc: DocumentModel) {
+  if (!doc.isClosed && useApp.getState().activeDocId !== doc.id) useApp.setState({ activeDocId: doc.id })
+}
+
 /**
  * Asks the person to allow an irreversible step. Declining (or the agent cancelling) ends the call:
  * the audit records "declined" and the agent is told not to retry.
@@ -73,6 +78,7 @@ export async function requireConfirmation(
   opts: { title: string; message: ReactNode; confirmLabel: string; details?: string[] },
   declined: string
 ): Promise<void> {
+  if (doc) showDocument(doc)
   const ok = await confirmAgentAction(ctx, opts)
   if (ok) return
   throwIfAborted(ctx)
