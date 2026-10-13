@@ -277,6 +277,9 @@
   display: inline-flex;
   color: var(--text-muted);
 }
+.ui-menu-icon .ui-menu-check {
+  color: var(--accent-text);
+}
 .ui-menu-label {
   flex: 1;
 }
@@ -294,6 +297,14 @@
   left: 100%;
   top: -5px;
   z-index: 2;
+}
+/* A submenu is as wide as its longest item (otherwise labels with shortcuts wrap). */
+.ui-submenu > .ui-menu {
+  width: max-content;
+  max-width: 480px;
+}
+.ui-submenu > .ui-menu .ui-menu-shortcut {
+  margin-left: 16px;
 }
 
 .ui-dialog-backdrop {
@@ -315,6 +326,9 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   user-select: none;
+}
+.ui-dialog:focus {
+  outline: none;
 }
 .ui-dialog-header {
   display: flex;

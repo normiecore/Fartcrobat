@@ -1,6 +1,39 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronRight } from 'lucide-react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { Check, ChevronRight } from 'lucide-react'
 import type { ContextMenuItem } from '../app/registry'
+
+/** Open popups, innermost last, each with the number of dialogs that were open when it opened. */
+const popups: { close: () => void; dialogs: number }[] = []
+const openDialogs = () => document.querySelectorAll('.ui-dialog[aria-modal="true"]').length
+
+/**
+ * Escape closes the innermost open popup (a menu with its submenus, a colour picker...) and does
+ * nothing else. main.tsx registers this before any other key listener: one added when the popup
+ * opens would run after the features' own Escape handling, which may already have left the tool.
+ * A dialog opened over the popup keeps its Escape.
+ */
+export function handlePopupEscape(e: KeyboardEvent) {
+  const top = popups[popups.length - 1]
+  if (e.key !== 'Escape' || !top || openDialogs() > top.dialogs) return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+  top.close()
+}
+
+/** While `open`, Escape closes this popup (see handlePopupEscape). */
+export function usePopupEscape(open: boolean, onClose: () => void) {
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  useLayoutEffect(() => {
+    if (!open) return
+    const entry = { close: () => onCloseRef.current(), dialogs: openDialogs() }
+    popups.push(entry)
+    return () => {
+      const i = popups.indexOf(entry)
+      if (i >= 0) popups.splice(i, 1)
+    }
+  }, [open])
+}
 
 /** A vertical menu list (used by context menus and dropdowns). */
 export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose: () => void }) {
@@ -18,7 +51,8 @@ export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose
           >
             <button
               type="button"
-              role="menuitem"
+              role={item.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+              aria-checked={item.checked}
               className={`ui-menu-item ${item.danger ? 'is-danger' : ''}`}
               disabled={item.disabled}
               onClick={() => {
@@ -30,19 +64,54 @@ export function MenuList({ items, onClose }: { items: ContextMenuItem[]; onClose
                 item.run?.()
               }}
             >
-              <span className="ui-menu-icon">{item.icon && <item.icon size={16} />}</span>
+              <span className="ui-menu-icon">
+                {item.checked ? <Check size={16} className="ui-menu-check" /> : item.icon && <item.icon size={16} />}
+              </span>
               <span className="ui-menu-label">{item.label}</span>
               {item.shortcut && <span className="ui-menu-shortcut">{item.shortcut}</span>}
               {item.submenu && <ChevronRight size={14} />}
             </button>
-            {item.submenu && openSub === item.id && (
-              <div className="ui-submenu">
-                <MenuList items={item.submenu} onClose={onClose} />
-              </div>
-            )}
+            {item.submenu && openSub === item.id && <Submenu items={item.submenu} onClose={onClose} />}
           </div>
         )
       )}
+    </div>
+  )
+}
+
+/**
+ * A submenu opened to the right of its item. It flips to the left when there is no room on the
+ * right and moves up (or scrolls) so it never extends past the bottom of the window.
+ */
+function Submenu({ items, onClose }: { items: ContextMenuItem[]; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [style, setStyle] = useState<React.CSSProperties>({ visibility: 'hidden' })
+  useLayoutEffect(() => {
+    const el = ref.current
+    const parent = el?.parentElement
+    if (!el || !parent) return
+    const p = parent.getBoundingClientRect()
+    const r = el.getBoundingClientRect()
+    const margin = 4
+    const next: React.CSSProperties = {}
+    if (p.right + r.width > window.innerWidth - margin && p.left - r.width >= margin) {
+      next.left = 'auto'
+      next.right = '100%'
+    }
+    const top = p.top - 5
+    const maxHeight = window.innerHeight - margin * 2
+    if (r.height > maxHeight) {
+      next.top = margin - p.top
+      next.maxHeight = maxHeight
+      next.overflowY = 'auto'
+    } else if (top + r.height > window.innerHeight - margin) {
+      next.top = window.innerHeight - margin - r.height - p.top
+    }
+    setStyle(next)
+  }, [items])
+  return (
+    <div ref={ref} className="ui-submenu" style={style}>
+      <MenuList items={items} onClose={onClose} />
     </div>
   )
 }
@@ -61,13 +130,8 @@ export function FloatingAt({ x, y, children, onClose }: { x: number; y: number; 
     if (ny + r.height > window.innerHeight - 4) ny = Math.max(4, y - r.height)
     setPos({ x: nx, y: ny })
   }, [x, y])
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [onClose])
+  // Closing the menu is all Escape does: not also leave Full Screen or reset the tool.
+  usePopupEscape(true, onClose)
   return (
     <>
       <div className="ui-popover-scrim" onMouseDown={onClose} onContextMenu={(e) => (e.preventDefault(), onClose())} />

@@ -11,6 +11,13 @@ export function FindBar({ doc }: { doc: DocumentModel }) {
   const [wholeWords, setWholeWords] = useState(!!search.options.wholeWords)
   const inputRef = useRef<HTMLInputElement>(null)
   const timer = useRef<number | null>(null)
+  /** The last query this bar searched for; other queries come from elsewhere (Ctrl+F on a selection...). */
+  const ownQuery = useRef(search.query)
+
+  const cancelPending = () => {
+    if (timer.current !== null) window.clearTimeout(timer.current)
+    timer.current = null
+  }
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -20,15 +27,36 @@ export function FindBar({ doc }: { doc: DocumentModel }) {
       inputRef.current?.select()
     }
     window.addEventListener('fartcrobat:focus-find', onFocus)
-    return () => window.removeEventListener('fartcrobat:focus-find', onFocus)
+    return () => {
+      window.removeEventListener('fartcrobat:focus-find', onFocus)
+      cancelPending()
+    }
   }, [])
 
+  // A search started elsewhere (Find with selected text, "Find text or tools") shows its text here.
+  useEffect(() => {
+    if (search.query === ownQuery.current) return
+    ownQuery.current = search.query
+    cancelPending()
+    setQuery(search.query)
+    setMatchCase(!!search.options.matchCase)
+    setWholeWords(!!search.options.wholeWords)
+    if (document.activeElement === inputRef.current) inputRef.current?.select()
+  }, [search.query, search.options])
+
+  const searchNow = (q: string, mc = matchCase, ww = wholeWords) => {
+    cancelPending()
+    ownQuery.current = q
+    void doc.search(q, { matchCase: mc, wholeWords: ww })
+  }
+
   const run = (q: string, mc = matchCase, ww = wholeWords) => {
-    if (timer.current) window.clearTimeout(timer.current)
-    timer.current = window.setTimeout(() => void doc.search(q, { matchCase: mc, wholeWords: ww }), 200)
+    cancelPending()
+    timer.current = window.setTimeout(() => searchNow(q, mc, ww), 200)
   }
 
   const close = () => {
+    cancelPending()
     doc.cancelSearch()
     useApp.setState({ findBarOpen: false })
     doc.view?.getViewportElement()?.focus()
@@ -50,8 +78,11 @@ export function FindBar({ doc }: { doc: DocumentModel }) {
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault()
-            if (search.query !== query) void doc.search(query, { matchCase, wholeWords })
-            else doc.nextHit(e.shiftKey ? -1 : 1)
+            if (search.query !== query) searchNow(query)
+            else {
+              cancelPending()
+              doc.nextHit(e.shiftKey ? -1 : 1)
+            }
           } else if (e.key === 'Escape') {
             e.preventDefault()
             close()

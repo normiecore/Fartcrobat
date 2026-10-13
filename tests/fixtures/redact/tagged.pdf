@@ -1,0 +1,94 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 20 0 R /MarkInfo << /Marked true >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /StructParents 0 /Thumb 7 0 R /Resources << /Font << /F1 5 0 R >> /XObject << /Im1 6 0 R >> /Properties << /MC0 << /ActualText (RESOURCESECRET) >> >> >> >>
+endobj
+4 0 obj
+<< /Length 424  >>
+stream
+/P <</MCID 0>> BDC BT /F1 18 Tf 72 720 Td (Tagged document) Tj ET EMC
+/Span <</MCID 1 /ActualText (Name: John Doe SSN 123-45-6789)>> BDC BT /F1 12 Tf 72 690 Td (Name: John Doe SSN 123-45-6789) Tj ET EMC
+/Figure <</MCID 2>> BDC q 100 0 0 50 72 600 cm /Im1 Do Q EMC
+/Span <</MCID 3 /ActualText (KEEPACTUAL)>> BDC BT /F1 12 Tf 72 560 Td (Keep this line) Tj ET EMC
+/Span /MC0 BDC BT /F1 12 Tf 72 520 Td (Resource text) Tj ET EMC
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Length 64 /Type /XObject /Subtype /Image /Width 8 /Height 8 /ColorSpace /DeviceGray /BitsPerComponent 8 >>
+stream
+                                                                
+endstream
+endobj
+7 0 obj
+<< /Length 39 /Width 13 /Height 3 /ColorSpace /DeviceGray /BitsPerComponent 8 >>
+stream
+THUMBNAILDATATHUMBNAILDATATHUMBNAILDATA
+endstream
+endobj
+10 0 obj
+<< /Title (Tagged) >>
+endobj
+20 0 obj
+<< /Type /StructTreeRoot /K 21 0 R /ParentTree 26 0 R >>
+endobj
+21 0 obj
+<< /Type /StructElem /S /Document /P 20 0 R /Pg 3 0 R /K [22 0 R 23 0 R 24 0 R 25 0 R] /Alt (DOCUMENTSUMMARY) >>
+endobj
+22 0 obj
+<< /Type /StructElem /S /P /P 21 0 R /K 0 >>
+endobj
+23 0 obj
+<< /Type /StructElem /S /Span /P 21 0 R /K 1 /E (EXPANSIONSECRET) >>
+endobj
+24 0 obj
+<< /Type /StructElem /S /Figure /P 21 0 R /K << /Type /MCR /MCID 2 /Pg 3 0 R >> /Alt (Photo of the SECRET badge) >>
+endobj
+25 0 obj
+<< /Type /StructElem /S /Span /P 21 0 R /K [3] /Alt (Keep this alt) >>
+endobj
+26 0 obj
+<< /Nums [0 [22 0 R 23 0 R 24 0 R 25 0 R]] >>
+endobj
+xref
+0 27
+0000000000 65535 f 
+0000000015 00000 n 
+0000000116 00000 n 
+0000000173 00000 n 
+0000000413 00000 n 
+0000000889 00000 n 
+0000000986 00000 n 
+0000001194 00000 n 
+0000000000 65535 f 
+0000000000 65535 f 
+0000001347 00000 n 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000001385 00000 n 
+0000001458 00000 n 
+0000001587 00000 n 
+0000001648 00000 n 
+0000001733 00000 n 
+0000001865 00000 n 
+0000001952 00000 n 
+trailer
+<< /Size 27 /Root 1 0 R /Info 10 0 R >>
+startxref
+2014
+%%EOF

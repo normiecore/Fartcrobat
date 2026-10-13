@@ -12,6 +12,11 @@ export class EngineCallError extends Error {
   }
 }
 
+/** True for the error a closed document's calls fail with (those still running when it closed, and later ones). */
+export function isDocumentClosedError(err: unknown): boolean {
+  return err instanceof EngineCallError && err.code === 'CLOSED'
+}
+
 interface Pending {
   resolve: (v: unknown) => void
   reject: (e: Error) => void

@@ -6,11 +6,14 @@ import './styles/shell.css'
 import './styles/viewer.css'
 import { loadFeatures, registry } from './app/registry'
 import { getActiveDoc, useApp } from './app/store'
-import { handleShortcut, runCommand, scheduleMenuUpdate } from './app/commands'
-import { openPaths, quitApp, refreshRecent } from './app/actions'
+import { commandsAllowed, handleShortcut, runCommand, scheduleMenuUpdate } from './app/commands'
+import { answerCloseRequest, openNewDocument, openPaths, refreshRecent, replaceDocumentBytes } from './app/actions'
+import { runMenuCommand, trackTextFieldFocus } from './app/editing'
+import { reportOpenFiles } from './app/windowState'
 import { invoke, onMainEvent } from './platform'
 import { authorName, coreFeature } from './core/coreFeature'
 import { AppShell } from './shell/AppShell'
+import { handlePopupEscape } from './ui/Menu'
 
 loadFeatures([coreFeature])
 
@@ -36,12 +39,14 @@ async function boot() {
     }
   })
 
+  // Escape that closes a popup does nothing else: registered first, before every feature's listener.
+  window.addEventListener('keydown', handlePopupEscape, true)
   // Keyboard shortcuts and the temporary hand tool (hold Space).
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && !e.repeat) {
       const t = e.target as HTMLElement
       const typing = t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(t.tagName)
-      if (!typing && getActiveDoc() && !useApp.getState().dialogs.length) {
+      if (!typing && getActiveDoc() && commandsAllowed()) {
         e.preventDefault()
         useApp.setState({ spaceHand: true })
         return
@@ -55,8 +60,9 @@ async function boot() {
   window.addEventListener('blur', () => useApp.setState({ spaceHand: false }))
 
   onMainEvent('app:openFiles', (paths) => void openPaths(paths))
-  onMainEvent('menu:command', (id) => void runCommand(id))
-  onMainEvent('app:beforeQuit', () => void quitApp())
+  // Text-editing items act on the focused field; other commands wait like keyboard shortcuts.
+  onMainEvent('menu:command', (id) => void runMenuCommand(id))
+  onMainEvent('app:beforeQuit', () => void answerCloseRequest())
   onMainEvent('window:fullScreenChanged', (on) => useApp.setState({ fullScreen: on, readMode: on ? useApp.getState().readMode : false }))
 
   // Window title and native menu follow the active document.
@@ -68,6 +74,11 @@ async function boot() {
     scheduleMenuUpdate()
   }
   useApp.subscribe((s, prev) => {
+    // Read Mode and Full Screen show a document; Home always has its top bar.
+    if (s.activeDocId === null && prev.activeDocId !== null && (s.readMode || s.fullScreen)) {
+      if (s.fullScreen) void invoke('window:setFullScreen', false).catch(() => {})
+      useApp.setState({ readMode: false, fullScreen: false })
+    }
     if (s.activeDocId !== prev.activeDocId || s.docs !== prev.docs) {
       unsubDoc?.()
       const doc = getActiveDoc()
@@ -87,10 +98,12 @@ async function boot() {
     </StrictMode>
   )
   refreshChrome()
+  trackTextFieldFocus()
+  reportOpenFiles()
   void refreshRecent()
   const launch = await invoke('app:launchFiles').catch(() => [] as string[])
   if (launch.length) await openPaths(launch)
-  ;(window as any).__fartcrobat = { registry, useApp, getActiveDoc, openPaths, runCommand }
+  ;(window as any).__fartcrobat = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes }
 }
 
 void boot()

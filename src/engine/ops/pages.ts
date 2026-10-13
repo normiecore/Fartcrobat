@@ -1,8 +1,9 @@
 import type { Rect } from '@shared/geometry'
 import { normalizeRect, transformRect } from '@shared/geometry'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
-import type { PDFDocument, Session } from '../session'
-import { readNumber } from '../util/pdf'
+import type { PDFDocument, PDFObject, Session } from '../session'
+import { copyPages, removePageFields } from '../util/graft'
+import { catalog, isNull, pageRotation, readNumber } from '../util/pdf'
 import { convertToPdf, OPENABLE_FORMATS } from './doc'
 
 function uniqueSorted(indices: number[], count: number): number[] {
@@ -28,14 +29,71 @@ export function openSource(s: Session, data: Uint8Array, fileName = 'file.pdf', 
   return converted
 }
 
-/** Copies pages from src into dst at `at` (-1 = end), sharing resources. */
+/**
+ * Copies pages from src into dst at `at` (-1 = end), sharing resources, with their annotations,
+ * links and form fields (see copyPages in util/graft). src and dst may be the same document.
+ */
 export function graftPages(dst: PDFDocument, src: PDFDocument, pages: number[], at: number) {
-  const map = dst.newGraftMap()
-  let pos = at
-  for (const p of pages) {
-    map.graftPage(pos, src, p)
-    if (pos >= 0) pos++
+  copyPages(dst, src, pages, at)
+}
+
+/** Deletes a page and detaches its form fields from /AcroForm. */
+export function deletePage(doc: PDFDocument, index: number) {
+  removePageFields(doc, doc.findPage(index))
+  doc.deletePage(index)
+}
+
+const INHERITED_PAGE_KEYS = ['Resources', 'MediaBox', 'CropBox', 'Rotate']
+
+/** Copies direct arrays and dictionaries (indirect references are shared). */
+function cloneDirect(doc: PDFDocument, v: PDFObject): PDFObject {
+  if (v.isIndirect()) return v
+  if (v.isArray()) {
+    const a = doc.newArray()
+    v.forEach((item) => a.push(cloneDirect(doc, item)))
+    return a
   }
+  if (v.isDictionary()) {
+    const d = doc.newDictionary()
+    v.forEach((item, key) => d.put(String(key), cloneDirect(doc, item)))
+    return d
+  }
+  return v
+}
+
+/**
+ * Puts the pages in `order` (a permutation of all page indices) by rewriting the page tree as one
+ * flat /Kids array under the root /Pages node. Nothing else in the document changes: MuPDF's
+ * rearrangePages() rebuilds the catalog and drops the form, attachments, page labels, /Lang,
+ * metadata, the structure tree and more. Values the pages inherited from intermediate /Pages
+ * nodes are copied onto the pages first.
+ */
+export function permutePages(doc: PDFDocument, order: number[]) {
+  const root = catalog(doc).get('Pages')
+  const rootNum = root.isIndirect() ? root.asIndirect() : -1
+  const refs = order.map((i) => doc.findPage(i))
+  for (const ref of refs) {
+    for (const key of INHERITED_PAGE_KEYS) {
+      if (!isNull(ref.get(key))) continue
+      let node = ref.get('Parent')
+      for (let depth = 0; !isNull(node) && depth < 64; depth++) {
+        if (node.isIndirect() && node.asIndirect() === rootNum) break // still inherited after the move
+        const v = node.get(key)
+        if (!isNull(v)) {
+          ref.put(key, cloneDirect(doc, v))
+          break
+        }
+        node = node.get('Parent')
+      }
+    }
+  }
+  const kids = doc.newArray()
+  for (const ref of refs) {
+    kids.push(ref)
+    ref.put('Parent', root)
+  }
+  root.put('Kids', kids)
+  root.put('Count', refs.length)
 }
 
 /** A new PDF containing the given pages of the session document. */
@@ -59,7 +117,7 @@ export default defineOps('pages', {
       const list = uniqueSorted(indices, s.pageCount())
       for (const i of list) {
         const obj = s.pdf.findPage(i)
-        const cur = Math.round(readNumber(obj.getInheritable('Rotate'), 0))
+        const cur = pageRotation(readNumber(obj.getInheritable('Rotate'), 0))
         const next = (((cur + degrees) % 360) + 360) % 360
         obj.put('Rotate', next)
       }
@@ -73,8 +131,9 @@ export default defineOps('pages', {
       const count = s.pageCount()
       const list = uniqueSorted(indices, count)
       if (list.length >= count) throw new EngineError('A document must keep at least one page', 'LAST_PAGE')
-      for (let k = list.length - 1; k >= 0; k--) s.pdf.deletePage(list[k])
+      for (let k = list.length - 1; k >= 0; k--) deletePage(s.pdf, list[k])
       s.structureChanged()
+      s.documentChanged()
     }
   ),
 
@@ -89,7 +148,7 @@ export default defineOps('pages', {
       const before = rest.filter((i) => i < to).length
       const order = [...rest.slice(0, before), ...moving, ...rest.slice(before)]
       if (order.every((v, i) => v === i)) return
-      s.pdf.rearrangePages(order)
+      permutePages(s.pdf, order)
       s.structureChanged()
     }
   ),
@@ -97,8 +156,14 @@ export default defineOps('pages', {
   /** Puts the pages in an explicit order (a permutation of all page indices). */
   reorder: mutation('Reorder Pages', (s, order: number[]) => {
     const count = s.pageCount()
-    if (order.length !== count || new Set(order).size !== count) throw new EngineError('Invalid page order', 'BAD_ORDER')
-    s.pdf.rearrangePages(order)
+    if (
+      order.length !== count ||
+      new Set(order).size !== count ||
+      !order.every((i) => Number.isInteger(i) && i >= 0 && i < count)
+    ) {
+      throw new EngineError('Invalid page order', 'BAD_ORDER')
+    }
+    permutePages(s.pdf, order)
     s.structureChanged()
   }),
 
@@ -128,6 +193,7 @@ export default defineOps('pages', {
         const count = s.pageCount()
         graftPages(s.pdf, src, pages, at < 0 || at >= count ? -1 : at)
         s.structureChanged()
+        s.documentChanged()
         return pages.length
       } finally {
         src.destroy()
@@ -137,15 +203,13 @@ export default defineOps('pages', {
 
   /** Copies pages within the document (duplicate). */
   duplicate: mutation('Duplicate Pages', (s, indices: number[], at?: number) => {
-    const list = uniqueSorted(indices, s.pageCount())
-    const bytes = extractToBytes(s, list)
-    const src = new s.mupdf.PDFDocument(bytes)
-    try {
-      graftPages(s.pdf, src, [...Array(list.length).keys()], at ?? list[list.length - 1] + 1)
-    } finally {
-      src.destroy()
-    }
+    const count = s.pageCount()
+    const list = uniqueSorted(indices, count)
+    if (!list.length) throw new EngineError('No pages selected', 'NO_PAGES')
+    const pos = at ?? list[list.length - 1] + 1
+    graftPages(s.pdf, s.pdf, list, pos < 0 || pos >= count ? -1 : pos)
     s.structureChanged()
+    s.documentChanged()
   }),
 
   /** Replaces pages starting at `start` with pages from another file. */
@@ -160,8 +224,9 @@ export default defineOps('pages', {
         const replaceCount = Math.min(pages.length, count - start)
         if (replaceCount <= 0) throw new EngineError('Nothing to replace', 'BAD_RANGE')
         graftPages(s.pdf, src, pages.slice(0, replaceCount), start)
-        for (let k = 0; k < replaceCount; k++) s.pdf.deletePage(start + replaceCount)
+        for (let k = 0; k < replaceCount; k++) deletePage(s.pdf, start + replaceCount)
         s.structureChanged()
+        s.documentChanged()
         return replaceCount
       } finally {
         src.destroy()

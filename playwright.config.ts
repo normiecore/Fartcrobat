@@ -5,7 +5,9 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 15_000 },
   workers: 1,
-  reporter: [['list']],
+  forbidOnly: !!process.env.CI,
+  // On GitHub, failures are also shown as annotations on the run and the commit.
+  reporter: process.env.CI ? [['github'], ['list']] : [['list']],
   use: {
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure'

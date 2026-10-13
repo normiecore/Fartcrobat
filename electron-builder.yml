@@ -1,0 +1,94 @@
+# Installer configuration (electron-builder). Build with: npm run dist (or dist:win / dist:mac / dist:linux)
+appId: org.fartcrobat.app
+productName: Fartcrobat
+copyright: Copyright © 2026 Fartcrobat contributors. Licensed under the GNU AGPL v3 or later.
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - resources/**
+  - package.json
+  - '!**/*.map'
+  # The renderer, preload and main bundles contain all code (electron.vite.config.ts bundles
+  # every dependency; only Electron and Node built-ins are external), so node_modules is not needed.
+  - '!node_modules/**'
+asar: true
+asarUnpack:
+  - resources/**
+publish: null
+# File associations are per platform: on Windows the name is the registry ProgId, which must be
+# unique to Fartcrobat (src/main/util/systemDefaults.ts WINDOWS_PROG_ID checks it to tell whether
+# Fartcrobat is the default PDF app); on macOS it is the document type's display name.
+win:
+  fileAssociations:
+    - ext: pdf
+      name: Fartcrobat.Document
+      description: PDF Document
+      icon: pdf-document
+  target:
+    - target: nsis
+      arch: [x64, arm64]
+  icon: build/icon.ico
+  artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+nsis:
+  # build/installer.nsh registers Fartcrobat under Default apps (RegisteredApplications).
+  include: build/installer.nsh
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Fartcrobat
+  license: build/license.txt
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+mac:
+  fileAssociations:
+    - ext: pdf
+      name: PDF Document
+      description: PDF Document
+      mimeType: application/pdf
+      role: Editor
+      rank: Default
+      icon: pdf-document
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  icon: build/icon.png
+  darkModeSupport: true
+  # Ad-hoc signed by default ("-"): unsigned apps that electron-builder modified are reported as
+  # "damaged" on Apple Silicon, while ad-hoc signed ones get the normal "Open Anyway" path. The
+  # release workflow signs with a real Developer ID when the CSC_LINK secret is set.
+  identity: '-'
+  hardenedRuntime: false
+  extendInfo:
+    NSHumanReadableCopyright: Fartcrobat is free software under the GNU AGPL v3 or later.
+dmg:
+  title: Fartcrobat ${version}
+linux:
+  target:
+    - AppImage
+    - deb
+    - tar.gz
+  category: Office
+  icon: build/icons
+  executableName: fartcrobat
+  syncDesktopName: true
+  synopsis: PDF reader, editor and signer
+  description: Free, open-source PDF reader, editor and signer for people coming from Adobe Acrobat Pro.
+  mimeTypes:
+    - application/pdf
+  desktop:
+    entry:
+      Name: Fartcrobat
+      GenericName: PDF Editor
+      Comment: Read, edit, comment on and sign PDF documents
+      Keywords: pdf;acrobat;reader;editor;sign;forms;
+      StartupWMClass: Fartcrobat
+  maintainer: Fartcrobat contributors <noreply@fartcrobat.org>
+deb:
+  priority: optional

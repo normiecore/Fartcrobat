@@ -1,0 +1,62 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R 7 0 R] /D << /Name (Default) /Order [5 0 R 6 0 R 7 0 R] /ON [5 0 R 7 0 R] /OFF [6 0 R] >> >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 9 0 R /Resources << /Font << /F1 8 0 R >> /Properties << /L1 5 0 R /L2 6 0 R /L3 7 0 R >> >> >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 10 0 R /Resources << /Font << /F1 8 0 R >> /Properties << /L1 5 0 R >> >> >>
+endobj
+5 0 obj
+<< /Type /OCG /Name (Shapes) >>
+endobj
+6 0 obj
+<< /Type /OCG /Name (Reviewer notes) >>
+endobj
+7 0 obj
+<< /Type /OCG /Name (Draft watermark) >>
+endobj
+8 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+9 0 obj
+<< /Length 262 >>
+stream
+BT /F1 24 Tf 72 700 Td (Layers fixture) Tj ET
+/OC /L1 BDC 0 0 1 rg 72 500 200 100 re f EMC
+/OC /L2 BDC 1 0 0 rg 320 500 200 100 re f BT /F1 14 Tf 0 g 72 460 Td (Reviewer notes layer) Tj ET EMC
+/OC /L3 BDC 0.8 0.8 0.8 rg BT /F1 60 Tf 120 300 Td (DRAFT) Tj ET EMC
+
+endstream
+endobj
+10 0 obj
+<< /Length 90 >>
+stream
+BT /F1 18 Tf 72 700 Td (Second page) Tj ET
+/OC /L1 BDC 0 0.6 0 rg 72 500 200 100 re f EMC
+
+endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000015 00000 n 
+0000000193 00000 n 
+0000000256 00000 n 
+0000000430 00000 n 
+0000000585 00000 n 
+0000000632 00000 n 
+0000000687 00000 n 
+0000000743 00000 n 
+0000000813 00000 n 
+0000001126 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+1267
+%%EOF

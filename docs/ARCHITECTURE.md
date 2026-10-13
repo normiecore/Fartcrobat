@@ -77,6 +77,7 @@ Registry concepts (all in `src/renderer/src/app/registry.ts`):
 | `toolGroups` | Entries in the left **All tools** pane (and Home tiles with `homeTile`). Opening one shows its `panel` in the left pane (use `ToolPanelFrame` so the back arrow works) and activates `defaultTool`; groups without a panel run `run()` |
 | `tools` | Pointer tools. While active, `layer` is mounted on every visible page above everything else and receives pointer events; `toolbar` appears in the contextual bar under the document toolbar. Set `allowDefaultInteractions` to keep text selection/links/annotation selection working underneath |
 | `pageLayers` | Always-mounted per-page layers (annotations, form fields...). `order` sets stacking: text selection 10, search 20, links 30. Use `pointer-events: none` on the layer and `auto` only on interactive children so you don't block other layers. `when({toolId, doc})` limits when they mount |
+| `toolGroups[].documentView` | Replaces the page viewer while the group is open (Organize Pages grid, Compare report) |
 | `rightPanels` | Icons in the right rail; the panel opens to the left of it |
 | `quickTools` | The floating vertical toolbar at the left of the document (tool ids or command ids with icons) |
 | `textSelectionActions` | Buttons on the mini toolbar above selected text and in its context menu |
@@ -95,7 +96,10 @@ Acrobat's shortcuts and menu labels wherever Acrobat has them.
   Core ops: `doc.core.doc / render / text / nav`, and the shared modules
   `doc.ops<typeof import('@engine/ops/annots').default>('annots')`, `'forms'`, `'pages'`.
 - Every engine response carries a `ChangeSet`; the model applies it automatically: pages re-render,
-  `info` is refreshed after structural changes, the journal (Undo label) and dirty flag update.
+  `info` is refreshed after structural changes (and its document-level facts — metadata,
+  language, form, signatures, attachments — after document changes), the journal (Undo label)
+  and dirty flag update. The engine owns the dirty flag: to mark content as unsaved use
+  `doc.core.doc.markDirty()`, not `doc.set({ dirty })`.
   Use `usePageVersion(doc, page)` to refetch per-page data when that page changes and
   `useDocState(doc, s => s.docVersion)` for document-level data (outline, attachments, form,
   signatures).
@@ -104,16 +108,21 @@ Acrobat's shortcuts and menu labels wherever Acrobat has them.
   `textModel.ts` (`rangeQuads`, `rangeRects`, `searchPage`, `caretAt`, `wordAt`).
 - `doc.setSelection({ kind: 'annotations', page, ids })` / `{ kind: 'custom', type, page, data }`.
 - `setHiddenAnnotations(doc, page, ids)` leaves annotations out of page rendering while you draw
-  a live preview (dragging).
+  a live preview (dragging). `doc.set({ showAnnotations: false })` hides all comments
+  (View > Show/Hide > Comments).
 
 App-level helpers from `@renderer/sdk`: `openDialog(close => <Dialog .../>)`, `ask`, `confirm`,
 `prompt`, `toast`, `showError`, `withProgress(title, report => ...)`, `showContextMenu`,
-`openNewDocument(bytes, name)` (new unsaved tab), `saveDocument`, `replaceDocumentBytes`,
+`openNewDocument(bytes, name)` (new unsaved tab), `saveDocument`,
+`replaceDocumentBytes(doc, bytes, path | null, { password? })` (path null: unsaved in-memory
+content; the open password is reused, a new one is asked for),
 `saveBytesAs(bytes, name, filters)`, `invoke('file:openDialog', ...)`, `readFile`, `setTool`,
 `openToolGroup`, `openRightPanel`, `runCommand`, `authorName()`, `usePrefs()`, `setPrefs()`.
 UI kit: `Button`, `IconButton`, `Dialog`, `Field`, `TextInput`, `NumberInput`, `TextArea`, `Select`,
 `Checkbox`, `Radio`, `Slider`, `Segmented`, `ColorPicker`, `ColorButton`, `PanelFrame`,
 `ToolPanelFrame`, `ToolRow`, `Section`, `EmptyState`, `MenuList`, `DropdownMenu`.
+Escape closes the innermost of the kit's popups and nothing else sees that key press; give a popover
+of your own the same behaviour with `usePopupEscape(open, close)`.
 Icons come from `lucide-react`.
 
 ### Engine: `engine.ts`
@@ -135,8 +144,15 @@ export default defineOps('stamps', {
 })
 ```
 
-- `s.pdf` is the MuPDF `PDFDocument`; `s.page(i)` a cached `PDFPage`; `s.mupdf` the module.
-- Never keep `PDFPage`/`PDFAnnotation` objects across calls; ask the session again.
+- `s.pdf` is the MuPDF `PDFDocument`; `s.page(i)` a cached `PDFPage`; `s.mupdf` the module;
+  `s.sourceBytes` the exact bytes the file was opened from or last saved incrementally to (null
+  for converted files); `s.password` the password it was opened with.
+- Never keep `PDFPage`/`PDFAnnotation` objects across calls; ask the session again. Pages you
+  `s.touch()` are dropped from the cache when the op ends, so C-level changes (applyRedactions,
+  new widgets) show up in the next call. If you edit `/Annots` arrays by hand and read the page
+  again in the same op, call `s.invalidatePages()` first.
+- `s.state` is per-document scratch space; `doc.reload` clears it except the keys listed in
+  `s.persistentState` (e.g. `'author'`) — add your own settings keys there.
 - Mutations must be synchronous (MuPDF's journal cannot span awaits). Do async work (fetching,
   parsing) in a query op or in the UI, then call a mutation with the result.
 - Return big buffers with `withTransfer(bytes, [bytes.buffer])`.
@@ -145,6 +161,15 @@ export default defineOps('stamps', {
 - Undo/redo, dirty tracking and save are handled by the core. Saving uses MuPDF garbage
   collection without compaction because compaction breaks the live undo history; use
   `saveDocument(s, { garbage: 'deduplicate', ... })` (it writes a separate copy) when you need it.
+  Security changes and optimisation also run on a copy. Signed files (signed when opened) save
+  incrementally; an incremental save reopens the document from the bytes it wrote (object
+  numbers and feature state stay, undo history is cleared), because MuPDF builds every
+  incremental save on the bytes it was opened from. Never call `s.pdf.saveToBuffer('incremental')`
+  on the live document; use `saveDocument(s, { mode: 'incremental' })` outside mutations.
+- Copy pages with `graftPages(dst, src, pages, at)` from `@engine/ops/pages` (annotations, links
+  and form fields come along) and delete them with `deletePage(doc, index)` (detaches their
+  form fields). Reorder with `permutePages(doc, order)`, never `rearrangePages` (it drops the
+  form, attachments, page labels and more from the catalog).
 - Helpers in `src/engine/util/pdf.ts`: `readRect`, `readString`, `walkFields`, `pdfLiteral`, `num`,
   `pdfDate`, `pageBoxes`, `catalog`...
 - Low-level PDF objects: `s.pdf.newDictionary()`, `addStream(buffer, dict)`, `obj.get('Key')`,
@@ -172,6 +197,15 @@ export function register(ctx: MainContext) {
 
 Channels must be named `feature:<feature-id>:<method>` (letters/digits only in the method); the
 preload rejects anything else. Call them from the UI with `invoke('feature:convert:office', path)`.
+The main and preload bundles include every package they import (installers ship no
+`node_modules`), so a `main.ts` may import pure-JS dependencies but nothing that loads files from
+its own package folder at runtime.
+
+Core channels worth knowing: `file:tempPath(name)` gives a path in a new private folder (only the
+user can read it; removed when the app quits) and `file:write` there marks the file as downloaded
+on Windows; `shell:openPath(path)` refuses programs and scripts (.exe, .js, .app, .desktop...) and
+returns the message to show; `file:saveDialog` asks before replacing a file whose extension it
+added. Quitting (`app:quit`) asks every window about unsaved documents, one at a time.
 
 ## Testing
 
@@ -189,7 +223,14 @@ npm run build && xvfb-run -a npx playwright test tests/e2e/<feature>.spec.ts
 ```
 
   `window.__fartcrobat` exposes `registry`, `useApp`, `getActiveDoc`, `openPaths`, `runCommand`
-  for tests. Take screenshots (`page.screenshot({ path: 'test-results/<name>.png' })`) and look at
+  for tests. Set `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` to run specs against a
+  packaged build instead (the release workflow does this for its smoke test).
+- Tests that check output with outside tools (pypdf, poppler `pdfsig`, LibreOffice, openssl) must
+  skip cleanly when the tool is missing; CI installs them (see `.github/workflows/ci.yml` and
+  `tests/requirements.txt`). Generate fixtures ahead of time and commit them rather than building
+  them with Python at test time.
+- Wait for observable state (`expect(...)`, `expect.poll`) rather than fixed sleeps: CI runners are
+  slower than a development machine. Take screenshots (`page.screenshot({ path: 'test-results/<name>.png' })`) and look at
   them: rendering bugs are easy to miss otherwise.
 - Before committing: `npm run typecheck && npm run lint && npm test`.
 

@@ -1,0 +1,5 @@
+# Python packages some tests use to check Fartcrobat's output with independent tools.
+# CI installs them (pip install -r tests/requirements.txt); without them those checks are skipped.
+# The fixture generators (tests/fixtures/**/make_*.py) need more, such as reportlab, but their
+# outputs are committed and no test runs them.
+pypdf==6.17.0
