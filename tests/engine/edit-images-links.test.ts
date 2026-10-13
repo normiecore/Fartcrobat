@@ -511,6 +511,24 @@ describe('links', () => {
     expect((await nav.links(1)).length).toBe(2)
   })
 
+  it('creates and moves links on a rotated page in page coordinates', async () => {
+    const { e, o } = await setup()
+    const nav = e.ops<typeof navOps>('nav')
+    expect(e.info.pages[2].rotation).not.toBe(0)
+    const made = await o.createLink(2, [50, 60, 250, 90], {
+      action: { type: 'uri', uri: 'https://rotated.example' },
+      appearance: { visible: true, width: 1, style: 'solid', color: '#0000ff', highlight: 'invert' }
+    })
+    expect(made.rect.map((v: number) => Math.round(v))).toEqual([50, 60, 250, 90])
+    const listed = (await nav.links(2)).find((l) => l.uri === 'https://rotated.example')!
+    expect(listed.rect.map((v) => Math.round(v))).toEqual([50, 60, 250, 90])
+    const moved = await o.updateLink(2, made.id, { rect: [60, 100, 260, 130] })
+    expect(moved.rect.map((v: number) => Math.round(v))).toEqual([60, 100, 260, 130])
+    const rt = await roundTrip(e)
+    const again = (await rt.ops<typeof navOps>('nav').links(2)).find((l) => l.uri === 'https://rotated.example')!
+    expect(again.rect.map((v) => Math.round(v))).toEqual([60, 100, 260, 130])
+  })
+
   it('creates links from web and e-mail addresses in the text', async () => {
     const { e, o } = await setup()
     const found = await o.findUrls('all')

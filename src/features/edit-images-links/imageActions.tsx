@@ -91,18 +91,31 @@ export async function pickImageFile(title: string): Promise<{ path: string; byte
   return { path: paths[0], bytes: await readFile(paths[0]) }
 }
 
-function busy<T>(img: PageImage, fn: () => Promise<T>): Promise<T> {
+const DROPPED = Symbol('dropped')
+let inFlight = false
+
+/**
+ * Runs one image edit at a time and marks the image busy meanwhile. An edit asked for while
+ * another one is being written (a double click on a button, a held shortcut) is dropped: it would
+ * act on the image as it was before the first edit.
+ */
+async function exclusive<T>(img: PageImage, fn: () => Promise<T>): Promise<T | typeof DROPPED> {
+  if (inFlight) return DROPPED
+  inFlight = true
   useUi.setState({ busyKey: imageKey(img) })
-  return fn().finally(() => {
+  try {
+    return await fn()
+  } finally {
+    inFlight = false
     if (useUi.getState().busyKey === imageKey(img)) useUi.setState({ busyKey: null })
-  })
+  }
 }
 
 /** Applies a page-space transformation and keeps the image selected. */
 export async function transformImage(doc: DocumentModel, page: number, img: PageImage, m: Matrix, kind: TransformKind) {
   try {
-    const next = await busy(img, () => ops(doc).transformImage(page, refOf(img), m, kind))
-    selectImage(doc, page, next)
+    const next = await exclusive(img, () => ops(doc).transformImage(page, refOf(img), m, kind))
+    if (next !== DROPPED) selectImage(doc, page, next)
   } catch (err) {
     showError(err, 'Could not change the image')
   }
@@ -123,8 +136,8 @@ export function nudgeImage(doc: DocumentModel, page: number, img: PageImage, dx:
 
 export async function deleteImage(doc: DocumentModel, page: number, img: PageImage) {
   try {
-    await ops(doc).deleteImage(page, refOf(img))
-    doc.clearSelection()
+    const done = await exclusive(img, () => ops(doc).deleteImage(page, refOf(img)))
+    if (done !== DROPPED) doc.clearSelection()
   } catch (err) {
     showError(err, 'Could not delete the image')
   }
@@ -135,8 +148,8 @@ export async function replaceImage(doc: DocumentModel, page: number, img: PageIm
     const file = await pickImageFile('Replace Image')
     if (!file) return
     const { bytes } = await loadImageBytes(doc, file.bytes)
-    const next = await busy(img, () => ops(doc).replaceImage(page, refOf(img), bytes))
-    selectImage(doc, page, next)
+    const next = await exclusive(img, () => ops(doc).replaceImage(page, refOf(img), bytes))
+    if (next !== DROPPED) selectImage(doc, page, next)
   } catch (err) {
     showError(err, 'Could not replace the image')
   }
@@ -144,8 +157,8 @@ export async function replaceImage(doc: DocumentModel, page: number, img: PageIm
 
 export async function cropImage(doc: DocumentModel, page: number, img: PageImage, rect: Rect) {
   try {
-    const next = await busy(img, () => ops(doc).cropImage(page, refOf(img), rect))
-    selectImage(doc, page, next)
+    const next = await exclusive(img, () => ops(doc).cropImage(page, refOf(img), rect))
+    if (next !== DROPPED) selectImage(doc, page, next)
   } catch (err) {
     showError(err, 'Could not crop the image')
   }
@@ -164,7 +177,8 @@ const ARRANGE_DONE: Record<ArrangeWhere, string> = {
 
 export async function arrangeImage(doc: DocumentModel, page: number, img: PageImage, where: ArrangeWhere) {
   try {
-    const next = await ops(doc).arrangeImage(page, refOf(img), where)
+    const next = await exclusive(img, () => ops(doc).arrangeImage(page, refOf(img), where))
+    if (next === DROPPED) return
     selectImage(doc, page, next)
     toast(ARRANGE_DONE[where], { kind: 'success', timeout: 1500 })
   } catch (err) {

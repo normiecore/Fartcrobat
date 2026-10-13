@@ -28,7 +28,9 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
   outline: none;
   transform-origin: center center;
-  z-index: 5;
+  /* above the text boxes of Edit text & images (their layer is z-index 5), so the handles of the
+     selected image stay reachable where they overlap text */
+  z-index: 6;
 }
 .fc-edit-images-links-frame.is-busy {
   border-style: dashed;

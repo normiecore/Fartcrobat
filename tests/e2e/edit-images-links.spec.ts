@@ -419,9 +419,17 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
   try {
     await openFixture(page)
 
-    // ---- drag a rectangle over a web address --------------------------------------------------------
-    await runCommand(page, 'edit.link.tool')
+    // ---- Menu > Tools > Link > Add/Edit Web or Document Link -------------------------------------------
+    await page.getByRole('button', { name: 'Menu', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Tools', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Add Image…' })).toBeVisible()
+    await page.getByRole('menuitem', { name: 'Link', exact: true }).click()
+    await expect(page.getByRole('menuitem', { name: 'Create Links from URLs…' })).toBeVisible()
+    await shot(page, '16-tools-menu')
+    await page.getByRole('menuitem', { name: 'Add/Edit Web or Document Link' }).click()
     await expect.poll(() => toolId(page)).toBe('edit.link')
+
+    // ---- drag a rectangle over a web address --------------------------------------------------------
     await expect(page.getByText('Drag a rectangle where the link should be.')).toBeVisible()
     const addr = await textRect(page, 'https://example.com/docs')
     const ac = await clientRect(page, [addr[0] - 1, addr[1] - 1, addr[2] + 1, addr[3] + 1])
@@ -433,7 +441,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await create.getByLabel('Line style').selectOption('dashed')
     await expect(create.getByLabel('Line thickness')).toBeVisible()
     await page.waitForTimeout(250)
-    await shot(page, '16-create-link-dialog')
+    await shot(page, '17-create-link-dialog')
     await create.getByRole('button', { name: 'Create link' }).click()
     await expect.poll(async () => (await navLinks(page)).map((l) => l.uri)).toContain('https://example.com/docs')
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Create Link')
@@ -453,7 +461,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.keyboard.press('ArrowRight')
     await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(1)
     await page.waitForTimeout(400)
-    await shot(page, '17-go-to-view')
+    await shot(page, '18-go-to-view')
     await bar.getByRole('button', { name: 'Set Link' }).click()
     await expect(bar).toHaveCount(0)
     await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
@@ -480,7 +488,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
       })
       .toBe(Math.round(wl.w + 30))
     await page.waitForTimeout(300)
-    await shot(page, '18-link-tool')
+    await shot(page, '19-link-tool')
 
     // ---- arrow keys move the selected link ------------------------------------------------------------
     const y0 = (await navLinks(page)).find((l) => l.uri === 'https://example.com/docs')!.rect[1]
@@ -516,7 +524,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     const auto = dialogNamed(page, 'Create Links from URLs')
     await expect(auto).toBeVisible()
     await page.waitForTimeout(250)
-    await shot(page, '19-create-links-from-urls')
+    await shot(page, '20-create-links-from-urls')
     await auto.getByRole('button', { name: 'Create links' }).click()
     await expect
       .poll(async () => (await navLinks(page)).map((l) => l.uri))
@@ -537,7 +545,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
 
     // ---- visible link borders are drawn in the normal view -----------------------------------------------
     await page.waitForTimeout(300)
-    await shot(page, '20-links-normal-view')
+    await shot(page, '21-links-normal-view')
 
     // ---- Remove All Links ----------------------------------------------------------------------------------
     await startCommand(page, 'edit.removeAllLinks')
@@ -562,7 +570,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.mouse.dblclick(center(al).x, center(al).y)
     await expect(props).toBeVisible()
     await page.waitForTimeout(250)
-    await shot(page, '21-dark-link-properties')
+    await shot(page, '22-dark-link-properties')
     await props.getByRole('button', { name: 'Cancel' }).click()
     await enterEditMode(page)
     const d0 = (await images(page))[0]
@@ -570,7 +578,47 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.mouse.click(center(dc).x, center(dc).y)
     await expect(page.locator('.fc-edit-images-links-frame')).toBeVisible()
     await page.waitForTimeout(300)
-    await shot(page, '22-dark-image-selected')
+    await shot(page, '23-dark-image-selected')
+  } finally {
+    await app.close()
+  }
+})
+
+test('page marks: a header added with page marks survives image edits and can still be removed', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFixture(page)
+    const marks = (fn: string, ...args: unknown[]) =>
+      page.evaluate(
+        ({ fn, args }) => (window as any).__fartcrobat.getActiveDoc().ops('page-marks')[fn](...args),
+        { fn, args }
+      )
+    const hasMarks = await page.evaluate(() => (window as any).__fartcrobat.registry.commands.has('marks.headerFooter.add'))
+    test.skip(!hasMarks, 'page-marks is not part of this build')
+    // a header that shrinks the page content to make room for it
+    await marks('apply', { type: 'HeaderFooter', shrink: true, text: { headerCenter: 'CONFIDENTIAL DRAFT' } }, { mode: 'add' })
+    await waitForRender(page)
+    const before = await images(page)
+    await enterEditMode(page)
+    const c = await clientRect(page, before[0].visible)
+    await drag(page, center(c), { x: center(c).x + 60, y: center(c).y })
+    await expect.poll(async () => (await images(page))[0].bbox[0]).toBeCloseTo(before[0].bbox[0] + 60 / c.scale, 0)
+    expect((await images(page))[1].bbox).toEqual(before[1].bbox)
+    // the selection frame matches the shrunk image
+    const moved = (await images(page))[0]
+    const mc = await clientRect(page, moved.visible)
+    const fb = (await page.locator('.fc-edit-images-links-frame').boundingBox())!
+    expect(Math.abs(fb.x - mc.x)).toBeLessThan(2)
+    expect(Math.abs(fb.width - mc.w)).toBeLessThan(2)
+    await page.waitForTimeout(300)
+    await shot(page, '24-page-marks-header')
+    // page marks still finds its header on the edited page and removes it
+    const listing = await marks('list')
+    expect(listing.groups.find((g: any) => g.type === 'HeaderFooter').pages).toContain(0)
+    await marks('remove', 'HeaderFooter')
+    const text = await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.text.plain(0))
+    expect(text).not.toContain('CONFIDENTIAL DRAFT')
+    expect((await images(page)).length).toBe(2)
   } finally {
     await app.close()
   }
