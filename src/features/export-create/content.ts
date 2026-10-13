@@ -1,6 +1,7 @@
 /**
  * Plain data describing the content of a page, as gathered by the engine for export. Shared by
- * the extraction code (engine), the layout analysis and the document builders.
+ * the extraction code (engine), the layout analysis and the document builders. All coordinates are
+ * in page space (points, origin top-left, y down).
  */
 
 export type Box = [number, number, number, number]
@@ -8,17 +9,18 @@ export type Box = [number, number, number, number]
 /** A run of characters with the same style on one line. */
 export interface XRun {
   text: string
+  /** Font name as written in the PDF, without the subset prefix ("Helvetica-Bold"). */
   font: string
   size: number
   /** 0xRRGGBB */
   color: number
-  /** FONT_BOLD | FONT_ITALIC | FONT_MONO | FONT_SERIF (see engine/ops/text.ts) */
+  /** FONT_BOLD | FONT_ITALIC | FONT_MONO | FONT_SERIF */
   flags: number
-  /** Left edge of every character (same length as text). */
-  xs: number[]
-  /** Right edge of the last character. */
+  x0: number
   x1: number
   underline?: boolean
+  strike?: boolean
+  /** External link target (http:, https:, mailto:...). */
   link?: string
 }
 
@@ -30,12 +32,9 @@ export interface XSegment {
   y1: number
   baseline: number
   runs: XRun[]
-  /** Whitespace that came before this segment on the same text line ('' for the first). */
-  lead: string
-  /** Index of the MuPDF line it came from. */
-  line: number
 }
 
+/** One visual line of text: segments that share a baseline, left to right. */
 export interface XLine {
   x0: number
   y0: number
@@ -44,9 +43,9 @@ export interface XLine {
   baseline: number
   /** Dominant font size. */
   size: number
-  /** Index of the MuPDF block (text and image blocks share one sequence). */
+  /** Index of the MuPDF block it came from (text and image blocks share one sequence). */
   block: number
-  /** Text that does not run left to right (rotated or vertical); kept as one segment. */
+  /** Text that does not run left to right (rotated or vertical). */
   rotated: boolean
   segments: XSegment[]
 }
@@ -64,14 +63,36 @@ export interface XImage {
   height: number
 }
 
-/** A straight line or the edge of a box drawn on the page (table borders, underlines). */
+/** A straight line drawn on the page (table borders, underlines). */
 export interface XRule {
-  /** Horizontal rules: y0 == y1 (centre line); vertical: x0 == x1. */
+  /** Horizontal rules: y0 == y1; vertical rules: x0 == x1. */
   x0: number
   y0: number
   x1: number
   y1: number
   dir: 'h' | 'v'
+  /** Stroke width in points. */
+  width: number
+  color: number
+}
+
+/** A filled rectangle (cell shading, coloured boxes). */
+export interface XFill {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  color: number
+}
+
+/** Area of vector artwork (charts, diagrams, shapes): exported as a picture. */
+export interface XDrawing {
+  x0: number
+  y0: number
+  x1: number
+  y1: number
+  /** Has curves, slanted lines or gradients (a chart or diagram), not only filled rectangles. */
+  art: boolean
 }
 
 export interface XLink {
@@ -86,8 +107,9 @@ export interface PageContent {
   lines: XLine[]
   images: XImage[]
   rules: XRule[]
+  fills: XFill[]
+  drawings: XDrawing[]
   links: XLink[]
-  blockCount: number
 }
 
 export const FONT_BOLD = 1
@@ -100,5 +122,14 @@ export function segmentText(seg: XSegment): string {
 }
 
 export function lineText(line: XLine): string {
-  return line.segments.map((s, i) => (i ? s.lead || ' ' : '') + segmentText(s)).join('')
+  return line.segments.map(segmentText).join(' ')
+}
+
+/** Raw page pixels (for TIFF). */
+export interface PageRaster {
+  width: number
+  height: number
+  /** 1 (gray) or 3 (RGB), no alpha. */
+  channels: 1 | 3
+  pixels: Uint8Array
 }

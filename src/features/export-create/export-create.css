@@ -1,0 +1,407 @@
+/* Export a PDF and Create a PDF */
+
+/* ---- shared bits ---- */
+.fc-export-create-hint {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 8px 0 4px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.fc-export-create-hint svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.fc-export-create-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--text);
+}
+.fc-export-create-note svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent-text);
+}
+.fc-export-create-note.is-warning svg {
+  color: var(--warning);
+}
+.fc-export-create-note.is-success svg {
+  color: var(--success);
+}
+.fc-export-create-link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent-text);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+}
+.fc-export-create-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px;
+}
+.fc-export-create-radio {
+  align-items: flex-start;
+}
+.fc-export-create-radio input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.fc-export-create-radio > span {
+  display: flex;
+  flex-direction: column;
+}
+.fc-export-create-radio-hint {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.fc-export-create-checks {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 0 0;
+  padding: 0 4px;
+}
+.fc-export-create-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px 10px;
+  padding: 0 4px;
+}
+.fc-export-create-grid .ui-select,
+.fc-export-create-grid .ui-input {
+  width: 100%;
+  min-width: 0;
+}
+.fc-export-create-label {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* ---- Export a PDF panel ---- */
+.fc-export-create-formats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fc-export-create-format {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  text-align: left;
+  color: var(--text);
+}
+.fc-export-create-format:hover {
+  background: var(--bg-hover);
+}
+.fc-export-create-format.is-active {
+  background: var(--bg-active);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.fc-export-create-format-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.fc-export-create-format-icon.is-word {
+  background: #2b579a;
+}
+.fc-export-create-format-icon.is-excel {
+  background: #217346;
+}
+.fc-export-create-format-icon.is-powerpoint {
+  background: #c43e1c;
+}
+.fc-export-create-format-icon.is-image {
+  background: #7b4fd6;
+}
+.fc-export-create-format-icon.is-html {
+  background: #e0592a;
+}
+.fc-export-create-format-icon.is-text {
+  background: #6e6e6e;
+}
+.fc-export-create-format-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fc-export-create-format-label {
+  font-weight: 600;
+}
+.fc-export-create-format.is-active .fc-export-create-format-label {
+  color: var(--accent-text);
+}
+.fc-export-create-format-desc {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-export-create-range {
+  align-items: center;
+}
+.fc-export-create-range > span {
+  flex-direction: row;
+}
+.fc-export-create-range .ui-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}
+.fc-export-create-panel .ui-field-error {
+  padding: 0 4px 0 25px;
+}
+.ui-panel-footer .fc-export-create-export-btn {
+  flex: 1;
+  justify-content: center;
+}
+.fc-export-create-result {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--success) 45%, var(--border));
+  background: color-mix(in srgb, var(--success) 9%, var(--bg-elev));
+}
+.fc-export-create-result > svg {
+  flex-shrink: 0;
+  color: var(--success);
+  margin-top: 1px;
+}
+.fc-export-create-result-body {
+  min-width: 0;
+  flex: 1;
+}
+.fc-export-create-result-title {
+  font-weight: 600;
+}
+.fc-export-create-result-file {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin: 2px 0 6px;
+}
+.fc-export-create-result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* ---- Create a PDF ---- */
+.fc-export-create-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fc-export-create-view {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  background: var(--doc-bg);
+  display: flex;
+}
+.fc-export-create-view-inner {
+  margin: auto;
+  padding: 32px 24px;
+  width: 100%;
+  max-width: 640px;
+}
+.fc-export-create-card {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.fc-export-create-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 6px;
+}
+.fc-export-create-card-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.fc-export-create-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: #d7373f;
+  color: #fff;
+  flex-shrink: 0;
+}
+.fc-export-create-card-body {
+  padding: 10px 20px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fc-export-create-card-body > .fc-export-create-grid {
+  padding: 0;
+}
+.fc-export-create-card-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+.fc-export-create-lead {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.fc-export-create-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 28px 20px;
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+  text-align: center;
+}
+.fc-export-create-drop.is-over,
+.fc-export-create-files.is-over {
+  border-color: var(--accent);
+  background: var(--bg-active);
+}
+.fc-export-create-drop-hint {
+  font-size: var(--fs-sm);
+  max-width: 440px;
+  line-height: 1.45;
+}
+.fc-export-create-files {
+  border: 2px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+}
+.fc-export-create-files-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 10px 10px;
+  color: var(--text-muted);
+  text-align: center;
+}
+.fc-export-create-files-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+}
+.fc-export-create-files-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 4px;
+  border-radius: var(--radius);
+}
+.fc-export-create-files-list li:hover {
+  background: var(--bg-hover);
+}
+.fc-export-create-files-index {
+  width: 22px;
+  text-align: right;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+.fc-export-create-files-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fc-export-create-files-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.fc-export-create-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.fc-export-create-size .ui-input-number {
+  width: 80px;
+}
+.fc-export-create-size .ui-select {
+  width: auto;
+}
+
+/* Create a PDF opened from Home (no document) covers Home. */
+.fc-export-create-home {
+  position: fixed;
+  top: var(--topbar-h);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  background: var(--doc-bg);
+}
+.fc-export-create-home-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+/* ---- Preferences > Convert ---- */
+.fc-export-create-lo {
+  grid-column: 1 / -1;
+  margin-bottom: 4px;
+}
+.fc-export-create-lo .ui-field {
+  margin-bottom: 4px;
+}
+.fc-export-create-lo-row {
+  display: flex;
+  gap: 6px;
+}
+.fc-export-create-lo-row .ui-input {
+  flex: 1;
+  min-width: 0;
+}
+.fc-export-create-lo .fc-export-create-note {
+  margin: 4px 0 12px;
+}
+
+.fc-export-create-grid .ui-segmented {
+  justify-self: start;
+}

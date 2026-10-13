@@ -48,10 +48,14 @@ export interface HtmlExportOptions {
 export interface TextExportOptions {
   /** Separate pages with a form feed character (\f) instead of a blank line. */
   pageBreaks: boolean
+  /** 'lines': keep every line as in the PDF; 'paragraphs': join the lines of a paragraph. */
+  layout: 'lines' | 'paragraphs'
 }
 
 export interface ExportOptions {
   format: ExportFormat
+  /** Open the exported file in its app when done. */
+  openAfter: boolean
   word: WordOptions
   excel: ExcelOptions
   powerpoint: PowerPointOptions
@@ -62,12 +66,13 @@ export interface ExportOptions {
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
   format: 'word',
+  openAfter: false,
   word: { layout: 'flowing', images: true, structure: true, tables: true },
   excel: { combine: false, numbers: true },
   powerpoint: { mode: 'editable' },
   image: { format: 'png', dpi: 150, quality: 85, grayscale: false, compression: 'deflate' },
   html: { layout: 'page', images: true },
-  text: { pageBreaks: false }
+  text: { pageBreaks: false, layout: 'lines' }
 }
 
 /** Merges stored (possibly partial or outdated) options over the defaults. */
@@ -89,14 +94,24 @@ export function normalizeExportOptions(v: unknown): ExportOptions {
   if (!['png', 'jpeg', 'tiff'].includes(image.format)) image.format = 'png'
   if (!DPI_CHOICES.includes(image.dpi)) image.dpi = 150
   image.quality = Math.max(1, Math.min(100, Math.round(image.quality)))
+  const word = pick(d.word, o.word)
+  if (word.layout !== 'flowing' && word.layout !== 'page') word.layout = 'flowing'
+  const powerpoint = pick(d.powerpoint, o.powerpoint)
+  if (powerpoint.mode !== 'editable' && powerpoint.mode !== 'image') powerpoint.mode = 'editable'
+  const html = pick(d.html, o.html)
+  if (html.layout !== 'page' && html.layout !== 'flowing') html.layout = 'page'
+  const text = pick(d.text, o.text)
+  if (text.layout !== 'lines' && text.layout !== 'paragraphs') text.layout = 'lines'
+  if (image.compression !== 'deflate' && image.compression !== 'none') image.compression = 'deflate'
   return {
     format: formats.includes(o.format as ExportFormat) ? (o.format as ExportFormat) : d.format,
-    word: pick(d.word, o.word),
+    openAfter: typeof o.openAfter === 'boolean' ? o.openAfter : d.openAfter,
+    word,
     excel: pick(d.excel, o.excel),
-    powerpoint: pick(d.powerpoint, o.powerpoint),
+    powerpoint,
     image,
-    html: pick(d.html, o.html),
-    text: pick(d.text, o.text)
+    html,
+    text
   }
 }
 
@@ -217,6 +232,79 @@ export interface ImagePageOptions {
 }
 
 export const DEFAULT_IMAGE_PAGE_OPTIONS: ImagePageOptions = { pageSize: 'image', margin: 36, autoRotate: true }
+
+export function normalizeImagePageOptions(v: unknown): ImagePageOptions {
+  const o = (v && typeof v === 'object' ? v : {}) as Partial<ImagePageOptions>
+  const d = DEFAULT_IMAGE_PAGE_OPTIONS
+  return {
+    pageSize: o.pageSize === 'letter' || o.pageSize === 'a4' || o.pageSize === 'image' ? o.pageSize : d.pageSize,
+    margin: typeof o.margin === 'number' && o.margin >= 0 && o.margin <= 144 ? o.margin : d.margin,
+    autoRotate: typeof o.autoRotate === 'boolean' ? o.autoRotate : d.autoRotate
+  }
+}
+
+export interface ImagePlacement {
+  pageWidth: number
+  pageHeight: number
+  /** Scale applied to the image's natural size (points at its resolution). */
+  scale: number
+  /** Top-left corner of the image on the page. */
+  x: number
+  y: number
+}
+
+/**
+ * Where an image of natural size w × h points goes: on a page of its own size, or fitted (never
+ * enlarged) and centred inside the margins of a Letter or A4 page, turned to landscape for wide
+ * images when autoRotate is on.
+ */
+export function fitImagePage(w: number, h: number, opts: ImagePageOptions): ImagePlacement {
+  if (opts.pageSize === 'image') return { pageWidth: w, pageHeight: h, scale: 1, x: 0, y: 0 }
+  const preset = PAGE_SIZES.find((p) => p.id === opts.pageSize) ?? PAGE_SIZES[0]
+  let pw = preset.width
+  let ph = preset.height
+  if (opts.autoRotate && w > h) [pw, ph] = [ph, pw]
+  const margin = Math.max(0, Math.min(opts.margin, Math.min(pw, ph) / 2 - 36))
+  const scale = Math.min(1, (pw - 2 * margin) / w, (ph - 2 * margin) / h)
+  return { pageWidth: pw, pageHeight: ph, scale, x: (pw - w * scale) / 2, y: (ph - h * scale) / 2 }
+}
+
+export interface BlankOptions {
+  /** A PAGE_SIZES id, or 'custom'. */
+  preset: string
+  /** Custom size in the chosen unit. */
+  width: number
+  height: number
+  unit: 'in' | 'mm' | 'pt'
+  landscape: boolean
+  pages: number
+}
+
+export const DEFAULT_BLANK: BlankOptions = { preset: 'letter', width: 8.5, height: 11, unit: 'in', landscape: false, pages: 1 }
+
+/** Page size in points for the blank page options. */
+export function blankSize(b: BlankOptions): { width: number; height: number } | string {
+  let w: number
+  let h: number
+  const preset = PAGE_SIZES.find((p) => p.id === b.preset)
+  if (preset) {
+    w = preset.width
+    h = preset.height
+  } else {
+    const f = b.unit === 'in' ? 72 : b.unit === 'mm' ? 72 / 25.4 : 1
+    w = b.width * f
+    h = b.height * f
+  }
+  if (!(w >= 72 && h >= 72)) return 'Pages must be at least 1 inch (25.4 mm) wide and tall'
+  if (w > 14400 || h > 14400) return 'Pages can be at most 200 inches (5080 mm) wide and tall'
+  if (b.landscape !== w > h) [w, h] = [h, w]
+  return { width: w, height: h }
+}
+
+/** A piece of a new PDF (Create a PDF). */
+export type CreatePart =
+  | { kind: 'file'; name: string; data: Uint8Array; password?: string }
+  | { kind: 'blank'; width: number; height: number; count: number }
 
 export interface HtmlConvertOptions {
   pageSize: 'Letter' | 'A4' | 'Legal'

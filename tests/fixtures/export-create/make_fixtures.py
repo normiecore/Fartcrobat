@@ -152,6 +152,70 @@ def rich_doc():
     c.save()
 
 
+def complex_doc():
+    """Two columns, a vector chart with labels, a shaded table, underlined and linked text."""
+    c = canvas.Canvas(os.path.join(OUT, 'complex.pdf'), pagesize=letter)
+    c.setTitle('Complex Layout')
+    c.setFont('Helvetica-Bold', 20)
+    c.drawString(72, 730, 'Field Report')
+    body = ParagraphStyle('col', fontName='Times-Roman', fontSize=10, leading=13, alignment=TA_JUSTIFY)
+    left = ('The left column describes the survey. ' * 9).strip()
+    right = ('The right column lists the results of the survey in detail. ' * 7).strip()
+    for x, text in ((72, left), (318, right)):
+        p = Paragraph(text, body)
+        _, h = p.wrap(222, 400)
+        p.drawOn(c, x, 710 - h)
+    # Vector bar chart with grid lines, axis and labels
+    ox, oy, w, h = 100, 380, 300, 150
+    c.setStrokeColor(colors.HexColor('#BBBBBB'))
+    c.setLineWidth(0.5)
+    for i in range(1, 5):
+        c.line(ox, oy + i * h / 4, ox + w, oy + i * h / 4)
+    c.setStrokeColor(colors.black)
+    c.setLineWidth(1)
+    c.line(ox, oy, ox + w, oy)
+    c.line(ox, oy, ox, oy + h)
+    for i, (label, val, col) in enumerate([('Q1', 60, '#1473E6'), ('Q2', 110, '#268E6C'), ('Q3', 90, '#DA7B11'), ('Q4', 140, '#D7373F')]):
+        c.setFillColor(colors.HexColor(col))
+        c.rect(ox + 20 + i * 70, oy, 40, val, stroke=0, fill=1)
+        c.setFillColor(colors.black)
+        c.setFont('Helvetica', 9)
+        c.drawCentredString(ox + 40 + i * 70, oy - 12, label)
+    c.setStrokeColor(colors.HexColor('#7B4FD6'))
+    c.setLineWidth(2)
+    pth = c.beginPath()
+    pth.moveTo(ox + 40, oy + 50)
+    pth.curveTo(ox + 110, oy + 120, ox + 180, oy + 60, ox + 250, oy + 130)
+    c.drawPath(pth, stroke=1, fill=0)
+    c.setFont('Helvetica-Bold', 10)
+    c.drawString(ox, oy + h + 8, 'Sales by quarter')
+    # Shaded-header table
+    top = 330
+    widths = [160, 100, 100]
+    rows = [['Item', 'Count', 'Share'], ['Apples', '120', '40%'], ['Pears', '90', '30%'], ['Plums', '90', '30%']]
+    c.setFillColor(colors.HexColor('#DDE7F7'))
+    c.rect(72, top - 20, sum(widths), 20, stroke=0, fill=1)
+    c.setFillColor(colors.black)
+    draw_table(c, 72, top, widths, rows, row_h=20)
+    # Underlined text and a link
+    c.setFont('Helvetica', 11)
+    c.drawString(72, 210, 'Read the full terms at')
+    c.setFillColor(colors.HexColor('#1473E6'))
+    c.drawString(190, 210, 'example.org/terms')
+    c.linkURL('https://example.org/terms', (190, 205, 290, 220), relative=0)
+    c.setStrokeColor(colors.HexColor('#1473E6'))
+    c.setLineWidth(0.6)
+    c.line(190, 208, 190 + c.stringWidth('example.org/terms', 'Helvetica', 11), 208)
+    c.setFillColor(colors.black)
+    c.drawString(72, 190, 'This sentence is')
+    c.drawString(160, 190, 'important')
+    c.setStrokeColor(colors.black)
+    c.line(160, 188, 160 + c.stringWidth('important', 'Helvetica', 11), 188)
+    c.drawString(212, 190, 'for everyone.')
+    c.showPage()
+    c.save()
+
+
 def sample_docx():
     from docx import Document
     d = Document()
@@ -191,5 +255,6 @@ td, th {{ border: 1px solid #888; padding: 4px 8px; }} .banner {{ background: #f
 if __name__ == '__main__':
     table_doc()
     rich_doc()
+    complex_doc()
     sample_docx()
     sample_html()
