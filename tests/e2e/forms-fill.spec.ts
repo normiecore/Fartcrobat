@@ -91,6 +91,8 @@ test('fill form.pdf with the mouse and keyboard, save, reopen, clear and undo', 
     await expect.poll(() => valueOf(page, 'email')).toBe('ada@example.com')
     await page.keyboard.press('Shift+Tab')
     await expect(field(page, 'email')).toBeFocused()
+    // Straight back into the field: it shows what was typed, even before the page has reloaded it
+    await expect(field(page, 'email')).toHaveValue('ada@example.com')
     // Enter in a single-line field commits and moves on
     await page.keyboard.press('End')
     await page.keyboard.type('.uk')
