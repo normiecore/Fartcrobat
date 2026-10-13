@@ -8,6 +8,8 @@ import {
   getActiveDoc,
   invoke,
   openToolGroup,
+  registry,
+  runCommand,
   setTool,
   showError,
   toast,
@@ -166,6 +168,26 @@ export function blockAt(blocks: TextBlockInfo[], p: Point, pad = 2, marks = fals
   return best
 }
 
+// ---- documents that do not allow changes ------------------------------------------------------
+
+/** Command of "Protect a PDF" that asks for the permissions password. */
+export const UNLOCK_COMMAND = 'protect.unlock'
+
+/** False when the document's permissions forbid changing it (until the permissions password is entered). */
+export function editingAllowed(doc: DocumentModel): boolean {
+  return doc.state.info.permissions?.edit !== false
+}
+
+export function explainLocked() {
+  toast('The author of this document does not allow changes to its content.', {
+    kind: 'warning',
+    timeout: 7000,
+    action: registry.commands.has(UNLOCK_COMMAND)
+      ? { label: 'Enter password…', run: () => void runCommand(UNLOCK_COMMAND) }
+      : undefined
+  })
+}
+
 /** Plain name of a kind of page mark, for messages. */
 export function markName(mark: MarkType): string {
   return mark === 'HeaderFooter'
@@ -239,6 +261,10 @@ export async function beginEdit(
   pagePoint: Point | null,
   selection?: Sel
 ) {
+  if (!editingAllowed(doc)) {
+    explainLocked()
+    return
+  }
   const hadSession = !!useEditText.getState().session || !!committing
   await commitSession()
   let target: TextBlockInfo | null = block
@@ -266,6 +292,10 @@ export async function beginEdit(
 export async function editTextAt(doc: DocumentModel, page: number, point: Point, selectText?: string) {
   if (useApp.getState().toolGroupId !== 'edit') openToolGroup('edit')
   if (useApp.getState().toolId !== 'edit.content') setTool('edit.content')
+  if (!editingAllowed(doc)) {
+    explainLocked()
+    return
+  }
   let blocks: TextBlockInfo[]
   try {
     blocks = await loadBlocks(doc, page)
@@ -295,6 +325,10 @@ export async function beginNewText(
   width: number | null,
   dir: Point = [1, 0]
 ) {
+  if (!editingAllowed(doc)) {
+    explainLocked()
+    return
+  }
   await commitSession()
   if (useEditText.getState().session) return
   const d = useEditText.getState().defaults

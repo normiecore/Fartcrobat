@@ -160,7 +160,20 @@ def office_report():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def no_edit():
+    """text.pdf that opens without a password but whose permissions forbid changing it."""
+    from pypdf import PdfReader, PdfWriter
+    from pypdf.constants import UserAccessPermissions as P
+
+    writer = PdfWriter(clone_from=PdfReader(os.path.join(OUT, '..', 'text.pdf')))
+    allowed = P.PRINT | P.EXTRACT | P.ADD_OR_MODIFY | P.FILL_FORM_FIELDS | P.EXTRACT_TEXT_AND_GRAPHICS | P.PRINT_TO_REPRESENTATION
+    writer.encrypt(user_password='', owner_password='owner-secret', permissions_flag=allowed, algorithm='AES-128')
+    with open(os.path.join(OUT, 'no-edit.pdf'), 'wb') as f:
+        writer.write(f)
+
+
 if __name__ == '__main__':
+    no_edit()
     shared_xobject()
     office_report()
     subset_font()

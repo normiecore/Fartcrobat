@@ -608,3 +608,41 @@ test('finishes the text being edited when saving from the menu or closing the do
     await app.close()
   }
 })
+
+test('a document that does not allow changes asks for its permissions password first', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('edit-text/no-edit.pdf'))
+    await waitForRender(page)
+    await page.locator('.shell-alltools-item', { hasText: 'Edit a PDF' }).click()
+    const bar = page.locator('.fc-edit-text-toolbar')
+    await expect(bar).toContainText('does not allow changes')
+    await expect(page.locator('.fc-edit-text-note')).toBeVisible()
+    await expect(page.locator('.fc-edit-text-box')).toHaveCount(0)
+    // Add text explains instead of starting a text box
+    await bar.getByRole('radio', { name: 'Add text' }).click()
+    await clickPage(page, 0.5, 0.6)
+    await expect(editor(page)).toHaveCount(0)
+    await expect(page.locator('.toast').filter({ hasText: 'does not allow changes' }).first()).toBeVisible()
+    await shot(page, '26-locked-document')
+
+    // "Protect a PDF" asks for the permissions password and lifts the restrictions
+    await bar.getByRole('button', { name: 'Enter password…' }).click()
+    const ask = page
+      .locator('.ui-dialog')
+      .filter({ has: page.locator('h2', { hasText: 'Permissions password' }) })
+    await expect(ask).toBeVisible()
+    await ask.locator('input[type="password"]').fill('owner-secret')
+    await ask.getByRole('button', { name: 'Unlock' }).click()
+    await expect(page.locator('.fc-edit-text-note')).toHaveCount(0)
+    await bar.getByRole('radio', { name: 'Edit' }).click()
+    await blockButton(page, /^Edit text: Chapter 1$/).click()
+    await expect(editor(page)).toBeFocused()
+    await page.keyboard.press('Control+A')
+    await page.keyboard.type('Unlocked')
+    await page.keyboard.press('Control+Enter')
+    await expect.poll(() => pageText(page)).toContain('Unlocked')
+  } finally {
+    await app.close()
+  }
+})

@@ -249,3 +249,24 @@
   left: auto;
   right: 0;
 }
+
+/* the document's permissions do not allow changes */
+.fc-edit-text-note {
+  display: flex;
+  gap: 8px;
+  margin: 4px 12px 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+.fc-edit-text-note > svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warning);
+}
+.fc-edit-text-note p {
+  margin: 0 0 6px;
+}

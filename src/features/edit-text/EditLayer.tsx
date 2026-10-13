@@ -10,6 +10,7 @@ import {
   showError,
   toast,
   useApp,
+  useDocState,
   usePageVersion,
   type ContextMenuItem,
   type DocumentModel,
@@ -253,7 +254,8 @@ export function EditLayer({ doc, pageIndex, geometry }: PageLayerProps) {
   const session = useEditText((s) => s.session)
   const contentMode = toolId === 'edit.content'
   const addMode = toolId === 'edit.addText'
-  const blocks = usePageBlocks(doc, pageIndex, contentMode)
+  const allowed = useDocState(doc, (s) => s.info.permissions?.edit !== false)
+  const blocks = usePageBlocks(doc, pageIndex, contentMode && allowed)
   const mine = session && session.doc === doc && session.page === pageIndex ? session : null
   const ref = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<{ a: Point; b: Point } | null>(null)
@@ -306,6 +308,7 @@ export function EditLayer({ doc, pageIndex, geometry }: PageLayerProps) {
       onPointerUp={onPointerUp}
     >
       {contentMode &&
+        allowed &&
         blocks &&
         // larger boxes first, so a small box inside or across a big one stays clickable
         [...blocks]

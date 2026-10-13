@@ -5,10 +5,12 @@ import {
   Droplet,
   Hash,
   Image as ImageIcon,
+  KeyRound,
   LayoutGrid,
   Link,
   PanelTop,
   ScanText,
+  ShieldAlert,
   TextCursorInput,
   Type,
   Wallpaper,
@@ -33,7 +35,7 @@ import {
   type Icon
 } from '@renderer/sdk'
 import { PanelFormat } from './FormatControls'
-import { commitSession, loadBlocks, useEditText } from './store'
+import { commitSession, loadBlocks, UNLOCK_COMMAND, useEditText } from './store'
 
 interface Entry {
   id: string
@@ -171,6 +173,25 @@ function MenuRow({ entry, disabled }: { entry: Entry; disabled: boolean }) {
   )
 }
 
+/** Note shown when the document's permissions do not allow changing it. */
+function LockedNote({ doc }: { doc: DocumentModel }) {
+  const locked = useDocState(doc, (s) => s.info.permissions?.edit === false)
+  if (!locked) return null
+  return (
+    <div className="fc-edit-text-note" role="note">
+      <ShieldAlert size={16} aria-hidden />
+      <div>
+        <p>The author of this document does not allow changes to its content.</p>
+        {registry.commands.has(UNLOCK_COMMAND) && (
+          <Button size="sm" onClick={() => void runCommand(UNLOCK_COMMAND)}>
+            Enter password…
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function EditPanel({ doc }: { doc: DocumentModel | null }) {
   const toolId = useApp((s) => s.toolId)
   const editing = useEditText((s) => !!s.session)
@@ -179,6 +200,7 @@ export function EditPanel({ doc }: { doc: DocumentModel | null }) {
   return (
     <ToolPanelFrame title="Edit a PDF">
       <div className="fc-edit-text-panel" data-fc-edit-text-keep>
+        {doc && <LockedNote doc={doc} />}
         <Section title="Edit and add">
           {content.map((e) => {
             const tool = registry.tools.get(e.id)
@@ -239,10 +261,12 @@ export function EditToolbar({ doc }: { doc: DocumentModel }) {
   const toolId = useApp((s) => s.toolId)
   const editing = useEditText((s) => !!s.session)
   const page = useDocState(doc, (s) => s.currentPage)
-  const hasText = usePageHasText(doc, page, toolId === 'edit.content')
-  const noText = toolId === 'edit.content' && !editing && hasText === false
-  const hint =
-    toolId === 'edit.addText'
+  const locked = useDocState(doc, (s) => s.info.permissions?.edit === false)
+  const hasText = usePageHasText(doc, page, toolId === 'edit.content' && !locked)
+  const noText = toolId === 'edit.content' && !editing && !locked && hasText === false
+  const hint = locked
+    ? 'The author of this document does not allow changes to its content.'
+    : toolId === 'edit.addText'
       ? 'Click where you want to add text, or drag to set the width of a text box.'
       : editing
         ? 'Type to change the text. Click outside the box to finish, or press Esc to cancel.'
@@ -274,6 +298,11 @@ export function EditToolbar({ doc }: { doc: DocumentModel }) {
       <span className="fc-edit-text-toolbar-hint" title={hint}>
         {hint}
       </span>
+      {locked && registry.commands.has(UNLOCK_COMMAND) && (
+        <Button size="sm" icon={KeyRound} onClick={() => void runCommand(UNLOCK_COMMAND)}>
+          Enter password…
+        </Button>
+      )}
       {noText && registry.commands.has('ocr.recognize') && (
         <Button size="sm" icon={ScanText} onClick={() => void runCommand('ocr.recognize')}>
           Recognize text
