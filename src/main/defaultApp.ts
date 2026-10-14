@@ -3,7 +3,15 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { DefaultAppStatus } from '@shared/types'
-import { DESKTOP_FILE, desktopEntry, findDesktopFile, isGeneratedDesktopFile, userApplicationsDir } from './util/linuxDesktop'
+import { appImageFile } from './util/appImage'
+import {
+  DESKTOP_FILE,
+  desktopEntry,
+  findDesktopFile,
+  isGeneratedDesktopFile,
+  retargetDesktopEntry,
+  userApplicationsDir
+} from './util/linuxDesktop'
 import { isFartcrobatProgId, regValue } from './util/systemDefaults'
 
 function run(cmd: string, args: string[]): Promise<string> {
@@ -14,12 +22,12 @@ function run(cmd: string, args: string[]): Promise<string> {
 
 /**
  * Linux: the program a desktop entry should start. AppImages run from $APPIMAGE (the mounted
- * executable changes on every start); tar.gz installs run the executable in place. Unpackaged
- * (development) runs cannot register themselves.
+ * executable changes on every start), but only when this process runs from it (another AppImage
+ * that started this one passes its own on); tar.gz installs run the executable in place.
+ * Unpackaged (development) runs cannot register themselves.
  */
 function linuxExecutable(): string | null {
-  if (process.env.APPIMAGE) return process.env.APPIMAGE
-  return app.isPackaged ? process.execPath : null
+  return appImageFile(process.execPath, process.env) ?? (app.isPackaged ? process.execPath : null)
 }
 
 /** Copies the app icon to the user's icon theme folder so the desktop entry has an icon. */
@@ -55,6 +63,22 @@ function ensureLinuxDesktopFile(): boolean {
   } catch (err) {
     console.error('Could not write the desktop entry', err)
     return !!existing
+  }
+}
+
+/**
+ * An update installed the AppImage at `from` under a new name, `to` (electron-updater does that
+ * when the old name has a version in it, and deletes the old file). Points the desktop entry
+ * Fartcrobat wrote for itself at the new file, so PDFs and launchers still open it. Synchronous,
+ * because it runs while the app quits.
+ */
+export function linuxAppImageMoved(from: string, to: string) {
+  const path = join(userApplicationsDir(), DESKTOP_FILE)
+  try {
+    const content = retargetDesktopEntry(readFileSync(path, 'utf8'), from, to)
+    if (content !== null) writeFileSync(path, content, { mode: 0o644 })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Could not update the desktop entry', err)
   }
 }
 

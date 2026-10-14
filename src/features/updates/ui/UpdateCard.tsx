@@ -2,17 +2,21 @@
  * The update notification in the bottom right corner: a new version is available, downloading,
  * ready to install, or its download failed. With a document open it sits in the corner of the
  * document area, so it never covers the page controls in the right rail or an open right panel;
- * on Home, in the corner of the window. It stays under dialogs and menus, and out of Read Mode.
+ * on Home, or when side panes leave the document area too narrow for it, in the corner of the
+ * window. It stays under dialogs and menus, and out of Read Mode.
  */
-import { useId, useLayoutEffect, useState, type ReactNode } from 'react'
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, ArrowDownCircle, CheckCircle2, X } from 'lucide-react'
 import type { UpdateStatus } from '@shared/updates'
 import { Button, IconButton, useApp, type Icon } from '@renderer/sdk'
-import { cardView, percentOf, progressLabel } from './format'
+import { cardTitle, cardView, percentOf, progressLabel } from './format'
 import { updateAction, useUpdates } from './store'
 
 const P = 'fc-updates'
+
+/** The card's width and its margins in the document area (updates.css). */
+const CARD_SPACE = 340 + 2 * 22
 
 export function UpdateCard() {
   const status = useUpdates((s) => s.status)
@@ -20,6 +24,8 @@ export function UpdateCard() {
   // Read Mode applies to a document (Home keeps its chrome), as in the shell.
   const readMode = useApp((s) => s.readMode) && hasDoc
   const [host, setHost] = useState<HTMLElement | null>(null)
+  const [hostTooNarrow, setHostTooNarrow] = useState(false)
+  const sectionRef = useRef<HTMLElement>(null)
 
   // The shell renders the document area when a document is open and Home when none is: find it
   // again when that changes (switching between documents keeps the same element).
@@ -28,11 +34,40 @@ export function UpdateCard() {
     if (el !== host) setHost(el)
   }, [host, hasDoc])
 
-  const view = cardView(status)
-  if (!view || !status?.update || readMode) return null
-  const card = (
+  // A small window with panes open on both sides leaves too little room for the card there.
+  useLayoutEffect(() => {
+    if (!host) return
+    const measure = () => setHostTooNarrow(host.clientWidth < CARD_SPACE)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [host])
+
+  const update = status?.update
+  const view = update && !readMode ? cardView(status) : null
+
+  // Each view has its own buttons, so the one that had the focus goes when the view changes. Read
+  // before React replaces them: whether the focus was on the card.
+  const lastView = useRef(view)
+  const refocus = useRef(false)
+  if (lastView.current !== view) {
+    refocus.current = !!sectionRef.current?.contains(document.activeElement)
+    lastView.current = view
+  }
+  useLayoutEffect(() => {
+    if (!refocus.current) return
+    refocus.current = false
+    // Unless the focus went somewhere else meanwhile, it moves on to the new view's main button.
+    const active = document.activeElement
+    if (active && active !== document.body) return
+    sectionRef.current?.querySelector<HTMLElement>('[data-focus]')?.focus()
+  }, [view])
+
+  const card = view && status && (
     <section
-      className={`${P}-card ${host ? '' : 'is-window'}`}
+      ref={sectionRef}
+      className={`${P}-card ${host && !hostTooNarrow ? '' : 'is-window'}`}
       role="region"
       aria-label="Update"
       data-view={view}
@@ -43,7 +78,15 @@ export function UpdateCard() {
       {view === 'downloadError' && <DownloadError status={status} />}
     </section>
   )
-  return host ? createPortal(card, host) : card
+  return (
+    <>
+      {/* Always in place, so screen readers announce each change of the card. */}
+      <div className={`${P}-live ui-visually-hidden`} aria-live="polite" aria-atomic="true">
+        {view && update ? cardTitle(view, update.version) : ''}
+      </div>
+      {card && (host && !hostTooNarrow ? createPortal(card, host) : card)}
+    </>
+  )
 }
 
 function Head({
@@ -65,10 +108,7 @@ function Head({
         <IconC size={20} />
       </span>
       <div className={`${P}-text`}>
-        {/* Announced when the flow moves on (available, downloading, ready...). */}
-        <div className={`${P}-title`} aria-live="polite">
-          {title}
-        </div>
+        <div className={`${P}-title`}>{title}</div>
         {sub && <div className={`${P}-sub`}>{sub}</div>}
       </div>
       {close}
@@ -97,7 +137,7 @@ function Available({ status }: { status: UpdateStatus }) {
       <Head
         icon={ArrowDownCircle}
         tone="accent"
-        title={`Fartcrobat ${status.update!.version} is available.`}
+        title={cardTitle('available', status.update!.version)}
         sub={`You have ${status.currentVersion}.`}
         close={<CloseButton />}
       />
@@ -105,6 +145,7 @@ function Available({ status }: { status: UpdateStatus }) {
         <Button
           variant="primary"
           size="sm"
+          data-focus
           aria-describedby={notify ? noteId : undefined}
           onClick={() => updateAction('feature:updates:download')}
         >
@@ -132,7 +173,7 @@ function Downloading({ status }: { status: UpdateStatus }) {
       <Head
         icon={ArrowDownCircle}
         tone="accent"
-        title={`Downloading Fartcrobat ${version}…`}
+        title={cardTitle('downloading', version)}
         close={<CloseButton title="Hide. The download continues." />}
       />
       <div
@@ -148,7 +189,7 @@ function Downloading({ status }: { status: UpdateStatus }) {
       </div>
       <div className={`${P}-progress`}>
         <span className={`${P}-progress-text`}>{label}</span>
-        <Button size="sm" variant="quiet" onClick={() => updateAction('feature:updates:cancel')}>
+        <Button size="sm" variant="quiet" data-focus onClick={() => updateAction('feature:updates:cancel')}>
           Cancel
         </Button>
       </div>
@@ -163,16 +204,18 @@ function Ready({ status }: { status: UpdateStatus }) {
       <Head
         icon={CheckCircle2}
         tone="success"
-        title={`Fartcrobat ${status.update!.version} is ready to install.`}
+        title={cardTitle('ready', status.update!.version)}
         sub="Restart Fartcrobat to finish."
       />
       <div className={`${P}-actions`}>
         <Button variant="primary" size="sm" onClick={() => updateAction('feature:updates:restart')}>
           Restart now
         </Button>
+        {/* Gets the focus when the download finishes under it: harmless if Enter was meant for Cancel. */}
         <Button
           variant="quiet"
           size="sm"
+          data-focus
           title="It installs the next time you quit."
           aria-describedby={noteId}
           onClick={() => updateAction('feature:updates:dismiss')}
@@ -188,7 +231,7 @@ function Ready({ status }: { status: UpdateStatus }) {
 }
 
 function DownloadError({ status }: { status: UpdateStatus }) {
-  const title = `Couldn't download Fartcrobat ${status.update!.version}.`
+  const title = cardTitle('downloadError', status.update!.version)
   return (
     <>
       <Head
@@ -199,7 +242,7 @@ function DownloadError({ status }: { status: UpdateStatus }) {
         close={<CloseButton />}
       />
       <div className={`${P}-actions`}>
-        <Button variant="primary" size="sm" onClick={() => updateAction('feature:updates:download')}>
+        <Button variant="primary" size="sm" data-focus onClick={() => updateAction('feature:updates:download')}>
           Try again
         </Button>
         <Button variant="quiet" size="sm" onClick={() => updateAction('feature:updates:openReleasePage')}>

@@ -3,7 +3,17 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { RENDERER_CSP } from '@main/util/csp'
-import { applicationsDirs, desktopEntry, desktopExecQuote, findDesktopFile, GENERATED_MARKER, isGeneratedDesktopFile, userApplicationsDir } from '@main/util/linuxDesktop'
+import { appImageFile } from '@main/util/appImage'
+import {
+  applicationsDirs,
+  desktopEntry,
+  desktopExecQuote,
+  findDesktopFile,
+  GENERATED_MARKER,
+  isGeneratedDesktopFile,
+  retargetDesktopEntry,
+  userApplicationsDir
+} from '@main/util/linuxDesktop'
 import { sheetStyle } from '@main/util/printSheet'
 import { isFartcrobatProgId, parseLpstatDefault, parseWindowsDevice, regValue, WINDOWS_PROG_ID } from '@main/util/systemDefaults'
 
@@ -75,6 +85,38 @@ describe('Linux desktop entry', () => {
 
   it('escapes special characters in the program path', () => {
     expect(desktopExecQuote('/opt/a"b`c$d\\e%f')).toBe('"/opt/a\\\\"b\\\\`c\\\\$d\\\\\\\\e%%f"')
+  })
+  it('follows an AppImage an update renamed, only in entries Fartcrobat wrote for that file', () => {
+    const from = '/home/me/Apps/Fartcrobat-0.2.0.AppImage'
+    const to = '/home/me/Apps/Fartcrobat-0.2.1.AppImage'
+    const entry = desktopEntry(from, 'fartcrobat')
+    expect(retargetDesktopEntry(entry, from, to)).toBe(desktopEntry(to, 'fartcrobat'))
+    // Another install the person made the default, or an entry a package installed.
+    expect(retargetDesktopEntry(desktopEntry('/opt/Fartcrobat/fartcrobat', 'fartcrobat'), from, to)).toBeNull()
+    expect(retargetDesktopEntry(entry.replace(GENERATED_MARKER, ''), from, to)).toBeNull()
+  })
+})
+
+describe('AppImage', () => {
+  const mount = '/tmp/.mount_FartcrAb12'
+  const own = { APPIMAGE: '/home/me/Apps/Fartcrobat.AppImage', APPDIR: mount }
+  const none = () => null
+
+  it('is the file this process runs from only when execPath is inside APPDIR', () => {
+    expect(appImageFile(`${mount}/fartcrobat`, own, none)).toBe(own.APPIMAGE)
+    expect(appImageFile(`${mount}/fartcrobat`, { ...own, APPDIR: `${mount}/` }, none)).toBe(own.APPIMAGE)
+    // Passed on by another AppImage that started this copy.
+    expect(appImageFile('/opt/Fartcrobat/fartcrobat', own, none)).toBeNull()
+    expect(appImageFile(`${mount}x/fartcrobat`, own, none)).toBeNull()
+    expect(appImageFile(`${mount}/fartcrobat`, { APPIMAGE: own.APPIMAGE }, none)).toBeNull()
+    expect(appImageFile(`${mount}/fartcrobat`, { APPDIR: mount }, none)).toBeNull()
+    expect(appImageFile('/fartcrobat', { ...own, APPDIR: '/' }, none)).toBeNull()
+    // A mount under a linked temporary folder: execPath is the resolved path.
+    const linked = { ...own, APPDIR: '/home/me/tmp/.mount_FartcrAb12' }
+    expect(appImageFile(`${mount}/fartcrobat`, linked, (p) => (p === linked.APPDIR ? mount : null))).toBe(
+      own.APPIMAGE
+    )
+    expect(appImageFile(`${mount}/fartcrobat`, linked, none)).toBeNull()
   })
 })
 

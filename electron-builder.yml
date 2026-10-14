@@ -104,5 +104,11 @@ linux:
       Keywords: pdf;acrobat;reader;editor;sign;forms;
       StartupWMClass: Fartcrobat
   maintainer: Fartcrobat contributors <noreply@fartcrobat.org>
+# No version in the AppImage's file name: an in-app update then replaces the file in place, so the
+# desktop entry and launchers that start it keep working. (electron-updater gives a file with a
+# version in its name the new version's name and deletes the old one; src/features/updates follows
+# that rename for files people renamed themselves.)
+appImage:
+  artifactName: ${productName}-${arch}.${ext}
 deb:
   priority: optional

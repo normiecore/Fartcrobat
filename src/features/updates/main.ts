@@ -1,9 +1,11 @@
 // Updates, main process: Electron glue around ./main/service (see docs/features/updates.md).
 import { app, shell } from 'electron'
-import { existsSync } from 'node:fs'
+import { accessSync, constants, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { retargetAppFile } from '@features/agent-access/main/endpoint'
 import { appVersion } from '@main/appVersion'
 import type { MainContext } from '@main/context'
+import { linuxAppImageMoved } from '@main/defaultApp'
 import { readMachinePolicy } from '@main/policy'
 import { allWindows, quitForUpdate } from '@main/windows'
 import type { UpdateCapability } from '@shared/updates'
@@ -22,7 +24,23 @@ function makeUpdater(capability: UpdateCapability, settings: UpdateSettings): Up
       config: () => readFakeConfig(fakeFile),
       onQuit: (handler) => app.once('quit', (_e, exitCode) => handler(exitCode))
     })
-  return electronUpdater(process.platform)
+  return electronUpdater(process.platform, {
+    // The AppImage got a new file name: what starts it (the desktop entry Fartcrobat wrote as the
+    // default PDF app, the agent shim's app.json) must name the new file, before this process exits.
+    appImageMoved: (from, to) => {
+      linuxAppImageMoved(from, to)
+      retargetAppFile(app.getPath('userData'), from, to)
+    }
+  })
+}
+
+function writable(dir: string): boolean {
+  try {
+    accessSync(dir, constants.W_OK)
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function register(ctx: MainContext) {
@@ -31,7 +49,9 @@ export function register(ctx: MainContext) {
     platform: process.platform,
     isPackaged: app.isPackaged,
     env: process.env,
-    hasUpdateConfig: app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
+    execPath: process.execPath,
+    hasUpdateConfig: app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
+    writable
   })
   const service = new UpdateService({
     currentVersion: appVersion(),

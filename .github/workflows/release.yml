@@ -2,7 +2,10 @@ name: Release
 
 # Builds installers for Windows, macOS and Linux. Run it manually to only build them. To publish
 # a GitHub release with the installers attached, either run it manually on main with a version
-# (the tag v<version> is created on the commit it built), or push a tag like v0.2.0.
+# (the tag v<version> is created on the commit it built), or push a tag like v0.2.0. To write the
+# release notes on GitHub first, save the release as a draft (do not publish it), run this
+# workflow, and publish the draft once the installers are attached: installed copies offer the
+# latest published release as soon as it exists.
 on:
   workflow_dispatch:
     inputs:
@@ -110,8 +113,17 @@ jobs:
             exit 1
           fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # Made on GitHub first (Releases > Draft a new release): attach the installers.
+            # Made on GitHub first (Releases > Draft a new release, Save draft): attach the
+            # installers. Only to a draft: installed copies already offer a published release, and
+            # --clobber replaces its files one at a time, so latest*.yml could name installers that
+            # are missing or from another build while it runs.
+            draft="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft)"
+            if [ "$draft" != "true" ]; then
+              echo "::error::Release $TAG is already published, so installed copies already offer it. Make it a draft again (Edit release > Save draft) and re-run this job, or delete the release and re-run to create it."
+              exit 1
+            fi
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            echo "::notice::The installers are attached to the draft release $TAG. Publish it on GitHub when it is ready."
           else
             # A manual run creates the tag on the commit it built.
             gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fartcrobat $TAG" --generate-notes

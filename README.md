@@ -2,7 +2,8 @@
 
 A free, open-source PDF reader, editor and signer for Windows, macOS and Linux. The layout follows
 current Adobe Acrobat Pro (All tools on the left, panels on the right rail), so people switching
-over can find things where they expect them. Everything runs offline.
+over can find things where they expect them. Everything works offline: the only network request
+the app makes by itself is a check for a new release on GitHub (see Updates below).
 
 ## What it does
 
@@ -66,6 +67,21 @@ over can find things where they expect them. Everything runs offline.
 Installers are built by GitHub Actions for each tagged release: `.exe` (Windows, x64 and arm64),
 `.dmg` and `.zip` (macOS), `.AppImage`, `.deb` and `.tar.gz` (Linux). Each registers Fartcrobat
 as a handler for `.pdf` files.
+
+## Updates
+
+Fartcrobat checks GitHub for a new release 30 seconds after it starts and then every 6 hours, and
+shows a notification when there is one. The check is one HTTPS request for the latest release
+page; nothing about you or your documents is sent. On Windows and with the AppImage, Download
+installs the update when you restart Fartcrobat (or the next time you quit); elsewhere it opens the
+release page. Help > Check for Updates... checks at once.
+
+To turn automatic checks off, use Preferences > Updates. Organizations can turn checks off (or
+on) for a computer: the `AutoUpdate` REG_DWORD under `HKLM\SOFTWARE\Policies\Fartcrobat` on
+Windows (0 off, 1 on), or `{"autoUpdate":{"enabled":false}}` in
+`/Library/Application Support/Fartcrobat/policy.json` (macOS) or `/etc/fartcrobat/policy.json`
+(Linux).
+See [docs/features/updates.md](docs/features/updates.md).
 
 ## Development
 

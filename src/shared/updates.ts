@@ -75,6 +75,11 @@ export interface UpdateStatus {
   /** Automatic checks are off, and why. Manual checks still work unless this is 'policy'. */
   checksOff: UpdateChecksOff
   /**
+   * The machine policy turns automatic checks on: the person's preference does not apply, and
+   * Preferences shows the switch on and read-only. False while the policy is being read.
+   */
+  checksForcedOn: boolean
+  /**
    * The person closed the notification for this version (Later, or the close button). Windows hide
    * the notification card until a newer version turns up or the phase moves on. Not persisted:
    * the next start shows it again.

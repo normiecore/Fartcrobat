@@ -137,6 +137,7 @@ describe('UpdateService: checking', () => {
       errorDuring: null,
       lastChecked: null,
       checksOff: null,
+      checksForcedOn: false,
       dismissedVersion: null,
       manual: false
     })
@@ -274,7 +275,7 @@ describe('UpdateService: policy and preference', () => {
     for (const policyReading of ['disabled', 'invalid', new Error('reg.exe failed')] as const) {
       const { service, github } = setup({ policyReading, firstCheckDelayMs: 10 })
       await service.ready
-      expect(service.status().checksOff).toBe('policy')
+      expect(service.status()).toMatchObject({ checksOff: 'policy', checksForcedOn: false })
       expect(await service.check(true)).toMatchObject({ phase: 'idle', checksOff: 'policy', manual: false })
       await vi.advanceTimersByTimeAsync(UPDATE_CHECK_INTERVAL_MS)
       expect(github.requests).toBe(0)
@@ -316,8 +317,10 @@ describe('UpdateService: policy and preference', () => {
 
   it('policy on forces automatic checks whatever the preference says', async () => {
     const { service, github } = setup({ policyReading: 'enabled', pref: false, firstCheckDelayMs: 10 })
+    expect(service.status().checksForcedOn).toBe(false)
     await service.ready
-    expect(service.status().checksOff).toBeNull()
+    // Preferences shows the switch on and read-only.
+    expect(service.status()).toMatchObject({ checksOff: null, checksForcedOn: true })
     await vi.advanceTimersByTimeAsync(10)
     expect(github.requests).toBe(1)
   })

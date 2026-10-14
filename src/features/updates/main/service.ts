@@ -82,6 +82,7 @@ export class UpdateService {
       lastChecked: null,
       // Until the policy is known, nothing checks.
       checksOff: 'policy',
+      checksForcedOn: false,
       dismissedVersion: null,
       manual: false
     }
@@ -97,7 +98,7 @@ export class UpdateService {
       )
       .then(() => {
         this.policyKnown = true
-        this.set({ checksOff: this.checksOff() })
+        this.set({ checksOff: this.checksOff(), checksForcedOn: this.policy === 'enabled' })
         this.schedule()
       })
   }

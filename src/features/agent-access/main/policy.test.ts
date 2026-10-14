@@ -1,10 +1,10 @@
 import { createHmac } from 'node:crypto'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { computeMac, isNonce, verifyMac } from './auth'
-import { launchInfo } from './endpoint'
+import { appFile, launchInfo, retargetAppFile } from './endpoint'
 import { WINDOWS_POLICY_VALUES, parseRegQuery, readMachinePolicy, windowsPolicy, type RunFile } from '@main/policy'
 import { agentAccessState, currentPolicy, machinePolicy, machinePolicyFile, readPolicy } from './policy'
 
@@ -225,6 +225,30 @@ describe('agent handshake helpers', () => {
     expect(
       launchInfo('/repo/node_modules/electron/dist/electron', false, '/repo', '1.2.3', own).executable
     ).toBe('/repo/node_modules/electron/dist/electron')
+  })
+
+  it('follows an AppImage an update renamed in app.json, only when app.json names the old file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fc-agent-app-'))
+    try {
+      const from = '/home/me/Apps/Fartcrobat-0.2.0.AppImage'
+      const to = '/home/me/Apps/Fartcrobat-0.2.1.AppImage'
+      // No app.json yet: nothing to do.
+      retargetAppFile(dir, from, to)
+      mkdirSync(dirname(appFile(dir)), { recursive: true })
+      writeFileSync(appFile(dir), JSON.stringify({ executable: from, args: [], appVersion: '0.2.0', enabled: true }))
+      retargetAppFile(dir, from, to)
+      expect(JSON.parse(readFileSync(appFile(dir), 'utf8'))).toEqual({
+        executable: to,
+        args: [],
+        appVersion: '0.2.0',
+        enabled: true
+      })
+      writeFileSync(appFile(dir), JSON.stringify({ executable: '/opt/Fartcrobat/fartcrobat', args: [], appVersion: '0.2.0' }))
+      retargetAppFile(dir, from, to)
+      expect(JSON.parse(readFileSync(appFile(dir), 'utf8')).executable).toBe('/opt/Fartcrobat/fartcrobat')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 
   it('tells the shim how to start the app', () => {

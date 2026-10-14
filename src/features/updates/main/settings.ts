@@ -3,6 +3,8 @@
 // so nobody can point an installed copy at another server or another installer, except
 // FARTCROBAT_UPDATE_CHECKS=0, which only turns automatic checks off (e2e runs against a packaged
 // build must not ask github.com).
+import { dirname } from 'node:path'
+import { appImageFile } from '@main/util/appImage'
 import { UPDATE_FIRST_CHECK_DELAY_MS, type UpdateCapability } from '@shared/updates'
 import { RELEASES_BASE, trimBase } from './release'
 
@@ -17,14 +19,23 @@ export interface InstallFacts {
   platform: NodeJS.Platform
   isPackaged: boolean
   env: NodeJS.ProcessEnv
+  /** process.execPath: an AppImage runs from inside its mount folder (APPDIR). */
+  execPath: string
   /** resources/app-update.yml exists (electron-builder writes it when publishing is configured). */
   hasUpdateConfig: boolean
+  /** Whether this user can create and delete files in `dir`. */
+  writable(dir: string): boolean
 }
 
 /**
  * 'install' for the Windows installer and Linux AppImages (and the fake updater in unpackaged
  * test builds); 'notify' for everything else: macOS until it is signed, .deb (installing needs a
  * password prompt), .tar.gz (nothing can update it), and unpackaged runs.
+ *
+ * An AppImage update deletes the .AppImage file and puts the new one in its folder, so it must be
+ * this process's own file (APPIMAGE is passed on to every program an AppImage starts, such as a
+ * .deb Fartcrobat opened from another AppImage app) in a folder the person can write to (an
+ * administrator may have put it in /opt).
  */
 export function updateCapability(facts: InstallFacts): UpdateCapability {
   if (!facts.isPackaged) return facts.env.FARTCROBAT_FAKE_UPDATER ? 'install' : 'notify'
@@ -32,9 +43,10 @@ export function updateCapability(facts: InstallFacts): UpdateCapability {
   switch (facts.platform) {
     case 'win32':
       return 'install'
-    case 'linux':
-      // Set by the AppImage runtime; .deb and .tar.gz installs don't have it.
-      return facts.env.APPIMAGE ? 'install' : 'notify'
+    case 'linux': {
+      const appImage = appImageFile(facts.execPath, facts.env)
+      return appImage && facts.writable(dirname(appImage)) ? 'install' : 'notify'
+    }
     case 'darwin':
       return MAC_INSTALLS_UPDATES ? 'install' : 'notify'
     default:

@@ -2,6 +2,7 @@
 import { app, BrowserWindow, shell, type WebContents } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { appVersion } from '@main/appVersion'
 import type { MainContext } from '@main/context'
 import { allWindows, createWindow, showWindow } from '@main/windows'
 import type { AgentCallReply, AgentCallRequest, AgentProgress, AgentStatus } from '@shared/agent/bridge'
@@ -143,8 +144,8 @@ export function register(ctx: MainContext) {
   const host = new ElectronWindows(ctx, (id) => agent.windowGone(id))
   const agent = new AgentAccess({
     userData: app.getPath('userData'),
-    appVersion: app.getVersion(),
-    launch: launchInfo(process.execPath, app.isPackaged, app.getAppPath(), app.getVersion()),
+    appVersion: appVersion(),
+    launch: launchInfo(process.execPath, app.isPackaged, app.getAppPath(), appVersion()),
     host,
     broadcast: (status) => {
       for (const win of allWindows()) ctx.send(win, 'agent:status', status)

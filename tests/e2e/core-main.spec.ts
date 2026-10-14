@@ -1,8 +1,8 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { builtinModules } from 'node:module'
+import { builtinModules, createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { activeDocState, FIXTURES, fixturePath, launch, openFile, ROOT, runCommand, waitForRender } from './helpers'
 
@@ -519,7 +519,25 @@ test('Linux "Make default" registers a desktop entry for AppImage installs', asy
   mkdirSync(join(data, 'apps'))
   const appImage = join(data, 'apps', 'Fartcrobat 0.1.0.AppImage')
   writeFileSync(appImage, '')
-  const { app, page } = await launch([], { APPIMAGE: appImage, XDG_DATA_HOME: data, XDG_DATA_DIRS: join(data, 'none') })
+  // An AppImage runs its executable from inside its mount folder (APPDIR).
+  const packaged = process.env.FARTCROBAT_EXECUTABLE
+  const executable = packaged ? resolve(ROOT, packaged) : (createRequire(import.meta.url)('electron') as string)
+  const mount = dirname(executable)
+  const xdg = { XDG_DATA_HOME: data, XDG_DATA_DIRS: join(data, 'none') }
+  // APPIMAGE and APPDIR passed on by another AppImage app that started this one: not this app's
+  // file. A packaged copy registers its own executable; an unpackaged one cannot register.
+  const other = await launch([], { ...xdg, APPIMAGE: join(data, 'apps', 'Other.AppImage'), APPDIR: '/tmp/.mount_OtherX' })
+  try {
+    const status = await other.page.evaluate(() => (window as any).api.invoke('defaultApp:status'))
+    expect(status.canSetDirectly).toBe(!!packaged)
+    if (packaged) {
+      await other.page.evaluate(() => (window as any).api.invoke('defaultApp:set'))
+      expect(readFileSync(join(data, 'applications/fartcrobat.desktop'), 'utf8')).toContain(`Exec="${executable}" %F`)
+    }
+  } finally {
+    await closeQuietly(other.app)
+  }
+  const { app, page } = await launch([], { ...xdg, APPIMAGE: appImage, APPDIR: mount })
   try {
     const status = await page.evaluate(() => (window as any).api.invoke('defaultApp:status'))
     expect(status.canSetDirectly).toBe(true)

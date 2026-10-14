@@ -41,6 +41,20 @@ export function cardView(status: UpdateStatus | null): CardView | null {
   return view
 }
 
+/** The card's title for a view (also what screen readers hear when the card changes). */
+export function cardTitle(view: CardView, version: string): string {
+  switch (view) {
+    case 'available':
+      return `Fartcrobat ${version} is available.`
+    case 'downloading':
+      return `Downloading Fartcrobat ${version}…`
+    case 'ready':
+      return `Fartcrobat ${version} is ready to install.`
+    case 'downloadError':
+      return `Couldn't download Fartcrobat ${version}.`
+  }
+}
+
 /** Whole percent, 0 to 100. */
 export function percentOf(progress: UpdateProgress | null): number {
   if (!progress) return 0

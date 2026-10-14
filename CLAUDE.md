@@ -1,10 +1,11 @@
 # Fartcrobat: notes for Claude sessions
 
 Open-source (AGPL) desktop PDF reader, editor and signer for Windows, macOS and Linux. The layout
-follows current Adobe Acrobat Pro. Fully offline, no built-in AI; optional local "agent access"
-(on by default) lets AI apps on the same computer, such as Claude Desktop, work with open
-documents over MCP. LibreOffice is used for Office conversion when installed, with a built-in
-fallback.
+follows current Adobe Acrobat Pro. Works offline, no built-in AI: its only network request of its
+own is the check for a new GitHub release (in-app updates, off in Preferences > Updates or with the
+`autoUpdate` machine policy). Optional local "agent access" (on by default) lets AI apps on the
+same computer, such as Claude Desktop, work with open documents over MCP. LibreOffice is used for
+Office conversion when installed, with a built-in fallback.
 
 ## State
 
@@ -14,7 +15,7 @@ fallback.
 - PRs #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent access and its
   review fixes), #6 and #8 (passwordless design and prototypes, and the fix for the red CI after
   #5) are merged into `main`. #10 (remembered passwords) is open.
-- About 1040 unit tests (vitest) and 142 end-to-end tests (Playwright on Electron).
+- About 1110 unit tests (vitest) and 155 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
@@ -28,12 +29,13 @@ fallback.
   Windows or with a real Claude Desktop yet.
 - **Passwordless** (`docs/features/passwordless.md`): phases 0 and 1 (remembered passwords with
   safeStorage, also for Digital IDs, silent unlock for agents) are in #10. The machine
-  policy for both features is `src/main/policy.ts`: REG_DWORDs `AgentAccess` and
-  `RememberPasswords` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows, `policy.json`
-  elsewhere. Next session: certificate encryption (phases 2 to 5: open Adobe.PubSec files, save
-  them back, the Windows certificate store and smart cards through PowerShell/.NET with the PIN
-  kept for the session, create certificate-encrypted files), then the `windows-latest` CI job and
-  the owner's manual Windows checklist. Prototypes for all of it are in `prototypes/passwordless/`.
+  policy for both features, and for updates, is `src/main/policy.ts`: REG_DWORDs `AgentAccess`,
+  `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
+  `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) elsewhere. Next session:
+  certificate encryption (phases 2 to 5: open Adobe.PubSec files, save them back, the Windows
+  certificate store and smart cards through PowerShell/.NET with the PIN kept for the session,
+  create certificate-encrypted files), then the `windows-latest` CI job and the owner's manual
+  Windows checklist. Prototypes for all of it are in `prototypes/passwordless/`.
 - Owner decisions so far are recorded at the top of both feature notes.
 
 ## Where things are
@@ -42,10 +44,10 @@ fallback.
   testing, UX rules). Read it before changing structure.
 - `docs/features/<id>.md`: design notes per feature; `docs/features/CONTRACTS.md` for shared APIs.
 - `src/features/<id>/`: one folder per feature with `index.tsx` (renderer), `engine.ts` (runs in
-  the MuPDF worker) and `main.ts` (Electron main). 18 features: comments, compare,
+  the MuPDF worker) and `main.ts` (Electron main). 20 features: agent-access, comments, compare,
   digital-signatures, edit-images-links, edit-text, export-create, fill-sign, forms-fill,
   markup-tools, navigation, ocr, organize-pages, page-marks, prepare-form, print,
-  protect-optimize, redact, stamps-measure.
+  protect-optimize, redact, stamps-measure, updates.
 - `src/engine/`: MuPDF (WASM) operations, one Web Worker per open document.
 - `src/renderer/src/`: app shell, viewer, command registry, UI kit.
 - Agent access: contracts in `src/shared/agent/` (tool catalogue, pipe protocol, main/window
@@ -97,7 +99,10 @@ outputs are committed; tests never generate them at run time.
 - In-app updates (`docs/features/updates.md`) download from the latest GitHub release, so every
   release must carry `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and the `.blockmap` files
   (electron-builder writes them; the publish job fails without them). v0.1.0 has no updater: people
-  on it install the next version by hand once.
+  on it install the next version by hand once. To write release notes on GitHub first, save the
+  release as a draft and do not publish it until the workflow has attached the installers
+  (installed copies offer a published release at once); the publish job refuses to add files to a
+  published release.
 - Windows installers are unsigned and macOS builds are only ad-hoc signed. Signing uses the
   `CSC_LINK` and `CSC_KEY_PASSWORD` repository secrets when they exist.
 

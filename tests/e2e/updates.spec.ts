@@ -10,6 +10,10 @@ import { activeDocState, fixturePath, launch, menuItem, openFile, ROOT, runComma
 // Updates end to end: a local server stands in for github.com (FARTCROBAT_UPDATE_URL) and
 // FARTCROBAT_FAKE_UPDATER stands in for electron-updater, reporting download progress and writing
 // the install it would run to a log file. Both work only in unpackaged builds.
+test.skip(
+  !!process.env.FARTCROBAT_EXECUTABLE,
+  'FARTCROBAT_UPDATE_URL and FARTCROBAT_FAKE_UPDATER only work in unpackaged builds'
+)
 
 /** This build's version: the server answers with it for "up to date". */
 const CURRENT: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
@@ -185,6 +189,17 @@ async function openPreferencesAt(page: Page, section: string) {
   return prefs
 }
 
+/** The window's content size (the window may not go below 720 px wide). */
+async function setContentSize(app: ElectronApplication, width: number, height: number) {
+  await app.evaluate(
+    ({ BrowserWindow }, size) => BrowserWindow.getAllWindows()[0].setContentSize(size.width, size.height),
+    { width, height }
+  )
+}
+
+/** The live region screen readers hear the card through. */
+const announcer = (page: Page) => page.locator('.fc-updates-live')
+
 async function waitForExit(app: ElectronApplication) {
   const proc = app.process()
   if (proc.exitCode !== null || proc.signalCode !== null) return
@@ -331,6 +346,42 @@ test('Cancel stops a download and offers it again', async () => {
   }
 })
 
+test('from the keyboard: the focus stays on the card as it changes, and screen readers hear each change', async () => {
+  const gh = await fakeGitHub()
+  const updater = fakeUpdater({ steps: 20, stepMs: 400 })
+  const { app, page } = await launch([], updateEnv(gh, updater))
+  try {
+    const card = updateCard(page)
+    const live = announcer(page)
+    await expect(live).toHaveText(`Fartcrobat ${NEW} is available.`)
+    await expect(live).toHaveAttribute('aria-live', 'polite')
+    // The same element all along: a live region added with its text already in it is not
+    // reliably announced.
+    await live.evaluate((el) => ((window as any).__updatesLive = el))
+    const sameRegion = () => live.evaluate((el) => el === (window as any).__updatesLive)
+
+    await card.getByRole('button', { name: 'Download' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(card.getByRole('button', { name: 'Cancel' })).toBeFocused()
+    await expect(live).toHaveText(`Downloading Fartcrobat ${NEW}…`)
+    expect(await sameRegion()).toBe(true)
+
+    await page.keyboard.press('Enter')
+    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card.getByRole('button', { name: 'Download' })).toBeFocused()
+    await expect(live).toHaveText(`Fartcrobat ${NEW} is available.`)
+
+    // Closed: nothing to announce, and the region stays for the next time.
+    await card.getByRole('button', { name: 'Close' }).click()
+    await expect(card).toBeHidden()
+    await expect(live).toHaveText('')
+    expect(await sameRegion()).toBe(true)
+  } finally {
+    await closeQuietly(app)
+    await gh.close()
+  }
+})
+
 test('Later: the update installs the next time Fartcrobat quits, without starting again', async () => {
   const gh = await fakeGitHub()
   const updater = fakeUpdater({ steps: 3, stepMs: 100 })
@@ -417,6 +468,38 @@ test("where the app cannot install ('notify'), Download opens the release page",
   }
 })
 
+test('in a narrow window with panes open on both sides, the card moves to the corner of the window', async () => {
+  const gh = await fakeGitHub()
+  const { app, page } = await launch([], updateEnv(gh))
+  try {
+    await setContentSize(app, 720, 600)
+    await openFile(page, fixturePath('text.pdf'))
+    await runCommand(page, 'comments.showList')
+    const card = updateCard(page)
+    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect
+      .poll(() => page.evaluate(() => document.querySelector<HTMLElement>('.shell-viewer-wrap')!.clientWidth))
+      .toBeLessThan(384)
+    const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }))
+    const inside = async (box: { x: number; y: number; width: number; height: number } | null) =>
+      !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height
+    const close = card.getByRole('button', { name: 'Close' })
+    await expect.poll(async () => inside(await close.boundingBox())).toBe(true)
+    expect(await inside(await card.boundingBox())).toBe(true)
+    expect((await card.boundingBox())!.width).toBeGreaterThanOrEqual(300)
+    await shot(page, 'narrow-window')
+
+    // Wide enough again: back in the corner of the document area.
+    await setContentSize(app, 1400, 900)
+    await expect(page.locator('.shell-viewer-wrap').getByRole('region', { name: 'Update' })).toBeVisible()
+    await close.click()
+    await expect(card).toBeHidden()
+  } finally {
+    await closeQuietly(app)
+    await gh.close()
+  }
+})
+
 // ---- checking by hand -----------------------------------------------------------------------------
 
 test('up to date: an automatic check says nothing; Help > Check for Updates... and About say so', async () => {
@@ -489,19 +572,27 @@ test('a failed check: silent when automatic, an error toast when asked for', asy
     }
     expect(gh.checks()).toBe(4)
 
-    // Preferences and About say the same.
+    // Preferences and About say so too. Each check gets an answer other than the last one, so the
+    // message they show comes from their own check.
+    // (A dropped connection may be tried twice by Chromium, so the counts only have to go up.)
+    gh.answer = { kind: 'drop' }
     const prefs = await openPreferencesAt(page, 'Updates')
+    const beforePrefs = gh.checks()
     await prefs.getByRole('button', { name: 'Check Now' }).click()
     await expect(prefs.getByRole('status')).toHaveText(
-      "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
+      "Couldn't check for updates. Check your internet connection and try again."
     )
+    expect(gh.checks()).toBeGreaterThan(beforePrefs)
     await prefs.getByRole('button', { name: 'Done' }).click()
+    gh.answer = { kind: 'error' }
     await runCommand(page, 'help.about')
     const about = page.getByRole('dialog', { name: 'About Fartcrobat' })
+    const beforeAbout = gh.checks()
     await about.getByRole('button', { name: 'Check for Updates' }).click()
     await expect(about.getByRole('status')).toHaveText(
       "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
     )
+    expect(gh.checks()).toBeGreaterThan(beforeAbout)
     await about.getByRole('button', { name: 'Close', exact: true }).first().click()
     await expect(about).toBeHidden()
     const failed = page.locator('.toast-error')
@@ -596,6 +687,43 @@ test('a machine policy that turns updates off: no checks at all, a read-only swi
     // Neither the automatic check (due at once) nor the manual one reached the server.
     await page.waitForTimeout(1000)
     expect(gh.checks()).toBe(0)
+  } finally {
+    await closeQuietly(app)
+    await gh.close()
+  }
+})
+
+test('a machine policy that turns checks on: the switch shows on and read-only, and checks run', async () => {
+  const gh = await fakeGitHub()
+  const dir = workDir()
+  const policy = join(dir, 'policy.json')
+  writeFileSync(policy, JSON.stringify({ autoUpdate: { enabled: true } }))
+  const userData = workDir()
+  writeFileSync(
+    join(userData, 'fartcrobat-settings.json'),
+    JSON.stringify({ prefs: { rememberPasswords: false, checkForUpdates: false } })
+  )
+  const { app, page } = await launch([], {
+    ...updateEnv(gh),
+    FARTCROBAT_POLICY_FILE: policy,
+    FARTCROBAT_USER_DATA: userData
+  })
+  try {
+    // The person turned checks off, but the policy wins.
+    await expect(updateCard(page)).toContainText(`Fartcrobat ${NEW} is available.`)
+    expect(gh.checks()).toBe(1)
+    expect(await updateStatus(page)).toMatchObject({ checksOff: null, checksForcedOn: true })
+
+    const prefs = await openPreferencesAt(page, 'Updates')
+    const toggle = prefs.getByRole('switch', { name: 'Check for updates automatically' })
+    await expect(toggle).toBeChecked()
+    await expect(toggle).toBeDisabled()
+    await expect(prefs).toContainText(
+      'Your organization turned automatic checks on for this computer, so it cannot be changed here.'
+    )
+    await expect(prefs).not.toContainText('Your organization manages updates on this computer.')
+    await expect(prefs.getByRole('button', { name: 'Check Now' })).toBeEnabled()
+    await shot(page, 'preferences-policy-on')
   } finally {
     await closeQuietly(app)
     await gh.close()

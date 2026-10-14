@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, nativeTheme, screen, shell } from 'electron
 import { join } from 'node:path'
 import { send } from './ipc'
 import { APP_ORIGIN } from './protocol'
+import { appImageFile } from './util/appImage'
 
 /** Document windows (print jobs use hidden windows that are not part of this set). */
 const windows = new Set<BrowserWindow>()
@@ -264,7 +265,10 @@ async function runQuitSequence() {
   app.quit()
 }
 
-/** Every window agreed to close: the app quits, and a pending update installer starts. */
+/**
+ * Every window agreed to close: the app quits, and a pending update installer starts. When the
+ * installer cannot start, the app starts again instead.
+ */
 function approveQuit() {
   quitPhase = 'approved'
   const pending = pendingInstall
@@ -278,7 +282,10 @@ function approveQuit() {
   try {
     pending.install()
   } catch (err) {
+    // The windows are closed already: start this version again rather than leave the person with
+    // neither the app nor the update.
     console.error('Could not start the update installer', err)
+    relaunchOnQuit = true
   }
   pending.settle(true)
 }
@@ -347,7 +354,11 @@ export function installQuitHandling(onQuit: () => void) {
   })
   app.on('will-quit', () => {
     onQuit()
-    if (relaunchOnQuit) app.relaunch()
+    if (relaunchOnQuit) {
+      // An AppImage starts again from its file: the folder this process runs from goes with it.
+      const appImage = appImageFile(process.execPath, process.env)
+      app.relaunch(appImage ? { execPath: appImage, args: process.argv.slice(1) } : undefined)
+    }
   })
 }
 

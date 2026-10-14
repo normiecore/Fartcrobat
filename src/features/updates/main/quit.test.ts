@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 /** What the stand-in records, shared with the tests. */
 const log = vi.hoisted((): string[] => [])
+/** The options of the last app.relaunch(). */
+const relaunched = vi.hoisted(() => ({ options: undefined as unknown }))
 
 vi.mock('electron', async () => {
   const { EventEmitter } = await import('node:events')
@@ -85,8 +87,9 @@ vi.mock('electron', async () => {
       this.emit('will-quit', new FakeEvent())
       this.emit('quit', new FakeEvent(), 0)
     }
-    relaunch() {
+    relaunch(options?: unknown) {
       log.push('app.relaunch')
+      relaunched.options = options
     }
     releaseSingleInstanceLock() {
       log.push('releaseSingleInstanceLock')
@@ -112,6 +115,7 @@ async function load() {
   // A fresh windows.ts (it keeps its state in the module) and a fresh app.
   vi.resetModules()
   log.length = 0
+  relaunched.options = undefined
   const { app } = (await import('electron')) as unknown as { app: EventEmitter & { quitting: boolean } }
   app.removeAllListeners()
   app.quitting = false
@@ -207,7 +211,7 @@ describe('quitForUpdate', { timeout: 5000 }, () => {
     expect(log).toContain('onQuit')
   })
 
-  it('a failing installer still lets the app quit', async () => {
+  it('a failing installer still lets the app quit, and the app starts again', async () => {
     const { windows } = await load()
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     expect(
@@ -216,7 +220,31 @@ describe('quitForUpdate', { timeout: 5000 }, () => {
       })
     ).toBe(true)
     expect(log).toContain('onQuit')
+    // The windows are gone: without the update, the person gets this version back.
+    expect(log.indexOf('app.relaunch')).toBeGreaterThan(log.indexOf('onQuit'))
+    expect(relaunched.options).toBeUndefined()
     expect(errors).toHaveBeenCalled()
     errors.mockRestore()
+  })
+
+  it('an AppImage starts again from its file, not from the folder that goes when it exits', async () => {
+    const { windows } = await load()
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const execPath = process.execPath
+    const mount = '/tmp/.mount_FartcrAb12'
+    process.env.APPIMAGE = '/home/me/Apps/Fartcrobat.AppImage'
+    process.env.APPDIR = mount
+    process.execPath = `${mount}/fartcrobat`
+    try {
+      await windows.quitForUpdate(() => {
+        throw new Error('EACCES')
+      })
+      expect(relaunched.options).toEqual({ execPath: '/home/me/Apps/Fartcrobat.AppImage', args: process.argv.slice(1) })
+    } finally {
+      process.execPath = execPath
+      delete process.env.APPIMAGE
+      delete process.env.APPDIR
+      errors.mockRestore()
+    }
   })
 })

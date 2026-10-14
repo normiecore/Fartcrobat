@@ -31,7 +31,9 @@ export function UpdateSettings() {
     void refreshUpdateStatus()
   }, [])
 
+  // The machine policy turns updates off (no checks at all), or turns automatic checks on.
   const policy = status?.checksOff === 'policy'
+  const forcedOn = !policy && status?.checksForcedOn === true
   const check = async () => {
     setChecking(true)
     setFailedAt(null)
@@ -53,12 +55,17 @@ export function UpdateSettings() {
         <b>Version {status?.currentVersion ?? appVersion ?? ''}</b>
       </p>
       <Switch
-        checked={!policy && prefs.checkForUpdates}
-        disabled={policy}
+        checked={forcedOn || (!policy && prefs.checkForUpdates)}
+        disabled={policy || forcedOn}
         onChange={(v) => void setPrefs({ checkForUpdates: v })}
         label="Check for updates automatically"
       />
       {policy && <p className={`${P}-settings-note`}>Your organization manages updates on this computer.</p>}
+      {forcedOn && (
+        <p className={`${P}-settings-note`}>
+          Your organization turned automatic checks on for this computer, so it cannot be changed here.
+        </p>
+      )}
       <div className={`${P}-settings-check`}>
         <Button disabled={checking || policy} onClick={() => void check()}>
           Check Now

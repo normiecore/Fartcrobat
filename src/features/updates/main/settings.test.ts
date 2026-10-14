@@ -5,12 +5,20 @@ import { RELEASES_BASE } from './release'
 import { MAC_INSTALLS_UPDATES, updateCapability, updateSettings } from './settings'
 
 describe('update capability', () => {
-  const packaged = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv = {}, hasUpdateConfig = true) =>
-    updateCapability({ platform, isPackaged: true, env, hasUpdateConfig })
+  const MOUNT = '/tmp/.mount_FartcrAb12'
+  const OWN_APPIMAGE = { APPIMAGE: '/home/me/Apps/Fartcrobat-0.2.0.AppImage', APPDIR: MOUNT }
+  const packaged = (
+    platform: NodeJS.Platform,
+    env: NodeJS.ProcessEnv = {},
+    hasUpdateConfig = true,
+    { execPath = `${MOUNT}/fartcrobat`, writable = (_dir: string): boolean => true } = {}
+  ) => updateCapability({ platform, isPackaged: true, env, execPath, hasUpdateConfig, writable })
 
   it('installs on Windows and from AppImages', () => {
-    expect(packaged('win32')).toBe('install')
-    expect(packaged('linux', { APPIMAGE: '/home/me/Apps/Fartcrobat-0.2.0.AppImage' })).toBe('install')
+    expect(packaged('win32', {}, true, { execPath: 'C:\\Program Files\\Fartcrobat\\Fartcrobat.exe' })).toBe(
+      'install'
+    )
+    expect(packaged('linux', OWN_APPIMAGE)).toBe('install')
   })
 
   it('only notifies for .deb and .tar.gz installs, macOS (until signed) and builds without update metadata', () => {
@@ -19,15 +27,46 @@ describe('update capability', () => {
     expect(MAC_INSTALLS_UPDATES).toBe(false)
     expect(packaged('darwin')).toBe('notify')
     expect(packaged('win32', {}, false)).toBe('notify')
-    expect(packaged('linux', { APPIMAGE: '/a.AppImage' }, false)).toBe('notify')
+    expect(packaged('linux', OWN_APPIMAGE, false)).toBe('notify')
     expect(packaged('freebsd')).toBe('notify')
+  })
+
+  it("notifies for an AppImage that isn't this process's own: the update would delete that file", () => {
+    // A .deb copy started by an AI app (or a PDF opened from an app) that runs as an AppImage
+    // inherits that app's APPIMAGE and APPDIR.
+    const inherited = { APPIMAGE: '/home/me/Apps/LM-Studio-0.3.9.AppImage', APPDIR: '/tmp/.mount_LMxyz' }
+    expect(packaged('linux', inherited, true, { execPath: '/opt/Fartcrobat/fartcrobat' })).toBe('notify')
+    expect(packaged('linux', { APPIMAGE: '/home/me/Apps/Other.AppImage' }, true, { execPath: '/opt/Fartcrobat/fartcrobat' })).toBe(
+      'notify'
+    )
+    // APPIMAGE without APPDIR, even from inside a mount.
+    expect(packaged('linux', { APPIMAGE: OWN_APPIMAGE.APPIMAGE })).toBe('notify')
+  })
+
+  it('notifies for an AppImage in a folder the person cannot write to (the update replaces the file)', () => {
+    const asked: string[] = []
+    const env = { APPIMAGE: '/opt/apps/Fartcrobat.AppImage', APPDIR: MOUNT }
+    const readOnly = (dir: string) => {
+      asked.push(dir)
+      return false
+    }
+    expect(packaged('linux', env, true, { writable: readOnly })).toBe('notify')
+    expect(asked).toEqual(['/opt/apps'])
+    expect(packaged('linux', env, true, { writable: (dir) => dir === '/opt/apps' })).toBe('install')
   })
 
   it('unpackaged: notify, unless the fake updater stands in; packaged builds ignore the fake', () => {
     const unpackaged = (env: NodeJS.ProcessEnv) =>
-      updateCapability({ platform: 'linux', isPackaged: false, env, hasUpdateConfig: false })
+      updateCapability({
+        platform: 'linux',
+        isPackaged: false,
+        env,
+        execPath: `${MOUNT}/fartcrobat`,
+        hasUpdateConfig: false,
+        writable: () => true
+      })
     expect(unpackaged({})).toBe('notify')
-    expect(unpackaged({ APPIMAGE: '/a.AppImage' })).toBe('notify')
+    expect(unpackaged(OWN_APPIMAGE)).toBe('notify')
     expect(unpackaged({ FARTCROBAT_FAKE_UPDATER: '/tmp/fake.json' })).toBe('install')
     expect(packaged('darwin', { FARTCROBAT_FAKE_UPDATER: '/tmp/fake.json' })).toBe('notify')
   })

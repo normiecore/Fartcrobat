@@ -23,6 +23,7 @@ function status(patch: Partial<UpdateStatus> = {}): UpdateStatus {
     errorDuring: null,
     lastChecked: null,
     checksOff: null,
+    checksForcedOn: false,
     dismissedVersion: null,
     manual: false,
     ...patch

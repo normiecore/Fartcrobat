@@ -16,8 +16,10 @@ export interface Updater {
   download(onProgress: (progress: UpdateProgress) => void, signal: AbortSignal): Promise<void>
   /**
    * Installs the downloaded update silently and starts the new version. Called only once every
-   * window agreed to close; the app quits right after. Quitting normally instead installs the
-   * update without starting it again (each updater arranges that itself once a download is done).
+   * window agreed to close; the app quits right after (and starts this version again when this
+   * throws, because the installer did not start). Quitting normally instead installs the update
+   * without starting it again (each updater arranges that itself once a download is done, and
+   * never for a download that was cancelled).
    */
   installAndRestart(): void
 }
