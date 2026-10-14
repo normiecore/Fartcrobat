@@ -49,7 +49,7 @@ import {
   imageFormatFor,
   networkHost,
   newNetworkHosts,
-  noCertificateFailure,
+  certificateFailure,
   openErrorCode,
   pathArg,
   pdfPath,
@@ -75,8 +75,8 @@ function messageOf(err: unknown): string {
 
 /** A file that could not be read or opened, as the agent sees it. */
 function openFailure(path: string, err: unknown): ToolError {
-  const noKey = noCertificateFailure(basename(path), err)
-  if (noKey) return new ToolError(noKey.code, noKey.message)
+  const certificate = certificateFailure(basename(path), err)
+  if (certificate) return new ToolError(certificate.code, certificate.message)
   const message = messageOf(err)
   if (openErrorCode(message) === 'unsupported') return new ToolError('unsupported', unsupportedMessage(basename(path), message))
   return new ToolError('file_error', `Could not open ${path}: ${message.replace(/^This file could not be opened: /, '')}`)

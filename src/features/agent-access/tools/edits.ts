@@ -37,7 +37,7 @@ import {
 } from './common'
 import { idList, optBoolean, optString, pagesPhrase, plural } from './act-common'
 import { AGENT_ANNOT_TYPES, NOT_COMMENTS, buildAnnotation, buildUpdate, type AgentAnnotType } from './act-annots'
-import { noCertificateFailure, openErrorCode } from './act-files'
+import { certificateFailure, openErrorCode } from './act-files'
 import { formFields, planFill, resolveValues } from './act-forms'
 import { duplicatedIndices, insertedIndices, planOrganize } from './act-pages'
 import { markProps, markSpecsFromItems } from './act-redact'
@@ -340,8 +340,8 @@ const organizePages: ToolHandler = async (args, ctx) => {
         withUnlock(file, doc, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw), { actor: 'agent', failWithoutKey: true })
       ).catch((err) => {
         if (err instanceof ToolError) throw err
-        const noKey = noCertificateFailure(file.name, err)
-        if (noKey) throw new ToolError(noKey.code, noKey.message)
+        const certificate = certificateFailure(file.name, err)
+        if (certificate) throw new ToolError(certificate.code, certificate.message)
         const message = String(err?.message ?? err)
         throw new ToolError(openErrorCode(message), `Could not open ${plan.path}: ${message}`)
       })

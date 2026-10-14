@@ -39,6 +39,7 @@ export {
 export {
   unlockCertificateFile,
   CertificateUnavailableError,
+  CertificateKeyFailedError,
   ADD_DIGITAL_ID_COMMAND,
   type UnlockCertificateRequest,
   type CertificateUnlocked

@@ -2,8 +2,8 @@
 // file (tabs, Revert, Insert, Combine, Create, Compare, agents), with fake ports for the main
 // process (certkeys:probe/decrypt), the engine and the dialogs.
 import { describe, expect, it } from 'vitest'
-import type { CertKeyCandidate, CertKeysDecryptRequest, CertKeysDecryptResult, CertKeyVia, PubSecRecipient } from '@shared/certkeys'
-import { noCertificateFailure } from '@features/agent-access/tools/act-files'
+import type { CertKeyCandidate, CertKeysDecryptRequest, CertKeysDecryptResult, CertKeyVia, PubSecRecipient, WindowsStoreState } from '@shared/certkeys'
+import { certificateFailure, openErrorCode } from '@features/agent-access/tools/act-files'
 import { protectionDetails, protectionNote } from '@features/organize-pages/protection'
 import {
   certificateAccess,
@@ -13,6 +13,7 @@ import {
   orderCandidates,
   unlockAuditSummary,
   unlockCertificate,
+  unlockCertificateOutcome,
   unsupportedKeyMessage,
   type CertAskState,
   type CertProblem,
@@ -55,7 +56,7 @@ function fail(code: Extract<CertKeysDecryptResult, { ok: false }>['code'], extra
 
 interface Script {
   /** Probe results in order (the last one repeats). */
-  probes: { candidates: CertKeyCandidate[]; recipients?: PubSecRecipient[] }[]
+  probes: { candidates: CertKeyCandidate[]; recipients?: PubSecRecipient[]; windowsStore?: WindowsStoreState }[]
   /** Answers of certkeys:decrypt by candidate id, in order (the last one repeats). */
   decrypt: Record<string, CertKeysDecryptResult[] | ((req: Omit<CertKeysDecryptRequest, 'blobs'>) => CertKeysDecryptResult)>
   /** Answers of the Digital ID prompt, in order. Without `remember`, the box is left as shown. */
@@ -73,7 +74,7 @@ function ports(script: Script) {
   const requests: Omit<CertKeysDecryptRequest, 'blobs'>[] = []
   const asked: CertAskState[] = []
   const problems: CertProblem[] = []
-  const noKeys: { message: string; canAdd: boolean; unsupportedKey: boolean }[] = []
+  const noKeys: Parameters<CertUnlockPorts['noKey']>[0][] = []
   const answers = [...(script.answers ?? [])]
   const problemAnswers = [...(script.problems ?? [])]
   const noKeyAnswers = [...(script.noKey ?? [])]
@@ -83,7 +84,7 @@ function ports(script: Script) {
     async probe() {
       log.push('probe')
       const r = script.probes[Math.min(probes++, script.probes.length - 1)]
-      return { candidates: r.candidates, recipients: r.recipients ?? [] }
+      return { candidates: r.candidates, recipients: r.recipients ?? [], ...(r.windowsStore ? { windowsStore: r.windowsStore } : {}) }
     },
     async decrypt(req) {
       requests.push(req)
@@ -310,6 +311,8 @@ describe('unlockCertificate', () => {
     }
   })
 
+  // A store found locked down only when a key is used (the probe goes through the same helper, so
+  // usually the probe's windowsStore says so instead: see the no-match message below).
   it('after a key problem the next key is tried: a locked-down store falls through to a Digital ID', async () => {
     const store = candidate('windows-store:aa')
     const card = candidate('windows-store:cc', { hardware: true, needs: 'pin' })
@@ -382,6 +385,81 @@ describe('unlockCertificate', () => {
     const { p, log } = ports({ probes: [{ candidates: [store] }], decrypt: { [store.id]: [fail('NO_MATCHING_CERT')] } })
     expect(await unlockCertificate(p, OPTS)).toBeNull()
     expect(log).toEqual(['probe', 'decrypt:windows-store:aa', 'noKey'])
+  })
+
+  it('a Windows certificate store that could not be searched is named in the no-match message', async () => {
+    const recipients: PubSecRecipient[] = [
+      { envelope: 0, index: 0, idType: 'issuerAndSerialNumber', issuer: 'CN=Contoso CA, O=Contoso', serial: '1A2B', keyType: 'rsa' }
+    ]
+    // The store probe found nothing because PowerShell runs in Constrained Language Mode: not "none of your certificates".
+    const constrained = ports({ probes: [{ candidates: [], recipients, windowsStore: 'constrained' }], decrypt: {} })
+    expect(await unlockCertificate(constrained.p, OPTS)).toBeNull()
+    expect(constrained.noKeys).toEqual([
+      {
+        message:
+          'This document is encrypted for the certificate with serial number 1A2B (issued by Contoso CA). None of your Digital IDs can open it. Windows only lets PowerShell run in Constrained Language Mode on this computer, so Fartcrobat cannot use the Windows certificate store. You can still use a Digital ID.',
+        canAdd: true,
+        unsupportedKey: false,
+        windowsStore: 'constrained'
+      }
+    ])
+    const unavailable = ports({ probes: [{ candidates: [], recipients, windowsStore: 'unavailable' }], decrypt: {} })
+    await unlockCertificate(unavailable.p, OPTS)
+    expect(unavailable.noKeys[0]).toMatchObject({ windowsStore: 'unavailable', canAdd: true })
+    expect(unavailable.noKeys[0].message).toMatch(/None of your Digital IDs can open it\. Windows PowerShell could not be started, so Fartcrobat cannot use the Windows certificate store\./)
+    // A store that works, is off or is not on this system changes nothing.
+    for (const windowsStore of ['available', 'off', 'not-windows', undefined] as const) {
+      const fine = ports({ probes: [{ candidates: [], recipients, windowsStore }], decrypt: {} })
+      await unlockCertificate(fine.p, OPTS)
+      expect(fine.noKeys[0]).toEqual({ message: noCertificateMessage(recipients), canAdd: true, unsupportedKey: false })
+    }
+    const ec = candidate('digital-id:44', { keyType: 'ec', label: 'EC Test' })
+    const onlyEc = ports({ probes: [{ candidates: [ec], windowsStore: 'constrained' }], decrypt: {} })
+    await unlockCertificate(onlyEc.p, OPTS)
+    expect(onlyEc.noKeys[0].message).toMatch(/cannot open yet\. Windows only lets PowerShell run in Constrained Language Mode/)
+  })
+
+  it('says why it gave up: a problem the person could only acknowledge, else a cancel', async () => {
+    const saved = candidate('digital-id:11', { passwordSaved: true, label: 'Alice' })
+    const card = candidate('windows-store:cc', { hardware: true, needs: 'pin' })
+    const store = candidate('windows-store:aa')
+    const typed = candidate('digital-id:22')
+    const outcome = async (script: Script) => unlockCertificateOutcome(ports(script).p, OPTS)
+
+    // OK on "The Digital ID file could not be read": a failure, not the person cancelling.
+    expect(await outcome({ probes: [{ candidates: [saved] }], decrypt: { [saved.id]: [fail('ID_UNAVAILABLE')] } })).toEqual({
+      ok: false,
+      problem: { candidate: saved, code: 'ID_UNAVAILABLE', message: expect.stringContaining('The Digital ID file could not be read'), canRetry: false }
+    })
+    // A key the engine refused; with several problems, the last one.
+    expect(
+      await outcome({
+        probes: [{ candidates: [saved, store] }],
+        decrypt: { [store.id]: [fail('UNSUPPORTED')], [saved.id]: [ok(saved)] },
+        refuse: [0]
+      })
+    ).toMatchObject({ ok: false, problem: { code: 'ERROR', message: 'The key of “Alice” did not open “secret.pdf”. The file may be damaged.' } })
+    // A problem after a typed password, too.
+    expect(
+      await outcome({ probes: [{ candidates: [typed] }], decrypt: { [typed.id]: [fail('ERROR', { message: 'Broken.' })] }, answers: [{ password: 'pw' }] })
+    ).toMatchObject({ ok: false, problem: { code: 'ERROR', message: 'Broken.' } })
+
+    // Cancel where Try Again was offered, Windows' dialog (or the wait) cancelled, a dismissed
+    // password prompt and the no-match message are the person cancelling.
+    expect(await outcome({ probes: [{ candidates: [card] }], decrypt: { [card.id]: [fail('CARD_NOT_PRESENT')] }, problems: ['cancel'] })).toEqual({ ok: false, problem: null })
+    expect(
+      await outcome({ probes: [{ candidates: [card, saved] }], decrypt: { [card.id]: [fail('TIMEOUT')], [saved.id]: [fail('ID_UNAVAILABLE')] }, problems: ['cancel'] })
+    ).toEqual({ ok: false, problem: null })
+    expect(await outcome({ probes: [{ candidates: [saved, card] }], decrypt: { [saved.id]: [fail('ID_UNAVAILABLE')], [card.id]: [fail('CANCELLED')] } })).toEqual({
+      ok: false,
+      problem: null
+    })
+    expect(await outcome({ probes: [{ candidates: [saved, typed] }], decrypt: { [saved.id]: [fail('ID_UNAVAILABLE')] }, answers: [null] })).toEqual({ ok: false, problem: null })
+    expect(await outcome({ probes: [{ candidates: [] }], decrypt: {} })).toEqual({ ok: false, problem: null })
+
+    // Opened: the key, as unlockCertificate gives it.
+    const opened = await outcome({ probes: [{ candidates: [saved] }], decrypt: { [saved.id]: [ok(saved)] } })
+    expect(opened).toMatchObject({ ok: true, unlocked: { via: { label: 'Alice' }, access: 'owner' } })
   })
 
   it('only elliptic-curve keys match: says Fartcrobat cannot open them yet (no Add Digital ID)', async () => {
@@ -467,12 +545,48 @@ describe('messages', () => {
   })
 
   it('agents are told why when no key opens a file', () => {
-    expect(noCertificateFailure('a.pdf', new Error('other'))).toBeNull()
-    expect(noCertificateFailure('a.pdf', null)).toBeNull()
+    expect(certificateFailure('a.pdf', new Error('other'))).toBeNull()
+    expect(certificateFailure('a.pdf', null)).toBeNull()
     const noKey = Object.assign(new Error('This document is encrypted for ...'), { code: 'NO_CERTIFICATE', unsupportedKey: false })
-    expect(noCertificateFailure('a.pdf', noKey)).toMatchObject({ code: 'failed', message: expect.stringContaining('none of the person\'s certificates or Digital IDs opens it') })
+    expect(certificateFailure('a.pdf', noKey)).toMatchObject({ code: 'failed', message: expect.stringContaining('none of the person\'s certificates or Digital IDs opens it') })
+    expect(certificateFailure('a.pdf', noKey)!.message).not.toMatch(/Windows certificate store/)
     const ec = Object.assign(new Error('...'), { code: 'NO_CERTIFICATE', unsupportedKey: true })
-    expect(noCertificateFailure('a.pdf', ec)).toMatchObject({ code: 'unsupported', message: expect.stringContaining('elliptic-curve') })
+    expect(certificateFailure('a.pdf', ec)).toMatchObject({ code: 'unsupported', message: expect.stringContaining('elliptic-curve') })
+    // The store could not be searched: the agent is not told that none of the person's certificates opens it.
+    const blocked = Object.assign(new Error('...'), { code: 'NO_CERTIFICATE', unsupportedKey: false, windowsStore: 'constrained' })
+    const told = certificateFailure('a.pdf', blocked)!
+    expect(told.code).toBe('failed')
+    expect(told.message).toMatch(/none of the person's Digital IDs opens it\. Fartcrobat could not search the Windows certificate store on this computer \(Windows only lets PowerShell run in Constrained Language Mode there\)/)
+    const noPowerShell = Object.assign(new Error('...'), { code: 'NO_CERTIFICATE', unsupportedKey: false, windowsStore: 'unavailable' })
+    expect(certificateFailure('a.pdf', noPowerShell)!.message).toMatch(/Windows PowerShell could not be started/)
+  })
+
+  it('agents are told when a key failed (not that the person cancelled), and when a file a key opened is damaged', () => {
+    const failed = Object.assign(new Error('The Digital ID file could not be read. Remove the Digital ID in Preferences > Digital IDs and import it again.'), {
+      code: 'CERTIFICATE_FAILED',
+      label: 'Alice',
+      problem: 'ID_UNAVAILABLE'
+    })
+    expect(certificateFailure('a.pdf', failed)).toEqual({
+      code: 'failed',
+      message:
+        'a.pdf was not opened: the person\'s key “Alice” could not be used. Fartcrobat told them: The Digital ID file could not be read. Remove the Digital ID in Preferences > Digital IDs and import it again. Never ask for keys, PINs or passwords in chat.'
+    })
+
+    // The engine's CERTIFICATE_OPEN_FAILED, directly (open_document) and as organize-pages words it (combine_files, insert_file).
+    for (const message of [
+      'This certificate-encrypted document could not be opened: it is damaged',
+      'b.pdf could not be opened: This certificate-encrypted document could not be opened: it is damaged'
+    ]) {
+      const damaged = Object.assign(new Error(message), { code: 'CERTIFICATE_OPEN_FAILED' })
+      expect(certificateFailure('b.pdf', damaged)).toEqual({
+        code: 'file_error',
+        message: 'b.pdf is certificate-encrypted and one of the person\'s keys unlocked it, but the file could not be opened: it is damaged. Ask the sender for a new copy.'
+      })
+      // Not "certificate encryption that Fartcrobat cannot open".
+      expect(openErrorCode(message)).toBe('file_error')
+    }
+    expect(openErrorCode("This file could not be opened: unknown encryption handler: 'Adobe.PubSec'")).toBe('unsupported')
   })
 
   it('audit summaries never include secrets', () => {

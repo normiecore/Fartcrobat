@@ -132,29 +132,58 @@ export function imageExportPaths(path: string, pages: number[], imageFormat: Exc
 
 /**
  * Why a file could not be opened, for the agent: "unsupported" for protection Fartcrobat cannot
- * open (Microsoft Purview / RMS, kinds of certificate encryption it does not read), else
- * "file_error".
+ * open (Microsoft Purview / RMS, kinds of certificate encryption it does not read: MuPDF's
+ * "unknown encryption handler: 'Adobe.PubSec'"), else "file_error". Certificate-encrypted files
+ * Fartcrobat reads fail with the codes certificateFailure handles.
  */
 export function openErrorCode(message: string): 'unsupported' | 'file_error' {
-  return /unknown encryption handler|unsupported encryption|Adobe\.PubSec|MicrosoftIRMServices|certificate/i.test(message) ? 'unsupported' : 'file_error'
+  return /unknown encryption handler|unsupported encryption|Adobe\.PubSec|MicrosoftIRMServices/i.test(message) ? 'unsupported' : 'file_error'
+}
+
+/** Why the Windows certificate store could not be searched, for the agent. */
+function windowsStoreReason(state: unknown): string | null {
+  if (state === 'constrained') return 'Windows only lets PowerShell run in Constrained Language Mode there'
+  if (state === 'unavailable') return 'Windows PowerShell could not be started'
+  return null
 }
 
 /**
- * When none of the person's keys opens a certificate-encrypted file (CertificateUnavailableError;
- * the person was told why in Fartcrobat): what the agent is told, or null for other errors.
- * "unsupported" when only keys Fartcrobat cannot use yet (elliptic-curve) match.
+ * Why a certificate-encrypted file was not opened although the person did not cancel (they were
+ * told why in Fartcrobat): what the agent is told, or null for other errors.
+ * - NO_CERTIFICATE (CertificateUnavailableError): none of the person's keys opens it;
+ *   "unsupported" when only keys Fartcrobat cannot use yet (elliptic-curve) match.
+ * - CERTIFICATE_FAILED (CertificateKeyFailedError): a key that matches could not be used.
+ * - CERTIFICATE_OPEN_FAILED (engine): a key opened it, but the file is damaged.
  */
-export function noCertificateFailure(name: string, err: unknown): { code: 'unsupported' | 'failed'; message: string } | null {
-  const e = err as { code?: unknown; unsupportedKey?: unknown } | null
-  if (!e || typeof e !== 'object' || e.code !== 'NO_CERTIFICATE') return null
+export function certificateFailure(name: string, err: unknown): { code: 'unsupported' | 'failed' | 'file_error'; message: string } | null {
+  const e = err as { code?: unknown; message?: unknown; unsupportedKey?: unknown; windowsStore?: unknown; label?: unknown } | null
+  if (!e || typeof e !== 'object') return null
+  const message = typeof e.message === 'string' ? e.message : ''
+  if (e.code === 'CERTIFICATE_OPEN_FAILED') {
+    const reason = message.replace(/^.*could not be opened: /s, '').replace(/\.$/, '')
+    return {
+      code: 'file_error',
+      message: `${name} is certificate-encrypted and one of the person's keys unlocked it, but the file could not be opened: ${reason}. Ask the sender for a new copy.`
+    }
+  }
+  if (e.code === 'CERTIFICATE_FAILED')
+    return {
+      code: 'failed',
+      message: `${name} was not opened: the person's key “${String(e.label ?? '')}” could not be used. Fartcrobat told them: ${message} Never ask for keys, PINs or passwords in chat.`
+    }
+  if (e.code !== 'NO_CERTIFICATE') return null
+  const store = windowsStoreReason(e.windowsStore)
+  const storeNote = store
+    ? ` Fartcrobat could not search the Windows certificate store on this computer (${store}), so a certificate there may open it but cannot be used.`
+    : ''
   if (e.unsupportedKey)
     return {
       code: 'unsupported',
-      message: `${name} is encrypted for an elliptic-curve certificate, which Fartcrobat cannot open yet. Ask the sender for a copy encrypted for an RSA certificate or protected with a password.`
+      message: `${name} is encrypted for an elliptic-curve certificate, which Fartcrobat cannot open yet.${storeNote} Ask the sender for a copy encrypted for an RSA certificate or protected with a password.`
     }
   return {
     code: 'failed',
-    message: `${name} is encrypted with certificates, and none of the person's certificates or Digital IDs opens it. Fartcrobat showed them who it is encrypted for; they can add the Digital ID it needs in Fartcrobat (Preferences > Digital IDs) and try again. Never ask for keys or passwords in chat.`
+    message: `${name} is encrypted with certificates, and none of the person's ${store ? 'Digital IDs' : 'certificates or Digital IDs'} opens it.${storeNote} Fartcrobat showed them who it is encrypted for; they can add the Digital ID it needs in Fartcrobat (Preferences > Digital IDs) and try again. Never ask for keys or passwords in chat.`
   }
 }
 
