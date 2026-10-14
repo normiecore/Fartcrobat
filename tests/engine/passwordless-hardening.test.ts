@@ -175,6 +175,18 @@ describe('predictor parameters', () => {
     expect((await inWorker('readPubSec', bytes)).result).toEqual({ recipients: 1, damaged: false, version: 5 })
   })
 
+  it('the engine answers for such a file: open and the input check ask for a certificate', async () => {
+    const bytes = xrefStreamFile('/W [1 2 1] /Filter /FlateDecode /DecodeParms << /Predictor 2 /Columns 0 >>', (rows) => zlibSync(rows))
+    // In the worker first: a reader that hangs again fails there instead of hanging this run.
+    expect((await inWorker('readPubSec', bytes)).result).toMatchObject({ recipients: 1 })
+    const engine = await createLocalEngine()
+    const doc = engine.ops<typeof docOps>('doc')
+    const t0 = performance.now()
+    expect(await doc.open(bytes, { fileName: 'hostile.pdf' })).toMatchObject({ ok: false, needsCertificate: true })
+    expect(await doc.checkFile(bytes, 'hostile.pdf')).toMatchObject({ needsCertificate: true })
+    expect(performance.now() - t0).toBeLessThan(2000)
+  })
+
   // /Columns 0, /Colors 0 or a negative value made the TIFF predictor loop step by 0 bytes.
   for (const parms of [
     '/Predictor 2 /Columns 0',
