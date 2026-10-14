@@ -16,26 +16,25 @@ declare module '@shared/ipc' {
     'feature:agent-access:progress': (progress: AgentProgress) => void
     'feature:agent-access:status': () => AgentStatus
     'feature:agent-access:disconnect': (connectionId?: number) => void
+    'feature:agent-access:allow': (clientName?: string) => void
+    'feature:agent-access:ready': () => { waitMs?: number }
     'feature:agent-access:attention': () => void
     'feature:agent-access:revealAuditLog': () => void
     'feature:agent-access:installExtension': () => string
   }
 }
 
-/**
- * How long after its page loaded a window counts as listening for agent requests even though its
- * renderer has not called any agent-access channel yet (it normally asks for the status at boot).
- */
-const READY_FALLBACK_MS = 3000
-
 const windowId = (wc: WebContents) => `w${wc.id}`
 
-/** The app's document windows for the router, and when each renderer can take requests. */
+/**
+ * The app's document windows for the router, and when each renderer can take requests: once its
+ * runner says so ('ready'). A window whose renderer never gets that far is not sent anything; the
+ * router gives up on it after a while.
+ */
 class ElectronWindows implements WindowHost {
   /** By webContents id: the renderer listens for agent requests. */
   private readonly listening = new Set<number>()
   private readonly waiters = new Map<number, ((ok: boolean) => void)[]>()
-  private readonly fallbacks = new Map<number, NodeJS.Timeout>()
 
   constructor(
     private readonly ctx: MainContext,
@@ -66,7 +65,6 @@ class ElectronWindows implements WindowHost {
     // A crashed window waits for the person to reload or close it: don't hold calls for that.
     if (wc.isCrashed()) return Promise.resolve(false)
     if (this.listening.has(wcId)) return Promise.resolve(true)
-    if (!wc.isLoading() && !this.fallbacks.has(wcId)) this.armFallback(wcId)
     return new Promise((resolve) => {
       const list = this.waiters.get(wcId) ?? []
       list.push(resolve)
@@ -87,8 +85,6 @@ class ElectronWindows implements WindowHost {
   /** The renderer used an agent-access channel: its request listener is registered. */
   markListening(wc: WebContents) {
     const wcId = wc.id
-    clearTimeout(this.fallbacks.get(wcId))
-    this.fallbacks.delete(wcId)
     if (this.listening.has(wcId)) return
     this.listening.add(wcId)
     this.settle(wcId, true)
@@ -96,16 +92,6 @@ class ElectronWindows implements WindowHost {
 
   private find(id: string): BrowserWindow | undefined {
     return allWindows().find((w) => windowId(w.webContents) === id)
-  }
-
-  private armFallback(wcId: number) {
-    clearTimeout(this.fallbacks.get(wcId))
-    const timer = setTimeout(() => {
-      this.fallbacks.delete(wcId)
-      this.listening.add(wcId)
-      this.settle(wcId, true)
-    }, READY_FALLBACK_MS)
-    this.fallbacks.set(wcId, timer)
   }
 
   private settle(wcId: number, ok: boolean) {
@@ -120,8 +106,6 @@ class ElectronWindows implements WindowHost {
     const id = windowId(wc)
     // The renderer is replaced: requests it was running are lost, new ones wait for it to boot.
     const lost = () => {
-      clearTimeout(this.fallbacks.get(wcId))
-      this.fallbacks.delete(wcId)
       this.listening.delete(wcId)
       this.gone(id)
     }
@@ -129,9 +113,6 @@ class ElectronWindows implements WindowHost {
       if (details.isMainFrame && !details.isSameDocument) lost()
     })
     wc.on('render-process-gone', lost)
-    wc.on('did-finish-load', () => {
-      if (!this.listening.has(wcId)) this.armFallback(wcId)
-    })
     win.on('closed', () => {
       lost()
       this.settle(wcId, false)
@@ -139,11 +120,20 @@ class ElectronWindows implements WindowHost {
   }
 }
 
-/** The Claude Desktop extension shipped with the app. */
+/**
+ * The Claude Desktop extension shipped with the app. Unpackaged, it is built next to this bundle
+ * (out/agent beside out/main), wherever the app was started from.
+ */
 function extensionPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'agent', 'fartcrobat.mcpb')
-    : join(app.getAppPath(), 'out', 'agent', 'fartcrobat.mcpb')
+    : join(__dirname, '..', 'agent', 'fartcrobat.mcpb')
+}
+
+/** A shorter wait before calls answer still_running, for tests of unpackaged builds only. */
+function testWaitMs(): number | undefined {
+  const ms = Number(process.env.FARTCROBAT_AGENT_WAIT_MS)
+  return !app.isPackaged && Number.isFinite(ms) && ms > 0 ? ms : undefined
 }
 
 /** Windows whose taskbar button flashes until they get the focus. */
@@ -165,6 +155,11 @@ export function register(ctx: MainContext) {
     host.markListening(e.sender)
     return agent.status()
   })
+  ctx.handle('feature:agent-access:ready', (e) => {
+    host.markListening(e.sender)
+    const waitMs = testWaitMs()
+    return waitMs ? { waitMs } : {}
+  })
   ctx.handle('feature:agent-access:reply', (e, reply) => {
     host.markListening(e.sender)
     agent.reply(windowId(e.sender), reply)
@@ -175,6 +170,9 @@ export function register(ctx: MainContext) {
   })
   ctx.handle('feature:agent-access:disconnect', (_e, connectionId) => {
     agent.disconnect(typeof connectionId === 'number' ? connectionId : undefined)
+  })
+  ctx.handle('feature:agent-access:allow', (_e, clientName) => {
+    agent.allow(typeof clientName === 'string' ? clientName : undefined)
   })
   ctx.handle('feature:agent-access:attention', (e) => {
     host.markListening(e.sender)

@@ -8,6 +8,7 @@ import { overallStatus, signatureStatus } from '@features/digital-signatures/sta
 import { protectDocument, removeDocumentSecurity, securityOf } from '@features/protect-optimize/flows'
 import { markNeedsReload, saveRedactedCopy } from '@features/redact/actions'
 import { redactOps } from '@features/redact/store'
+import type { MarkInfo } from '@features/redact/shared'
 import {
   ToolError,
   auditName,
@@ -23,6 +24,11 @@ import { cancelled, checked, commitTyping, engineTask, handoff, paragraphs, requ
 
 /** Smallest new signature box (points): smaller ones cannot show a readable signature. */
 const MIN_SIGNATURE_BOX = { w: 36, h: 18 }
+
+/** Same page and area (an id given to a mark stored inline can move to another mark). */
+function sameArea(a: MarkInfo, b: MarkInfo): boolean {
+  return a.page === b.page && JSON.stringify([a.rect, a.quads]) === JSON.stringify([b.rect, b.quads])
+}
 
 const applyRedactions: ToolHandler = async (args, ctx) => {
   const doc = resolveDoc(ctx, args.handle)
@@ -53,13 +59,22 @@ const applyRedactions: ToolHandler = async (args, ctx) => {
     },
     `apply ${what}`
   )
+  // Another call may have changed the marks while the person read the question. Marks added
+  // meanwhile are left out below; one moved or resized would remove more than they approved.
+  const now = await engineTask('Could not read the redaction marks', () => redactOps(doc).list())
+  if (marks.some((m) => now.some((n) => n.id === m.id && !sameArea(m, n))))
+    throw new ToolError(
+      'failed',
+      'The redaction marks changed while the person was deciding, so nothing was applied. Call apply_redactions again.'
+    )
   const report = await engineTask('Could not apply redactions', () =>
     runAsAgent(doc, () =>
       doc
         .ops<typeof import('@features/redact/engine').default>('redact', {
           onProgress: (fraction, message) => ctx.progress(Math.round(fraction * 100), 100, message)
         })
-        .apply(ids.length ? marks.map((m) => m.id) : null)
+        // Exactly the marks the person approved: marks another call added meanwhile stay unapplied.
+        .apply(marks.map((m) => m.id))
     )
   )
   // As after the person applies them: the tab reloads from the next saved file, so the removed
@@ -122,7 +137,11 @@ const signDocument: ToolHandler = async (args, ctx) => {
   }
   await commitTyping()
   showDocument(doc)
-  const signedOk = await handoff(ctx, () => startSigning(doc, { mode: certify ? 'certify' : 'sign', target, reason, location }))
+  const signedOk = await handoff(
+    ctx,
+    () => startSigning(doc, { mode: certify ? 'certify' : 'sign', target, reason, location }),
+    { keepDone: true }
+  )
   if (!signedOk)
     throw cancelled(
       ctx,
@@ -158,8 +177,10 @@ const protectDocumentTool: ToolHandler = async (args, ctx) => {
   if (!requireOpenPassword && !restrictEditing) throw new ToolError('invalid_args', 'Choose require_open_password, restrict_editing or both')
   await commitTyping()
   showDocument(doc)
-  const done = await handoff(ctx, () =>
-    protectDocument(doc, { mode: requireOpenPassword ? 'password' : 'restrict', initial: { requireOpenPassword, restrictEditing } })
+  const done = await handoff(
+    ctx,
+    () => protectDocument(doc, { mode: requireOpenPassword ? 'password' : 'restrict', initial: { requireOpenPassword, restrictEditing } }),
+    { keepDone: true }
   )
   if (!done)
     throw cancelled(
@@ -203,7 +224,7 @@ const removeSecurity: ToolHandler = async (args, ctx) => {
     },
     'remove security'
   )
-  const saved = await handoff(ctx, () => removeDocumentSecurity(doc, { confirmed: true }))
+  const saved = await handoff(ctx, () => removeDocumentSecurity(doc, { confirmed: true }), { keepDone: true })
   if (!saved)
     throw cancelled(
       ctx,
