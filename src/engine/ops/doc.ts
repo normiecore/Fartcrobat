@@ -1,5 +1,21 @@
 import type { CertificateKey, CertificateLock } from '@shared/certkeys'
 import type { DocInfo, DocMetadata, LockInfo, OpenResult, PageInfo, PasswordAccess, Permission, SaveOptions } from '@shared/types'
+import {
+  assertNoBridge,
+  certificateEncryptionLabel,
+  certificateLockOf,
+  certificatePermissions,
+  copyCertificateKey,
+  keysOpen,
+  openPubSec,
+  openWithKeys,
+  plainSaveOptions,
+  plainSessionBytes,
+  readPubSec,
+  writeSessionPubSec,
+  type PubSecInfo,
+  type PubSecState
+} from '../crypt'
 import { defineOps, EngineError, mutation, withTransfer, type Transfer } from '../define'
 import type { PDFDocument, Session } from '../session'
 import { accessOf, readLockInfo } from '../util/lockInfo'
@@ -103,7 +119,8 @@ export function buildDocInfo(s: Session): DocInfo {
 /** Everything in DocInfo except the per-page list: cheap enough to refresh after every change. */
 export function documentFacts(s: Session): Omit<DocInfo, 'pages'> {
   const doc = s.pdf
-  const permissions = {} as Record<Permission, boolean>
+  const pubsec = s.pubsec
+  let permissions = {} as Record<Permission, boolean>
   for (const p of PERMISSIONS) {
     try {
       permissions[p] = doc.hasPermission(p)
@@ -115,6 +132,12 @@ export function documentFacts(s: Session): Omit<DocInfo, 'pages'> {
   const version = (versionNum / 10).toFixed(1)
   let encryption: string | null = safe(() => doc.getMetaData('encryption') ?? null, null)
   if (encryption === 'None' || encryption === '') encryption = null
+  if (pubsec) {
+    // MuPDF sees the temporary bridge (or no encryption at all): report the file's own security,
+    // and the permissions of the envelope that opened it.
+    encryption = certificateEncryptionLabel(pubsec.source)
+    permissions = certificatePermissions(pubsec.permissions).permissions
+  }
   return {
     pageCount: doc.countPages(),
     metadata: readMetadata(doc),
@@ -122,8 +145,7 @@ export function documentFacts(s: Session): Omit<DocInfo, 'pages'> {
     format: s.converted ? s.sourceFormat : `PDF ${version}`,
     converted: s.converted,
     encryption,
-    // CONTRACT STUB (engine builder replaces): 'certificate' for documents opened with a certificate.
-    security: encryption ? 'password' : null,
+    security: pubsec ? 'certificate' : encryption ? 'password' : null,
     permissions,
     hasForm: safe(() => hasForm(doc), false),
     hasXfa: safe(() => hasXfa(doc), false),
@@ -131,7 +153,8 @@ export function documentFacts(s: Session): Omit<DocInfo, 'pages'> {
     layerCount: safe(() => doc.countLayers(), 0),
     attachmentCount: safe(() => Object.keys(doc.getEmbeddedFiles()).length, 0),
     wasRepaired: safe(() => doc.wasRepaired(), false),
-    canSaveIncrementally: safe(() => doc.canBeSavedIncrementally(), false),
+    // Certificate-encrypted documents are always saved in full (see saveCertificateDocument).
+    canSaveIncrementally: !pubsec && safe(() => doc.canBeSavedIncrementally(), false),
     // Read /Lang as written: MuPDF's getLanguage() drops region subtags ("en-US" -> "en").
     language: safe(() => readString(catalog(doc).get('Lang')) || doc.getLanguage() || null, null)
   }
@@ -250,6 +273,7 @@ function takeBuffer(buf: InstanceType<Session['mupdf']['Buffer']>): Uint8Array {
  */
 function prefersIncremental(s: Session): boolean {
   const doc = s.pdf
+  if (s.pubsec) return false
   if (!safe(() => doc.canBeSavedIncrementally(), false)) return false
   return s.signedOnOpen || safe(() => countSignatures(doc), 0) > 0
 }
@@ -274,6 +298,8 @@ function saveIncrementally(s: Session): Uint8Array {
  * its own security settings.
  */
 export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
+  if (opts.encryptCertificate) return saveWithNewCertificateSecurity(s, opts)
+  if (s.pubsec) return saveCertificateDocument(s, s.pubsec, opts)
   opts = withRequiredSaveOptions(s, opts)
   const doc = s.pdf
   let mode = opts.mode ?? 'auto'
@@ -306,6 +332,55 @@ export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
   }
 }
 
+/**
+ * HOOK for the engine outputs builder: SaveOptions.encryptCertificate, new certificate security
+ * (Protect > Encrypt with Certificate) for any document, plain, password-protected or
+ * certificate-encrypted. Build the envelopes, then
+ * writePubSecDocument(s.mupdf, s.pdf, writeKeyFor(seed, envelopes, encryptMetadata),
+ * { saveOptions, password: sessionReadPassword(s) }), check it with assertNoBridge(bytes, s.pubsec)
+ * when the session is certificate-encrypted, and register the new key (src/engine/crypt/index.ts).
+ */
+function saveWithNewCertificateSecurity(s: Session, opts: SaveOptions): Uint8Array {
+  void [s, opts]
+  throw new EngineError('Encrypting with certificates is not available yet', 'NOT_IMPLEMENTED')
+}
+
+/**
+ * Saves a certificate-encrypted document, always in full ('auto' too, even when it is signed: the
+ * person is warned that its signatures become invalid). Compaction, compression, cleaning and
+ * sanitizing apply to the plain copy. The output keeps the original seed and envelopes (V4 files
+ * are upgraded to V5, AES-256); `decrypt` writes a plain file and `encrypt` password security,
+ * both only for a recipient allowed to change the security.
+ */
+function saveCertificateDocument(s: Session, state: PubSecState, opts: SaveOptions): Uint8Array {
+  if (opts.mode === 'incremental') {
+    throw new EngineError('Certificate-encrypted documents are always saved in full', 'CERTIFICATE_FULL_SAVE')
+  }
+  opts = withRequiredSaveOptions(s, { ...opts, mode: 'full' })
+  if ((opts.encrypt || opts.decrypt) && state.access !== 'owner') {
+    throw new EngineError('Your certificate does not allow changing the security of this document', 'PERMISSION_DENIED')
+  }
+  // compress, compress-images, compress-fonts, clean, sanitize and the garbage level, no security.
+  const plainOptions = plainSaveOptions(saveOptionString({ ...opts, encrypt: undefined, decrypt: false }, false))
+  if (opts.encrypt) {
+    const copy = new s.mupdf.PDFDocument(plainSessionBytes(s, 'garbage=yes'))
+    let bytes: Uint8Array
+    try {
+      bytes = takeBuffer(copy.saveToBuffer(saveOptionString({ ...opts, decrypt: false }, false)))
+    } finally {
+      copy.destroy()
+    }
+    assertNoBridge(bytes, state, 'password')
+    return bytes
+  }
+  if (opts.decrypt) {
+    const bytes = plainSessionBytes(s, plainOptions)
+    assertNoBridge(bytes, state, 'plain')
+    return bytes
+  }
+  return writeSessionPubSec(s, plainOptions)
+}
+
 interface OpenOptions {
   password?: string
   /** Report the document as unsaved (it only exists in memory). */
@@ -322,6 +397,9 @@ function openInto(s: Session, data: Uint8Array, fileName: string, opts: OpenOpti
   try {
     src = m.Document.openDocument(data, magic)
   } catch (err) {
+    // MuPDF only knows the Standard security handler and throws on /Adobe.PubSec files.
+    const info = pubsecOf(data)
+    if (info) return openCertificateInto(s, data, fileName, info, opts)
     throw new EngineError(`This file could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
   }
   let password: string | undefined
@@ -344,11 +422,7 @@ function openInto(s: Session, data: Uint8Array, fileName: string, opts: OpenOpti
         src.destroy()
         return { ok: false, needsPassword: true, wrongPassword: !!opts.password, lock }
       }
-      if (s.pending && s.pending !== src) {
-        try {
-          s.pending.destroy()
-        } catch {}
-      }
+      dropPending(s, src)
       s.pending = src
       s.pendingBytes = data
       s.pendingDirty = !!opts.dirty
@@ -357,6 +431,50 @@ function openInto(s: Session, data: Uint8Array, fileName: string, opts: OpenOpti
     }
   }
   return finishOpen(s, src, fileName, data, { password, access, dirty: opts.dirty, keepSettings: opts.reload })
+}
+
+/** Forgets documents waiting for a password or a certificate key (except `keep`). */
+function dropPending(s: Session, keep?: InstanceType<Session['mupdf']['Document']>) {
+  if (s.pending && s.pending !== keep) {
+    try {
+      s.pending.destroy()
+    } catch {}
+  }
+  s.pending = null
+  s.pendingBytes = null
+  s.pendingDirty = false
+  s.pendingCertificate = null
+}
+
+/** The public-key security of bytes MuPDF refused, or null when that is not why. */
+function pubsecOf(data: Uint8Array): PubSecInfo | null {
+  try {
+    return readPubSec(data)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Opens a certificate-encrypted file with a key the engine holds. Without one, the file waits for
+ * doc.unlockCertificate (a reload leaves the open document as it is instead, as with passwords).
+ */
+function openCertificateInto(s: Session, data: Uint8Array, fileName: string, info: PubSecInfo, opts: OpenOptions): OpenResult {
+  const opened = openWithKeys(s.mupdf, data, info, s.certificateKeys.find(info.recipients))
+  if (opened) {
+    return finishOpen(s, opened.doc, fileName, data, {
+      pubsec: opened.state,
+      access: opened.state.access,
+      dirty: opts.dirty,
+      keepSettings: opts.reload
+    })
+  }
+  const certificate = certificateLockOf(info)
+  if (opts.reload) return { ok: false, needsCertificate: true, certificate }
+  dropPending(s)
+  s.pendingCertificate = { bytes: data, info, dirty: !!opts.dirty }
+  s.fileName = fileName
+  return { ok: false, needsCertificate: true, certificate }
 }
 
 function lockOf(src: InstanceType<Session['mupdf']['Document']>): LockInfo | null {
@@ -373,16 +491,19 @@ function finishOpen(
   src: InstanceType<Session['mupdf']['Document']>,
   fileName: string,
   bytes: Uint8Array | null,
-  opts: { password?: string; access?: PasswordAccess; dirty?: boolean; keepSettings?: boolean } = {}
+  opts: { password?: string; access?: PasswordAccess; dirty?: boolean; keepSettings?: boolean; pubsec?: PubSecState } = {}
 ): OpenResult {
   s.pending = null
   s.pendingBytes = null
   s.pendingDirty = false
+  s.pendingCertificate = null
   const pdf = src.asPDF()
   if (pdf) {
     s.setDocument(pdf, { fileName, sourceFormat: 'PDF', converted: false, dirty: opts.dirty, keepSettings: opts.keepSettings })
+    // For a certificate-encrypted document: the file as given (signatures cover these bytes).
     s.sourceBytes = bytes
     s.password = opts.password ?? null
+    s.pubsec = opts.pubsec ?? null
   } else {
     const ext = extensionOf(fileName)
     const converted = convertToPdf(s, src)
@@ -456,6 +577,12 @@ export default defineOps('doc', {
     try {
       src = s.mupdf.Document.openDocument(data, OPENABLE_FORMATS[ext] ? fileName : 'application/pdf')
     } catch (err) {
+      const info = pubsecOf(data)
+      if (info) {
+        // A key this engine holds opens it (checked without opening the file).
+        if (keysOpen(data, info, s.certificateKeys.find(info.recipients))) return { needsPassword: false }
+        return { needsPassword: false, needsCertificate: true, certificate: certificateLockOf(info) }
+      }
       throw new EngineError(`This file could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
     }
     try {
@@ -473,8 +600,24 @@ export default defineOps('doc', {
    * addCertificateKey). Returns needsCertificate again when the key does not belong to the file.
    */
   unlockCertificate(s, key: CertificateKey, opts: { dirty?: boolean } = {}): OpenResult {
-    void [s, key, opts]
-    throw new EngineError('Certificate encryption is not implemented yet', 'NOT_IMPLEMENTED') // CONTRACT STUB
+    const pending = s.pendingCertificate
+    if (!pending) throw new EngineError('No document is waiting for a certificate', 'NO_PENDING')
+    const k = copyCertificateKey(key)
+    let opened: ReturnType<typeof openPubSec>
+    try {
+      opened = openPubSec(s.mupdf, pending.bytes, pending.info, k)
+    } catch (err) {
+      if ((err as EngineError).code === 'CERTIFICATE_KEY_MISMATCH') {
+        return { ok: false, needsCertificate: true, certificate: certificateLockOf(pending.info) }
+      }
+      throw err
+    }
+    s.certificateKeys.add(k)
+    return finishOpen(s, opened.doc, s.fileName, pending.bytes, {
+      pubsec: opened.state,
+      access: opened.state.access,
+      dirty: opts.dirty || pending.dirty
+    })
   },
 
   /**
@@ -483,18 +626,23 @@ export default defineOps('doc', {
    * from, and new tabs made from a certificate-encrypted document).
    */
   addCertificateKey(s, key: CertificateKey): void {
-    void [s, key]
-    throw new EngineError('Certificate encryption is not implemented yet', 'NOT_IMPLEMENTED') // CONTRACT STUB
+    s.certificateKeys.add(key)
   },
 
   /** The open document's certificate security (public data), or null when it is not certificate-encrypted. */
   certificateLock(s): CertificateLock | null {
-    void s
-    return null // CONTRACT STUB
+    const p = s.pubsec
+    if (!p || !s.doc) return null
+    return certificateLockOf({ recipients: p.recipients, version: p.source.version, cipher: p.source.cipher, keyLength: p.source.keyBits / 8 })
   },
 
-  /** The lock of the open document (null when it is not encrypted), to find its saved password. */
+  /**
+   * The lock of the open document (null when it is not encrypted), to find its saved password.
+   * Null for a certificate-encrypted document: no password opens it, and MuPDF's trailer holds the
+   * temporary bridge, which never leaves the engine (see certificateLock).
+   */
   lockInfo(s): LockInfo | null {
+    if (s.pubsec) return null
     return readLockInfo(s.pdf)
   },
 
@@ -594,6 +742,8 @@ export default defineOps('doc', {
   close(s) {
     s.closeDocument()
     s.password = null
+    // The engine's certificate keys stay (Session.certificateKeys): they end with the worker.
+    s.pendingCertificate = null
   }
 })
 
