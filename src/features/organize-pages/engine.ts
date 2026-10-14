@@ -3,9 +3,11 @@ import type { CertificateLock } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { PDFDocument, PDFObject, Session } from '@engine/session'
-import { openSourceWithAccess, type PasswordNeededError } from '@engine/ops/pages'
+import type { PubSecState } from '@engine/crypt'
+import { openSourceWithAccess, type CertificateNeededError, type OpenedSource, type PasswordNeededError } from '@engine/ops/pages'
 import { isNull, readName, readNumber, readString } from '@engine/util/pdf'
 import {
+  certificateProtectionOf,
   isEncrypted,
   outputSizer,
   protectionOfFile,
@@ -73,12 +75,17 @@ function selectPages(doc: PDFDocument, pages: number[] | undefined): number[] {
   return pages.filter((p, i) => Number.isInteger(p) && p >= 0 && p < n && pages.indexOf(p) === i)
 }
 
-/** The bytes and password each opened encrypted file came from, to give outputs its protection. */
-const origins = new WeakMap<PDFDocument, { data: Uint8Array; password: string | null }>()
+/**
+ * The bytes and password each opened encrypted file came from, to give outputs its protection. For
+ * a certificate-encrypted file (opened with a key the engine holds), its security instead: MuPDF
+ * cannot read the protection of PubSec bytes, and holds the document through a temporary bridge.
+ */
+const origins = new WeakMap<PDFDocument, { data: Uint8Array; password: string | null; pubsec?: PubSecState }>()
 
-function openFile(s: Session, data: Uint8Array, fileName: string, password?: string) {
+function openFile(s: Session, data: Uint8Array, fileName: string, password?: string): OpenedSource {
   const opened = openSourceWithAccess(s, data, fileName, password)
-  if (isEncrypted(opened.doc)) origins.set(opened.doc, { data, password: password ?? null })
+  if (opened.pubsec) origins.set(opened.doc, { data, password: null, pubsec: opened.pubsec })
+  else if (isEncrypted(opened.doc)) origins.set(opened.doc, { data, password: password ?? null })
   return opened
 }
 
@@ -94,10 +101,12 @@ function openRef(s: Session, ref: SourceRef): { doc: PDFDocument; owned: boolean
 
 /** The protection of a file opened by openRef, or null when it is not encrypted. */
 function protectionOfRef(s: Session, doc: PDFDocument, fileName: string): Protection | null {
-  if (!isEncrypted(doc)) return null
   const origin = origins.get(doc)
+  // Certificate security, kept from the open (the decrypted route leaves MuPDF no encryption to see).
+  if (origin?.pubsec) return certificateProtectionOf(origin.pubsec)
+  if (!isEncrypted(doc)) return null
   if (!origin) throw new EngineError(`The protection of ${fileName} could not be read`, 'NO_SOURCE')
-  return protectionOfFile(s.mupdf, origin.data, origin.password)
+  return protectionOfFile(s.mupdf, origin.data, origin.password, s.certificateKeys)
 }
 
 function pageSizes(doc: PDFDocument, max = MAX_PROBE_SIZES) {
@@ -134,9 +143,16 @@ function tryOpen(
   try {
     return openFile(s, data, fileName, password)
   } catch (err) {
-    if ((err as EngineError).code === 'NEEDS_PASSWORD')
+    const code = (err as EngineError).code
+    if (code === 'NEEDS_PASSWORD')
       return { ok: false, needsPassword: true, wrongPassword: !!password, lock: (err as PasswordNeededError).lock ?? null }
-    throw new EngineError(`${fileName} could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
+    // No key this engine holds opens it: the renderer unlocks it, calls doc.addCertificateKey and probes again.
+    if (code === 'NEEDS_CERTIFICATE') return { ok: false, needsCertificate: true, certificate: (err as CertificateNeededError).certificate }
+    // CERTIFICATE_OPEN_FAILED: a key that belongs to the file found it unusable (damaged).
+    throw new EngineError(
+      `${fileName} could not be opened: ${(err as Error).message}`,
+      code === 'CERTIFICATE_OPEN_FAILED' ? code : 'OPEN_FAILED'
+    )
   }
 }
 
@@ -377,7 +393,8 @@ export default defineOps('organize-pages', {
 
   /**
    * Like combine, and says which file's protection the result has: when any file is encrypted, the
-   * result gets the encryption, permissions and passwords of the first one that is.
+   * result gets the encryption, permissions and passwords of the first one that is (or its
+   * certificate security: the same envelopes, so the same people open it with the same keys).
    */
   combineWithProtection(s, sources: SourceRef[], opts: CombineOptions = {}) {
     const result = combineSources(s, sources, opts)
@@ -409,7 +426,8 @@ export default defineOps('organize-pages', {
 
   /**
    * The password that opens extracted files (the one this document was opened with), or null when
-   * they open without one. Only for opening them in a new tab: never show it or pass it on.
+   * they open without one (certificate security too: they open with the same keys). Only for
+   * opening them in a new tab: never show it or pass it on.
    */
   openPassword(s): string | null {
     return sessionProtection(s)?.password ?? null

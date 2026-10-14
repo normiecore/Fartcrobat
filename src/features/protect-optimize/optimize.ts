@@ -2,8 +2,14 @@
  * PDF Optimizer (engine side). Works on a private copy of the document so the open document and its
  * undo history are never touched: downsamples and recompresses images, subsets fonts, discards
  * objects and user data, and cleans up the file structure.
+ *
+ * A certificate-encrypted document (s.pubsec) is optimized on a decrypted copy, and the result is
+ * written by the PubSec writer with the document's own seed and envelopes (V5 AES-256, no object
+ * streams), so it opens with the same keys. MuPDF's view of such a document holds a temporary
+ * security dictionary (the bridge) or plaintext, which never reaches the result.
  */
 import type * as MuPDF from 'mupdf'
+import { assertNoBridge, openWithKeys, plainSessionBytes, readPubSec, writePubSecDocument, type PubSecState } from '@engine/crypt'
 import { EngineError } from '@engine/define'
 import type { PDFDocument, PDFObject, Session } from '@engine/session'
 import { catalog, countSignatures, isNull, readName, walkFields } from '@engine/util/pdf'
@@ -206,13 +212,20 @@ export interface WorkingCopy {
   pdf: PDFDocument
   plainSize: number
   encrypted: boolean
+  /** Certificate security of the document: `pdf` is decrypted and the result is written with it. */
+  pubsec?: PubSecState
 }
 
 /**
  * Saves the open document (with its unsaved changes) and reopens the bytes as a separate document.
  * Encrypted documents keep their encryption; those that need an open password need `password`.
+ * A certificate-encrypted document gives a decrypted copy (no password needed).
  */
 export function openWorkingCopy(s: Session, password?: string): WorkingCopy {
+  if (s.pubsec) {
+    const plain = plainSessionBytes(s, 'garbage=yes,compress')
+    return { pdf: new s.mupdf.PDFDocument(plain), plainSize: plain.length, encrypted: true, pubsec: s.pubsec }
+  }
   const buf = s.pdf.saveToBuffer('garbage=yes,compress')
   const bytes = buf.asUint8Array().slice()
   buf.destroy()
@@ -869,12 +882,39 @@ function fontProgramBytes(pdf: PDFDocument): number {
 
 // ---- the whole pipeline ---------------------------------------------------------------------
 
-export function saveOptionsFor(opts: OptimizeOptions): string {
+export function saveOptionsFor(opts: OptimizeOptions, certificate = false): string {
   const parts = [opts.cleanup.removeUnused ? 'garbage=deduplicate' : 'garbage=yes']
   if (opts.cleanup.compressStreams) parts.push('compress', 'compress-images', 'compress-fonts')
-  if (opts.cleanup.objectStreams) parts.push('objstms')
+  // The PubSec writer encrypts object by object and writes no object streams.
+  if (opts.cleanup.objectStreams && !certificate) parts.push('objstms')
   if (opts.cleanup.optimizeContent) parts.push('clean')
   return parts.join(',')
+}
+
+/**
+ * The optimized copy as a certificate-encrypted file with the document's own seed and envelopes,
+ * refused if it carries the bridge, and checked by opening it with the keys this engine holds.
+ */
+function writeCertificateResult(s: Session, pdf: PDFDocument, state: PubSecState, opts: OptimizeOptions): Uint8Array {
+  const bytes = writePubSecDocument(s.mupdf, pdf, state.writeKey, { saveOptions: saveOptionsFor(opts, true) })
+  assertNoBridge(bytes, state)
+  let doc: PDFDocument | null = null
+  try {
+    const info = readPubSec(bytes)
+    if (!info) throw new Error('not certificate-encrypted')
+    // Through the engine's key registry, as the next open of the result will be (the key that
+    // opened the document as a fallback).
+    const opened = openWithKeys(s.mupdf, bytes, info, [...s.certificateKeys.find(info.recipients), state.key])
+    if (!opened) throw new Error('it does not open with the document’s keys')
+    doc = opened.doc
+    if (doc.countPages() !== pdf.countPages()) throw new Error('pages missing')
+    doc.loadPage(0).destroy()
+  } catch (err) {
+    throw new EngineError(`The optimized file did not pass checks (${(err as Error).message}); nothing was saved`, 'OPTIMIZE_FAILED')
+  } finally {
+    doc?.destroy()
+  }
+  return bytes
 }
 
 export async function optimizeDocument(
@@ -905,10 +945,14 @@ export async function optimizeDocument(
       }
     }
     progress(0.9, 'Saving')
-    const buf = pdf.saveToBuffer(saveOptionsFor(opts))
-    const bytes = buf.asUint8Array().slice()
-    buf.destroy()
-    verifyOutput(s.mupdf, bytes, password)
+    let bytes: Uint8Array
+    if (copy.pubsec) bytes = writeCertificateResult(s, pdf, copy.pubsec, opts)
+    else {
+      const buf = pdf.saveToBuffer(saveOptionsFor(opts))
+      bytes = buf.asUint8Array().slice()
+      buf.destroy()
+      verifyOutput(s.mupdf, bytes, password)
+    }
     progress(1, 'Done')
     return {
       bytes,
