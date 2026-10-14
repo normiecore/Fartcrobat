@@ -241,7 +241,8 @@ export class AgentRouter {
     t.state = 'sent'
     const { connectionId, client, tool, args } = p.call
     try {
-      this.host.request(t.windowId, { id: p.key, connectionId, client, windowId: t.windowId, tool, args })
+      const currentWindow = this.host.current() === t.windowId
+      this.host.request(t.windowId, { id: p.key, connectionId, client, windowId: t.windowId, currentWindow, tool, args })
     } catch (err) {
       t.state = 'done'
       if (p.fanOut) this.settle(p)

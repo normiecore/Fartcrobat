@@ -114,6 +114,7 @@ describe('agent router', () => {
       connectionId: 1,
       client: c.client,
       windowId: 'w1',
+      currentWindow: expect.any(Boolean),
       tool: 'get_page_text',
       args: c.args
     })

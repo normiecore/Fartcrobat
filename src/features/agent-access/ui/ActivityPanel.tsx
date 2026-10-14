@@ -17,7 +17,8 @@ const OUTCOME: Record<CallRecord['outcome'], { label: string; icon: typeof Check
   done: { label: 'Done', icon: Check },
   declined: { label: 'You declined', icon: ShieldX },
   cancelled: { label: 'Cancelled', icon: Ban },
-  error: { label: 'Failed', icon: CircleAlert }
+  error: { label: 'Failed', icon: CircleAlert },
+  pending: { label: 'Still running', icon: Loader2 }
 }
 
 function CallRow({ call }: { call: CallRecord }) {

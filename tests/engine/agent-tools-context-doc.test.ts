@@ -62,7 +62,7 @@ function open(...docs: DocumentModelType[]) {
 }
 
 function ctxFor(audit: Record<string, unknown> = {}, progress: number[][] = []) {
-  const request: AgentCallRequest = { id: '1:1', connectionId: 1, client: { name: 'claude-ai', version: '1' }, windowId: 'w1', tool: 'x', args: {} }
+  const request: AgentCallRequest = { id: '1:1', connectionId: 1, client: { name: 'claude-ai', version: '1' }, windowId: 'w1', currentWindow: true, tool: 'x', args: {} }
   return {
     request,
     signal: new AbortController().signal,

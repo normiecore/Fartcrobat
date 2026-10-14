@@ -37,7 +37,7 @@ describe('agent shim: MCP results', () => {
   it('lists every catalogue tool with its schema and hints, and nothing app-side', () => {
     const tools = mcpTools()
     expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name))
-    expect(tools).toHaveLength(30)
+    expect(tools).toHaveLength(31)
     for (const [i, tool] of tools.entries()) {
       const def = AGENT_TOOLS[i]
       expect(tool).toEqual({

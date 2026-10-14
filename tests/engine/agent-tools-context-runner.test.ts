@@ -27,7 +27,7 @@ beforeEach(() => {
 
 let nextId = 1
 function request(tool: string, args: Record<string, unknown> = {}): AgentCallRequest {
-  return { id: `1:${nextId++}`, connectionId: 1, client: { name: 'claude-ai', version: '1.0' }, windowId: 'w1', tool, args }
+  return { id: `1:${nextId++}`, connectionId: 1, client: { name: 'claude-ai', version: '1.0' }, windowId: 'w1', currentWindow: true, tool, args }
 }
 
 type Handler = (args: Record<string, unknown>, ctx: import('@features/agent-access/tools/common').ToolContext) => Promise<any>

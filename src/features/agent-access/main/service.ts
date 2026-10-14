@@ -95,6 +95,7 @@ export class AgentAccess {
       enabled: this.state.enabled,
       policy: this.state.policy,
       listening: !!server,
+      blocked: [],
       connections: (server?.list() ?? []).map((c) => ({
         id: c.id,
         client: c.client,

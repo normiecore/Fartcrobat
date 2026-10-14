@@ -370,6 +370,7 @@ describeUnix('agent access pipe', () => {
       connectionId,
       client: { name: 'claude-ai', version: '1.0' },
       windowId: 'w1',
+      currentWindow: expect.any(Boolean),
       tool: 'find_text',
       args: { handle: 'w1-doc-2', query: 'John Smith', pages: '1-3' }
     })
