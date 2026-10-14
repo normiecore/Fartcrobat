@@ -87,6 +87,43 @@ describe('protect-optimize: certificate files', () => {
     expect(certs.every((c) => c.der[0] === 0x30 && sha256(c.der) === c.sha256)).toBe(true)
   })
 
+  it('reads a PEM certificate after a readable dump longer than 4 KB (openssl ca, openssl x509 -text)', () => {
+    // What `openssl x509 -text` writes before the BEGIN line; for an RSA 4096-bit key (modulus and
+    // signature, 512 bytes each) the dump is about 5 KB.
+    const hexLines = (bytes: number) =>
+      Array.from({ length: Math.ceil(bytes / 15) }, (_, i) => '                    ' + Array.from({ length: 15 }, (_, j) => ((i * 15 + j) % 256).toString(16).padStart(2, '0')).join(':') + ':').join('\n')
+    const dump = [
+      'Certificate:',
+      '    Data:',
+      '        Version: 3 (0x2)',
+      '        Serial Number: 4096 (0x1000)',
+      '        Signature Algorithm: sha256WithRSAEncryption',
+      '        Issuer: O = Fartcrobat Test Keys, CN = Fartcrobat Tëst CA',
+      '        Subject: CN = Carol Test',
+      '        Subject Public Key Info:',
+      '            Public Key Algorithm: rsaEncryption',
+      '                Public-Key: (4096 bit)',
+      '                Modulus:',
+      hexLines(513),
+      '                Exponent: 65537 (0x10001)',
+      '    Signature Algorithm: sha256WithRSAEncryption',
+      '    Signature Value:',
+      hexLines(512),
+      ''
+    ].join('\n')
+    expect(dump.length).toBeGreaterThan(4096)
+    const pem = new TextDecoder().decode(pki('alice.crt'))
+    for (const file of [text(dump + pem), text((dump + pem).replace(/\n/g, '\r\n')), text('\ufeff' + dump + pem)]) {
+      expect(new TextDecoder().decode(file).indexOf('-----BEGIN ')).toBeGreaterThan(4096)
+      expect(detectCertificateFile(file)).toBe('pem')
+      expect(readCertificateFile(file).map((c) => c.sha256)).toEqual([ALICE_SHA256])
+    }
+    // DER is still told by its content, with or without a trailing newline.
+    const der = pki('alice.cer')
+    expect(detectCertificateFile(der)).toBe('certificate')
+    expect(readCertificateFile(new Uint8Array([...der, 0x0a])).map((c) => c.sha256)).toEqual([ALICE_SHA256])
+  })
+
   it('reads the certificates of a certs-only .p7b, DER and PEM', () => {
     const p7b = pki('colleagues.p7b')
     expect(detectCertificateFile(p7b)).toBe('pkcs7')
