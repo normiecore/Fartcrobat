@@ -11,6 +11,8 @@ const P = 'fc-protect-optimize'
 /** Acrobat's document message bar for restricted documents, shown under the document toolbar. */
 function RestrictedBar({ doc, permsKey }: { doc: DocumentModel; permsKey: string }) {
   const permissions = useDocState(doc, (s) => s.info.permissions)
+  // Certificate security has no permissions password: the certificate decides.
+  const certificate = useDocState(doc, (s) => s.info.security === 'certificate')
   const denied = restrictionList(permissions)
   return (
     <div className={`${P}-msgbar`} role="status" data-testid="restricted-bar">
@@ -21,9 +23,11 @@ function RestrictedBar({ doc, permsKey }: { doc: DocumentModel; permsKey: string
       <Button size="sm" variant="quiet" onClick={() => openToolGroup('protect')}>
         Permission details
       </Button>
-      <Button size="sm" variant="quiet" onClick={() => void enterPermissionsPassword(doc)}>
-        Enter password…
-      </Button>
+      {!certificate && (
+        <Button size="sm" variant="quiet" onClick={() => void enterPermissionsPassword(doc)}>
+          Enter password…
+        </Button>
+      )}
       <button
         type="button"
         className="ui-icon-btn"
@@ -40,6 +44,7 @@ function RestrictedBar({ doc, permsKey }: { doc: DocumentModel; permsKey: string
 /** Lock badge in the document toolbar for encrypted documents (opens Protect), plus the message bar. */
 export function SecurityBadge({ doc }: { doc: DocumentModel }) {
   const encryption = useDocState(doc, (s) => s.info.encryption)
+  const security = useDocState(doc, (s) => s.info.security)
   const permissions = useDocState(doc, (s) => s.info.permissions)
   const permsKey = JSON.stringify(permissions)
   const dismissed = useProtectOptimize((s) => s.dismissedBars[doc.id] === permsKey)
@@ -47,15 +52,20 @@ export function SecurityBadge({ doc }: { doc: DocumentModel }) {
   const anchor = useCallback((el: HTMLSpanElement | null) => {
     setHost((el?.closest('.shell-doctoolbar') as HTMLElement | null) ?? null)
   }, [])
-  const restricted = !!encryption && isRestricted(permissions)
+  const encrypted = !!encryption || security === 'certificate'
+  const restricted = encrypted && isRestricted(permissions)
   const label = encryptionLabel(encryption)
+  const title =
+    security === 'certificate'
+      ? `This document is protected with certificate security${label ? ` (${label})` : ''}. Click for security settings.`
+      : `This document is protected${label ? ` (${label})` : ''}. Click for security settings.`
   return (
     <span ref={anchor} className={`${P}-badge-anchor`}>
-      {encryption && (
+      {encrypted && (
         <button
           type="button"
           className={`${P}-badge ${restricted ? 'is-restricted' : ''}`}
-          title={`This document is protected${label ? ` (${label})` : ''}. Click for security settings.`}
+          title={title}
           aria-label="Document security"
           data-testid="security-badge"
           onClick={() => openToolGroup('protect')}

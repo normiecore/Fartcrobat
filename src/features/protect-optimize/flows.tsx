@@ -24,12 +24,23 @@ import {
   withProgress,
   writeFile
 } from '@renderer/sdk'
+import { CertificateEncryptDialog, type CertificateEncryptChoice } from './CertificateEncryptDialog'
+import {
+  OWN_REMOVED_WARNING,
+  REPLACE_CERTIFICATE_SECURITY,
+  certificateSecurity,
+  hasOwnRecipient,
+  ownVia,
+  permissionSummary,
+  toCertificateGroups
+} from './certificates'
 import type ops from './engine'
 import { ProtectDialog } from './ProtectDialog'
 import {
   FEATURE_ID,
   compressedName,
   encryptOptions,
+  encryptionLabel,
   formatBytes,
   permissionsFor,
   reductionSummary,
@@ -45,8 +56,23 @@ export function poOps(doc: DocumentModel, opts?: { onProgress?: (fraction: numbe
   return doc.ops<typeof ops>(FEATURE_ID, opts)
 }
 
-export function securityOf(doc: DocumentModel) {
+/** Certificate security (/Adobe.PubSec): the document opened with one of the person's certificates. */
+export function isCertificateEncrypted(doc: DocumentModel): boolean {
+  return doc.state.info.security === 'certificate'
+}
+
+/**
+ * The document's security. A certificate-encrypted document has no password: what it allows comes
+ * from the envelope the person's certificate opened, which the engine reported in DocInfo.
+ */
+export async function securityOf(doc: DocumentModel) {
+  if (isCertificateEncrypted(doc)) return certificateSecurity(doc.state.info, doc.state.unlock)
   return poOps(doc).security()
+}
+
+/** Shown when a certificate that may not change the security tries to. */
+function cannotChangeCertificateSecurity(doc: DocumentModel, what: string) {
+  toast(`Your certificate does not allow you to ${what} of “${doc.state.title}”.`, { kind: 'warning', timeout: 8000 })
 }
 
 async function refreshInfo(doc: DocumentModel) {
@@ -133,6 +159,10 @@ export async function unlockWithPermissionsPassword(doc: DocumentModel, reason: 
 }
 
 export async function enterPermissionsPassword(doc: DocumentModel) {
+  if (isCertificateEncrypted(doc)) {
+    toast(`“${doc.state.title}” is protected with certificate security, so it has no permissions password.`)
+    return
+  }
   const st = await securityOf(doc)
   if (!st.encrypted || st.ownerAccess) {
     toast('This document has no restrictions to lift.')
@@ -168,13 +198,14 @@ export async function protectDocument(
   opts: { mode?: 'password' | 'restrict'; initial?: Partial<Pick<ProtectSettings, 'requireOpenPassword' | 'restrictEditing'>> } = {}
 ): Promise<boolean> {
   try {
-    const st = await securityOf(doc)
-    if (st.encrypted && !st.ownerAccess) {
-      const ok = await unlockWithPermissionsPassword(
-        doc,
-        `“${doc.state.title}” is protected with a permissions password. Enter it to change the security settings.`
-      )
-      if (!ok) return false
+    if (!(await mayChangeSecurity(doc))) return false
+    if (isCertificateEncrypted(doc)) {
+      const go = await confirm({
+        title: opts.mode === 'restrict' ? 'Restrict editing' : 'Protect using password',
+        message: `${REPLACE_CERTIFICATE_SECURITY} The people it is encrypted for will no longer open it with their certificates.`,
+        confirmLabel: 'Continue'
+      })
+      if (!go) return false
     }
     const settings = await openDialog<ProtectSettings>((close) => (
       <ProtectDialog doc={doc} mode={opts.mode ?? 'password'} initial={opts.initial} onDone={close} />
@@ -185,6 +216,24 @@ export async function protectDocument(
     showError(err, 'Could not protect the document')
     return false
   }
+}
+
+/**
+ * Whether the person may change the document's security: always for unprotected documents, after
+ * the permissions password for restricted password-protected ones, and only when their certificate
+ * allows it for certificate-encrypted ones.
+ */
+async function mayChangeSecurity(doc: DocumentModel): Promise<boolean> {
+  const st = await securityOf(doc)
+  if (!st.encrypted || st.ownerAccess) return true
+  if (isCertificateEncrypted(doc)) {
+    cannotChangeCertificateSecurity(doc, 'change the security')
+    return false
+  }
+  return unlockWithPermissionsPassword(
+    doc,
+    `“${doc.state.title}” is protected with a permissions password. Enter it to change the security settings.`
+  )
 }
 
 export async function applyProtection(doc: DocumentModel, settings: ProtectSettings): Promise<boolean> {
@@ -243,6 +292,78 @@ export async function applyProtection(doc: DocumentModel, settings: ProtectSetti
   return true
 }
 
+// ---- encrypt with certificate ---------------------------------------------------------------
+
+export async function openCertificateEncryptDialog(doc: DocumentModel) {
+  await encryptWithCertificate(doc)
+}
+
+/**
+ * Protect > Encrypt with Certificate: the person picks the recipients and their permissions, then
+ * where to save. Resolves true once the encrypted file was saved and the tab reopened from it.
+ * Agents cannot start it (there is no agent tool for it).
+ */
+export async function encryptWithCertificate(doc: DocumentModel): Promise<boolean> {
+  try {
+    if (!(await mayChangeSecurity(doc))) return false
+    const choice = await openDialog<CertificateEncryptChoice>((close) => <CertificateEncryptDialog doc={doc} onDone={close} />)
+    if (!choice) return false
+    return await applyCertificateEncryption(doc, choice)
+  } catch (err) {
+    showError(err, 'Could not encrypt the document')
+    return false
+  }
+}
+
+export async function applyCertificateEncryption(doc: DocumentModel, choice: CertificateEncryptChoice): Promise<boolean> {
+  const groups = toCertificateGroups(choice.groups)
+  if (!groups.length) return false
+  const path = await chooseSavePath('Save Encrypted PDF', doc.state.filePath ?? pdfName(doc.state.title))
+  if (!path) return false
+  const via = ownVia(choice.groups, choice.own)
+  try {
+    const bytes = await doc.busyWhile('Encrypting…', () => doc.saveBytes({ mode: 'full', encryptCertificate: { groups } }))
+    await writeFile(path, bytes)
+    // The engine kept the key it made, so the tab reopens from the new file without asking.
+    await reloadFromSaved(doc, bytes, path, { unlock: { method: 'certificate', access: 'owner', ...(via ? { via } : {}) } })
+  } catch (err) {
+    showError(err, 'Could not encrypt the document')
+    return false
+  }
+  const used = choice.groups.filter((g) => g.recipients.length)
+  const names = (g: (typeof used)[number]) => sentenceList(g.recipients.map((r) => r.cert.name))
+  const method = encryptionLabel(doc.state.info.encryption) ?? '256-bit AES'
+  await ask({
+    title: 'Your PDF is encrypted',
+    width: 500,
+    message: (
+      <div className="fc-protect-optimize-summary" data-testid="cert-encrypt-summary">
+        <p>
+          Saved <b>{basename(path)}</b> with certificate security ({method}).
+        </p>
+        <ul>
+          {used.length === 1 ? (
+            <li>These people can open it with their certificate or Digital ID: {names(used[0])}.</li>
+          ) : (
+            used.map((g, i) => (
+              <li key={g.id}>
+                Group {i + 1} ({permissionSummary(g.settings).replace(/^./, (c) => c.toLowerCase())}): {names(g)}.
+              </li>
+            ))
+          )}
+          {!hasOwnRecipient(choice.groups) && <li>{OWN_REMOVED_WARNING}</li>}
+        </ul>
+        <p className="fc-protect-optimize-muted">
+          No password is needed. Each recipient opens it with the private key of their certificate, for example a Digital ID or a smart
+          card.
+        </p>
+      </div>
+    ),
+    buttons: [{ id: 'ok', label: 'OK', variant: 'primary' }]
+  })
+  return true
+}
+
 // ---- remove security ------------------------------------------------------------------------
 
 export async function removeSecurity(doc: DocumentModel) {
@@ -261,7 +382,12 @@ export async function removeDocumentSecurity(doc: DocumentModel, opts: { confirm
       toast('This document has no security to remove.')
       return null
     }
+    const certificate = isCertificateEncrypted(doc)
     if (!st.ownerAccess) {
+      if (certificate) {
+        cannotChangeCertificateSecurity(doc, 'remove the security')
+        return null
+      }
       const ok = await unlockWithPermissionsPassword(doc, `Enter the permissions password to remove security from “${doc.state.title}”.`)
       if (!ok) return null
     }
@@ -272,8 +398,10 @@ export async function removeDocumentSecurity(doc: DocumentModel, opts: { confirm
       message: (
         <>
           <p style={{ marginTop: 0 }}>
-            Remove the password and all restrictions from “{doc.state.title}”? Anyone with the file will be able to open, print, copy and
-            change it.
+            {certificate
+              ? `Remove the certificate security from “${doc.state.title}”?`
+              : `Remove the password and all restrictions from “${doc.state.title}”?`}{' '}
+            Anyone with the file will be able to open, print, copy and change it.
           </p>
           {hasPath ? (
             <p style={{ marginBottom: 0 }}>
@@ -308,7 +436,12 @@ export async function removeDocumentSecurity(doc: DocumentModel, opts: { confirm
       return path
     }
     await reloadFromSaved(doc, bytes, path, { unlock: null })
-    toast(`Security removed. “${basename(path)}” no longer has a password or restrictions.`, { kind: 'success' })
+    toast(
+      certificate
+        ? `Security removed. “${basename(path)}” is no longer encrypted.`
+        : `Security removed. “${basename(path)}” no longer has a password or restrictions.`,
+      { kind: 'success' }
+    )
     return path
   } catch (err) {
     showError(err, 'Could not remove security')
@@ -352,7 +485,14 @@ export async function compressDocument(doc: DocumentModel, options: OptimizeOpti
     )
     const before = (await savedSize(doc)) ?? report.originalSize
     const name = compressedName(title)
-    const base = { before, after: bytes.length, name, report, summary: reductionSummary(before, bytes.length) }
+    const base = {
+      before,
+      after: bytes.length,
+      name,
+      report,
+      summary: reductionSummary(before, bytes.length),
+      certificate: isCertificateEncrypted(doc)
+    }
     if (bytes.length >= before) {
       const result: CompressResult = { ...base, smaller: false, path: null, openedInTab: false }
       setResult(doc, result)
@@ -361,7 +501,8 @@ export async function compressDocument(doc: DocumentModel, options: OptimizeOpti
     }
     let path: string | null = null
     if (output === 'tab') {
-      const opened = await openNewDocument(bytes, name)
+      // A certificate-encrypted copy opens with the key that opened this document.
+      const opened = await openNewDocument(bytes, name, isCertificateEncrypted(doc) ? { derivedFrom: doc.state.unlock } : {})
       if (!opened) return null
       await poOps(opened).markUnsaved()
     } else {
@@ -398,7 +539,7 @@ export function describeReport(r: CompressResult): string[] {
   const removed = r.report.discarded.filter((d) => d !== 'form fields flattened')
   if (r.report.discarded.includes('form fields flattened')) out.push('Form fields flattened')
   if (removed.length) out.push(`Removed: ${sentenceList(removed)}`)
-  if (r.report.keptEncryption) out.push('Password protection kept')
+  if (r.report.keptEncryption) out.push(r.certificate ? 'Certificate security kept' : 'Password protection kept')
   return out
 }
 
