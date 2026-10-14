@@ -1,7 +1,7 @@
 // Certificate encryption: a crafted /Recipients list cannot stall or exhaust the main process. A file
 // chooses its envelopes, so certkeys:* bounds the request (envelopes, bytes), the ASN.1 elements read
 // across it and the RecipientInfos of each envelope, parses each distinct envelope once per request,
-// and never hands an envelope over the limits to the Windows helper.
+// and hands the Windows helper only what it parsed, once, up to STORE_RECIPIENT_INFOS recipients.
 import type { IpcMainInvokeEvent } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -11,7 +11,7 @@ import {
   parseEnvelope
 } from '@features/digital-signatures/lib/envelope'
 import { createDigitalIdSource } from '@main/certkeys/digitalIdSource'
-import { REQUEST_ELEMENTS, requestEnvelopes } from '@main/certkeys/envelopes'
+import { REQUEST_ELEMENTS, requestEnvelopes, STORE_RECIPIENT_INFOS } from '@main/certkeys/envelopes'
 import { certKeyHandlers, CERTKEY_LIMITS } from '@main/certkeys/handlers'
 import type { WindowsStore } from '@main/certkeys/windowsStoreSource'
 import { idRecord, recipientsOf } from './certkeys-fixtures'
@@ -161,8 +161,9 @@ describe('envelope limits', () => {
     const read = parsed.filter(Boolean).length
     expect(read).toBe(Math.floor(REQUEST_ELEMENTS / 1012))
     expect(parsed.slice(0, read).every(Boolean)).toBe(true)
-    // what was refused for its size is not given to the Windows helper either
-    parsed.forEach((p, i) => expect(forStore[i].length > 0).toBe(p !== null))
+    // the Windows helper gets the first envelope: its 1000 recipients are all it may be given
+    expect(STORE_RECIPIENT_INFOS).toBe(1000)
+    expect(forStore.map((b) => b.length > 0)).toEqual(blobs.map((_, i) => i === 0))
     // identical envelopes are read once and cost nothing more
     const same = requestEnvelopes(new Array(250).fill(blobs[0]))
     expect(same.parsed.every((p) => p === same.parsed[0] && p !== null)).toBe(true)
@@ -174,6 +175,27 @@ describe('envelope limits', () => {
     const { parsed, forStore } = requestEnvelopes([...crafted, ...real])
     expect(parsed.map(Boolean)).toEqual([false, false, false, true])
     expect(forStore.map((b) => b.length > 0)).toEqual([false, false, false, true])
+  })
+
+  it('gives the Windows helper each envelope once, only what was parsed, and at most 1000 recipients', () => {
+    const real = recipientsOf('v5-two-envelopes.pdf')
+    const nineHundred = envelopeWith(tiny(900))
+    // 97 copies of one envelope: the helper walked every copy (97 000 recipients took 40 s)
+    const copies = requestEnvelopes([...real, ...new Array(97).fill(nineHundred)])
+    expect(copies.parsed.every(Boolean)).toBe(true)
+    expect(copies.forStore.map((b) => b.length > 0)).toEqual([true, true, true, ...new Array(96).fill(false)])
+    // the same real envelope twice: the second copy is left out (it gives the same answers)
+    expect(requestEnvelopes([real[0], real[1], real[0]]).forStore.map((b) => b.length > 0)).toEqual([true, true, false])
+    // a long-form length with leading zero bytes: refused here, but .NET would read all 3000
+    const valid = envelopeWith(tiny(3000))
+    const lead = valid[1] & 0x7f
+    const padded = cat(Uint8Array.of(0x30, 0x80 | (lead + 4), 0, 0, 0, 0), valid.subarray(2))
+    const damaged = requestEnvelopes([padded, ...real])
+    expect(damaged.parsed.map(Boolean)).toEqual([false, true, true])
+    expect(damaged.forStore.map((b) => b.length > 0)).toEqual([false, true, true])
+    // distinct envelopes past 1000 recipients in all are left out too
+    const many = requestEnvelopes([...real, ...Array.from({ length: 5 }, (_, i) => envelopeWith(tiny(400), i))])
+    expect(many.forStore.map((b) => b.length > 0)).toEqual([true, true, true, true, false, false, false])
   })
 })
 
@@ -223,6 +245,16 @@ describe('certkeys:* with crafted /Recipients', () => {
     // the Windows helper got empty envelopes in place of the crafted ones, indexes unchanged
     expect(given).toHaveLength(1)
     expect(given[0].map((b) => b.length)).toEqual([0, 0, real[0].length, 0, 0])
+  })
+
+  it('97 copies of a 1000-recipient envelope reach the Windows helper once', async () => {
+    const { handlers, given } = setup()
+    const thousand = envelopeWith(tiny(1000))
+    const blobs = new Array(97).fill(thousand)
+    expect(blobs.reduce((n, b) => n + b.length, 0)).toBeLessThanOrEqual(CERTKEY_LIMITS.totalBytes)
+    await handlers['certkeys:probe'](ok, { blobs })
+    expect(given).toHaveLength(1)
+    expect(given[0].filter((b) => b.length > 0)).toHaveLength(1)
   })
 
   it('caps the recipients described, and decrypts after one parse of the request', async () => {
