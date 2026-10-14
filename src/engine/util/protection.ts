@@ -16,6 +16,11 @@ export interface ProtectionSummary {
   needsPassword: boolean
   /** The file restricts printing, changing, copying, commenting, forms or pages. */
   restricted: boolean
+  /**
+   * Certificate security: the file opens with the same certificates as its source (same envelopes),
+   * not with a password. `needsPassword` is then false.
+   */
+  certificate?: boolean
 }
 
 /**

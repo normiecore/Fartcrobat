@@ -1,3 +1,4 @@
+import type { CertificateLock } from './certkeys'
 import type { Rect } from './geometry'
 
 /** Static information about one page, in page space (rotation applied). */
@@ -39,6 +40,11 @@ export interface DocInfo {
   /** True when the file was not a PDF and was converted on open. */
   converted: boolean
   encryption: string | null
+  /**
+   * How the document is encrypted: 'password' (the Standard handler), 'certificate' (public-key
+   * security, /Adobe.PubSec, opened with a person's certificate), or null when it is not.
+   */
+  security: 'password' | 'certificate' | null
   permissions: Record<Permission, boolean>
   hasForm: boolean
   hasXfa: boolean
@@ -101,7 +107,12 @@ export type OpenResult =
       /** Set when a password opened the document. */
       access?: PasswordAccess
     }
-  | { ok: false; needsPassword: true; wrongPassword?: boolean; lock?: LockInfo | null }
+  | { ok: false; needsPassword: true; needsCertificate?: false; wrongPassword?: boolean; lock?: LockInfo | null }
+  /**
+   * Certificate encryption: one of the person's keys must unwrap a seed from `certificate.recipients`
+   * (src/shared/certkeys.ts). The engine keeps the file pending until doc.unlockCertificate.
+   */
+  | { ok: false; needsPassword?: false; needsCertificate: true; certificate: CertificateLock }
 
 export interface SaveOptions {
   /**
@@ -125,6 +136,26 @@ export interface SaveOptions {
     ownerPassword: string
     permissions: Partial<Record<Permission, boolean>>
   }
+  /**
+   * Certificate security (Protect > Encrypt with Certificate): PubSec V5, AES-256, one envelope per
+   * group, all sharing a new seed. Replaces any other security. Only public certificates are needed.
+   * The engine keeps the new key, so reloading the saved bytes opens them without asking.
+   */
+  encryptCertificate?: {
+    groups: CertificateGroup[]
+    /** Default true. */
+    encryptMetadata?: boolean
+  }
+}
+
+/** Recipients of certificate-encrypted output that get the same permissions (one envelope). */
+export interface CertificateGroup {
+  /** DER X.509 certificates with RSA keys. */
+  certificates: Uint8Array[]
+  /** Anything not set to false is allowed. */
+  permissions: Partial<Record<Permission, boolean>>
+  /** Recipients may change the security (and so get every permission). Default false. */
+  changeSecurity?: boolean
 }
 
 export type ThemePreference = 'system' | 'light' | 'dark'
@@ -172,6 +203,11 @@ export interface Preferences {
    * machine policy can turn it off. Manual checks work either way, unless the policy is off.
    */
   checkForUpdates: boolean
+  /**
+   * Open certificate-encrypted files with certificates from the Windows certificate store and smart
+   * cards (Preferences > Digital IDs; Windows only).
+   */
+  useWindowsCertificateStore: boolean
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -199,7 +235,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   agentAccess: true,
   rememberPasswords: true,
   rememberPasswordChecked: true,
-  checkForUpdates: true
+  checkForUpdates: true,
+  useWindowsCertificateStore: true
 }
 
 export interface RecentFile {

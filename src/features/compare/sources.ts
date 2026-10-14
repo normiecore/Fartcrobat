@@ -76,6 +76,8 @@ async function openPrivate(path: string): Promise<DocumentModel | null> {
     let info: DocInfo | null = res.ok ? res.info : null
     let unlock: DocUnlock | null = null
     if (!res.ok) {
+      // CONTRACT STUB (renderer builder replaces): certificate-encrypted files unlock with the person's keys.
+      if (res.needsCertificate) throw new Error('Certificate-encrypted PDFs cannot be compared yet')
       const unlocked = await unlockFile({
         name,
         filePath: path,

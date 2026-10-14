@@ -52,6 +52,8 @@ async function unlockOpen(
   filePath: string | null,
   reopen: (password: string) => Promise<OpenResult>
 ): Promise<{ info: DocInfo; unlock: DocUnlock } | null> {
+  // CONTRACT STUB (renderer builder replaces): certificate-encrypted files unlock with the person's keys.
+  if (res.needsCertificate) throw new Error('Certificate-encrypted PDFs cannot be opened yet')
   let info: DocInfo | null = null
   const unlocked = await unlockFile({
     name,

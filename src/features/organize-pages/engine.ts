@@ -1,4 +1,5 @@
 import type { Rect } from '@shared/geometry'
+import type { CertificateLock } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { PDFDocument, PDFObject, Session } from '@engine/session'
@@ -47,7 +48,9 @@ export type ProbeResult =
       access?: PasswordAccess
     }
   /** `lock` finds a password saved on this device for the file. */
-  | { ok: false; needsPassword: true; wrongPassword: boolean; lock?: LockInfo | null }
+  | { ok: false; needsPassword: true; needsCertificate?: false; wrongPassword: boolean; lock?: LockInfo | null }
+  /** Certificate-encrypted: unlock it, give the key to doc.addCertificateKey, and probe again. */
+  | { ok: false; needsPassword?: false; needsCertificate: true; certificate: CertificateLock }
 
 const SCRATCH_PREFIX = 'organize-pages:'
 const MAX_PROBE_SIZES = 2000

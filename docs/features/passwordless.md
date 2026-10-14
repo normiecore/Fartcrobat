@@ -697,7 +697,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 11. Encrypt a file from Acrobat with 128-bit AES, and another with 256-bit AES.
 12. Remove the card and open a file. Fartcrobat says which card is needed, and there is no PIN prompt.
 13. Insert the card and open the file: the Windows PIN dialog appears in front of Fartcrobat. Then try Cancel, a wrong PIN, and pulling the card out during the prompt. Each one shows a clear message.
-14. Close and reopen the file. Expect a second PIN prompt, because the helper is one process per call.
+14. Close and reopen the file: there is no second PIN prompt, because one helper process keeps the card unlocked while Fartcrobat runs. Then click "Lock smart card" (Preferences > Digital IDs) and reopen: the PIN is asked again. Quit, start Fartcrobat again and reopen: the PIN is asked again.
 15. Have an agent open the file through Claude Desktop. The PIN dialog appears for the human, and the agent call finishes after the PIN is entered.
 
 **Files made by Acrobat**
@@ -750,7 +750,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 
 **Smart cards and locked-down machines**
 
-- **The PIN is asked on every open.** The PIN cache is per process, and the helper uses one process per call (inferred from Microsoft's documentation).
+- **The PIN is asked once per session.** Windows keeps a smart card's PIN per process (inferred from Microsoft's documentation), and the helper is one long-lived process per app session (owner decision). While it runs, an agent can open more files protected by that card without the person; "Lock smart card" in Preferences > Digital IDs, or quitting Fartcrobat, stops it. A helper that times out (5 minutes waiting for a PIN) is stopped too, so the next open asks again.
 - **Machines in Constrained Language Mode cannot run the helper.** The fix is an Authenticode-signed `.ps1` run with `-File`, which needs the code-signing certificate from backlog item 1.
 
 **Saved secrets and other programs running as the same user**
