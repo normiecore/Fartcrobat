@@ -686,7 +686,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 
 **Certificate store**
 
-6. Put a software key in CurrentUser\My (made with `New-SelfSignedCertificate`, default KSP). Encrypt a file to it from Acrobat and open it in Fartcrobat: there is no prompt.
+6. Put a software key in CurrentUser\My (made with `New-SelfSignedCertificate`, default KSP). Encrypt a file to it from Acrobat and open it in Fartcrobat: there is no prompt. Repeat on a machine whose execution policy is the client default, Restricted (`Get-ExecutionPolicy -List`): the helper only uses built-in cmdlets on stdin, which Restricted is expected to allow.
 7. Repeat with a legacy CSP key, a key marked non-exportable, and a TPM key (Microsoft Platform Crypto Provider). This is the biggest unknown: CNG keys with .NET Framework `EnvelopedCms`.
 8. Renew a certificate. A file encrypted to the old one still opens (archived certificates).
 9. With strong private key protection, the consent dialog appears in front of Fartcrobat.
@@ -696,7 +696,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 
 11. Encrypt a file from Acrobat with 128-bit AES, and another with 256-bit AES.
 12. Remove the card and open a file. Fartcrobat says which card is needed, and there is no PIN prompt.
-13. Insert the card and open the file: the Windows PIN dialog appears in front of Fartcrobat. Then try Cancel, a wrong PIN, and pulling the card out during the prompt. Each one shows a clear message.
+13. Insert the card and open the file: the Windows PIN dialog appears in front of Fartcrobat. Then try Cancel, a wrong PIN, and pulling the card out during the prompt. Each one shows a clear message, with the Windows error code (HRESULT) in it. If no PIN dialog appears at all and Fartcrobat keeps saying "Waiting for your smart card...", suspect the hidden window flag: Node starts the helper with `windowsHide`, which also asks Windows to hide the helper's first window. The modern PIN prompt runs in its own process (CredentialUIBroker.exe) and should not be affected, but an older card driver's own dialog could be.
 14. Close and reopen the file: there is no second PIN prompt, because one helper process keeps the card unlocked while Fartcrobat runs. Then click "Lock smart card" (Preferences > Digital IDs) and reopen: the PIN is asked again. Quit, start Fartcrobat again and reopen: the PIN is asked again.
 15. Have an agent open the file through Claude Desktop. The PIN dialog appears for the human, and the agent call finishes after the PIN is entered.
 
@@ -717,6 +717,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 
 23. Set `__PSLockdownPolicy=4` (machine scope), or use a real AppLocker or WDAC policy. Fartcrobat says the Windows store cannot be used here and offers Digital IDs.
 24. Block `powershell.exe` with AppLocker. Fartcrobat shows the same message and does not crash.
+    Also start Fartcrobat from a PowerShell 7 window (so it inherits PowerShell 7's `PSModulePath`): the store still works, because the helper drops that variable before starting Windows PowerShell 5.1.
 25. Watch Microsoft Defender, or the company's EDR, for alerts about Fartcrobat starting PowerShell.
 
 ## Known limits
