@@ -256,5 +256,6 @@ npm run build && xvfb-run -a npx playwright test tests/e2e/<feature>.spec.ts
 - Where Acrobat is clumsy, make it simpler: fewer dialogs, sensible defaults, live previews, undo for
   everything, plain-language messages. Destructive steps (apply redactions, remove security) get a
   clear confirmation.
-- Everything works offline. No telemetry, no accounts.
+- Everything works offline. No telemetry, no accounts. The only request the app makes on its own
+  is the update check (`docs/features/updates.md`); don't add others.
 - Every change to a document must be undoable (use `mutation`) and mark the document dirty.

@@ -11,32 +11,48 @@ Office conversion when installed, with a built-in fallback.
 
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
-  `.tar.gz`).
-- PRs #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent access and its
-  review fixes), #6 and #8 (passwordless design and prototypes, and the fix for the red CI after
-  #5) are merged into `main`. #10 (remembered passwords) is open.
+  `.tar.gz`). It has no updater.
+- Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
+  access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords).
+  Open: UPDATES_PR (in-app updates). #11 is a stray PR from `main` into the session branch; close
+  it.
+- GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
+  into it and the branch cannot be deleted. The owner should set the default branch to `main`
+  (Settings > General). Everything on that branch is already in `main` once UPDATES_PR merges.
 - About 1110 unit tests (vitest) and 155 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
-- **Agent access** (`docs/features/agent-access.md`): merged, with the review fixes from #9
-  (`wait_for_result` and "still_running" answers so waits on the person survive the AI app's
-  ~60 s request timeout, one agent prompt per window, Disconnect that sticks, handles that change
-  on reload, the Windows policy in HKLM, confirmation before the first use of each network
-  computer and before undoing the person's own steps, copy-restricted documents readable but not
-  exportable, and a shim that starts Fartcrobat through WMI on Windows so it escapes Claude
-  Desktop's MSIX AppData redirection). Known gaps are listed in #9. Nothing has been tried on
-  Windows or with a real Claude Desktop yet.
+- **In-app updates** (`docs/features/updates.md`, UPDATES_PR): checks
+  `github.com/normiecore/Fartcrobat/releases/latest` 30 s after start and every 6 hours, shows a
+  card in the bottom right (Download with a progress bar, then Restart now or Later), and installs
+  silently through electron-updater 6.8.10 after the normal quit flow has asked about unsaved
+  documents. Install works for the Windows NSIS installer and the Linux AppImage; macOS (until
+  Developer ID signing), .deb and .tar.gz only notify and open the release page. Help > Check for
+  Updates..., Preferences > Updates (version, switch, last checked) and the About dialog show the
+  version. Machine policy `AutoUpdate` / `autoUpdate`. The AppImage file name has no version any
+  more, so updates replace it in place. A review (install safety, security, release pipeline, UI)
+  found 15 issues, all fixed in the PR, among them an inherited `APPIMAGE` variable that would
+  have made a .deb install replace another app's AppImage.
+  - Not yet tried for real: no release has latest*.yml yet. Next step after merging: bump to
+    0.2.0 (PR), run the Release workflow, install 0.2.0 by hand on Windows (per user and per
+    machine) and as an AppImage, then release 0.2.1 and check that each updates itself, that
+    Restart now with unsaved changes asks first, and that `AutoUpdate`=0 hides everything.
+- **Agent access** (`docs/features/agent-access.md`): merged with the review fixes from #9. Known
+  gaps are listed in #9 and backlog items 15 and 16. Nothing has been tried on Windows or with a
+  real Claude Desktop yet.
 - **Passwordless** (`docs/features/passwordless.md`): phases 0 and 1 (remembered passwords with
-  safeStorage, also for Digital IDs, silent unlock for agents) are in #10. The machine
-  policy for both features, and for updates, is `src/main/policy.ts`: REG_DWORDs `AgentAccess`,
+  safeStorage, also for Digital IDs, silent unlock for agents) are merged (#10). Next: certificate
+  encryption (phases 2 to 5: open Adobe.PubSec files, save them back, the Windows certificate
+  store and smart cards through PowerShell/.NET with the PIN kept for the session, create
+  certificate-encrypted files), then the `windows-latest` CI job and the owner's manual Windows
+  checklist. Prototypes for all of it are in `prototypes/passwordless/`.
+- The machine policy for all three features is `src/main/policy.ts`: REG_DWORDs `AgentAccess`,
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
-  `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) elsewhere. Next session:
-  certificate encryption (phases 2 to 5: open Adobe.PubSec files, save them back, the Windows
-  certificate store and smart cards through PowerShell/.NET with the PIN kept for the session,
-  create certificate-encrypted files), then the `windows-latest` CI job and the owner's manual
-  Windows checklist. Prototypes for all of it are in `prototypes/passwordless/`.
-- Owner decisions so far are recorded at the top of both feature notes.
+  `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
+- Owner decisions so far are recorded at the top of each feature note.
+- Suggested order for the next session: merge UPDATES_PR and cut 0.2.0 (so people get the
+  updater), then certificate encryption.
 
 ## Where things are
 
@@ -158,6 +174,10 @@ Roughly in priority order:
     PIPE_REJECT_REMOTE_CLIENTS. The `.mcpb` extension is not signed.
 16. Agent access has only been tested on Linux with a scripted MCP client; try it with Claude
     Desktop on Windows (install the `.mcpb` from Preferences > AI apps).
+17. Updates on macOS only notify until releases are Developer ID signed (backlog 1); then set
+    `MAC_INSTALLS_UPDATES` in `src/features/updates/main/settings.ts` and test Squirrel.Mac.
+18. Updates for .deb installs only notify: electron-updater can install them, but only through a
+    root password prompt (`pkexec dpkg -i`).
 
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.
