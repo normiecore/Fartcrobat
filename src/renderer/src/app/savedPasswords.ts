@@ -114,11 +114,14 @@ export async function linkDocumentFiles(doc: DocumentModel, paths: string[]) {
   } catch {}
 }
 
-/** What finds a document's saved password: its lock and its file. */
+/**
+ * What finds the password saved for this document, for showing or forgetting it: its exact lock
+ * only. A record reached through the lock always opens it; /ID[0] and the path are guesses for
+ * opening (Protect keeps /ID[0], so they can lead to another file's password), not for this.
+ */
 export async function documentTarget(doc: DocumentModel): Promise<Extract<SavedPasswordTarget, { kind: 'pdf' }> | null> {
   const lock = await doc.core.doc.lockInfo()
-  if (!lock && !doc.state.filePath) return null
-  return { kind: 'pdf', lock, path: doc.state.filePath }
+  return lock ? { kind: 'pdf', lock: { ...lock, id: null }, path: null } : null
 }
 
 /** The password saved on this device for a document (no secret), or null. */

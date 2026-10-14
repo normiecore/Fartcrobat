@@ -1,5 +1,5 @@
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,9 +20,17 @@ export interface App {
 /**
  * Launches the built app (run `npm run build` first) with a throwaway profile. Set
  * FARTCROBAT_EXECUTABLE to a packaged app (e.g. release/linux-unpacked/fartcrobat) to test that instead.
+ * Remembering passwords is off unless `opts.rememberPasswords` is set: otherwise specs would behave
+ * differently on machines with a keyring (and would use it).
  */
-export async function launch(files: string[] = [], env: Record<string, string> = {}): Promise<App> {
+export async function launch(
+  files: string[] = [],
+  env: Record<string, string> = {},
+  opts: { rememberPasswords?: boolean } = {}
+): Promise<App> {
   const userData = mkdtempSync(join(tmpdir(), 'fartcrobat-e2e-'))
+  if (!opts.rememberPasswords)
+    writeFileSync(join(userData, 'fartcrobat-settings.json'), JSON.stringify({ prefs: { rememberPasswords: false } }))
   const packaged = process.env.FARTCROBAT_EXECUTABLE
   const app = await electron.launch({
     ...(packaged ? { executablePath: resolve(ROOT, packaged) } : {}),

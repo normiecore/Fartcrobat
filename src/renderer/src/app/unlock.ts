@@ -95,6 +95,8 @@ export async function unlock(ports: UnlockPorts, opts: UnlockOptions): Promise<U
     const level = await ports.attempt(answer.password)
     if (!level) {
       wrong = true
+      // The next prompt keeps what the person chose in this one (unticked stays unticked).
+      if (offer.offer) offer = { offer: true, checked: answer.remember }
       continue
     }
     if (answer.remember && offer.offer) {
@@ -131,6 +133,6 @@ export function unlockAuditSummary(o: UnlockOutcome | DocUnlock | null | undefin
 /** Prompt text for the states above. `purpose` ends the first request ("to compare it"). */
 export function promptMessage(name: string, s: Pick<AskState, 'wrong' | 'savedStale'>, purpose?: string): string {
   if (s.wrong) return `The password for “${name}” is incorrect. Try again.`
-  if (s.savedStale) return `The password saved for “${name}” no longer opens it, so it was removed. Enter the document open password.`
+  if (s.savedStale) return `The password saved for “${name}” no longer opens it and won't be tried for it again. Enter the document open password.`
   return `“${name}” is protected. Enter the document open password${purpose ? ` ${purpose}` : ''}.`
 }

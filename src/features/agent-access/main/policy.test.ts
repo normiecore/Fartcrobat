@@ -64,6 +64,29 @@ describe('agent access policy', () => {
     expect(readMachinePolicy({ file: join(dir, 'missing.json'), env: {} })).toEqual({ agentAccess: null, rememberPasswords: null })
   })
 
+  it('keeps a broken policy file apart from an explicit "enabled": false', () => {
+    // A typo in a file about agent access only: every section fails closed, but readMachinePolicy
+    // says 'invalid', so remembering is turned off without wiping saved passwords.
+    const typo = policy('typo.json', '{"agentAccess":{"enabled":false},}')
+    expect(readPolicy(typo)).toBe('disabled')
+    expect(readPolicy(typo, 'rememberPasswords')).toBe('disabled')
+    expect(currentPolicy(typo, {}, 'rememberPasswords')).toBe('disabled')
+    expect(readMachinePolicy({ file: typo, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
+    const notBoolean = policy('no.json', '{"rememberPasswords":{"enabled":"no"}}')
+    expect(readPolicy(notBoolean, 'rememberPasswords')).toBe('disabled')
+    expect(readMachinePolicy({ file: notBoolean, env: {} })).toEqual({ agentAccess: null, rememberPasswords: 'invalid' })
+    // A file that exists but cannot be read (here a folder: EISDIR).
+    expect(currentPolicy(dir, {})).toBe('disabled')
+    expect(readMachinePolicy({ file: dir, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
+    // Only an explicit false reads as 'disabled'.
+    const off = policy('off.json', '\uFEFF{"rememberPasswords":{"enabled":false}}')
+    expect(readMachinePolicy({ file: off, env: {} }).rememberPasswords).toBe('disabled')
+    // A broken machine file still beats FARTCROBAT_POLICY_FILE; a broken test file is invalid too.
+    const on = policy('on.json', '{"rememberPasswords":{"enabled":true}}')
+    expect(readMachinePolicy({ file: typo, env: { FARTCROBAT_POLICY_FILE: on } }).rememberPasswords).toBe('invalid')
+    expect(readMachinePolicy({ file: join(dir, 'missing.json'), env: { FARTCROBAT_POLICY_FILE: typo } }).rememberPasswords).toBe('invalid')
+  })
+
   it('knows where each system keeps the machine policy', () => {
     expect(machinePolicyFile('win32', { ProgramData: 'D:\\ProgramData' })).toBe(
       'D:\\ProgramData\\Fartcrobat\\policy.json'

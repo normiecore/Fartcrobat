@@ -401,6 +401,8 @@ Only public certificates are needed. After writing, the app reloads from the new
 - makes `find` return nothing;
 - wipes the store at start-up.
 
+A policy file that exists but cannot be read or understood (a JSON typo, a file only root can read, or `"enabled"` that is not `true` or `false`) turns remembering off for the session, like the explicit setting, but does not wipe the store: only `"enabled": false` written out does. `readMachinePolicy()` reports such a file as `'invalid'` and `rememberPolicy` (`src/main/passwords/handlers.ts`) decides what each reading does; `readPolicy` and `currentPolicy` still fail closed with `'disabled'`.
+
 ## Remembered passwords as built (phases 0 and 1)
 
 **Where the code is**
@@ -417,16 +419,20 @@ Only public certificates are needed. After writing, the app reloads from the new
 - The Preferences switch off keeps saved passwords but neither uses nor offers to save them (Preferences still lists them, with Remove). Only the machine policy wipes the store, at start-up.
 - Outputs made from a document whose password is saved (Save As, Extract and Split to files, the agent's `extract_pages` and `combine_files` with a path) link their path to that saved password, but only when their lock is the one it opened. New tabs from such a document (Extract, Combine, the Compare report) carry `derivedFrom`, so a later Save As links too.
 - Protect offers "Remember password on this device" for the open password only. The tab keeps full access through the permissions password as before; the next open uses the saved open password and gets the restrictions others get.
-- The Sign dialog fills in a Digital ID's saved password and shows "Filled in with the password saved on this device"; unticking Remember and signing forgets it, and a saved password that no longer works is forgotten with a message. Removing a Digital ID forgets its password. Preferences > Digital IDs marks IDs whose password is saved.
-- Agent audit summaries for `open_document`: "unlocked with a password saved on this device", "the person typed the password", "opened" (no password needed or given by a tool) and "already open". The tool description and the server instructions say a saved password opens files without a prompt.
+- The Sign dialog fills in a Digital ID's saved password and shows "Filled in with the password saved on this device. Click Sign to continue."; only the click signs with it (Enter does nothing while the saved password is in the field, so a stray Enter after an agent's `sign_document` brings the dialog forward signs nothing). Unticking Remember and signing forgets it, and a saved password that no longer works is forgotten with a message. Removing a Digital ID forgets its password. Preferences > Digital IDs marks IDs whose password is saved.
+- Agent audit summaries for `open_document`: "unlocked with a password saved on this device", "the person typed the password", "opened" (no password needed or given by a tool) and "already open". `organize_pages` with `insert_file` and `combine_files` add how each protected source was unlocked in brackets. The tool description and the server instructions say a saved password opens files without a prompt.
+- The Protect panel's "Password saved on this device" row and its Forget look the document up by its exact lock only. /ID[0] and the path stay keys for opening, but Protect keeps /ID[0], so they could show (and Forget would delete) the password of the file it was protected from.
+- When a saved password fails, only this file's keys are unlinked from it, so the prompt says it "no longer opens it and won't be tried for it again": the record still opens older copies.
+- After a wrong typed password, the next prompt keeps the Remember choice the person made in the last one.
+- A store file that exists but cannot be read (EACCES, EBUSY) is not treated as empty: the call fails and the next one reads it again. Only content that is not a valid store starts empty.
 - The test cipher (`FARTCROBAT_TEST_SECRET_CIPHER=1`, unpackaged builds only) is reversible and marked "Test cipher (not protected)" in Preferences.
 - Sender check: `URL.origin` is "null" for `app://` URLs, so the handlers compare scheme and host.
 - Not wired to saved passwords: Compress still asks for the open password of a protected document, as before, even when a saved password opened it. The engine session already has that password, so a later change can drop the prompt.
 
 **Tests**
 
-- Unit: `tests/engine/core-saved-passwords-{keys,store,unlock,flow,main}.test.ts` (the 32 prototype tests, adapted, plus the engine's `lock` and `access`, `checkFile`, path folding, `electronCipher` with a mocked safeStorage, the test cipher's gate and the handlers: other senders refused, plain errors, nothing logged).
-- End to end: `tests/e2e/saved-passwords.spec.ts` (skipped with `FARTCROBAT_EXECUTABLE`), with the fixture `tests/fixtures/saved-passwords/encrypted-changed.pdf` (`make_saved_passwords.py`, pypdf). It covers the prompt, Remove and Remove All, a changed password, unticking, Protect and Forget, a Digital ID, the machine policy, Linux without a keyring (real safeStorage, skipped when a D-Bus session exists) and an agent opening a remembered file and extracting pages through the built MCP shim.
+- Unit: `tests/engine/core-saved-passwords-{keys,store,unlock,flow,main}.test.ts` (the 32 prototype tests, adapted, plus the engine's `lock` and `access`, `checkFile`, path folding, `electronCipher` with a mocked safeStorage, the test cipher's gate, the handlers: other senders refused, plain errors, nothing logged, and which policy readings turn remembering off or wipe the store).
+- End to end: `tests/e2e/saved-passwords.spec.ts` (skipped with `FARTCROBAT_EXECUTABLE`; the only spec that launches with remembering on, see `launch` in `tests/e2e/helpers.ts`), with the fixture `tests/fixtures/saved-passwords/encrypted-changed.pdf` (`make_saved_passwords.py`, pypdf). It covers the prompt, Remove and Remove All, a changed password, unticking (also before a wrong password), Protect and Forget, a Digital ID (Enter does not sign with its saved password), the machine policy, a policy file that cannot be understood, Linux without a keyring (real safeStorage, skipped when a D-Bus session exists) and an agent opening a remembered file, extracting pages, inserting it and combining it through the built MCP shim.
 
 ## Implementation plan
 

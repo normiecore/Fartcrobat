@@ -5,7 +5,7 @@ import type { AnnotInfo } from '@engine/ops/annots'
 import type annotOps from '@engine/ops/annots'
 import type pageOps from '@engine/ops/pages'
 import { EngineCallError } from '@renderer/engine/EngineClient'
-import { rangeQuads, useApp, type DocumentModel } from '@renderer/sdk'
+import { rangeQuads, unlockAuditSummary, useApp, type DocumentModel } from '@renderer/sdk'
 import { formController } from '@features/forms-fill/controller'
 import { formsSettings, loadFormsSettings } from '@features/forms-fill/settings'
 import type markupOps from '@features/markup-tools/engine'
@@ -340,7 +340,9 @@ const organizePages: ToolHandler = async (args, ctx) => {
           orgOps(doc).insertFiles(plan.gap, [{ data: file.bytes, fileName: file.engineName, password: probe.password }])
         )
       )
-      summary = `inserted ${plural(changed.length, 'page')} from ${plan.path}`
+      // Like open_document, the audit line says how a protected source was unlocked.
+      const how = unlockAuditSummary(probe.unlock)
+      summary = `inserted ${plural(changed.length, 'page')} from ${plan.path}${how ? ` (${how})` : ''}`
       break
     }
   }

@@ -147,7 +147,7 @@ function CreateIdDialog({ onDone }: { onDone: (r?: IdResult) => void }) {
         </Field>
       </div>
       <p className="shell-muted fc-digital-signatures-small">
-        You will need this password every time you sign. It cannot be recovered if you forget it.
+        You will need this password to sign. It cannot be recovered if you forget it.
       </p>
       {(error || (touched && invalid)) && (
         <div className="fc-digital-signatures-error" role="alert">
@@ -201,7 +201,7 @@ function ImportPasswordDialog({ path, onDone }: { path: string; onDone: (r?: IdR
         <TextInput data-autofocus type="password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Digital ID password" />
       </Field>
       <p className="shell-muted fc-digital-signatures-small">
-        Fartcrobat keeps a copy of the file in its settings folder. The password is not stored; you will enter it when you sign.
+        Fartcrobat keeps a copy of the file in its settings folder. It only keeps the password if you choose to remember it on this device when you sign.
       </p>
       {error && (
         <div className="fc-digital-signatures-error" role="alert">

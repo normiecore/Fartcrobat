@@ -295,7 +295,9 @@ export function SignDialog({
     <Dialog
       title={title}
       onClose={() => onDone()}
-      onSubmit={() => void submit()}
+      // A password filled in from this device's store signs only on a click, so a stray Enter (for
+      // example while an agent's sign_document opens this dialog) does nothing.
+      onSubmit={usingSaved ? undefined : () => void submit()}
       width={880}
       className="fc-digital-signatures-dialog fc-digital-signatures-signdialog"
       footer={
@@ -357,7 +359,7 @@ export function SignDialog({
           )}
           <Field
             label={rec ? `Password for “${rec.name}”` : 'Password'}
-            hint={usingSaved ? 'Filled in with the password saved on this device.' : undefined}
+            hint={usingSaved ? `Filled in with the password saved on this device. Click ${mode === 'certify' ? 'Certify' : 'Sign'} to continue.` : undefined}
           >
             <input
               ref={passwordRef}

@@ -129,6 +129,34 @@ describe('SavedPasswordStore', () => {
     expect(fs.files.has(FILE)).toBe(false)
   })
 
+  it('does not replace a store file it cannot read now (EBUSY): the call fails and the next one reads it again', async () => {
+    const fs = memoryFs()
+    await setup({ fs }).store.remember({ kind: 'pdf', keys: [k('id', 'A')], label: 'a', password: '1' })
+    const before = fs.files.get(FILE)
+    const writes = fs.writes
+    const read = fs.read
+    let busy = 1
+    const ebusy = () => Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })
+    fs.read = async (path) => {
+      if (busy-- > 0) throw ebusy()
+      return read(path)
+    }
+    const { store } = setup({ fs })
+    await expect(store.remember({ kind: 'pdf', keys: [k('id', 'B')], label: 'b', password: '2' })).rejects.toThrow('EBUSY')
+    expect(fs.files.get(FILE)).toBe(before)
+    expect(fs.writes).toBe(writes)
+    // Nothing empty was cached: the next call reads the file and keeps what was saved.
+    await store.remember({ kind: 'pdf', keys: [k('id', 'B')], label: 'b', password: '2' })
+    expect((await store.list()).map((r) => r.label).sort()).toEqual(['a', 'b'])
+
+    // forget('all') (Remove All, the machine policy) still removes a file it cannot read.
+    fs.read = async () => {
+      throw ebusy()
+    }
+    expect(await setup({ fs }).store.forget('all')).toBe(0)
+    expect(fs.files.has(FILE)).toBe(false)
+  })
+
   it('caps the number of records, dropping the least recently used', async () => {
     const { store } = setup({ max: 2 })
     await store.remember({ kind: 'pdf', keys: [k('id', 'A')], label: 'a', password: '1' })

@@ -9,6 +9,7 @@ import type { IpcMainInvokeEvent } from 'electron'
 import type { IpcArgs, IpcChannel, IpcResult } from '@shared/ipc'
 import type { SavedPasswordTarget } from '@shared/passwords'
 import type { LockInfo, PasswordAccess } from '@shared/types'
+import type { PolicyReading } from '../policy'
 import { targetKeys } from './keys'
 import type { SavedPasswordStore } from './store'
 
@@ -36,6 +37,15 @@ function siteOf(url: string): string | null {
   } catch {
     return null
   }
+}
+
+/**
+ * What the machine policy's `rememberPasswords` reading does at start-up. Anything but an explicit
+ * `"enabled": true` (or no say) turns remembering off; only an explicit `"enabled": false` also
+ * wipes what was saved, because a typo or an unreadable policy file must not destroy passwords.
+ */
+export function rememberPolicy(reading: PolicyReading | null): { off: boolean; wipe: boolean } {
+  return { off: reading === 'disabled' || reading === 'invalid', wipe: reading === 'disabled' }
 }
 
 /** True when the sender is the app's own page in one of its windows. */

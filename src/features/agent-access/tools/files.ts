@@ -358,13 +358,19 @@ const combineFiles: ToolHandler = async (args, ctx) => {
     )
     throwIfAborted(ctx)
     const derivedFrom = protection ? unlocks[protection.index] : undefined
+    // Like open_document, the audit line says how each protected source was unlocked.
+    const unlocked = paths.flatMap((p, i) => {
+      const how = unlockAuditSummary(unlocks[i])
+      return how ? [`${p}: ${how}`] : []
+    })
+    const how = unlocked.length ? ` (${unlocked.join('; ')})` : ''
     if (target) {
       await write(target, bytes)
       if (derivedFrom?.savedRef) {
         const checked = await engine.ops<typeof docOps>('doc').checkFile(bytes, 'combined.pdf').catch(() => null)
         if (checked?.needsPassword) await linkSavedPassword(derivedFrom, checked.lock, [target])
       }
-      ctx.audit({ document: target, summary: `combined ${paths.length} files to ${target}` })
+      ctx.audit({ document: target, summary: `combined ${paths.length} files to ${target}${how}` })
       return { data: { path: target, files: paths.length, protectedLike: protection?.fileName ?? null } }
     }
     const name = binderName(useApp.getState().docs.map((d) => d.state.title))
@@ -372,7 +378,7 @@ const combineFiles: ToolHandler = async (args, ctx) => {
     const password = protection ? sources[protection.index]?.password : undefined
     const opened = await withAttention(() => openAsNewDocument(bytes, name, { password, derivedFrom }))
     if (!opened) throw new ToolError('failed', 'The combined file could not be opened in a new tab (Fartcrobat showed the person why).')
-    ctx.audit({ document: auditName(opened), summary: `combined ${paths.length} files into a new tab` })
+    ctx.audit({ document: auditName(opened), summary: `combined ${paths.length} files into a new tab${how}` })
     return { data: { ...describeDoc(ctx, opened), files: paths.length, protectedLike: protection?.fileName ?? null } }
   } finally {
     engine.terminate()

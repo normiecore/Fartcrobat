@@ -5,7 +5,8 @@ import { promptMessage, unlock, unlockAuditSummary, type AskState, type SavedCan
 function ports(o: {
   saved?: SavedCandidate[]
   correct: Record<string, 'user' | 'owner'>
-  answers?: ({ password: string; remember: boolean } | null)[]
+  /** Without `remember`, the box is left as the prompt showed it (as the dialog does). */
+  answers?: ({ password: string; remember?: boolean } | null)[]
 }) {
   const log: string[] = []
   const asked: AskState[] = []
@@ -31,7 +32,9 @@ function ports(o: {
     },
     async ask(state) {
       asked.push(state)
-      return answers.shift() ?? null
+      const a = answers.shift()
+      if (!a) return null
+      return { password: a.password, remember: a.remember ?? (state.remember.offer && state.remember.checked) }
     }
   }
   return { p, log, asked }
@@ -87,6 +90,20 @@ describe('unlock', () => {
     const off = { offer: false as const, reason: 'To remember passwords on this computer, Fartcrobat needs GNOME Keyring or KWallet.' }
     expect(await unlock(b.p, { trySaved: true, remember: async () => off, prompt: true })).toMatchObject({ remembered: false })
     expect(b.asked[0].remember).toEqual(off)
+  })
+
+  it('after a wrong password, the next prompt keeps the Remember choice the person made', async () => {
+    // Unticked, then a typo: the retry must not tick the box again behind the person's back.
+    const a = ports({ correct: { right: 'user' }, answers: [{ password: 'nope', remember: false }, { password: 'right' }] })
+    expect(await unlock(a.p, { trySaved: true, remember: OFFER, prompt: true })).toEqual({ method: 'typed', level: 'user', remembered: false })
+    expect(a.asked[1].remember).toEqual({ offer: true, checked: false })
+    expect(a.log.some((l) => l.startsWith('remember:'))).toBe(false)
+
+    // The reverse: ticked on the wrong attempt stays ticked.
+    const b = ports({ correct: { right: 'user' }, answers: [{ password: 'nope', remember: true }, { password: 'right' }] })
+    expect(await unlock(b.p, { trySaved: true, remember: { offer: true, checked: false }, prompt: true })).toMatchObject({ remembered: true })
+    expect(b.asked[1].remember).toEqual({ offer: true, checked: true })
+    expect(b.log).toContain('remember:right:user')
   })
 
   it('remembering off: never looks up saved passwords; the offer is only fetched when asking', async () => {

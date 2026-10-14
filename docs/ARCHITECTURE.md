@@ -237,7 +237,9 @@ npm run build && xvfb-run -a npx playwright test tests/e2e/<feature>.spec.ts
 
   `window.__fartcrobat` exposes `registry`, `useApp`, `getActiveDoc`, `openPaths`, `runCommand`
   for tests. Set `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` to run specs against a
-  packaged build instead (the release workflow does this for its smoke test).
+  packaged build instead (the release workflow does this for its smoke test). `launch` turns
+  remembering passwords off (so specs behave the same with or without a keyring and never use the
+  developer's); pass `launch(files, env, { rememberPasswords: true })` to test it.
 - Tests that check output with outside tools (pypdf, poppler `pdfsig`, LibreOffice, openssl) must
   skip cleanly when the tool is missing; CI installs them (see `.github/workflows/ci.yml` and
   `tests/requirements.txt`). Generate fixtures ahead of time and commit them rather than building

@@ -164,6 +164,32 @@ describe('remember password flow (MuPDF, the store on disk, a fake cipher)', () 
     expect(app.prompts).toHaveLength(2)
   })
 
+  it("the Protect panel and its Forget use the document's lock only, never another file's password found by /ID", async () => {
+    app.answers = [{ password: 'u1', remember: true }]
+    await app.open(original)
+    const copy = join(dir, 'copy.pdf')
+    copyFileSync(original, copy)
+    // Protect into b.pdf with a new password, Remember unticked: same /ID[0], new lock.
+    const d = new mupdf.PDFDocument(new Uint8Array(readFileSync(original)))
+    d.authenticatePassword('u1')
+    const c = new mupdf.PDFDocument(save(d, 'garbage=yes'))
+    c.authenticatePassword('u1')
+    const b = join(dir, 'b.pdf')
+    writeFileSync(b, save(c, ENC('u2', 'o2')))
+    const lockB = readLockInfo(new mupdf.PDFDocument(new Uint8Array(readFileSync(b))))
+    expect(lockB?.id).toBe(readLockInfo(new mupdf.PDFDocument(new Uint8Array(readFileSync(original))))?.id)
+    // /ID or path would reach contract.pdf's record...
+    expect(await app.store.savedFor(targetKeys({ kind: 'pdf', lock: lockB, path: b }, process.platform))).not.toBeNull()
+    // ...but the panel's target (documentTarget in savedPasswords.ts) is the lock alone.
+    const panel = targetKeys({ kind: 'pdf', lock: lockB && { ...lockB, id: null }, path: null }, process.platform)
+    expect(panel).toHaveLength(1)
+    expect(await app.store.savedFor(panel)).toBeNull()
+    expect(await app.store.forgetKeys(panel)).toBe(0)
+    expect((await app.open(original))?.outcome?.method).toBe('saved-password')
+    expect((await app.open(copy))?.outcome?.method).toBe('saved-password')
+    expect(app.prompts).toHaveLength(1)
+  })
+
   it('a typed owner password is remembered as owner (full access)', async () => {
     app.answers = [{ password: 'o1', remember: true }]
     expect((await app.open(original))?.outcome).toMatchObject({ level: 'owner' })

@@ -9,7 +9,7 @@ import { store as settings } from '../store'
 import { isAppWindow } from '../windows'
 import { electronCipher } from './electronCipher'
 import { nodeStoreFs } from './fileStore'
-import { passwordHandlers, senderAllowed, type PasswordChannel } from './handlers'
+import { passwordHandlers, rememberPolicy, senderAllowed, type PasswordChannel } from './handlers'
 import { SavedPasswordStore } from './store'
 import { testCipher, testCipherEnabled } from './testCipher'
 
@@ -32,8 +32,9 @@ function trustedSender(e: IpcMainInvokeEvent): boolean {
 
 /** Registers the 'passwords:*' channels. Call once the app is ready. */
 export function registerPasswordHandlers() {
-  // Read once: a policy that turns remembering off also wipes what was saved before.
-  const policyOff = readMachinePolicy().rememberPasswords === 'disabled'
+  // Read once (rememberPolicy says what turns remembering off and what also wipes the store).
+  const policy = rememberPolicy(readMachinePolicy().rememberPasswords)
+  const policyOff = policy.off
   const disabled = () => (policyOff ? 'policy' : settings().prefs.rememberPasswords === false ? 'off' : null)
   let instance: SavedPasswordStore | null = null
   const store = () =>
@@ -44,7 +45,7 @@ export function registerPasswordHandlers() {
         : electronCipher(safeStorage, { platform: process.platform, disabled, ready: () => app.isReady() }),
       fs: nodeStoreFs
     }))
-  if (policyOff) void store().forget('all').catch(() => {})
+  if (policy.wipe) void store().forget('all').catch(() => {})
   const handlers = passwordHandlers({ store, allowed: trustedSender, platform: process.platform, policyOff: () => policyOff })
   for (const channel of Object.keys(handlers) as PasswordChannel[]) handle(channel, handlers[channel] as never)
 }

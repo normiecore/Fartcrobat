@@ -1,9 +1,13 @@
 // Saved passwords in the main process: safeStorage behind the cipher (Linux 'v10' means no
 // keyring), the test cipher's gate, and the IPC handlers (sender check, no logging, plain errors).
 import type { IpcMainInvokeEvent, SafeStorage } from 'electron'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { electronCipher } from '@main/passwords/electronCipher'
-import { passwordHandlers, senderAllowed } from '@main/passwords/handlers'
+import { passwordHandlers, rememberPolicy, senderAllowed } from '@main/passwords/handlers'
+import { readMachinePolicy } from '@main/policy'
 import { SavedPasswordStore } from '@main/passwords/store'
 import { testCipher, testCipherEnabled } from '@main/passwords/testCipher'
 import type { LockInfo } from '@shared/types'
@@ -96,6 +100,37 @@ describe('test cipher', () => {
     await expect(cipher.decrypt(new TextEncoder().encode('v11garbage'))).rejects.toThrow()
     disabled = 'policy'
     expect(await cipher.unavailable()).toMatchObject({ reason: 'policy' })
+  })
+})
+
+describe('machine policy at start-up', () => {
+  let dir: string
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'fc-pw-policy-'))
+  })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+  const policyFile = (content: string) => {
+    const file = join(dir, `policy-${Math.random().toString(36).slice(2)}.json`)
+    writeFileSync(file, content)
+    return file
+  }
+  const effect = (content: string) => rememberPolicy(readMachinePolicy({ file: policyFile(content), env: {} }).rememberPasswords)
+
+  it('only an explicit "enabled": false wipes saved passwords; a broken file only turns remembering off', () => {
+    expect(effect('{"rememberPasswords":{"enabled":false}}')).toEqual({ off: true, wipe: true })
+    expect(effect('{"rememberPasswords":{"enabled":true}}')).toEqual({ off: false, wipe: false })
+    expect(effect('{"agentAccess":{"enabled":false}}')).toEqual({ off: false, wipe: false })
+    // An administrator's typo in a file meant for agent access only.
+    expect(effect('{"agentAccess":{"enabled":false},}')).toEqual({ off: true, wipe: false })
+    // Trying to turn it on, but not with a boolean, or with a misspelt key.
+    expect(effect('{"rememberPasswords":{"enabled":"true"}}')).toEqual({ off: true, wipe: false })
+    expect(effect('{"rememberPasswords":{"enable":true}}')).toEqual({ off: true, wipe: false })
+    // A file that exists but cannot be read (a folder here: EISDIR, like EACCES or EBUSY).
+    expect(rememberPolicy(readMachinePolicy({ file: dir, env: {} }).rememberPasswords)).toEqual({ off: true, wipe: false })
+    expect(rememberPolicy(readMachinePolicy({ file: join(dir, 'missing.json'), env: {} }).rememberPasswords)).toEqual({
+      off: false,
+      wipe: false
+    })
   })
 })
 

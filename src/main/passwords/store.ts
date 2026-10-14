@@ -124,16 +124,18 @@ export class SavedPasswordStore {
   private async load(): Promise<StoreFile> {
     if (this.data) return this.data
     let parsed: StoreFile = { version: 1, records: [] }
-    try {
-      const text = await this.o.fs.read(this.o.file)
-      if (text) {
+    // Null when there is no file. Any other read error (EACCES, EBUSY) propagates and nothing is
+    // cached: starting empty would let the next write replace every saved password.
+    const text = await this.o.fs.read(this.o.file)
+    if (text) {
+      try {
         const raw = JSON.parse(text)
         if (raw && raw.version === 1 && Array.isArray(raw.records)) {
           parsed = { version: 1, records: raw.records.filter(isRecord) }
         }
+      } catch {
+        // Corrupt or foreign content starts empty; it is replaced on the next write.
       }
-    } catch {
-      // An unreadable store starts empty; the old file is replaced on the next write.
     }
     this.data = parsed
     return parsed
@@ -286,10 +288,10 @@ export class SavedPasswordStore {
     return this.run(async () => (await this.load()).records.map(info).sort((a, b) => b.used - a.used))
   }
 
-  /** Forgets the given records ('all': every record, and the file is removed). */
+  /** Forgets the given records ('all': every record, and the file is removed, even unreadable). */
   forget(refs: string[] | 'all'): Promise<number> {
     return this.run(async () => {
-      const d = await this.load()
+      const d = refs === 'all' ? await this.load().catch(() => (this.data = { version: 1, records: [] })) : await this.load()
       const before = d.records.length
       if (refs === 'all') d.records = []
       else {
