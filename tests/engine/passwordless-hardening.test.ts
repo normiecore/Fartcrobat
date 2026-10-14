@@ -11,7 +11,7 @@ import { buildSync } from 'esbuild'
 import { zlibSync } from 'fflate'
 import * as mupdf from 'mupdf'
 import { describe, expect, it } from 'vitest'
-import { appendUpdate, concat, encryptObjectsInPlace, pubsecEncryptDict, readPubSec, serialiseEncrypted, verifyFileKey, writeKeyFor, writePubSecDocument } from '@engine/crypt'
+import { appendUpdate, concat, encryptObjectsInPlace, fileKey, pubsecEncryptDict, readPubSec, serialiseEncrypted, verifyFileKey, writeKeyFor, writePubSecDocument } from '@engine/crypt'
 import { PdfString } from '@engine/crypt/pdfLex'
 import { latin1, md5, randomBytes, rc4, toHex, toLatin1 } from '@engine/crypt/primitives'
 import { createLocalEngine } from '@engine/local'
@@ -58,8 +58,12 @@ const ops = {
     return { entries: x.entries.size, trailers: x.trailers.length }
   },
   readPubSec(b) {
-    const i = lib.readPubSec(b)
-    return i && { recipients: i.recipients.length, damaged: i.xref.damaged, version: i.version }
+    try {
+      const i = lib.readPubSec(b)
+      return i && { recipients: i.recipients.length, damaged: i.xref.damaged, version: i.version }
+    } catch (err) {
+      return { error: err.message }
+    }
   },
   decodeStream(b, [dict, max]) {
     try {
@@ -343,18 +347,23 @@ describe('scanning damaged files takes linear time', () => {
 // ---- /Recipients -------------------------------------------------------------------------------
 
 describe('/Recipients over the limits', () => {
-  /** A one-page certificate-encrypted file with a classic xref table and `recipients` (PDF strings). */
-  function withRecipients(recipients: string): Uint8Array {
+  /**
+   * A one-page certificate-encrypted file with a classic xref table and `recipients` (PDF strings),
+   * and object 5 when given.
+   */
+  function withRecipients(recipients: string, object5?: string): Uint8Array {
     const b = new Builder()
       .add('%PDF-1.7\n')
       .obj(1, '<< /Type /Catalog /Pages 2 0 R >>')
       .obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
       .obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>')
       .obj(4, PUBSEC_ENCRYPT.replace('[<3082010a0201>]', `[${recipients}]`))
+    if (object5 !== undefined) b.obj(5, object5)
+    const nums = object5 === undefined ? [1, 2, 3, 4] : [1, 2, 3, 4, 5]
     const at = b.pos
-    let xref = 'xref\n0 5\n0000000000 65535 f \n'
-    for (const n of [1, 2, 3, 4]) xref += `${String(b.offsets.get(n)).padStart(10, '0')} 00000 n \n`
-    return b.add(`${xref}trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R >>\nstartxref\n${at}\n%%EOF\n`).bytes()
+    let xref = `xref\n0 ${nums.length + 1}\n0000000000 65535 f \n`
+    for (const n of nums) xref += `${String(b.offsets.get(n)).padStart(10, '0')} 00000 n \n`
+    return b.add(`${xref}trailer\n<< /Size ${nums.length + 1} /Root 1 0 R /Encrypt 4 0 R >>\nstartxref\n${at}\n%%EOF\n`).bytes()
   }
 
   async function opened(bytes: Uint8Array) {
@@ -388,6 +397,57 @@ describe('/Recipients over the limits', () => {
       })
     })
   }
+
+  // Every reference re-reads the object it points at: 5000 references to a 20,000-element array
+  // took over a minute before the work was bounded.
+  for (const refs of [99, 5000]) {
+    it(`${refs} references to one large object are refused at once`, async () => {
+      const bytes = withRecipients(`<3082010a0201> ${'5 0 R '.repeat(refs)}`, `[${'0 '.repeat(20000)}]`)
+      const read = await inWorker('readPubSec', bytes)
+      expect(read.result).toEqual({ error: expect.stringMatching(/more recipients than Fartcrobat can read/) })
+      expect(read.elapsed).toBeLessThan(1000)
+    })
+  }
+
+  it('a few references to a string object still read', async () => {
+    const bytes = withRecipients('5 0 R 5 0 R', '<3082010a0201>')
+    expect((await inWorker('readPubSec', bytes)).result).toEqual({ recipients: 2, damaged: false, version: 5 })
+  })
+})
+
+describe('the key check reads a bounded amount', () => {
+  // Each `(xxxx` opens a string that never ends: reading it goes to the end of the file. Before
+  // they counted, 6000 of them took about 10 s to unlock.
+  const FILE = 'v5-classic.pdf'
+  function withUnterminated(count: number): Uint8Array {
+    const bytes = pubsecFixture(FILE)
+    const info = readPubSec(bytes)!
+    return appendUpdate(bytes, info, Array.from({ length: count }, (_, k) => ({ num: info.trailer.size + k, gen: 0, source: '(xxxx' })))
+  }
+
+  it('objects that do not parse count against the budget', async () => {
+    const bytes = withUnterminated(6000)
+    const info = readPubSec(bytes)!
+    const K = fileKey(info, keyFor(FILE, 'alice', bytes).seed)
+    let t0 = performance.now()
+    verifyFileKey(bytes, info, K)
+    expect(performance.now() - t0).toBeLessThan(1000)
+    const engine = await createLocalEngine()
+    const doc = engine.ops<typeof docOps>('doc')
+    await doc.open(bytes, { fileName: FILE })
+    t0 = performance.now()
+    const res = await doc.unlockCertificate(keyFor(FILE, 'alice', bytes)).catch((err: { code?: string }) => ({ ok: false, code: err.code }))
+    expect(performance.now() - t0).toBeLessThan(3000)
+    expect(res).toMatchObject({ ok: true })
+  })
+
+  it('a sound file still checks the key: a wrong seed is refused', () => {
+    const bytes = withUnterminated(10)
+    const info = readPubSec(bytes)!
+    const seed = keyFor(FILE, 'alice', bytes).seed
+    expect(verifyFileKey(bytes, info, fileKey(info, seed))).toBe(true)
+    expect(verifyFileKey(bytes, info, fileKey(info, seed.map((x, i) => (i === 0 ? x ^ 1 : x))))).toBe(false)
+  })
 })
 
 // ---- the RC4 key check --------------------------------------------------------------------------

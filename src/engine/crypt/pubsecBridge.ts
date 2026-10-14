@@ -18,7 +18,7 @@ import { EngineError } from '../define'
 import type { Mupdf, PDFDocument } from '../session'
 import { certificatePermissions } from './keys'
 import { collectStrings, hasCryptFilter, isNamed, rawStream } from './objects'
-import { asName, objectAt, PdfRef, serialise, type PdfDict, type PdfValue, type Xref } from './pdfLex'
+import { asName, objectAt, PdfRef, readBudget, serialise, type PdfDict, type PdfValue, type ReadMeter, type Xref } from './pdfLex'
 import {
   aesCbcDecryptNoPad,
   bytesEqual,
@@ -197,14 +197,15 @@ export function verifyFileKey(bytes: Uint8Array, info: PubSecInfo, K: Uint8Array
   let good = 0
   let bad = 0
   let binary = 0
-  // Objects whose data overlaps (a hostile file) must not make the walk quadratic.
-  let budget = 2 * bytes.length + 65536
+  // Objects whose data overlaps, or that do not parse (each read to the end of the file), must not
+  // make the walk quadratic in a hostile file: every object read counts, parsed or not.
+  const meter: ReadMeter = { scanned: 0 }
+  const budget = readBudget(bytes)
   for (const [num, e] of info.xref.entries) {
-    if (good + bad >= 8 || budget < 0) break
+    if (good + bad >= 8 || meter.scanned > budget) break
     if (e.type !== 1 || num === info.encryptRef?.num) continue
-    const obj = objectAt(bytes, info.xref, num)
+    const obj = objectAt(bytes, info.xref, num, 0, meter)
     if (!obj) continue
-    budget -= obj.end - e.offset
     if (!obj.stream || exemptStream(obj.stream.dict, info.encryptMetadata)) continue
     const data = bytes.subarray(obj.stream.start, obj.stream.end)
     const key = objectKey(K, info.cipher, num, e.gen)

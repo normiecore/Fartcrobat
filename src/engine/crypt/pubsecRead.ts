@@ -11,10 +11,12 @@ import {
   objectAt,
   PdfRef,
   PdfString,
+  readBudget,
   readXref,
   resolve,
   type PdfDict,
   type PdfValue,
+  type ReadMeter,
   type Xref
 } from './pdfLex'
 
@@ -69,13 +71,21 @@ export function tooManyRecipients(): EngineError {
   )
 }
 
+/**
+ * The strings of a /Recipients value. Bounded by PUBSEC_RECIPIENT_LIMITS, and by the work of
+ * reading the objects it refers to (entries may all refer to one large object).
+ */
 function stringsOf(b: Uint8Array, xref: Xref, v: PdfValue): Uint8Array[] {
-  const value = resolve(b, xref, v)
+  const meter: ReadMeter = { scanned: 0 }
+  const budget = readBudget(b)
+  const value = resolve(b, xref, v, meter)
   const items = Array.isArray(value) ? value : [value]
+  if (items.length > PUBSEC_RECIPIENT_LIMITS.envelopes) throw tooManyRecipients()
   const out: Uint8Array[] = []
   let total = 0
   for (const item of items) {
-    const s = resolve(b, xref, item)
+    const s = resolve(b, xref, item, meter)
+    if (meter.scanned > budget) throw tooManyRecipients()
     if (!(s instanceof PdfString)) continue
     total += s.bytes.length
     if (

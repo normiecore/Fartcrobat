@@ -25,7 +25,12 @@ export type PdfDict = Map<string, PdfValue>
 export type PdfValue = null | boolean | number | PdfName | PdfString | PdfRef | PdfValue[] | PdfDict
 
 export class PdfSyntaxError extends Error {
-  constructor(message: string, at: number) {
+  constructor(
+    message: string,
+    at: number,
+    /** How far reading got (ReadMeter): past `at` for what is only found unterminated at the end. */
+    readonly reached = at
+  ) {
     super(`${message} at byte ${at}`)
     this.name = 'PdfSyntaxError'
   }
@@ -125,7 +130,7 @@ function literalString(b: Uint8Array, i: number): [PdfString, number] {
       out.push(c)
     }
   }
-  throw new PdfSyntaxError('Unterminated string', start)
+  throw new PdfSyntaxError('Unterminated string', start, b.length)
 }
 
 function hexString(b: Uint8Array, i: number): [PdfString, number] {
@@ -134,7 +139,7 @@ function hexString(b: Uint8Array, i: number): [PdfString, number] {
   let high = -1
   i++
   for (;;) {
-    if (i >= b.length) throw new PdfSyntaxError('Unterminated hex string', start)
+    if (i >= b.length) throw new PdfSyntaxError('Unterminated hex string', start, b.length)
     const c = b[i++]
     if (c === 0x3e) break
     if (CLASS[c] === 1) continue
@@ -530,7 +535,7 @@ function streamSpan(b: Uint8Array, dict: PdfDict, at: number, resolveLength: (re
   }
   // A missing or wrong /Length: the data ends before `endstream` and its end of line.
   const found = indexOfBytes(b, ENDSTREAM, start)
-  if (found < 0) throw new PdfSyntaxError('Stream without endstream', at)
+  if (found < 0) throw new PdfSyntaxError('Stream without endstream', at, b.length)
   let end = found
   if (end > start && b[end - 1] === LF) end--
   if (end > start && b[end - 1] === CR) end--
@@ -753,23 +758,41 @@ export function scanXref(b: Uint8Array): Xref {
  * and, for a stream, where its raw data is (/Length direct or indirect). Null when the object is
  * free, inside an object stream, or not where the xref says.
  */
-export function objectAt(b: Uint8Array, xref: Xref, num: number, depth = 0): TopLevelObject | null {
+/**
+ * Counts the bytes objectAt reads, including objects that fail to parse (an unterminated string
+ * reads to the end of the file) and indirect /Length lookups. A caller that reads objects a file
+ * chooses (any number of entries or references, which may overlap) stops when it is over a budget
+ * proportional to the file, so the work stays linear.
+ */
+export interface ReadMeter {
+  scanned: number
+}
+
+/** The work budget for one walk over a file's objects (see ReadMeter). */
+export function readBudget(b: Uint8Array): number {
+  return 2 * b.length + 65536
+}
+
+export function objectAt(b: Uint8Array, xref: Xref, num: number, depth = 0, meter?: ReadMeter): TopLevelObject | null {
   const e = xref.entries.get(num)
   if (!e || e.type !== 1 || depth > 8) return null
   const resolveLength = (ref: PdfRef) => {
-    const v = objectAt(b, xref, ref.num, depth + 1)?.value
+    const v = objectAt(b, xref, ref.num, depth + 1, meter)?.value
     return typeof v === 'number' ? v : null
   }
   try {
-    return indirectAt(b, e.offset, resolveLength, num)
-  } catch {
+    const obj = indirectAt(b, e.offset, resolveLength, num)
+    if (meter) meter.scanned += obj ? Math.max(1, obj.end - e.offset) : 32
+    return obj
+  } catch (err) {
+    if (meter) meter.scanned += Math.max(1, (err instanceof PdfSyntaxError ? err.reached : b.length) - e.offset)
     return null
   }
 }
 
 /** Follows a reference to a top-level object's value (one level); other values as they are. */
-export function resolve(b: Uint8Array, xref: Xref, v: PdfValue | undefined): PdfValue {
+export function resolve(b: Uint8Array, xref: Xref, v: PdfValue | undefined, meter?: ReadMeter): PdfValue {
   if (v === undefined) return null
-  if (v instanceof PdfRef) return objectAt(b, xref, v.num)?.value ?? null
+  if (v instanceof PdfRef) return objectAt(b, xref, v.num, 0, meter)?.value ?? null
   return v
 }
