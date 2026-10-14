@@ -71,6 +71,15 @@ export const POWERSHELL_ARGS = ['-NoLogo', '-NoProfile', '-NonInteractive', '-Co
 /** A runaway answer without a line break: give up rather than buffer it forever. */
 const MAX_LINE = 64 * 1024 * 1024
 
+/**
+ * Removes every spelling of `name` from a copy of an environment: Windows treats environment
+ * names case-insensitively, and a copy of process.env keeps whatever case the parent used.
+ */
+export function deleteEnv(env: NodeJS.ProcessEnv, name: string): void {
+  const lower = name.toLowerCase()
+  for (const key of Object.keys(env)) if (key.toLowerCase() === lower) delete env[key]
+}
+
 export function defaultPowerShellPath(env: NodeJS.ProcessEnv = process.env): string {
   const root = env.SystemRoot || env.windir || 'C:\\Windows'
   return path.win32.join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
@@ -254,7 +263,7 @@ export class PowerShellHelper {
     }
     // Started from a PowerShell 7 session, PSModulePath lists PowerShell 7's modules first, and Windows
     // PowerShell 5.1 then fails to load its own built-in cmdlets. Without it, 5.1 uses its defaults.
-    if (!this.opts.powershellPath) delete env.PSModulePath
+    if (!this.opts.powershellPath) deleteEnv(env, 'PSModulePath')
     const child = spawn(exe, POWERSHELL_ARGS, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'], env })
     const proc: HelperProcess = { child, buffer: '', dead: false }
     child.stdout?.setEncoding('utf8').on('data', (s: string) => this.onStdout(proc, s))

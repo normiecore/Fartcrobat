@@ -13,7 +13,7 @@ import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import forge from 'node-forge'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { CertKeyError } from '@main/certkeys/source'
@@ -23,6 +23,7 @@ import {
   WinStoreError,
   decryptRecipients,
   defaultPowerShellPath,
+  deleteEnv,
   listEncryptionCertificates,
   probeRecipients,
   type HelperOptions
@@ -219,6 +220,12 @@ describe('error mapping', () => {
       'The smart card PIN was wrong.'
     )
     expect(toCertKeyError(new Error('boom')).code).toBe('ERROR')
+  })
+
+  it('drops every spelling of PSModulePath (Windows environment names ignore case)', () => {
+    const env: NodeJS.ProcessEnv = { PSModulePath: 'a', PSMODULEPATH: 'b', psmodulepath: 'c', PATH: 'p' }
+    deleteEnv(env, 'PSModulePath')
+    expect(env).toEqual({ PATH: 'p' })
   })
 
   it('takes test PowerShell options from the environment of unpackaged builds only', () => {
@@ -724,8 +731,13 @@ const STORE_TESTS =
 
 function runPs(args: string[]): string {
   const env: NodeJS.ProcessEnv = { ...(helperOpts.env ?? process.env), TERM: 'dumb' }
-  // as the helper does: PowerShell 7's module paths (CI shells are pwsh) break Windows PowerShell 5.1
-  if (IS_PS51) delete env.PSModulePath
+  // As the helper does: PowerShell 7's module paths (CI shells are pwsh) break Windows PowerShell
+  // 5.1, which then loads PowerShell 7's Microsoft.PowerShell.Security (no Cert: drive). Here only
+  // 5.1's own modules, so the test does not depend on the runner's machine-wide module path.
+  if (IS_PS51) {
+    deleteEnv(env, 'PSModulePath')
+    env.PSModulePath = join(dirname(PS!), 'Modules')
+  }
   const r = spawnSync(PS!, ['-NoLogo', '-NoProfile', '-NonInteractive', ...args], {
     env,
     timeout: 120_000,
