@@ -7,15 +7,15 @@ This feature lets people and AI agents open encrypted PDFs without typing anythi
 
 An AI agent that opens a file through agent access gets the same silent access as the person. Every such open is written to the agent audit log, without secrets.
 
-**Status of this note.** This is the design and plan. It is based on four spikes: three finished, and one that was stopped early and is replaced by a smaller check described in the appendix.
+**Status of this note.** This began as the design and plan, based on four spikes: three finished, and one that was stopped early and is replaced by a smaller check described in the appendix. Everything in it is now built; the "as built" sections say where the code is and where it differs from the plan, and they win where the two disagree.
 
-- **Phases 0 and 1 (remembered passwords) are implemented** (14 October 2026). See "Remembered passwords as built" below for where the code is and where it differs from this plan.
-- Phases 2 to 6 (certificate encryption) are not in the app yet.
+- **Phases 0 and 1 (remembered passwords) are implemented** (14 October 2026). See "Remembered passwords as built".
+- **Phases 2 to 6 (certificate encryption) are implemented** (14 October 2026). See "Certificate encryption as built". What needs Windows, a smart card or Acrobat is untested until the owner's team runs the manual checklist.
 
 - **Verified** means a command was run and its output was read. **Inferred** means it was not.
 - No spike had access to the Windows certificate store, a smart card or Acrobat. Everything about them is inferred until the manual checklist at the end has been run on real Windows machines.
 
-## Owner decisions (13 October 2026)
+## Owner decisions (13 October 2026, confirmed 14 October)
 
 - Scope: remembered passwords and certificate encryption (open, save back, create). Purview and company password vaults are out of scope.
 - Agents unlock remembered and certificate-encrypted files **silently**, like the person; every agent open is in the agent audit log.
@@ -434,6 +434,50 @@ A policy that exists but cannot be read or understood (a JSON typo, a file only 
 - Unit: `tests/engine/core-saved-passwords-{keys,store,unlock,flow,main}.test.ts` (the 32 prototype tests, adapted, plus the engine's `lock` and `access`, `checkFile`, path folding, `electronCipher` with a mocked safeStorage, the test cipher's gate, the handlers: other senders refused, plain errors, nothing logged, and which policy readings turn remembering off or wipe the store).
 - End to end: `tests/e2e/saved-passwords.spec.ts` (skipped with `FARTCROBAT_EXECUTABLE`; the only spec that launches with remembering on, see `launch` in `tests/e2e/helpers.ts`), with the fixture `tests/fixtures/saved-passwords/encrypted-changed.pdf` (`make_saved_passwords.py`, pypdf). It covers the prompt, Remove and Remove All, a changed password, unticking (also before a wrong password), Protect and Forget, a Digital ID (Enter does not sign with its saved password), the machine policy, a policy file that cannot be understood, Linux without a keyring (real safeStorage, skipped when a D-Bus session exists) and an agent opening a remembered file, extracting pages, inserting it and combining it through the built MCP shim.
 
+## Certificate encryption as built (phases 2 to 6)
+
+Built on 14 October 2026 by parallel builders on shared contracts, then reviewed adversarially (eight review lenses, each finding checked by two independent verifiers) and fixed. Nothing here has run on Windows hardware, a smart card or Acrobat: for those, the code, the automated tests and the manual checklist below are ready for the owner's team.
+
+**Where the code is**
+
+- Shared contracts: `src/shared/certkeys.ts` (`CertificateLock`, `CertificateKey`, the `certkeys:*` request and result types, `PUBSEC_PERMISSION`, `certificateAuditSummary`, `describeCertKey`); in `src/shared/types.ts`, `OpenResult`'s `needsCertificate` variant, `SaveOptions.encryptCertificate` and `CertificateGroup`, `DocInfo.security` and the preference `useWindowsCertificateStore`.
+- Engine, `src/engine/crypt/` (`index.ts` documents the surface):
+  - `primitives.ts`: AES, SHA-2 and MD5 from `@noble/ciphers` and `@noble/hashes`, our own RC4;
+  - `pdfLex.ts`: a PDF object parser, the newest trailer (the last `startxref`), a real xref reader (classic tables, xref streams with predictors through `fflate`, hybrid files, `/Prev` chains) with a linear scan for damaged files, and bounds on everything a hostile file controls;
+  - `standardR6.ts`: the bridge's Standard V5/R6 dictionary, with separate one-time user and owner passwords;
+  - `pubsecRead.ts`: `readPubSec`, `certificateLockOf`;
+  - `pubsecBridge.ts`: file keys, `bridgeV5`, `neutralise` and `decryptAll`, `verifyFileKey`, `openPubSec` and `openWithKeys`;
+  - `pubsecWrite.ts` and `src/engine/util/pdfWriter.ts`: encrypt in place, the serialiser, `writePubSecDocument`, `assertNoBridge`, `assertCertificateOutput`;
+  - `keys.ts`: `CertificateKeyRegistry` (keys by envelope) and the permission mapping.
+- Engine integration: `Session.pubsec`, `pendingCertificate` and `certificateKeys` (`src/engine/session.ts`); in `src/engine/ops/doc.ts` the ops `open`, `reload`, `unlockCertificate`, `addCertificateKey`, `certificateKey`, `certificateLock` and `checkFile`, `documentFacts`, and the save routes; `openSourceWithAccess` (`ops/pages.ts`); certificate `Protection` for outputs (`src/engine/util/protection.ts`); the organize-pages, compare and export-create engines; Compress and the Optimizer (`protect-optimize/optimize.ts`); `security()` in `protect-optimize/engine.ts`; the signing refusal in `digital-signatures/worker/sign.ts`.
+- Envelopes: `src/features/digital-signatures/lib/envelope.ts` (reading, used by the main process) and `envelopeBuild.ts` (building, used by the engine; RSA PKCS#1 v1.5 with BigInt, issuer and serial copied byte for byte).
+- Main process, `src/main/certkeys/`: `source.ts` (`RecipientKeySource`), `digitalIdSource.ts`, `handlers.ts` (the IPC handlers without Electron), `index.ts` (Electron glue), `winCertStore.ts` (the long-lived PowerShell helper), `winStoreScripts.ts` (its PowerShell 5.1 scripts) and `windowsStoreSource.ts`. `src/main/passwords/index.ts` exports `savedPasswordStore()`, `rememberPasswordsPolicy()` and `trustedSender()` for it.
+- Renderer: the pure logic in `src/renderer/src/app/unlock.ts` (`unlockCertificate`, `orderCandidates`, the messages); `certificates.ts` (`unlockCertificateFile`, the "Waiting for your smart card..." overlay and its Cancel); in `actions.ts`, opening, Revert, replacing bytes and the signatures warning; side inputs in organize-pages (`withUnlock`), compare and export-create; the agent tools; `digital-signatures/ui/encrypted.ts` (signing refused); in Preferences > Digital IDs (`DigitalIdsSettings.tsx`), the Windows store switch and "Lock smart card".
+- Protect: `CertificateEncryptDialog.tsx`, `certificates.ts` (pure helpers), `certificateFiles.ts` (.cer, .pem, .p7b and .p12 parsing), and changes to `flows.tsx`, `ProtectPanel.tsx` and `SecurityBadge.tsx`.
+
+**Differences from the plan**
+
+- **Synchronous crypto, no async save route.** The engine uses `@noble/ciphers` 2.4.0, `@noble/hashes` 2.4.0 and `fflate` 0.8.3 (pinned) instead of WebCrypto, so `saveDocument` stays synchronous and writes certificate security itself. Save, Save As, Extract, Split, Combine, the Compare report, Compress and the `insertFiles` mutation all keep the source's certificate security without becoming async. AES runs at about 55 MB/s in the worker. Measured in Node: opening a 5 MB V5 file takes about 120 ms (mostly the R6 hashes), and saving it about 0.8 s (an extra decrypting MuPDF pass plus AES).
+- **Keys by envelope.** The engine keeps every `CertificateKey` it was given (the envelope, its seed and its permission bytes) for the life of its worker, and opens any file whose `/Recipients` contain an identical envelope. That is how Revert, reload, files to insert, combine, compare or create from, and new tabs made from a certificate-encrypted document open without asking again. `doc.unlockCertificate(key)` opens the pending document; `doc.addCertificateKey(key)` only registers. The renderer keeps a tab's key in `DocState.unlock.certificateKey` (method `'certificate'`, or `'source'` for tabs made from it) and gives it to new engines; after Encrypt with Certificate, `doc.certificateKey()` hands the new key to the tab.
+- **The bridge uses separate one-time user and owner passwords**, and the engine authenticates with the user password, so MuPDF applies the recipient's permissions itself. `doc.lockInfo()` returns null for certificate-encrypted documents, so the bridge's `/U` and `/O` never reach the renderer.
+- **A wrong seed is caught before opening.** `verifyFileKey` checks the AES padding of a few streams (for RC4, zlib headers or plain text), so a key for the right envelope but the wrong seed gives `needsCertificate`, not garbage.
+- **Damaged files are refused.** A certificate-encrypted file that MuPDF has to repair does not open (CERTIFICATE_OPEN_FAILED).
+- **EncryptMetadata false**: such files open through the decrypt pass (V5 too, with K for every object, leaving the XMP stream alone). Saving back always writes EncryptMetadata true (D7), so the XMP stream becomes encrypted.
+- **Restricted recipients.** A recipient whose envelope lacks the change-security bit can edit and save (as their permissions allow) but cannot Remove Security, Protect with a password or Encrypt with Certificate (PERMISSION_DENIED; the Protect panel explains it). Recipients with every other permission but not that bit do not get full access.
+- **Outputs that are plain on purpose**, as for password-protected documents: a comment summary, and a new PDF made with Create from protected files.
+- **The PowerShell helper is one process per app session** (owner decision). Requests run one at a time, each with a request id, and only the `FCJSON:<id>:` answer line is read. Timeouts are 60 s, and 5 minutes for a decrypt. Cancel in "Waiting for your smart card..." reaches the main process (`certkeys:cancel`) and stops the helper, so the next open asks for the PIN again. "Lock smart card" appears only while the helper holds a key known to be hardware. Whether a key is hardware is read after a decrypt, never in a probe (a probe never opens a key); a key counts as hardware unless its provider is one of Microsoft's software providers. Active Directory lookup was not built.
+- **Recipients are named by serial number and issuer** in messages ("encrypted for the certificate with serial number 1A2B (issued by Contoso CA)"): a CMS envelope does not carry the recipient's name.
+- **The main process never bundles `@noble/*`.** electron-vite defines `__dirname` in the ES module main bundle by inserting a shim after the last `import` it finds by text, and `@noble`'s doc comments contain such lines, so the shim landed in a comment and the app did not start. `tests/engine/main-bundle.test.ts` walks the main process's imports to keep it that way. node-forge is loaded only when a Digital ID is used.
+- **Agents** open certificate-encrypted files through the same flow as the person (actor `'agent'`). The audit summaries are "opened with Digital ID <name>" (with "(password saved on this device)" when it was), and "opened with certificate <subject> (<thumbprint>) from the Windows certificate store" or "... from a smart card". When no key opens a file, the agent is told why ("failed" or "unsupported"), and only the person's own Cancel is reported as cancelled.
+- **Signatures.** Saving a certificate-encrypted document with signatures asks first ("Saving will invalidate N signatures"), once per tab; agents' `save_document` asks the person the same. After the save, the tab validates its signatures against the new bytes. New signatures are refused, and every signing entry point explains why.
+
+**Tests**
+
+- Unit (vitest): `passwordless-lex` (the parser and xref reader), `passwordless-open` (every fixture and recipient, by seed), `passwordless-save` (save back, V4 to V5, no bridge or plaintext in any output, incremental refused, Remove Security, Protect with a password, revert, a pyHanko cross-check), `passwordless-outputs` (Extract, Split, Combine, Compare, Optimize, side inputs, signing refused), `passwordless-create` (Encrypt with Certificate: one and two groups, permission bits, exact issuer bytes, EC refused, a pyHanko cross-check), `passwordless-hardening` (hostile files that must not hang or exhaust memory, a direct `/Info`, what the tab reports after a save), `passwordless-guard` (no new `saveToBuffer` outside an allow-list), `certkeys-envelope`, `certkeys-digitalid`, `certkeys-handlers` (senders, argument bounds, hostile `/Recipients`, cancel, nothing logged), `certkeys-winstore` (script rules, the process model, and the store through pwsh on Linux against a private test store; on Windows, the stock PowerShell 5.1 in the `windows-helper` CI job), `core-certificate-unlock` (the unlock logic), `protect-certificate-files` and `protect-certificate-recipients`, and `main-bundle`.
+- End to end: `tests/e2e/certificate-encryption.spec.ts` (skipped with `FARTCROBAT_EXECUTABLE`, like the saved-passwords spec): a Digital ID opens a file and its password is remembered, an edit saves back encrypted, Revert, a file for someone else, a restricted recipient with signing disabled, the signatures warning, Encrypt with Certificate for two recipients reopened by each, an agent opening silently (with the audit line and no secret) and saving a signed file, and the Windows store through the PowerShell helper on Linux (skipped without pwsh).
+- Fixtures: `tests/fixtures/passwordless/make_pubsec.py` (pyHanko, cryptography, asn1crypto), deterministic, outputs committed, keys for tests only; see its README.
+- CI: pyHanko is in `tests/requirements.txt`, so the cross-checks run there. The `windows-helper` job runs `certkeys-winstore.test.ts` on `windows-latest` against the stock Windows PowerShell 5.1.
+
 ## Implementation plan
 
 Estimates are in engineer-days for someone who knows the codebase, and include tests. They assume the spike code is ported, not rewritten.
@@ -747,7 +791,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 **Recipient key types**
 
 - **EC (ECDH) recipients** are not supported, for opening or creating. .NET on Linux cannot do it (verified); .NET Framework on Windows is unknown.
-- **RSA-OAEP recipients** are opened but never written. Opening was verified through the Windows store helper under pwsh; the Digital ID path is planned.
+- **RSA-OAEP recipients** are opened but never written. Both the Windows store helper (pwsh on Linux) and Digital IDs (tested with the OAEP fixture, SHA-256) open them.
 
 **Smart cards and locked-down machines**
 
@@ -768,6 +812,15 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 **PDF MAC** (ISO/TS 32004, which pyHanko adds by default)
 
 - It is ignored on open (verified to open) and dropped on save.
+- pyHanko then refuses the saved file: the envelopes it wrote say a missing MAC is not allowed, and those envelopes cannot be changed without every recipient's certificate. Acrobat does not write a PDF MAC, so this only affects files made by pyHanko. Keeping the MAC means implementing ISO/TS 32004.
+
+**What certificate-encrypted files open**
+
+- Files that MuPDF would have to repair are refused (CERTIFICATE_OPEN_FAILED), because a repaired file's xref can no longer be trusted for the decrypt pass.
+- Files that encrypt only attachments (`/StmF /Identity`, or `/EFF` with its own recipients), and files whose strings and streams use different crypt filters, are not supported.
+- For RC4 files the check that a seed is right is a heuristic (zlib headers or plain text in streams); a file with neither could open with garbage for a wrong seed of the right envelope, which only a broken envelope can produce.
+- V1 and V2 public-key files (`/Recipients` at the top level, SubFilters s3 and s4) have a code path but no fixture.
+- Messages name recipients by serial number and issuer, because the envelope has no name in it.
 
 **Labels in the store file**
 
@@ -775,6 +828,8 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 - This shows which protected files exist.
 
 ## Open questions for the owner
+
+Answered by the owner decisions above: 1 (ticked by default), 2 (agents unlock silently; no separate policy key yet), 3 (PIN once per session), 4 (warn, then allow) and 5 (upgrade V4 to AES-256). The others are still open.
 
 1. Is it acceptable for the Remember checkbox to be ticked by default? (Recommended: yes.)
 2. Should agents be allowed to unlock files silently? Or should a policy key such as `agentUnlock.enabled` let IT turn it off for agents while keeping it for people?
