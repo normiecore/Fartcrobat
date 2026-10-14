@@ -370,6 +370,18 @@ class XrefBudget {
 }
 
 /** `num gen obj` at `i` (after whitespace): [num, gen, end of the header] or null. */
+/**
+ * How far objHeader may read from `i`: three tokens and the white space and comments before them
+ * (a ReadMeter charge for an entry with no object there; a long run of digits counts in full).
+ */
+function headerReach(b: Uint8Array, i: number): number {
+  for (let t = 0; t < 3 && i < b.length; t++) {
+    i = skipWs(b, i)
+    while (i < b.length && CLASS[b[i]] === 0) i++
+  }
+  return Math.min(b.length, i + 1)
+}
+
 function objHeader(b: Uint8Array, i: number): [number, number, number] | null {
   const num = uintAt(b, i)
   if (!num) return null
@@ -775,16 +787,16 @@ export function readBudget(b: Uint8Array): number {
 
 export function objectAt(b: Uint8Array, xref: Xref, num: number, depth = 0, meter?: ReadMeter): TopLevelObject | null {
   const e = xref.entries.get(num)
-  if (!e || e.type !== 1 || depth > 8) return null
+  // An in-use entry at offset 0 (some writers make them) is a free object for MuPDF too.
+  if (!e || e.type !== 1 || e.offset === 0 || depth > 8) return null
   const resolveLength = (ref: PdfRef) => {
     const v = objectAt(b, xref, ref.num, depth + 1, meter)?.value
     return typeof v === 'number' ? v : null
   }
   try {
     const obj = indirectAt(b, e.offset, resolveLength, num)
-    // No object there: reading the header may have gone through a long run of digits or white
-    // space, so it counts as reading to the end (real files do not have such entries).
-    if (meter) meter.scanned += obj ? Math.max(1, obj.end - e.offset) : Math.max(1, b.length - e.offset)
+    // No object there: only the header was read, which may still be a long run of digits or white space.
+    if (meter) meter.scanned += Math.max(1, (obj ? obj.end : headerReach(b, e.offset)) - e.offset)
     return obj
   } catch (err) {
     if (meter) meter.scanned += Math.max(1, (err instanceof PdfSyntaxError ? err.reached : b.length) - e.offset)

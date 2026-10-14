@@ -161,9 +161,9 @@ describe('envelope limits', () => {
     const read = parsed.filter(Boolean).length
     expect(read).toBe(Math.floor(REQUEST_ELEMENTS / 1012))
     expect(parsed.slice(0, read).every(Boolean)).toBe(true)
-    // the Windows helper gets the first envelope: its 1000 recipients are all it may be given
-    expect(STORE_RECIPIENT_INFOS).toBe(1000)
-    expect(forStore.map((b) => b.length > 0)).toEqual(blobs.map((_, i) => i === 0))
+    // the Windows helper gets the first ten envelopes: their 10 000 recipients are all it may be given
+    expect(STORE_RECIPIENT_INFOS).toBe(10_000)
+    expect(forStore.map((b) => b.length > 0)).toEqual(blobs.map((_, i) => i < 10))
     // identical envelopes are read once and cost nothing more
     const same = requestEnvelopes(new Array(250).fill(blobs[0]))
     expect(same.parsed.every((p) => p === same.parsed[0] && p !== null)).toBe(true)
@@ -177,7 +177,7 @@ describe('envelope limits', () => {
     expect(forStore.map((b) => b.length > 0)).toEqual([false, false, false, true])
   })
 
-  it('gives the Windows helper each envelope once, only what was parsed, and at most 1000 recipients', () => {
+  it('gives the Windows helper each envelope once, only what was parsed, and at most 10 000 recipients', () => {
     const real = recipientsOf('v5-two-envelopes.pdf')
     const nineHundred = envelopeWith(tiny(900))
     // 97 copies of one envelope: the helper walked every copy (97 000 recipients took 40 s)
@@ -193,9 +193,12 @@ describe('envelope limits', () => {
     const damaged = requestEnvelopes([padded, ...real])
     expect(damaged.parsed.map(Boolean)).toEqual([false, true, true])
     expect(damaged.forStore.map((b) => b.length > 0)).toEqual([false, true, true])
-    // distinct envelopes past 1000 recipients in all are left out too
-    const many = requestEnvelopes([...real, ...Array.from({ length: 5 }, (_, i) => envelopeWith(tiny(400), i))])
-    expect(many.forStore.map((b) => b.length > 0)).toEqual([true, true, true, true, false, false, false])
+    // a real file for many people (one envelope per permission group) is searched in full
+    const groups = requestEnvelopes([envelopeWith(tiny(600), 1), envelopeWith(tiny(600), 2), ...real])
+    expect(groups.forStore.every((b) => b.length > 0)).toBe(true)
+    // distinct envelopes past 10 000 recipients in all are left out
+    const many = requestEnvelopes([...real, ...Array.from({ length: 30 }, (_, i) => envelopeWith(tiny(400), i))])
+    expect(many.forStore.map((b) => b.length > 0)).toEqual([true, true, ...new Array(24).fill(true), ...new Array(6).fill(false)])
   })
 })
 

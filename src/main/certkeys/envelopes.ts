@@ -19,10 +19,13 @@ export const REQUEST_ELEMENTS = 4 * ENVELOPE_LIMITS.elements
 
 /**
  * RecipientInfos given to the Windows helper per request, across its envelopes. The helper walks
- * each one in PowerShell (about half a millisecond each), so this bounds a probe to well under its
- * timeout. Real files have a few recipients.
+ * each one in PowerShell (about half a millisecond each with PowerShell 7), so this bounds a probe
+ * to seconds, well under its timeout, while a real file for many people (Acrobat writes one
+ * envelope per permission group, 1000 recipients each at most) is still searched in full. A decrypt
+ * tries a few recipients at most (DECRYPT_BODY). 10 000 RSA recipients are about all that fit in
+ * PUBSEC_RECIPIENT_LIMITS.totalBytes, so only crafted lists go past it.
  */
-export const STORE_RECIPIENT_INFOS = ENVELOPE_LIMITS.recipientInfos
+export const STORE_RECIPIENT_INFOS = 10 * ENVELOPE_LIMITS.recipientInfos
 
 export interface RequestEnvelopes {
   /** One per blob: the parsed envelope, or null when it is damaged or over the limits. */
@@ -32,7 +35,8 @@ export interface RequestEnvelopes {
    * unreadable): envelopes not parsed here (damaged or over the limits; .NET accepts some encodings
    * this parser refuses, such as lengths with leading zero bytes), the second and later copies of
    * an envelope (they give the same answers as the first), and envelopes past
-   * STORE_RECIPIENT_INFOS. So a crafted list never makes PowerShell do more than a real file.
+   * STORE_RECIPIENT_INFOS. With the helper's own cap on decrypt attempts (DECRYPT_BODY), a crafted
+   * list never makes PowerShell do much more than a real file.
    */
   forStore: Uint8Array[]
 }

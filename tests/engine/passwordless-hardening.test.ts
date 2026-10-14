@@ -478,6 +478,25 @@ describe('the key check reads a bounded amount', () => {
     expect(e.info.pageCount).toBe(expected(V4).pages)
   })
 
+  it('in-use entries at offset 0 (MuPDF reads them as free) cost nothing: the file opens and a wrong seed is refused', async () => {
+    // Some writers list new objects at offset 0. Charged as a read to the end of the file, 12 of
+    // them refused a 1 MB V4 file and 3 made the key check accept any seed.
+    const V4 = 'v4-rc4.pdf'
+    const base = concat([pubsecFixture(V4), latin1(`%${'x'.repeat(1 << 20)}\n`)])
+    const info = readPubSec(base)!
+    const nums = Array.from({ length: 16 }, (_, k) => info.trailer.size + k)
+    const appended = appendUpdate(base, info, nums.map((num) => ({ num, gen: 0, source: 'null' })))
+    const tail = toLatin1(appended.subarray(base.length)).replace(/\d{10} 00000 n\r\n/g, '0000000000 00000 n\r\n')
+    const bytes = concat([base, latin1(tail)])
+    const zeroInfo = readPubSec(bytes)!
+    expect(nums.every((n) => zeroInfo.xref.entries.get(n)?.type === 1 && (zeroInfo.xref.entries.get(n) as { offset: number }).offset === 0)).toBe(true)
+    const seed = keyFor(V4, 'alice', bytes).seed
+    expect(verifyFileKey(bytes, zeroInfo, fileKey(zeroInfo, seed))).toBe(true)
+    expect(verifyFileKey(bytes, zeroInfo, fileKey(zeroInfo, seed.map((x, i) => (i === 0 ? x ^ 1 : x))))).toBe(false)
+    const e = await openWithKey(bytes, keyFor(V4, 'alice', bytes))
+    expect(e.info.pageCount).toBe(expected(V4).pages)
+  })
+
   it('a sound file still checks the key: a wrong seed is refused', () => {
     const bytes = withUnterminated(10)
     const info = readPubSec(bytes)!

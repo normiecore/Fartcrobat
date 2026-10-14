@@ -146,11 +146,14 @@ function Get-FcKeyHardware($cert) {
  *        or opening any key, so it never shows a PIN prompt.
  * decrypt: decrypts the first matching recipient with EnvelopedCms (Windows asks for a smart card PIN
  *        itself) and returns ContentInfo.Content (for PubSec: 20-byte seed + 4 permission bytes), then
- *        says whether the key it just used is hardware (see KEY_HARDWARE).
+ *        says whether the key it just used is hardware (see KEY_HARDWARE). Each certificate is tried
+ *        once per envelope and FcMaxAttempts times in all: every try is a private key operation (on a
+ *        card or TPM, a fraction of a second), and a crafted envelope may name a certificate 1000 times.
  */
 export const DECRYPT_BODY =
   KEY_HARDWARE +
   String.raw`
+$FcMaxAttempts = 4
 function Get-FcSerialKeys([string]$hex) {
   $h = ($hex -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
   if ($h.Length % 2) { $h = '0' + $h }
@@ -268,10 +271,16 @@ if ($ordered.Count -eq 0) {
 } else {
   $attempts = New-Object System.Collections.ArrayList
   $absent = New-Object System.Collections.ArrayList
+  $tried = @{}
   $done = $false
   foreach ($c in $ordered) {
     # a missing card is missing for every envelope that names its certificate
     if ($absent -contains $c.cert.Thumbprint) { continue }
+    # a real envelope names a certificate once: each is tried once per envelope, and a few times in all
+    $once = [string]$c.blob + ':' + $c.store + ':' + $c.cert.Thumbprint
+    if ($tried.ContainsKey($once)) { continue }
+    if ($attempts.Count -ge $FcMaxAttempts) { break }
+    $tried[$once] = $true
     try {
       $extra = New-Object "$X.X509Certificate2Collection"
       [void]$extra.Add($c.cert)

@@ -1044,6 +1044,25 @@ describe.skipIf(!STORE_TESTS)('with PowerShell and a test certificate store', ()
     expect(r.content).toEqual(SEED)
   })
 
+  it('tries a certificate once per envelope, and a few times in all (each try is a private key operation)', async () => {
+    // A crafted envelope naming the person's certificate 300 times, with damaged content: every
+    // try unwraps the key and then fails. 1000 such tries took 107 s.
+    const many = forgeEnvelope(Array.from({ length: 300 }, () => pem('me-enc')), SEED)
+    many[many.length - 1] ^= 0x5a
+    const others = Array.from({ length: 6 }, (_, i) => {
+      const b = forgeEnvelope([pem('me-enc')], SEED)
+      b[b.length - 1] ^= 0x11 + i
+      return b
+    })
+    const t0 = performance.now()
+    const err = await decryptRecipients(helper, [many, ...others], { thumbprint: thumbOf('me-enc') }).catch((e: unknown) => e)
+    expect(performance.now() - t0).toBeLessThan(30_000)
+    expect(err).toBeInstanceOf(WinStoreError)
+    const attempts = ((err as WinStoreError).detail as { attempts: Array<{ blob: number }> }).attempts
+    // once in the crafted envelope, then the next envelopes, four tries in all
+    expect(attempts.map((a) => a.blob)).toEqual([0, 1, 2, 3])
+  })
+
   it('runs calls one at a time in one process, and remembers that a key is not hardware', async () => {
     const blob = forgeEnvelope([pem('me-enc')], SEED)
     const fresh = createWindowsStore({ platform: 'win32', enabled: () => true, ...helperOpts })
