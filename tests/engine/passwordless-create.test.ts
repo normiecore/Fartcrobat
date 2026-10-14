@@ -21,6 +21,7 @@ import { PUBSEC_PERMISSION, type CertificateKey } from '@shared/certkeys'
 import type { CertificateGroup, Permission, SaveOptions } from '@shared/types'
 import { openFixture, type OpenedEngine } from './helpers'
 import { expected, includesBytes, keyFor, openFixtureAs, openWithKey, pageText, PKI, pubsecFixture } from './passwordless-helpers'
+import { hasPyHanko } from './pyhanko'
 
 const TMP = mkdtempSync(join(tmpdir(), 'fc-pubsec-create-'))
 afterAll(() => rmSync(TMP, { recursive: true, force: true }))
@@ -331,16 +332,6 @@ describe('Encrypt with Certificate', () => {
     expect(await other.ops<typeof docOps>('doc').open(out, { fileName: 'x.pdf' })).toMatchObject({ ok: false, needsCertificate: true })
   })
 })
-
-/** Whether pyHanko can be imported (the probe must exit 0). */
-function hasPyHanko(): boolean {
-  try {
-    const r = spawnSync('python3', ['-I', '-c', 'import pyhanko'], { stdio: 'ignore' })
-    return r.status === 0 && !r.error
-  } catch {
-    return false
-  }
-}
 
 const PYHANKO_CHECK = `
 import json, sys

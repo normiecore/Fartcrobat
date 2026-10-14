@@ -26,6 +26,7 @@ import {
   pubsecFixture,
   type Engine
 } from './passwordless-helpers'
+import { hasPyHanko } from './pyhanko'
 
 const NOTE = 'Note text in an object stream'
 const PLAINTEXT = ['Hello secret world', NOTE, 'Secret title', 'Field value', 'xmp-marker-123', 'Page two text']
@@ -316,8 +317,6 @@ describe('assertNoBridge', () => {
 
 // ---- cross-check with pyHanko --------------------------------------------------------------
 
-const PYHANKO = spawnSync('python3', ['-c', 'import pyhanko'], { stdio: 'ignore' }).status === 0
-
 const PY_READ = `
 import sys, json
 from pyhanko.pdf_utils.reader import PdfFileReader
@@ -345,7 +344,7 @@ print(json.dumps({'status': res.status.name, 'version': int(r.encrypt_dict['/V']
                   'title': str(r.trailer_view['/Info']['/Title']), 'notes': notes}))
 `
 
-describe.skipIf(!PYHANKO)('pyHanko opens saved files', () => {
+describe.skipIf(!hasPyHanko())('pyHanko opens saved files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-pubsec-'))
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
 

@@ -13,7 +13,8 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { dataOf, errorOf, expectAudit, startShim, type Agent } from './agent-helpers'
 import { ROOT, activeDocState, fixturePath, launch, runCommand, waitForRender } from './helpers'
 
 test.skip(!!process.env.FARTCROBAT_EXECUTABLE, 'packaged builds have no test cipher')
@@ -50,11 +51,15 @@ function digitalId(name: string, label: string, dir: string) {
   }
 }
 
-/** Launches with the given Digital IDs listed, remembering on (test cipher). */
+/**
+ * Launches with the given Digital IDs listed, remembering on (test cipher). The Windows certificate
+ * store is off, so on Windows these tests neither start PowerShell nor depend on the person's store.
+ */
 async function launchWithIds(ids: { name: string; label: string }[], env: Record<string, string> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-ids-'))
   return launch([], { ...TEST_CIPHER, ...env }, {
     rememberPasswords: true,
+    prefs: { useWindowsCertificateStore: false },
     kv: { 'digital-signatures:ids': ids.map((i) => digitalId(i.name, i.label, dir)) }
   })
 }
@@ -125,12 +130,16 @@ function activeInfo(page: Page) {
   })
 }
 
-/** Bytes a certificate-encrypted file written by Fartcrobat must (not) contain. */
-function expectCertificateFile(path: string) {
+/**
+ * Bytes a certificate-encrypted file written by Fartcrobat must (not) contain. `plaintext` is a title
+ * the test gave the document: certificate-encrypted saves write no object streams, so the document
+ * information dictionary would show it if it were written in clear.
+ */
+function expectCertificateFile(path: string, plaintext: string) {
   const text = readFileSync(path).toString('latin1')
   expect(text).toContain('/Adobe.PubSec')
   expect(text).not.toMatch(/\/Filter\s*\/Standard/)
-  expect(text).not.toContain('Hello secret world')
+  expect(text).not.toContain(plaintext)
 }
 
 test('a Digital ID opens a certificate-encrypted file; the password is remembered; edits save back encrypted', async () => {
@@ -165,7 +174,7 @@ test('a Digital ID opens a certificate-encrypted file; the password is remembere
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
     await runCommand(page, 'file.save')
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(false)
-    expectCertificateFile(file)
+    expectCertificateFile(file, 'Edited title')
     await closeActive(page)
     await expect(page.locator('.home-title')).toBeVisible()
 
@@ -238,18 +247,24 @@ test('saving a signed certificate-encrypted file warns that its signatures will 
     await page.keyboard.press('Enter')
     await expectOpened(page, 'signed.pdf')
     const before = readFileSync(file)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.setMetadata({ title: 'Changed' }))
-    await startCommand(page, 'file.save')
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.setMetadata({ title: 'Changed after signing' }))
+    await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
+    // Kept, so the file is compared once the cancelled save has ended (a Cancel that saved has written by then).
+    const cancelled = page.evaluate(() => (window as any).__fartcrobat.runCommand('file.save') as Promise<boolean>)
+    cancelled.catch(() => {}) // awaited below; an earlier failure must not be hidden by its rejection
     const warn = dialogTitled(page, 'Invalidate signatures?')
     await expect(warn).toBeVisible()
     await expect(warn).toContainText('Saving will invalidate 1 signature')
     await shot(page, 'signature-warning')
     await warn.getByRole('button', { name: 'Cancel' }).click()
+    await cancelled
+    await expect(warn).toHaveCount(0)
+    expect((await activeDocState(page))?.dirty).toBe(true)
     expect(Buffer.compare(readFileSync(file), before)).toBe(0)
     await startCommand(page, 'file.save')
     await dialogTitled(page, 'Invalidate signatures?').getByRole('button', { name: 'Save' }).click()
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(false)
-    expectCertificateFile(file)
+    expectCertificateFile(file, 'Changed after signing')
   } finally {
     await app.close()
   }
@@ -285,7 +300,8 @@ test('Encrypt with Certificate for two recipients: each one opens the file with 
       await expect(page.getByTestId('cert-encrypt-summary')).toBeVisible()
       await shot(page, 'encrypt-summary')
       await page.keyboard.press('Enter')
-      expectCertificateFile(encrypted)
+      // text.pdf's title, in clear in the source.
+      expectCertificateFile(encrypted, 'Fixture Text Document')
       // The tab reopened from the new file without asking, as its creator.
       await expect.poll(async () => (await activeInfo(page)).security).toBe('certificate')
       expect((await activeInfo(page)).unlock).toMatchObject({ method: 'certificate', access: 'owner' })
@@ -366,6 +382,82 @@ test('an agent opens a certificate-encrypted file silently with a remembered Dig
   }
 })
 
+/** A question an agent's call waits for (not one of the app's own, which have Cancel). */
+async function agentQuestion(page: Page, title: string) {
+  const dialog = dialogTitled(page, title)
+  await expect(dialog).toBeVisible()
+  await expect(dialog).toContainText('through agent access')
+  return dialog
+}
+
+test('an agent saving a signed certificate-encrypted file: the person is told the signature will stop validating, once per tab', async () => {
+  const { app, page, userData } = await launchWithIds([{ name: 'alice', label: 'Alice Test' }])
+  let agent: Agent | null = null
+  try {
+    const file = tempCopy('v5-signed.pdf', 'signed.pdf')
+    const copy = join(dirname(file), 'signed copy.pdf')
+    // The person opens the file; the agent works in that tab.
+    await openPath(page, file)
+    await dialogTitled(page, 'Digital ID password').getByLabel('Password', { exact: true }).fill('alice-pass')
+    await page.keyboard.press('Enter')
+    await expectOpened(page, 'signed.pdf')
+    const before = readFileSync(file)
+    await expect.poll(() => existsSync(join(userData, 'agent-access', 'endpoint.json'))).toBe(true)
+    agent = await startShim(userData)
+    const { handle } = dataOf(await agent.call('open_document', { path: file }))
+    dataOf(await agent.call('set_metadata', { handle, title: 'Agent title' }))
+    await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
+
+    // Save As: the person is asked first; Decline writes nothing.
+    const saveAs = agent.start('save_document', { handle, path: copy })
+    const invalidate = await agentQuestion(page, 'Invalidate signatures?')
+    await expect(invalidate).toContainText('Saving will invalidate 1 signature')
+    await invalidate.getByRole('button', { name: 'Decline', exact: true }).click()
+    expect(errorOf(await saveAs)).toContain('[declined]')
+    expect(existsSync(copy)).toBe(false)
+
+    // Save over the file: "Save over the file?" says so too; Decline keeps the file as it was.
+    const declined = agent.start('save_document', { handle })
+    const over = await agentQuestion(page, 'Save over the file?')
+    await expect(over).toContainText('Saving will invalidate 1 signature')
+    await expect(over).toContainText(file)
+    await shot(page, 'agent-signature-warning')
+    await over.getByRole('button', { name: 'Decline', exact: true }).click()
+    expect(errorOf(await declined)).toContain('[declined]')
+    await expect(over).toHaveCount(0)
+    expect(Buffer.compare(readFileSync(file), before)).toBe(0)
+    expect((await activeDocState(page))?.dirty).toBe(true)
+
+    // Allowed: written over the file, still certificate-encrypted.
+    const saving = agent.start('save_document', { handle })
+    const allow = await agentQuestion(page, 'Save over the file?')
+    await expect(allow).toContainText('Saving will invalidate 1 signature')
+    await allow.getByRole('button', { name: 'Save', exact: true }).click()
+    expect(dataOf(await saving)).toMatchObject({ saved: file, encrypted: true, unsavedChanges: false })
+    expectCertificateFile(file, 'Agent title')
+
+    // The person agreed for this tab: the next save only asks whether to save over the file.
+    dataOf(await agent.call('set_metadata', { handle, title: 'Second agent title' }))
+    const again = agent.start('save_document', { handle })
+    const plain = await agentQuestion(page, 'Save over the file?')
+    await expect(plain).not.toContainText('will invalidate')
+    await plain.getByRole('button', { name: 'Save', exact: true }).click()
+    expect(dataOf(await again)).toMatchObject({ saved: file, unsavedChanges: false })
+    expectCertificateFile(file, 'Second agent title')
+
+    const lines = await expectAudit(userData, agent.calls, ['alice-pass'])
+    expect(lines.filter((l) => l.tool === 'save_document').map((l) => [l.outcome, l.args.path ?? null])).toEqual([
+      ['declined', copy],
+      ['declined', null],
+      ['done', null],
+      ['done', null]
+    ])
+  } finally {
+    await agent?.close()
+    await app.close()
+  }
+})
+
 /** pwsh on this machine, when it runs. */
 function powershell(): string | null {
   for (const p of [process.env.PWSH, '/usr/local/bin/pwsh', '/usr/bin/pwsh'].filter(Boolean) as string[]) {
@@ -378,7 +470,9 @@ function powershell(): string | null {
 }
 
 test('the Windows certificate store opens a file without a prompt (helper run with PowerShell 7 and a private test store)', async () => {
-  test.skip(process.platform === 'win32', 'on Windows the helper uses the real store (see certkeys-winstore.test.ts)')
+  // A private test store only works on Linux: on Windows the helper uses the real store (see
+  // certkeys-winstore.test.ts), and on macOS .NET's CurrentUser\My is the keychain, not a folder in HOME.
+  test.skip(process.platform !== 'linux', 'the private test store works on Linux only')
   const pwsh = powershell()
   test.skip(!pwsh, 'needs PowerShell (pwsh)')
   // A private .NET store: HOME decides where .NET on Linux keeps CurrentUser\My.
