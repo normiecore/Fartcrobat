@@ -256,7 +256,9 @@ npm run build && xvfb-run -a npx playwright test tests/e2e/<feature>.spec.ts
   README; `expected.json` gives each recipient's seed, so engine tests can open them without RSA).
 - Tests that check output with outside tools (pypdf, poppler `pdfsig`, LibreOffice, openssl) must
   skip cleanly when the tool is missing; CI installs them (see `.github/workflows/ci.yml` and
-  `tests/requirements.txt`). Generate fixtures ahead of time and commit them rather than building
+  `tests/requirements.txt`). CI sets `FARTCROBAT_REQUIRE_PYHANKO=1`, which turns a missing pyHanko
+  into a failure instead of a skip (`tests/engine/pyhanko.ts`), so the cross-checks of what
+  Fartcrobat writes for certificate encryption cannot quietly stop running there. Generate fixtures ahead of time and commit them rather than building
   them with Python at test time.
 - Wait for observable state (`expect(...)`, `expect.poll`) rather than fixed sleeps: CI runners are
   slower than a development machine. Take screenshots (`page.screenshot({ path: 'test-results/<name>.png' })`) and look at
