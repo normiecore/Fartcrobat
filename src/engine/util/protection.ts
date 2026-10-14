@@ -300,8 +300,12 @@ export function outputSizer(
   let out: PDFDocument | null = null
   return {
     size(doc) {
-      // Written as it would be saved (and never kept): the size includes the encryption.
-      if (protection?.certificate) return writePubSecDocument(m, doc, protection.certificate.writeKey, { saveOptions: OUTPUT_SAVE_OPTIONS }).length
+      if (protection?.certificate) {
+        // Written as it would be saved (and never kept): the size includes the encryption.
+        const bytes = writePubSecDocument(m, doc, protection.certificate.writeKey, { saveOptions: OUTPUT_SAVE_OPTIONS })
+        assertNoBridge(bytes, protection.certificate.state)
+        return bytes.length
+      }
       let buf: InstanceType<Mupdf['Buffer']>
       if (!protection) buf = doc.saveToBuffer(OUTPUT_SAVE_OPTIONS)
       else {
