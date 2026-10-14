@@ -57,11 +57,11 @@ test('an AI app lists the tools, opens a document and sees what the person is lo
   const s = await startSession()
   try {
     const { agent, page } = s
-    // tools/list: the 30 tools, with the instructions the model gets.
+    // tools/list: every catalogue tool, with the instructions the model gets.
     expect(agent.client.getServerVersion()).toMatchObject({ name: 'fartcrobat' })
     expect(agent.client.getInstructions()).toBe(SERVER_INSTRUCTIONS)
     const { tools } = await agent.client.listTools()
-    expect(tools).toHaveLength(30)
+    expect(tools).toHaveLength(AGENT_TOOLS.length)
     expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name))
 
     // Nothing open yet.

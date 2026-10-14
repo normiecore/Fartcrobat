@@ -1,16 +1,41 @@
 # Fartcrobat: notes for Claude sessions
 
 Open-source (AGPL) desktop PDF reader, editor and signer for Windows, macOS and Linux. The layout
-follows current Adobe Acrobat Pro. Fully offline, no AI features. LibreOffice is used for Office
-conversion when installed, with a built-in fallback.
+follows current Adobe Acrobat Pro. Fully offline, no built-in AI; optional local "agent access"
+(on by default) lets AI apps on the same computer, such as Claude Desktop, work with open
+documents over MCP. LibreOffice is used for Office conversion when installed, with a built-in
+fallback.
 
 ## State
 
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`).
-- PRs #1 (the app), #2 (fixes) and #3 (release publishing) are merged into `main`. CI is green.
-- About 717 unit tests (vitest) and 122 end-to-end tests (Playwright on Electron).
+- PRs #1 (the app), #2 (fixes), #3 (release publishing), #4 and #5 (agent access) are merged
+  into `main`. #6 (passwordless design and prototypes) merged into the session branch, not `main`;
+  #8 brings it to `main` together with the fix for the red CI after #5 (an e2e tool count).
+- About 917 unit tests (vitest) and 131 end-to-end tests (Playwright on Electron).
+
+### Work in progress (handoff, 14 Oct 2026)
+
+- **Agent access** (`docs/features/agent-access.md`): merged. A review found ~28 issues; the fixes
+  are being made on the session branch in three parts: the call runtime (`wait_for_result` and
+  "still_running" answers so waits on the person survive the AI app's ~60 s request timeout, one
+  agent prompt per window, handoff cancel semantics, disconnect that sticks, handles that change
+  on reload, Windows policy from HKLM), the tool handlers (confirm the first access to each network
+  host, refuse `\\?\` and `\\.\` paths, confirm undo/redo of the person's own steps, apply exactly
+  the confirmed redaction marks, copy-restricted documents readable but not exportable), and the
+  shim (start Fartcrobat through WMI on Windows so it escapes Claude Desktop's MSIX file-system
+  virtualisation; do not start the app when access is off). Nothing has been tried on Windows or
+  with a real Claude Desktop yet.
+- **Passwordless** (`docs/features/passwordless.md`): phases 0 and 1 (remembered passwords with
+  safeStorage, also for Digital IDs, silent unlock for agents) are built on branch
+  `claude/passwordless`, with review fixes in progress; not yet in a PR to `main`. Next session:
+  certificate encryption (phases 2 to 5: open Adobe.PubSec files, save them back, the Windows
+  certificate store and smart cards through PowerShell/.NET with the PIN kept for the session,
+  create certificate-encrypted files), then the `windows-latest` CI job and the owner's manual
+  Windows checklist. Prototypes for all of it are in `prototypes/passwordless/`.
+- Owner decisions so far are recorded at the top of both feature notes.
 
 ## Where things are
 
@@ -24,6 +49,10 @@ conversion when installed, with a built-in fallback.
   protect-optimize, redact, stamps-measure.
 - `src/engine/`: MuPDF (WASM) operations, one Web Worker per open document.
 - `src/renderer/src/`: app shell, viewer, command registry, UI kit.
+- Agent access: contracts in `src/shared/agent/` (tool catalogue, pipe protocol, main/window
+  messages), the feature in `src/features/agent-access/` (main process pipe server, window runner
+  and tool handlers, UI), the MCP shim in `src/agent-shim/` (built to `out/agent/shim.mjs` and the
+  Claude Desktop extension `out/agent/fartcrobat.mcpb`, shipped as `<resources>/agent/`).
 - `tests/engine/*.test.ts` (vitest), `tests/e2e/*.spec.ts` (Playwright), `tests/fixtures/`.
 
 Stack: Electron 44, electron-vite 5, React 19, zustand, TypeScript 6, mupdf 1.28 (WASM),
@@ -36,6 +65,7 @@ npm ci
 npm run dev                                   # app with hot reload
 npm run typecheck && npm run lint && npm test # run before every commit
 npm run build && xvfb-run -a npx playwright test [tests/e2e/<feature>.spec.ts]
+npm run build:agent                           # only the MCP shim and the .mcpb (build runs it too)
 npm run dist:linux                            # installers into release/
 npm run fixtures                              # regenerate base fixtures (needs reportlab, Pillow)
 ```
@@ -53,7 +83,8 @@ outputs are committed; tests never generate them at run time.
 - `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` runs e2e specs against a packaged
   build (the release workflow smoke-tests this way).
 - Every push to any branch runs CI and failures email the owner. Verify locally first, and put
-  `[skip ci]` in intermediate commits that don't need a run.
+  `[skip ci]` in intermediate commits that don't need a run. But make sure a PR's head commit runs
+  CI before it is merged: #5 was merged with `[skip ci]` on every commit and turned `main` red.
 
 ## CI and releases
 
@@ -114,6 +145,11 @@ Roughly in priority order:
 12. Windows and macOS installers are not end-to-end tested in CI (only Linux is).
 13. Prettier is configured but not applied across the repo.
 14. Upstream: mupdf.js `walk` should use `String.fromCodePoint`.
+15. Agent access on Windows: the named pipe uses Node's default DACL and accepts remote clients
+    (token auth still applies); a native helper could set an owner-only DACL and
+    PIPE_REJECT_REMOTE_CLIENTS. The `.mcpb` extension is not signed.
+16. Agent access has only been tested on Linux with a scripted MCP client; try it with Claude
+    Desktop on Windows (install the `.mcpb` from Preferences > AI apps).
 
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.
