@@ -249,6 +249,11 @@ export async function insertFileSources(
 ): Promise<number[] | null> {
   if (!sources.length) return null
   try {
+    // Pages of an open certificate-encrypted document (loadOpenDocument) open with its key.
+    for (const s of sources) {
+      const key = s.file.unlock?.certificateKey
+      if (key) await doc.core.doc.addCertificateKey(key)
+    }
     const created = await withProgress(
       sources.length > 1 ? `Inserting ${sources.length} files…` : `Inserting ${sources[0].file.name}…`,
       () =>
