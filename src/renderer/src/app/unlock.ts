@@ -337,9 +337,9 @@ export function digitalIdPromptMessage(
 
 /**
  * The order keys are tried in: `silent`, Windows store keys that need nothing and are not known to
- * be on a smart card, then Digital IDs whose password is saved; `hardware`, the other Windows store
- * keys (Windows asks for the PIN in its own dialog); `prompt`, Digital IDs whose password the
- * person types. Each key once, RSA keys only.
+ * be on a smart card, then Digital IDs whose password is saved (or that need none); `hardware`,
+ * the other Windows store keys (Windows asks for the PIN in its own dialog); `prompt`, Digital IDs
+ * whose password the person types. Each key once, RSA keys only.
  */
 export function orderCandidates(candidates: CertKeyCandidate[]): {
   silent: CertKeyCandidate[]
@@ -355,10 +355,12 @@ export function orderCandidates(candidates: CertKeyCandidate[]): {
   const store = usable.filter((c) => c.source === 'windows-store')
   const ids = usable.filter((c) => c.source === 'digital-id')
   const storeSilent = store.filter((c) => c.needs === 'nothing' && c.hardware !== true)
+  // A Digital ID opens silently when its password is saved (or it has none).
+  const idSilent = ids.filter((c) => c.passwordSaved || c.needs === 'nothing')
   return {
-    silent: [...storeSilent, ...ids.filter((c) => c.passwordSaved)],
+    silent: [...storeSilent, ...idSilent],
     hardware: store.filter((c) => !storeSilent.includes(c)),
-    prompt: ids.filter((c) => !c.passwordSaved)
+    prompt: ids.filter((c) => !idSilent.includes(c))
   }
 }
 
