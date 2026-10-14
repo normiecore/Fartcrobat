@@ -3,8 +3,8 @@
 // (src/features/protect-optimize/certificates.ts).
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import { PUBSEC_PERMISSION, type CertKeyCandidate, type CertKeyVia, type EncryptionCertificate, type PubSecRecipient } from '@shared/certkeys'
+import { describe, expect, it, vi } from 'vitest'
+import { PUBSEC_PERMISSION, type CertKeyCandidate, type CertKeyVia, type EncryptionCertificate, type PubSecRecipient, type WindowsStoreState } from '@shared/certkeys'
 import type { DocInfo, Permission } from '@shared/types'
 import type { DigitalIdRecord } from '@features/digital-signatures/types'
 import { certificatePermissionBits, certificatePermissions } from '@engine/crypt/keys'
@@ -14,6 +14,7 @@ import {
   EC_REASON,
   FULL_ACCESS,
   OPENS_FOR_ANYONE,
+  STORE_LIST_FAILED,
   addRecipients,
   certificateRecipientNames,
   certificateSecurity,
@@ -26,6 +27,7 @@ import {
   moveRecipient,
   ownVia,
   permissionSummary,
+  readRecipientSources,
   recipientFromDigitalId,
   recipientFromStore,
   recipientRefusal,
@@ -256,6 +258,63 @@ describe('protect-optimize: certificate recipients', () => {
     expect(removedGroupNotice(three, 3)).toBeNull()
     expect(removedGroupNotice([group(1, [alice])], 1)).toBeNull()
     expect(removedGroupNotice(three, 99)).toBeNull()
+  })
+
+  it('reads the recipient sources, and says why the Windows store list is empty when listing it failed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const ids = async () => [digitalId('Alice', 'alice.cer')]
+      const mine = storeCert('winstore/me-enc.cer', 'CurrentUser\\My', true)
+      const colleague = storeCert('winstore/colleague.cer', 'CurrentUser\\AddressBook', false)
+      const ok = await readRecipientSources({ ids, status: async () => ({ windowsStore: 'available' }), list: async () => [mine, colleague] })
+      expect(ok.ids.map((r) => r.cert.name)).toEqual(['Alice Test'])
+      expect(ok.store.map((r) => r.source)).toEqual(['windows-store', 'other-people'])
+      expect(ok).toMatchObject({ storeState: 'available' })
+      expect(ok.storeError).toBeUndefined()
+
+      // Not Windows, or the store is off: it is not listed at all.
+      let listed = false
+      const off = await readRecipientSources({
+        ids,
+        status: async () => ({ windowsStore: 'not-windows' }),
+        list: async () => {
+          listed = true
+          return []
+        }
+      })
+      expect(off).toMatchObject({ store: [], storeState: 'not-windows' })
+      expect(listed).toBe(false)
+
+      // The first use of the helper finds PowerShell in Constrained Language Mode: the status said
+      // 'available' (not tried yet) and says 'constrained' after the failed list.
+      const states: WindowsStoreState[] = ['available', 'constrained']
+      const constrained = await readRecipientSources({
+        ids,
+        status: async () => ({ windowsStore: states.shift()! }),
+        list: async () => {
+          throw new Error('The Windows certificate store is not available right now')
+        }
+      })
+      expect(constrained).toMatchObject({ store: [], storeState: 'constrained' })
+      expect(constrained.storeError).toBeUndefined()
+
+      // PowerShell missing: the tab goes away.
+      const missing = ['available', 'unavailable'] as WindowsStoreState[]
+      expect(
+        await readRecipientSources({ ids, status: async () => ({ windowsStore: missing.shift()! }), list: () => Promise.reject(new Error('no')) })
+      ).toMatchObject({ store: [], storeState: 'unavailable' })
+
+      // Still 'available' (a timeout): the tab stays, with the reason instead of "no certificates".
+      const timeout = await readRecipientSources({ ids, status: async () => ({ windowsStore: 'available' }), list: () => Promise.reject(new Error('timeout')) })
+      expect(timeout).toMatchObject({ store: [], storeState: 'available', storeError: STORE_LIST_FAILED })
+
+      // The status itself fails: no store tab, the Digital IDs still come.
+      const broken = await readRecipientSources({ ids, status: () => Promise.reject(new Error('ipc')), list: async () => [mine] })
+      expect(broken).toMatchObject({ store: [], storeState: 'unavailable' })
+      expect(broken.ids).toHaveLength(1)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('warns when none of the person’s own certificates is a recipient, and says how the reopened file was opened', () => {

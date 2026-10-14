@@ -1,6 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { FileKey2, IdCard, Info, Plus, SlidersHorizontal, Trash2, TriangleAlert, UserPlus, X } from 'lucide-react'
-import type { WindowsStoreState } from '@shared/certkeys'
 import {
   Button,
   Checkbox,
@@ -27,9 +26,8 @@ import {
   hasOwnRecipient,
   moveRecipient,
   permissionSummary,
+  readRecipientSources,
   recipientCount,
-  recipientFromDigitalId,
-  recipientFromStore,
   recipientRefusal,
   recipientWarnings,
   recipientsFromFile,
@@ -38,7 +36,8 @@ import {
   removedGroupNotice,
   type GroupSettings,
   type Recipient,
-  type RecipientGroup
+  type RecipientGroup,
+  type RecipientSources
 } from './certificates'
 import { PRINTING_OPTIONS, type PrintingAllowed } from './shared'
 
@@ -51,30 +50,13 @@ export interface CertificateEncryptChoice {
   own: Recipient | null
 }
 
-/** The certificates the person can pick recipients from. */
-export interface RecipientSources {
-  /** Preferences > Digital IDs. */
-  ids: Recipient[]
-  /** The Windows store: the person's own certificates, then Other People. */
-  store: Recipient[]
-  storeState: WindowsStoreState
-}
-
 /** Reads the Digital IDs and, on Windows, the certificate store. Never prompts. */
-export async function loadRecipientSources(): Promise<RecipientSources> {
-  const ids = (await loadIds()).map(recipientFromDigitalId).filter((r): r is Recipient => !!r)
-  let storeState: WindowsStoreState = 'unavailable'
-  let store: Recipient[] = []
-  try {
-    storeState = (await invoke('certkeys:status')).windowsStore
-    if (storeState === 'available') {
-      const list = await invoke('certkeys:listEncryptionCertificates', { includeOthers: true })
-      store = list.map(recipientFromStore).filter((r): r is Recipient => !!r)
-    }
-  } catch (err) {
-    console.warn('[protect-optimize] could not list the Windows certificates', err)
-  }
-  return { ids, store, storeState }
+export function loadRecipientSources(): Promise<RecipientSources> {
+  return readRecipientSources({
+    ids: loadIds,
+    status: () => invoke('certkeys:status'),
+    list: () => invoke('certkeys:listEncryptionCertificates', { includeOthers: true })
+  })
 }
 
 const dateText = (d: Date) => d.toISOString().slice(0, 10)
@@ -249,14 +231,21 @@ function RecipientPicker({ sources, taken, onDone }: { sources: RecipientSources
                 You have no Digital IDs yet. Create or import one in Preferences &gt; Digital IDs, or add a certificate file.
               </p>
             ))}
-          {tab === 'store' && (
-            <>
-              <h4 className={`${P}-cert-subhead`}>My certificates</h4>
-              {own.length ? list(own) : <p className={`${P}-hint`}>No personal certificates for encryption were found.</p>}
-              <h4 className={`${P}-cert-subhead`}>Other People</h4>
-              {others.length ? list(others) : <p className={`${P}-hint`}>No certificates in Other People.</p>}
-            </>
-          )}
+          {tab === 'store' &&
+            (sources.storeError ? (
+              // Listing failed: "no certificates" would not be true.
+              <div className={`${P}-note is-error`} role="alert" data-testid="cert-store-error">
+                <TriangleAlert size={16} />
+                <span>{sources.storeError}</span>
+              </div>
+            ) : (
+              <>
+                <h4 className={`${P}-cert-subhead`}>My certificates</h4>
+                {own.length ? list(own) : <p className={`${P}-hint`}>No personal certificates for encryption were found.</p>}
+                <h4 className={`${P}-cert-subhead`}>Other People</h4>
+                {others.length ? list(others) : <p className={`${P}-hint`}>No certificates in Other People.</p>}
+              </>
+            ))}
           {tab === 'files' && (
             <>
               <p className={`${P}-hint`}>

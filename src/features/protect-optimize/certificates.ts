@@ -1,9 +1,18 @@
 /**
  * Certificate security in the Protect tools: the recipients and permission groups of Protect >
  * Encrypt with Certificate, the person's own certificate, and what the Protect panel says about a
- * certificate-encrypted document. Pure: no DOM, no IPC (the dialog and flows.tsx do those).
+ * certificate-encrypted document. Pure: no DOM, no IPC (the dialog and flows.tsx do those, and
+ * pass IPC to readRecipientSources as ports).
  */
-import type { CertKeyCandidate, CertKeysProbeResult, CertKeyVia, EncryptionCertificate, PubSecRecipient } from '@shared/certkeys'
+import type {
+  CertKeyCandidate,
+  CertKeysProbeResult,
+  CertKeysStatus,
+  CertKeyVia,
+  EncryptionCertificate,
+  PubSecRecipient,
+  WindowsStoreState
+} from '@shared/certkeys'
 import type { CertificateGroup, DocInfo, Permission } from '@shared/types'
 import type { DocUnlock } from '@renderer/sdk'
 import { fromBase64 } from '@features/digital-signatures/lib/asn1'
@@ -110,6 +119,56 @@ export function recipientFromStore(c: EncryptionCertificate): Recipient | null {
 /** Certificates read from a .cer, .p7b or .p12 file. */
 export function recipientsFromFile(certs: CertificateInfo[], fileName: string): Recipient[] {
   return certs.map((cert) => ({ id: cert.sha256, cert, source: 'file', sourceLabel: fileName, mine: false }))
+}
+
+/** The certificates the person can pick recipients from. */
+export interface RecipientSources {
+  /** Preferences > Digital IDs. */
+  ids: Recipient[]
+  /** The Windows store: the person's own certificates, then Other People. */
+  store: Recipient[]
+  storeState: WindowsStoreState
+  /** The store can be used but could not be listed this time: said in its tab instead of "no certificates". */
+  storeError?: string
+}
+
+export const STORE_LIST_FAILED =
+  'The Windows certificate store could not be read. Close this window and try again, or use Digital IDs or certificate files.'
+
+/** Where readRecipientSources() reads from (IPC in the app, fakes in tests). */
+export interface RecipientSourcePorts {
+  ids(): Promise<DigitalIdRecord[]>
+  status(): Promise<Pick<CertKeysStatus, 'windowsStore'>>
+  list(): Promise<EncryptionCertificate[]>
+}
+
+/** Reads the Digital IDs and, when it can be used, the Windows certificate store. Never prompts. */
+export async function readRecipientSources(ports: RecipientSourcePorts): Promise<RecipientSources> {
+  const ids = (await ports.ids()).map(recipientFromDigitalId).filter((r): r is Recipient => !!r)
+  let storeState: WindowsStoreState = 'unavailable'
+  let store: Recipient[] = []
+  let storeError: string | undefined
+  try {
+    storeState = (await ports.status()).windowsStore
+    if (storeState === 'available') {
+      try {
+        store = (await ports.list()).map(recipientFromStore).filter((r): r is Recipient => !!r)
+      } catch (err) {
+        console.warn('[protect-optimize] could not list the Windows certificates', err)
+        // 'available' also means "not tried yet": the first list can find PowerShell restricted
+        // (Constrained Language Mode) or missing, which the status says now.
+        storeState = await ports.status().then(
+          (s) => s.windowsStore,
+          () => 'unavailable' as const
+        )
+        if (storeState === 'available') storeError = STORE_LIST_FAILED
+      }
+    }
+  } catch (err) {
+    console.warn('[protect-optimize] could not read the Windows certificate store status', err)
+    storeState = 'unavailable'
+  }
+  return { ids, store, storeState, ...(storeError ? { storeError } : {}) }
 }
 
 function viaMatches(via: CertKeyVia, r: Recipient): boolean {
