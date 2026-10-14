@@ -167,6 +167,11 @@ export interface Preferences {
   rememberPasswords: boolean
   /** The last choice in the password prompt's "Remember password on this device" checkbox. */
   rememberPasswordChecked: boolean
+  /**
+   * Check GitHub for a new release at start-up and every few hours (Preferences > Updates). A
+   * machine policy can turn it off. Manual checks work either way, unless the policy is off.
+   */
+  checkForUpdates: boolean
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -193,7 +198,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   hardwareAcceleration: true,
   agentAccess: true,
   rememberPasswords: true,
-  rememberPasswordChecked: true
+  rememberPasswordChecked: true,
+  checkForUpdates: true
 }
 
 export interface RecentFile {
