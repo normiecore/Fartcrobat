@@ -1,9 +1,11 @@
-import type { CertificateKey, CertificateLock } from '@shared/certkeys'
+import { EnvelopeBuildError, buildEnvelopedData } from '@features/digital-signatures/lib/envelopeBuild'
+import { PUBSEC_PERMISSION, type CertificateKey, type CertificateLock } from '@shared/certkeys'
 import type { DocInfo, DocMetadata, LockInfo, OpenResult, PageInfo, PasswordAccess, Permission, SaveOptions } from '@shared/types'
 import {
   assertNoBridge,
   certificateEncryptionLabel,
   certificateLockOf,
+  certificatePermissionBits,
   certificatePermissions,
   copyCertificateKey,
   keysOpen,
@@ -11,7 +13,11 @@ import {
   openWithKeys,
   plainSaveOptions,
   plainSessionBytes,
+  randomBytes,
   readPubSec,
+  sessionReadPassword,
+  writeKeyFor,
+  writePubSecDocument,
   writeSessionPubSec,
   type PubSecInfo,
   type PubSecState
@@ -333,16 +339,54 @@ export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
 }
 
 /**
- * HOOK for the engine outputs builder: SaveOptions.encryptCertificate, new certificate security
- * (Protect > Encrypt with Certificate) for any document, plain, password-protected or
- * certificate-encrypted. Build the envelopes, then
- * writePubSecDocument(s.mupdf, s.pdf, writeKeyFor(seed, envelopes, encryptMetadata),
- * { saveOptions, password: sessionReadPassword(s) }), check it with assertNoBridge(bytes, s.pubsec)
- * when the session is certificate-encrypted, and register the new key (src/engine/crypt/index.ts).
+ * SaveOptions.encryptCertificate: new certificate security (Protect > Encrypt with Certificate) for
+ * any document, plain, password-protected or certificate-encrypted. A new 20-byte seed, one
+ * envelope per group (buildEnvelopedData: AES-256-CBC content, RSA PKCS#1 v1.5 key transport,
+ * issuerAndSerialNumber copied from each certificate), written as V5 AES-256 by the PubSec writer.
+ * Replaces any other security. Always a full save; the live document is not changed.
+ *
+ * The engine keeps the new key (one per envelope) with full access, so reloading the saved bytes
+ * opens them without asking and the person who applied the security keeps full access in this tab,
+ * as in Acrobat, where new security applies from the next time the file is opened. Other engines
+ * open the file with the key the person's own certificate unwraps, and its permissions.
  */
 function saveWithNewCertificateSecurity(s: Session, opts: SaveOptions): Uint8Array {
-  void [s, opts]
-  throw new EngineError('Encrypting with certificates is not available yet', 'NOT_IMPLEMENTED')
+  const spec = opts.encryptCertificate!
+  if (opts.mode === 'incremental') throw new EngineError('Security changes need a full save', 'BAD_SAVE')
+  if (opts.encrypt || opts.decrypt) throw new EngineError('Choose one kind of security to save with', 'BAD_SAVE')
+  // As for Remove Security: only a recipient allowed to change the security may replace it.
+  if (s.pubsec && s.pubsec.access !== 'owner') {
+    throw new EngineError('Your certificate does not allow changing the security of this document', 'PERMISSION_DENIED')
+  }
+  const groups = (spec.groups ?? []).filter((g) => g.certificates?.length)
+  if (!groups.length) throw new EngineError('Add at least one recipient', 'NO_RECIPIENTS')
+  const seed = randomBytes(20)
+  const envelopes: Uint8Array[] = []
+  const permissions: number[] = []
+  for (const g of groups) {
+    const bits = certificatePermissionBits(g.permissions ?? {}, !!g.changeSecurity)
+    try {
+      envelopes.push(buildEnvelopedData(g.certificates, seed, bits))
+    } catch (err) {
+      if (err instanceof EnvelopeBuildError) throw new EngineError(err.message, err.code)
+      throw err
+    }
+    permissions.push(bits)
+  }
+  const key = writeKeyFor(seed, envelopes, spec.encryptMetadata ?? true)
+  opts = withRequiredSaveOptions(s, { ...opts, mode: 'full' })
+  // compress, compress-images, compress-fonts, clean, sanitize and the garbage level, no security.
+  const plainOptions = plainSaveOptions(
+    saveOptionString({ ...opts, encrypt: undefined, decrypt: false, encryptCertificate: undefined }, false)
+  )
+  const bytes = writePubSecDocument(s.mupdf, s.pdf, key, { saveOptions: plainOptions, password: sessionReadPassword(s) })
+  // No bridge of a certificate-encrypted session, and no Standard handler of a password-protected one.
+  assertNoBridge(bytes, s.pubsec)
+  envelopes.forEach((envelope, i) => {
+    s.certificateKeys.add({ envelope, seed, permissions: (permissions[i] | PUBSEC_PERMISSION.changeSecurity) >>> 0 })
+  })
+  seed.fill(0)
+  return bytes
 }
 
 /**

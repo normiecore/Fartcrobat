@@ -185,9 +185,9 @@ describe('saving back', () => {
     expect(await pageText(again, 2)).toBe(await pageText(await openWithKey(other, keyFor('text-v5.pdf', 'bob', other)), 0))
   })
 
-  it('new certificate security is not part of the engine core yet', async () => {
+  it('new certificate security needs recipients (passwordless-create.test.ts tests the rest)', async () => {
     const e = await openFixtureAs('v5-classic.pdf', 'alice')
-    await expect(e.doc.save({ encryptCertificate: { groups: [] } })).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
+    await expect(e.doc.save({ encryptCertificate: { groups: [] } })).rejects.toMatchObject({ code: 'NO_RECIPIENTS' })
   })
 })
 
