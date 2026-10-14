@@ -27,7 +27,7 @@ beforeEach(() => {
 
 let nextId = 1
 function request(tool: string, args: Record<string, unknown> = {}): AgentCallRequest {
-  return { id: `1:${nextId++}`, connectionId: 1, client: { name: 'claude-ai', version: '1.0' }, windowId: 'w1', tool, args }
+  return { id: `1:${nextId++}`, connectionId: 1, client: { name: 'claude-ai', version: '1.0' }, windowId: 'w1', currentWindow: true, tool, args }
 }
 
 type Handler = (args: Record<string, unknown>, ctx: import('@features/agent-access/tools/common').ToolContext) => Promise<any>
@@ -138,11 +138,13 @@ describe('executeCall', () => {
     })
     const doc = { id: 'doc-77', isClosed: false, state: { filePath: '/x/report.pdf', title: 'report.pdf' } }
     useApp.setState({ docs: [doc as any] })
-    const named = await runner.executeCall(request('undo', { handle: 'w1-doc-77' }), new AbortController().signal, d)
+    const named = await runner.executeCall(request('undo', { handle: `w1-${common.BOOT}-doc-77` }), new AbortController().signal, d)
     expect(named.audit).toEqual({ document: '/x/report.pdf', outcome: 'done' })
-    // the same document id in another window is another document
-    const elsewhere = await runner.executeCall(request('undo', { handle: 'w2-doc-77' }), new AbortController().signal, d)
+    // the same document id in another window, or from before a reload, is another document
+    const elsewhere = await runner.executeCall(request('undo', { handle: `w2-${common.BOOT}-doc-77` }), new AbortController().signal, d)
     expect(elsewhere.audit).toEqual({ outcome: 'done' })
+    const earlier = await runner.executeCall(request('undo', { handle: `w1-x${common.BOOT}-doc-77` }), new AbortController().signal, d)
+    expect(earlier.audit).toEqual({ outcome: 'done' })
     const bad = { ...request('undo'), args: ['nope'] as unknown as Record<string, unknown> }
     await runner.executeCall(bad, new AbortController().signal, d)
     expect(seen).toEqual({})

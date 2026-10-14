@@ -6,7 +6,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { SERVER_INSTRUCTIONS, type AgentClientInfo } from '@shared/agent/protocol'
 import { agentTool } from '@shared/agent/tools'
 import { AppLink, logToStderr } from './app'
-import { errorResult, mcpTools, toCallToolResult } from './result'
+import { clientInfo, errorResult, mcpTools, toCallToolResult } from './result'
 
 /** package.json's version, filled in by scripts/build-agent-shim.mjs. */
 declare const __FARTCROBAT_VERSION__: string | undefined
@@ -17,12 +17,7 @@ const TOOLS = mcpTools()
 /** The AI app as it introduced itself: per request on the 2026 protocol, at initialize before that. */
 function clientOf(server: Server, ctx: ServerContext): AgentClientInfo {
   const envelope = ctx.mcpReq.envelope as Record<string, unknown> | undefined
-  const info = (envelope?.[CLIENT_INFO_META_KEY] ?? server.getClientVersion()) as
-    { name?: unknown; version?: unknown } | undefined
-  return {
-    name: typeof info?.name === 'string' && info.name ? info.name : 'unknown',
-    version: typeof info?.version === 'string' ? info.version : ''
-  }
+  return clientInfo(envelope?.[CLIENT_INFO_META_KEY] ?? server.getClientVersion())
 }
 
 function createServer(link: AppLink): Server {

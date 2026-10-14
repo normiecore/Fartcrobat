@@ -222,6 +222,9 @@ export function buildUpdate(entry: unknown, index: number, annotType: (id: numbe
     else spec.color = color
   }
   const rect = entry.rect !== undefined ? rectValue(entry.rect, `${where}.rect`) : undefined
+  // Moved while the person looks at an apply_redactions confirmation, a mark would remove other content than they approved.
+  if (rect && type === 'Redact')
+    throw new InvalidArgs(`${where}: redaction marks cannot be moved or resized; delete the mark (delete_ids) and mark again with mark_redactions`)
   if (rect && (rect[2] - rect[0] < 1 || rect[3] - rect[1] < 1)) throw new InvalidArgs(`${where}.rect is too small`)
   if (!Object.keys(spec).length && !rect) throw new InvalidArgs(`${where} changes nothing: give text, color or rect`)
   return { id: entry.id, spec, rect }

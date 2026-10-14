@@ -109,18 +109,23 @@ export class DocumentModel {
   /** Sequence number of the newest ChangeSet whose journal and dirty state were applied. */
   private journalSeq = 0
 
+  /** The file a converted document (Word, an image...) was made from; null for a PDF opened as is. */
+  readonly sourcePath: string | null
+
   constructor(
     readonly engine: EngineClient,
     info: DocInfo,
     opts: {
       title: string
       filePath: string | null
+      sourcePath?: string | null
       zoomMode?: ZoomMode
       layout?: PageLayoutMode
       dirty?: boolean
       unlock?: DocUnlock | null
     }
   ) {
+    this.sourcePath = opts.sourcePath ?? null
     this.store = createStore<DocState>(() => ({
       info,
       title: opts.title,

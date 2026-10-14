@@ -40,8 +40,9 @@ export function rotation(angle: unknown): 90 | 180 | 270 {
 /**
  * Checks organize_pages arguments. `pages` is the parsed page range (0-based), or null when the
  * agent gave none: delete and move need one, rotate and duplicate default to every page.
+ * `platform` is the app's, for the path of insert_file.
  */
-export function planOrganize(args: OrganizeArgs, pages: number[] | null, pageCount: number): OrganizePlan {
+export function planOrganize(args: OrganizeArgs, pages: number[] | null, pageCount: number, platform: string): OrganizePlan {
   const op = args.operation as OrganizeOperation
   if (!OPERATIONS.includes(op)) throw new InvalidArgs(`operation must be one of ${OPERATIONS.join(', ')}`)
   const all = Array.from({ length: pageCount }, (_, i) => i)
@@ -65,7 +66,7 @@ export function planOrganize(args: OrganizeArgs, pages: number[] | null, pageCou
     }
     case 'insert_file':
       if (args.path === undefined) throw new InvalidArgs('insert_file needs path: the file whose pages to insert')
-      return { op, gap: gapBefore(args.before, pageCount), path: pathArg(args.path) }
+      return { op, gap: gapBefore(args.before, pageCount), path: pathArg(args.path, platform) }
     case 'duplicate':
       return { op, pages: pages ?? all }
   }

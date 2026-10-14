@@ -62,7 +62,7 @@ function open(...docs: DocumentModelType[]) {
 }
 
 function ctxFor(audit: Record<string, unknown> = {}, progress: number[][] = []) {
-  const request: AgentCallRequest = { id: '1:1', connectionId: 1, client: { name: 'claude-ai', version: '1' }, windowId: 'w1', tool: 'x', args: {} }
+  const request: AgentCallRequest = { id: '1:1', connectionId: 1, client: { name: 'claude-ai', version: '1' }, windowId: 'w1', currentWindow: true, tool: 'x', args: {} }
   return {
     request,
     signal: new AbortController().signal,
@@ -93,8 +93,8 @@ describe('list_documents and get_context', () => {
     useApp.setState({ activeDocId: b.doc.id })
     const { data } = (await call('list_documents')) as { data: { documents: any[] } }
     expect(data.documents).toEqual([
-      { handle: `w1-${a.doc.id}`, title: 'text.pdf', path: '/docs/text.pdf', pageCount: 5, currentPage: 1, active: false, unsavedChanges: false, encrypted: false },
-      { handle: `w1-${b.doc.id}`, title: 'form.pdf', path: null, pageCount: 1, currentPage: 1, active: true, unsavedChanges: false, encrypted: false }
+      { handle: `w1-${common.BOOT}-${a.doc.id}`, title: 'text.pdf', path: '/docs/text.pdf', pageCount: 5, currentPage: 1, active: false, unsavedChanges: false, encrypted: false },
+      { handle: `w1-${common.BOOT}-${b.doc.id}`, title: 'form.pdf', path: null, pageCount: 1, currentPage: 1, active: true, unsavedChanges: false, encrypted: false }
     ])
   })
 
@@ -102,9 +102,26 @@ describe('list_documents and get_context', () => {
     await expectToolError(call('get_context'), 'no_document')
     const a = modelFor(await openFixture('text.pdf'), 'text.pdf')
     open(a.doc)
-    await expectToolError(call('get_context', { handle: 'w2-' + a.doc.id }), 'stale_handle')
-    await expectToolError(call('get_context', { handle: 'w1-doc-99999' }), 'stale_handle')
+    await expectToolError(call('get_context', { handle: `w2-${common.BOOT}-${a.doc.id}` }), 'stale_handle')
+    await expectToolError(call('get_context', { handle: `w1-${common.BOOT}-doc-99999` }), 'stale_handle')
     await expectToolError(call('get_context', { handle: 'nonsense' }), 'stale_handle')
+    // A handle from before the window reloaded (or the app restarted) names no document now.
+    await expectToolError(call('get_context', { handle: `w1-old${common.BOOT}-${a.doc.id}` }), 'stale_handle')
+    // Home with tabs still open: the agent is pointed at list_documents.
+    useApp.setState({ activeDocId: null })
+    await expect(call('get_context')).rejects.toMatchObject({ code: 'no_document', message: expect.stringContaining('list_documents') })
+  })
+
+  it('reports the active tab of a window the person is not using as not active', async () => {
+    const a = modelFor(await openFixture('text.pdf'), 'text.pdf')
+    open(a.doc)
+    const background = ctxFor()
+    background.request.currentWindow = false
+    const { data } = (await call('list_documents', {}, background)) as { data: { documents: any[] } }
+    expect(data.documents).toEqual([expect.objectContaining({ active: false })])
+    const context = (await call('get_context', {}, background)) as { data: any }
+    expect(context.data).toMatchObject({ document: { active: false }, lookingAtThisDocument: false })
+    expect(((await call('get_context')) as { data: any }).data).toMatchObject({ document: { active: true }, lookingAtThisDocument: true })
   })
 
   it('describes the page, the selected text with its rects and the search', async () => {
@@ -175,9 +192,9 @@ describe('get_document_info', () => {
     const form = modelFor(await openFixture('form.pdf'), 'form.pdf')
     const enc = modelFor(await openFixture('encrypted.pdf', 'secret'), 'encrypted.pdf')
     open(form.doc, enc.doc)
-    const f = (await call('get_document_info', { handle: `w1-${form.doc.id}` })) as { data: any }
+    const f = (await call('get_document_info', { handle: `w1-${common.BOOT}-${form.doc.id}` })) as { data: any }
     expect(f.data.form).toEqual({ hasForm: true, fieldCount: 8 })
-    const e = (await call('get_document_info', { handle: `w1-${enc.doc.id}` })) as { data: any }
+    const e = (await call('get_document_info', { handle: `w1-${common.BOOT}-${enc.doc.id}` })) as { data: any }
     expect(e.data.encrypted).toBe(true)
     expect(e.data.security.encryption).toBeTruthy()
     expect(e.data.security.permissions.print).toBe(true)
@@ -218,7 +235,7 @@ describe('get_page_text', () => {
     const lines = data.pages[0].lines
     expect(lines[0]).toEqual({ text: 'Chapter 1', rect: expect.any(Array) })
     expect(lines.find((l: any) => l.text.startsWith('Hello Fartcrobat page 1')).rect[0]).toBeCloseTo(72, 0)
-    const s = (await call('get_page_text', { handle: `w1-${scan.doc.id}` })) as { data: any }
+    const s = (await call('get_page_text', { handle: `w1-${common.BOOT}-${scan.doc.id}` })) as { data: any }
     expect(s.data.pagesWithoutText).toEqual([1])
     expect(s.data.hint).toMatch(/recognize_text/)
   })
@@ -319,7 +336,7 @@ describe('list_annotations, list_form_fields, list_signatures', () => {
     const { data } = (await call('list_form_fields')) as { data: any }
     expect(data.count).toBe(8)
     expect(data.fields.find((f: any) => f.name === 'country').value).toBe('Canada')
-    const none = (await call('list_form_fields', { handle: `w1-${text.doc.id}` })) as { data: any }
+    const none = (await call('list_form_fields', { handle: `w1-${common.BOOT}-${text.doc.id}` })) as { data: any }
     expect(none.data).toMatchObject({ count: 0, fields: [] })
   })
 
@@ -334,7 +351,7 @@ describe('list_annotations, list_form_fields, list_signatures', () => {
     expect(typeof s.signer).toBe('string')
     expect(['valid', 'unknown-identity', 'warning', 'unknown', 'invalid']).toContain(s.status)
     expect(s.summary).toBeTruthy()
-    const none = (await call('list_signatures', { handle: `w1-${text.doc.id}` })) as { data: any }
+    const none = (await call('list_signatures', { handle: `w1-${common.BOOT}-${text.doc.id}` })) as { data: any }
     expect(none.data).toEqual({ signatures: [], unsignedFields: [] })
   })
 })
@@ -344,13 +361,13 @@ describe('show_in_app', () => {
     const a = modelFor(await openFixture('text.pdf'), 'text.pdf')
     const b = modelFor(await openFixture('text.pdf'), 'other.pdf')
     open(a.doc, b.doc)
-    const { data } = (await call('show_in_app', { handle: `w1-${b.doc.id}`, page: 3, rect: [100, 200, 50, 150] })) as { data: any }
+    const { data } = (await call('show_in_app', { handle: `w1-${common.BOOT}-${b.doc.id}`, page: 3, rect: [100, 200, 50, 150] })) as { data: any }
     expect(useApp.getState().activeDocId).toBe(b.doc.id)
     expect(invoked).toContain('feature:agent-access:attention')
     expect(b.seen.scrolled).toEqual([{ page: 2, rect: [50, 150, 100, 200] }])
     expect(ui.useFlash.getState().flash).toMatchObject({ docId: b.doc.id, page: 2, rect: [50, 150, 100, 200] })
     expect(data).toEqual({ page: 3, rect: [50, 150, 100, 200] })
-    await call('show_in_app', { handle: `w1-${a.doc.id}`, page: 5 })
+    await call('show_in_app', { handle: `w1-${common.BOOT}-${a.doc.id}`, page: 5 })
     expect(a.seen.pages).toEqual([4])
   })
 

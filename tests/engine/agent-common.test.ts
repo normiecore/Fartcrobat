@@ -95,21 +95,27 @@ describe('rectArg', () => {
 })
 
 describe('handles', () => {
-  it('parses window and document ids', () => {
-    expect(common.parseHandle('w3-doc-12')).toEqual({ windowId: 'w3', docId: 'doc-12' })
-    expect(common.parseHandle('w10-doc-1')).toEqual({ windowId: 'w10', docId: 'doc-1' })
+  it('parses window and document ids, and whether the handle is from this load of the window', () => {
+    const { BOOT, parseHandle } = common
+    expect(BOOT).toMatch(/^[a-z0-9]+$/)
+    expect(parseHandle(`w3-${BOOT}-doc-12`)).toEqual({ windowId: 'w3', docId: 'doc-12', current: true })
+    expect(parseHandle(`w10-${BOOT}-doc-1`)).toEqual({ windowId: 'w10', docId: 'doc-1', current: true })
+    // Before a reload or a restart the same window and document numbers named other documents.
+    const earlier = BOOT === 'zz9' ? 'zz8' : 'zz9'
+    expect(parseHandle(`w3-${earlier}-doc-12`)).toEqual({ windowId: 'w3', docId: 'doc-12', current: false })
   })
 
   it('rejects anything else', () => {
     const { parseHandle } = common
-    for (const h of ['', 'doc-1', 'w3', 'w3-doc-', 'w3-doc-x', 'x3-doc-1', 'w3-doc-1-extra', ' w3-doc-1', 'w-doc-1']) expect(parseHandle(h)).toBeNull()
+    for (const h of ['', 'doc-1', 'w3', 'w3-doc-1', 'w3-b-doc-', 'w3-b-doc-x', 'x3-b-doc-1', 'w3-b-doc-1-extra', ' w3-b-doc-1', 'w-b-doc-1', 'w3--doc-1', 'w3-B-doc-1'])
+      expect(parseHandle(h)).toBeNull()
   })
 
   it('makes handles that parse back', () => {
     const ctx = { request: { windowId: 'w7' } } as Parameters<typeof common.handleOf>[0]
     const handle = common.handleOf(ctx, { id: 'doc-4' } as Parameters<typeof common.handleOf>[1])
-    expect(handle).toBe('w7-doc-4')
-    expect(common.parseHandle(handle)).toEqual({ windowId: 'w7', docId: 'doc-4' })
+    expect(handle).toBe(`w7-${common.BOOT}-doc-4`)
+    expect(common.parseHandle(handle)).toEqual({ windowId: 'w7', docId: 'doc-4', current: true })
   })
 })
 

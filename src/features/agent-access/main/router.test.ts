@@ -79,7 +79,7 @@ class FakeSink {
   }
 }
 
-function setup(host: FakeHost, opts: { readyTimeoutMs?: number } = {}) {
+function setup(host: FakeHost, opts: { readyTimeoutMs?: number; cancelWaitMs?: number } = {}) {
   const sink = new FakeSink()
   const router = new AgentRouter(
     host,
@@ -104,7 +104,7 @@ describe('agent router', () => {
   it('sends a call with a handle to the window named in it', async () => {
     const host = new FakeHost('w1', 'w2')
     const { router, sink } = setup(host)
-    const c = call('get_page_text', { handle: 'w1-doc-3', pages: '2' })
+    const c = call('get_page_text', { handle: 'w1-b1-doc-3', pages: '2' })
     router.call(c)
     await waitFor(() => expect(host.requests).toHaveLength(1))
     const { windowId, request } = host.requests[0]
@@ -114,6 +114,7 @@ describe('agent router', () => {
       connectionId: 1,
       client: c.client,
       windowId: 'w1',
+      currentWindow: expect.any(Boolean),
       tool: 'get_page_text',
       args: c.args
     })
@@ -138,16 +139,24 @@ describe('agent router', () => {
   it('answers stale_handle for an unknown window or a malformed handle without reaching a window', () => {
     const host = new FakeHost('w1')
     const { router, sink } = setup(host)
-    router.call(call('get_context', { handle: 'w7-doc-1' }))
+    router.call(call('get_context', { handle: 'w7-b1-doc-1' }))
     router.call(call('get_context', { handle: 'doc-1' }))
     router.call(call('get_context', { handle: 12 }))
+    // The old form, without the window's load token.
+    router.call(call('get_context', { handle: 'w1-doc-1' }))
     expect(host.requests).toHaveLength(0)
     expect(sink.results.map((r) => r.result.error?.code)).toEqual([
       'stale_handle',
       'stale_handle',
-      'invalid_args'
+      'invalid_args',
+      'stale_handle'
     ])
-    expect(sink.audits.map((a) => a.error)).toEqual(['stale_handle', 'stale_handle', 'invalid_args'])
+    expect(sink.audits.map((a) => a.error)).toEqual([
+      'stale_handle',
+      'stale_handle',
+      'invalid_args',
+      'stale_handle'
+    ])
   })
 
   it('answers unknown_tool without reaching a window', () => {
@@ -172,18 +181,20 @@ describe('agent router', () => {
     await waitFor(() => expect(host.requests).toHaveLength(3))
     expect(host.requests.map((r) => r.windowId)).toEqual(['w1', 'w2', 'w3'])
     expect(host.requests.map((r) => r.request.windowId)).toEqual(['w1', 'w2', 'w3'])
+    // Only the window the person uses reports its active tab as active.
+    expect(host.requests.map((r) => r.request.currentWindow)).toEqual([false, true, false])
     const id = host.requests[0].request.id
     // Answers arrive in any order; one window fails and is left out.
     router.reply('w3', {
       id,
-      result: { data: { documents: [{ handle: 'w3-doc-1' }, { handle: 'w3-doc-2' }] } }
+      result: { data: { documents: [{ handle: 'w3-b1-doc-1' }, { handle: 'w3-b1-doc-2' }] } }
     })
     router.reply('w2', { id, result: { error: { code: 'failed', message: 'boom' } } })
     expect(sink.results).toHaveLength(0)
-    router.reply('w1', { id, result: { data: { documents: [{ handle: 'w1-doc-1' }] } } })
+    router.reply('w1', { id, result: { data: { documents: [{ handle: 'w1-b1-doc-1' }] } } })
     expect(sink.results).toHaveLength(1)
     expect(sink.results[0].result).toEqual({
-      data: { documents: [{ handle: 'w1-doc-1' }, { handle: 'w3-doc-1' }, { handle: 'w3-doc-2' }] }
+      data: { documents: [{ handle: 'w1-b1-doc-1' }, { handle: 'w3-b1-doc-1' }, { handle: 'w3-b1-doc-2' }] }
     })
   })
 
@@ -201,10 +212,10 @@ describe('agent router', () => {
     router.call(call('list_documents'))
     await waitFor(() => expect(host.requests).toHaveLength(2))
     const id = host.requests[0].request.id
-    router.reply('w1', { id, result: { data: { documents: [{ handle: 'w1-doc-1' }] } } })
+    router.reply('w1', { id, result: { data: { documents: [{ handle: 'w1-b1-doc-1' }] } } })
     host.close('w2')
     router.windowGone('w2')
-    expect(sink.results[0].result).toEqual({ data: { documents: [{ handle: 'w1-doc-1' }] } })
+    expect(sink.results[0].result).toEqual({ data: { documents: [{ handle: 'w1-b1-doc-1' }] } })
   })
 
   it('sends other calls to the focused window', async () => {
@@ -252,7 +263,7 @@ describe('agent router', () => {
   it('forwards a cancel to the window and waits for its answer', async () => {
     const host = new FakeHost('w1')
     const { router, sink } = setup(host)
-    const c = call('recognize_text', { handle: 'w1-doc-1' })
+    const c = call('recognize_text', { handle: 'w1-b1-doc-1' })
     router.call(c)
     await waitFor(() => expect(host.requests).toHaveLength(1))
     router.cancel(1, c.id)
@@ -263,6 +274,32 @@ describe('agent router', () => {
       result: { error: { code: 'aborted', message: 'The call was cancelled.' } }
     })
     expect(sink.results[0].result.error?.code).toBe('aborted')
+    expect(sink.audits[0]).toMatchObject({ outcome: 'cancelled', error: 'aborted' })
+  })
+
+  it('ends a cancelled call whose window never answers', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = new FakeHost('w1')
+      const { router, sink } = setup(host, { cancelWaitMs: 1000 })
+      const c = call('recognize_text', { handle: 'w1-b1-doc-1' })
+      router.call(c)
+      await vi.waitFor(() => expect(host.requests).toHaveLength(1))
+      router.cancel(1, c.id)
+      router.connectionClosed(1)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(sink.results).toHaveLength(0)
+      expect(router.running(1)).toBe(1)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(sink.results.map((r) => r.result.error?.code)).toEqual(['aborted'])
+      expect(sink.audits.map((a) => a.outcome)).toEqual(['cancelled'])
+      expect(router.running(1)).toBe(0)
+      // A late answer changes nothing.
+      router.reply('w1', { id: `1:${c.id}`, result: { data: 'late' } })
+      expect(sink.results).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('cancels a call that has not reached a window yet at once', async () => {
@@ -273,6 +310,8 @@ describe('agent router', () => {
     router.call(c)
     router.cancel(1, c.id)
     expect(sink.results[0].result.error?.code).toBe('aborted')
+    // Recorded as cancelled, as when the window ends a cancelled call.
+    expect(sink.audits[0]).toMatchObject({ outcome: 'cancelled', error: 'aborted' })
     host.setReady('w1')
     await new Promise((r) => setImmediate(r))
     expect(host.requests).toHaveLength(0)
@@ -282,9 +321,9 @@ describe('agent router', () => {
   it('cancels the calls of a connection that went away', async () => {
     const host = new FakeHost('w1', 'w2')
     const { router } = setup(host)
-    const a = call('recognize_text', { handle: 'w1-doc-1' }, 4)
-    const b = call('get_context', { handle: 'w2-doc-1' }, 4)
-    const other = call('get_context', { handle: 'w2-doc-1' }, 5)
+    const a = call('recognize_text', { handle: 'w1-b1-doc-1' }, 4)
+    const b = call('get_context', { handle: 'w2-b1-doc-1' }, 4)
+    const other = call('get_context', { handle: 'w2-b1-doc-1' }, 5)
     router.call(a)
     router.call(b)
     router.call(other)
@@ -299,8 +338,8 @@ describe('agent router', () => {
   it('answers stale_handle for calls running in a window that closes', async () => {
     const host = new FakeHost('w1', 'w2')
     const { router, sink } = setup(host)
-    const a = call('apply_redactions', { handle: 'w1-doc-1' })
-    const b = call('get_context', { handle: 'w2-doc-1' })
+    const a = call('apply_redactions', { handle: 'w1-b1-doc-1' })
+    const b = call('get_context', { handle: 'w2-b1-doc-1' })
     router.call(a)
     router.call(b)
     await waitFor(() => expect(host.requests).toHaveLength(2))
@@ -329,7 +368,7 @@ describe('agent router', () => {
   it('ignores answers and progress from a window the call was not sent to', async () => {
     const host = new FakeHost('w1', 'w2')
     const { router, sink } = setup(host)
-    const c = call('recognize_text', { handle: 'w1-doc-1' })
+    const c = call('recognize_text', { handle: 'w1-b1-doc-1' })
     router.call(c)
     await waitFor(() => expect(host.requests).toHaveLength(1))
     const id = host.requests[0].request.id
@@ -342,5 +381,177 @@ describe('agent router', () => {
     router.reply('w1', { id, result: { data: 'ok' } })
     router.reply('w1', { id, result: { data: 'twice' } })
     expect(sink.results.map((r) => r.result)).toEqual([{ data: 'ok' }])
+  })
+
+  describe('calls that answer still_running', () => {
+    const TICKET = 'w2-t1-b1'
+    const stillRunning = (ticket = TICKET) => ({
+      data: { status: 'still_running', ticket, message: 'Still running.' }
+    })
+
+    /** A call answered still_running by w2; returns the call. */
+    async function ticketed(host: FakeHost, router: AgentRouter, connectionId = 1) {
+      const c = call('apply_redactions', { handle: 'w2-b1-doc-1' }, connectionId)
+      router.call(c)
+      await waitFor(() =>
+        expect(host.requests.some((r) => r.request.id === `${connectionId}:${c.id}`)).toBe(true)
+      )
+      router.reply('w2', {
+        id: `${connectionId}:${c.id}`,
+        result: stillRunning(),
+        audit: { outcome: 'pending', summary: `still running, ticket ${TICKET}` }
+      })
+      return c
+    }
+
+    it('sends wait_for_result to the window named in the ticket, whichever window is focused', async () => {
+      const host = new FakeHost('w1', 'w2')
+      host.focused = 'w1'
+      const { router, sink } = setup(host)
+      const c = await ticketed(host, router)
+      expect(sink.results).toEqual([{ connectionId: 1, id: c.id, result: stillRunning() }])
+      expect(sink.audits[0]).toMatchObject({ tool: 'apply_redactions', outcome: 'pending' })
+      expect(router.running(1)).toBe(0)
+      const w = call('wait_for_result', { ticket: TICKET })
+      router.call(w)
+      await waitFor(() => expect(host.requests).toHaveLength(2))
+      expect(host.requests[1]).toMatchObject({
+        windowId: 'w2',
+        request: { tool: 'wait_for_result', args: { ticket: TICKET } }
+      })
+      router.reply('w2', {
+        id: `1:${w.id}`,
+        result: { data: { applied: 2 } },
+        audit: { outcome: 'done', summary: 'apply_redactions: applied 2 redactions on pages 1, 2' }
+      })
+      expect(sink.results[1]).toEqual({ connectionId: 1, id: w.id, result: { data: { applied: 2 } } })
+      expect(sink.audits[1]).toMatchObject({
+        tool: 'wait_for_result',
+        args: { ticket: TICKET },
+        outcome: 'done',
+        summary: 'apply_redactions: applied 2 redactions on pages 1, 2'
+      })
+      // Collected: closing the connection now stops nothing.
+      router.connectionClosed(1)
+      await new Promise((r) => setImmediate(r))
+      expect(host.requests).toHaveLength(2)
+    })
+
+    it('refuses tickets it cannot route without reaching a window', () => {
+      const host = new FakeHost('w1')
+      const { router, sink } = setup(host)
+      router.call(call('wait_for_result', {}))
+      router.call(call('wait_for_result', { ticket: 7 }))
+      router.call(call('wait_for_result', { ticket: 'w1-doc-1' }))
+      router.call(call('wait_for_result', { ticket: 'w9-t1-b1' }))
+      expect(host.requests).toHaveLength(0)
+      expect(sink.results.map((r) => r.result.error?.code)).toEqual([
+        'invalid_args',
+        'invalid_args',
+        'invalid_args',
+        'invalid_args'
+      ])
+    })
+
+    it('stops the calls a connection had tickets for when it closes', async () => {
+      const host = new FakeHost('w1', 'w2')
+      const { router, sink } = setup(host)
+      await ticketed(host, router, 3)
+      router.connectionClosed(3)
+      await waitFor(() => expect(host.requests).toHaveLength(2))
+      const stop = host.requests[1]
+      expect(stop).toMatchObject({
+        windowId: 'w2',
+        request: { connectionId: 3, tool: 'wait_for_result', args: { ticket: TICKET, cancel: true } }
+      })
+      router.reply('w2', {
+        id: stop.request.id,
+        result: { error: { code: 'aborted', message: 'The call was cancelled.' } },
+        audit: { outcome: 'cancelled', summary: 'apply_redactions' }
+      })
+      expect(sink.audits.at(-1)).toMatchObject({
+        connection: 3,
+        tool: 'wait_for_result',
+        outcome: 'cancelled',
+        summary: 'apply_redactions'
+      })
+      expect(router.running(3)).toBe(0)
+    })
+
+    it('stops a call the agent cancelled while its still_running answer was on the way', async () => {
+      // The cancel reaches main before the answer.
+      const host = new FakeHost('w1', 'w2')
+      const { router } = setup(host)
+      const a = call('apply_redactions', { handle: 'w2-b1-doc-1' })
+      router.call(a)
+      await waitFor(() => expect(host.requests).toHaveLength(1))
+      router.cancel(1, a.id)
+      router.reply('w2', { id: `1:${a.id}`, result: stillRunning('w2-t1-b1') })
+      await waitFor(() => expect(host.requests).toHaveLength(2))
+      expect(host.requests[1].request).toMatchObject({
+        tool: 'wait_for_result',
+        args: { ticket: 'w2-t1-b1', cancel: true }
+      })
+
+      // The answer reaches main before the cancel.
+      const b = call('sign_document', { handle: 'w2-b1-doc-1' })
+      router.call(b)
+      await waitFor(() => expect(host.requests).toHaveLength(3))
+      router.reply('w2', { id: `1:${b.id}`, result: stillRunning('w2-t2-b1') })
+      router.cancel(1, b.id)
+      await waitFor(() => expect(host.requests).toHaveLength(4))
+      expect(host.requests[3].request).toMatchObject({
+        tool: 'wait_for_result',
+        args: { ticket: 'w2-t2-b1', cancel: true }
+      })
+    })
+
+    it('keeps the ticket when only a wait for it was cancelled', async () => {
+      const host = new FakeHost('w1', 'w2')
+      const { router } = setup(host)
+      await ticketed(host, router)
+      const w = call('wait_for_result', { ticket: TICKET })
+      router.call(w)
+      await waitFor(() => expect(host.requests).toHaveLength(2))
+      router.cancel(1, w.id)
+      router.reply('w2', {
+        id: `1:${w.id}`,
+        result: { error: { code: 'aborted', message: 'The call was cancelled.' } }
+      })
+      // Not stopped by that cancel, but still stopped when the connection closes.
+      expect(host.requests).toHaveLength(2)
+      router.connectionClosed(1)
+      await waitFor(() => expect(host.requests).toHaveLength(3))
+      expect(host.requests[2].request).toMatchObject({
+        tool: 'wait_for_result',
+        args: { ticket: TICKET, cancel: true }
+      })
+    })
+
+    it('forgets the tickets of a window that closes', async () => {
+      const host = new FakeHost('w1', 'w2')
+      const { router, sink } = setup(host)
+      await ticketed(host, router)
+      host.close('w2')
+      router.windowGone('w2')
+      router.connectionClosed(1)
+      router.call(call('wait_for_result', { ticket: TICKET }))
+      await new Promise((r) => setImmediate(r))
+      expect(host.requests).toHaveLength(1)
+      expect(sink.results.at(-1)?.result.error?.code).toBe('invalid_args')
+    })
+
+    it('takes still_running answers only from the window that runs the call', async () => {
+      const host = new FakeHost('w1', 'w2')
+      const { router } = setup(host)
+      const c = call('apply_redactions', { handle: 'w2-b1-doc-1' })
+      router.call(c)
+      await waitFor(() => expect(host.requests).toHaveLength(1))
+      // w2 cannot hand out w1's ticket.
+      router.reply('w2', { id: `1:${c.id}`, result: stillRunning('w1-t1-b1') })
+      router.connectionClosed(1)
+      await new Promise((r) => setImmediate(r))
+      expect(host.requests).toHaveLength(1)
+    })
   })
 })

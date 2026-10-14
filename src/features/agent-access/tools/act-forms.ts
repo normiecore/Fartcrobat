@@ -71,18 +71,29 @@ function choice(field: FormField, value: string): string | null {
 export function normalizeValue(field: FormField, value: unknown): NormalizedValue {
   const name = `"${field.name}"`
   switch (field.type) {
-    case 'text':
+    case 'text': {
       if (typeof value !== 'string') throw new InvalidArgs(`${name} is a text field: give its value as a string`)
+      // Refused rather than cut, as typing in Fartcrobat stops at the limit: a cut date or number would be wrong.
+      const max = field.widget.maxLen
+      if (max > 0 && value.length > max)
+        throw new InvalidArgs(`${name} takes at most ${max} characters${field.widget.comb ? ', one per box' : ''} (got ${value.length})`)
       return value
+    }
     case 'checkbox': {
-      if (typeof value === 'boolean') return value ? field.onStates[0] : 'Off'
+      // Check boxes that share a name but have different export values work like radio buttons.
+      const group = field.onStates.length > 1
+      const pick = () => {
+        if (group) throw new InvalidArgs(`${name} is a group of check boxes: give the value of the box to tick, one of ${quoteList(field.onStates)}, or false`)
+        return field.onStates[0]
+      }
+      if (typeof value === 'boolean') return value ? pick() : 'Off'
       if (typeof value !== 'string') throw new InvalidArgs(`${name} is a check box: give true or false`)
       if (field.onStates.includes(value)) return value
       const loose = field.onStates.find((s) => s.toLowerCase() === value.toLowerCase())
       if (loose) return loose
       if (OFF.test(value.trim())) return 'Off'
-      if (ON.test(value.trim())) return field.onStates[0]
-      throw new InvalidArgs(`${name} is a check box: give true or false${field.onStates.length > 1 ? `, or one of ${quoteList(field.onStates)}` : ''}`)
+      if (ON.test(value.trim())) return pick()
+      throw new InvalidArgs(`${name} is a check box: give true or false${group ? `, or one of ${quoteList(field.onStates)}` : ''}`)
     }
     case 'radio': {
       if (value === false) return 'Off'

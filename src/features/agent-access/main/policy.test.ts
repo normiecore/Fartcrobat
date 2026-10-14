@@ -5,8 +5,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { computeMac, isNonce, verifyMac } from './auth'
 import { launchInfo } from './endpoint'
-import { readMachinePolicy } from '@main/policy'
-import { agentAccessState, currentPolicy, machinePolicyFile, readPolicy } from './policy'
+import { parseRegQuery, readMachinePolicy, windowsPolicy, type RunFile } from '@main/policy'
+import { agentAccessState, currentPolicy, machinePolicy, machinePolicyFile, readPolicy } from './policy'
 
 describe('agent access policy', () => {
   let dir: string
@@ -39,17 +39,18 @@ describe('agent access policy', () => {
     expect(agentAccessState(false, 'enabled')).toEqual({ enabled: true, policy: 'enabled' })
   })
 
-  it('prefers the machine file to the one FARTCROBAT_POLICY_FILE names', () => {
+  it('prefers the machine policy to the file FARTCROBAT_POLICY_FILE names', async () => {
     const on = policy('on.json', '{"agentAccess":{"enabled":true}}')
     const off = policy('off.json', '{"agentAccess":{"enabled":false}}')
     const missing = join(dir, 'missing.json')
-    expect(currentPolicy(missing, {})).toBeNull()
-    expect(currentPolicy(missing, { FARTCROBAT_POLICY_FILE: off })).toBe('disabled')
-    expect(currentPolicy(off, { FARTCROBAT_POLICY_FILE: on })).toBe('disabled')
-    expect(currentPolicy(on, { FARTCROBAT_POLICY_FILE: off })).toBe('enabled')
+    const machine = (file: string) => machinePolicy('linux', {}, file)
+    expect(currentPolicy(await machine(missing), {})).toBeNull()
+    expect(currentPolicy(await machine(missing), { FARTCROBAT_POLICY_FILE: off })).toBe('disabled')
+    expect(currentPolicy(await machine(off), { FARTCROBAT_POLICY_FILE: on })).toBe('disabled')
+    expect(currentPolicy(await machine(on), { FARTCROBAT_POLICY_FILE: off })).toBe('enabled')
   })
 
-  it('reads each section on its own (agent access and remembered passwords share the file)', () => {
+  it('reads each section on its own (agent access and remembered passwords share the policy)', async () => {
     const both = policy('both.json', '{"agentAccess":{"enabled":true},"rememberPasswords":{"enabled":false}}')
     expect(readPolicy(both)).toBe('enabled')
     expect(readPolicy(both, 'rememberPasswords')).toBe('disabled')
@@ -57,43 +58,89 @@ describe('agent access policy', () => {
     expect(readPolicy(agentOnly, 'rememberPasswords')).toBeNull()
     expect(readPolicy(policy('broken.json', '{'), 'rememberPasswords')).toBe('disabled')
     // Sections fall back to FARTCROBAT_POLICY_FILE one by one.
-    expect(readMachinePolicy({ file: agentOnly, env: { FARTCROBAT_POLICY_FILE: both } })).toEqual({
+    expect(await readMachinePolicy({ file: agentOnly, env: { FARTCROBAT_POLICY_FILE: both } })).toEqual({
       agentAccess: 'disabled',
       rememberPasswords: 'disabled'
     })
-    expect(readMachinePolicy({ file: join(dir, 'missing.json'), env: {} })).toEqual({ agentAccess: null, rememberPasswords: null })
+    expect(await readMachinePolicy({ file: join(dir, 'missing.json'), env: {} })).toEqual({
+      agentAccess: null,
+      rememberPasswords: null
+    })
   })
 
-  it('keeps a broken policy file apart from an explicit "enabled": false', () => {
+  it('keeps a broken policy file apart from an explicit "enabled": false', async () => {
     // A typo in a file about agent access only: every section fails closed, but readMachinePolicy
     // says 'invalid', so remembering is turned off without wiping saved passwords.
     const typo = policy('typo.json', '{"agentAccess":{"enabled":false},}')
     expect(readPolicy(typo)).toBe('disabled')
     expect(readPolicy(typo, 'rememberPasswords')).toBe('disabled')
-    expect(currentPolicy(typo, {}, 'rememberPasswords')).toBe('disabled')
-    expect(readMachinePolicy({ file: typo, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
+    expect(await readMachinePolicy({ file: typo, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
     const notBoolean = policy('no.json', '{"rememberPasswords":{"enabled":"no"}}')
     expect(readPolicy(notBoolean, 'rememberPasswords')).toBe('disabled')
-    expect(readMachinePolicy({ file: notBoolean, env: {} })).toEqual({ agentAccess: null, rememberPasswords: 'invalid' })
+    expect(await readMachinePolicy({ file: notBoolean, env: {} })).toEqual({ agentAccess: null, rememberPasswords: 'invalid' })
     // A file that exists but cannot be read (here a folder: EISDIR).
-    expect(currentPolicy(dir, {})).toBe('disabled')
-    expect(readMachinePolicy({ file: dir, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
+    expect(currentPolicy(await machinePolicy('linux', {}, dir), {})).toBe('disabled')
+    expect(await readMachinePolicy({ file: dir, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
     // Only an explicit false reads as 'disabled'.
     const off = policy('off.json', '\uFEFF{"rememberPasswords":{"enabled":false}}')
-    expect(readMachinePolicy({ file: off, env: {} }).rememberPasswords).toBe('disabled')
+    expect((await readMachinePolicy({ file: off, env: {} })).rememberPasswords).toBe('disabled')
     // A broken machine file still beats FARTCROBAT_POLICY_FILE; a broken test file is invalid too.
     const on = policy('on.json', '{"rememberPasswords":{"enabled":true}}')
-    expect(readMachinePolicy({ file: typo, env: { FARTCROBAT_POLICY_FILE: on } }).rememberPasswords).toBe('invalid')
-    expect(readMachinePolicy({ file: join(dir, 'missing.json'), env: { FARTCROBAT_POLICY_FILE: typo } }).rememberPasswords).toBe('invalid')
+    expect((await readMachinePolicy({ file: typo, env: { FARTCROBAT_POLICY_FILE: on } })).rememberPasswords).toBe('invalid')
+    expect(
+      (await readMachinePolicy({ file: join(dir, 'missing.json'), env: { FARTCROBAT_POLICY_FILE: typo } })).rememberPasswords
+    ).toBe('invalid')
   })
 
-  it('knows where each system keeps the machine policy', () => {
-    expect(machinePolicyFile('win32', { ProgramData: 'D:\\ProgramData' })).toBe(
-      'D:\\ProgramData\\Fartcrobat\\policy.json'
-    )
-    expect(machinePolicyFile('win32', {})).toBe('C:\\ProgramData\\Fartcrobat\\policy.json')
-    expect(machinePolicyFile('darwin', {})).toBe('/Library/Application Support/Fartcrobat/policy.json')
-    expect(machinePolicyFile('linux', {})).toBe('/etc/fartcrobat/policy.json')
+  it('knows where macOS and Linux keep the machine policy file, and that Windows has none', () => {
+    expect(machinePolicyFile('darwin')).toBe('/Library/Application Support/Fartcrobat/policy.json')
+    expect(machinePolicyFile('linux')).toBe('/etc/fartcrobat/policy.json')
+    // A file under ProgramData could be planted by any user, or redirected with %ProgramData%.
+    expect(machinePolicyFile('win32')).toBeNull()
+  })
+
+  it('reads the Windows policy from HKLM with reg.exe', async () => {
+    const calls: { file: string; args: string[] }[] = []
+    const reg =
+      (err: (Error & { code?: unknown }) | null, stdout = ''): RunFile =>
+      (file, args, done) => {
+        calls.push({ file, args })
+        done(err, stdout)
+      }
+    const out = (...values: string[]) =>
+      `\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Fartcrobat\r\n${values.map((v) => `    ${v}\r\n`).join('')}\r\n`
+    expect(await windowsPolicy({ SystemRoot: 'D:\\Win' }, reg(null, out('AgentAccess    REG_DWORD    0x1')))).toEqual({
+      agentAccess: 'enabled',
+      rememberPasswords: null
+    })
+    expect(calls[0]).toEqual({ file: 'D:\\Win\\System32\\reg.exe', args: ['query', 'HKLM\\SOFTWARE\\Policies\\Fartcrobat'] })
+    expect(
+      await windowsPolicy({}, reg(null, out('AgentAccess    REG_DWORD    0x0', 'RememberPasswords    REG_DWORD    0x0')))
+    ).toEqual({ agentAccess: 'disabled', rememberPasswords: 'disabled' })
+    expect(calls[1].file).toBe('C:\\Windows\\System32\\reg.exe')
+    // Not set: the preference decides.
+    expect(await windowsPolicy({}, reg(Object.assign(new Error('not found'), { code: 1 })))).toEqual({
+      agentAccess: null,
+      rememberPasswords: null
+    })
+    expect(await windowsPolicy({}, reg(Object.assign(new Error('spawn'), { code: 'ENOENT' })))).toEqual({
+      agentAccess: null,
+      rememberPasswords: null
+    })
+    // Set to something it cannot read, or the query failed otherwise: invalid, which turns the
+    // setting off without wiping saved passwords.
+    expect(await windowsPolicy({}, reg(null, out('RememberPasswords    REG_SZ    yes')))).toEqual({
+      agentAccess: null,
+      rememberPasswords: 'invalid'
+    })
+    expect(await windowsPolicy({}, reg(Object.assign(new Error('timed out'), { code: null })))).toEqual({
+      agentAccess: 'invalid',
+      rememberPasswords: 'invalid'
+    })
+    expect(parseRegQuery('    agentaccess    REG_DWORD    0x00000001', 'agentAccess')).toBe('enabled')
+    expect(parseRegQuery('    RememberPasswords    REG_DWORD    0x2', 'rememberPasswords')).toBe('invalid')
+    expect(parseRegQuery('    RememberPasswordsX    REG_DWORD    0x1', 'rememberPasswords')).toBeNull()
+    expect(parseRegQuery('', 'agentAccess')).toBeNull()
   })
 })
 
@@ -118,15 +165,34 @@ describe('agent handshake helpers', () => {
     expect(isNonce('zz'.repeat(32))).toBe(false)
   })
 
+  it('starts an AppImage again from its file, not from its temporary mount', () => {
+    const mount = '/tmp/.mount_FartcrAb12'
+    const own = { APPIMAGE: '/home/me/Apps/Fartcrobat.AppImage', APPDIR: mount }
+    expect(
+      launchInfo(`${mount}/fartcrobat`, true, `${mount}/resources/app.asar`, '1.2.3', own).executable
+    ).toBe('/home/me/Apps/Fartcrobat.AppImage')
+    expect(
+      launchInfo(`${mount}/fartcrobat`, true, '', '1.2.3', { ...own, APPDIR: `${mount}/` }).executable
+    ).toBe('/home/me/Apps/Fartcrobat.AppImage')
+    // Inherited from an AppImage that started this copy (an AI app): not this app's file.
+    const inherited = { APPIMAGE: '/home/me/Claude.AppImage', APPDIR: '/tmp/.mount_ClaudeX' }
+    expect(launchInfo('/opt/Fartcrobat/fartcrobat', true, '', '1.2.3', inherited).executable).toBe(
+      '/opt/Fartcrobat/fartcrobat'
+    )
+    expect(
+      launchInfo('/repo/node_modules/electron/dist/electron', false, '/repo', '1.2.3', own).executable
+    ).toBe('/repo/node_modules/electron/dist/electron')
+  })
+
   it('tells the shim how to start the app', () => {
     expect(
-      launchInfo('/opt/Fartcrobat/fartcrobat', true, '/opt/Fartcrobat/resources/app.asar', '1.2.3')
+      launchInfo('/opt/Fartcrobat/fartcrobat', true, '/opt/Fartcrobat/resources/app.asar', '1.2.3', {})
     ).toEqual({
       executable: '/opt/Fartcrobat/fartcrobat',
       args: [],
       appVersion: '1.2.3'
     })
-    expect(launchInfo('/repo/node_modules/electron/dist/electron', false, '/repo', '1.2.3')).toEqual({
+    expect(launchInfo('/repo/node_modules/electron/dist/electron', false, '/repo', '1.2.3', {})).toEqual({
       executable: '/repo/node_modules/electron/dist/electron',
       args: ['/repo'],
       appVersion: '1.2.3'

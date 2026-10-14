@@ -12,12 +12,17 @@ export function disconnect(connectionId?: number) {
   void call.catch((err) => showError(err, 'Could not disconnect'))
 }
 
+export function allow(clientName: string) {
+  void invoke('feature:agent-access:allow', clientName).catch((err) => showError(err, 'Could not allow the AI app again'))
+}
+
 const OUTCOME: Record<CallRecord['outcome'], { label: string; icon: typeof Check }> = {
   running: { label: 'Running', icon: Loader2 },
   done: { label: 'Done', icon: Check },
   declined: { label: 'You declined', icon: ShieldX },
   cancelled: { label: 'Cancelled', icon: Ban },
-  error: { label: 'Failed', icon: CircleAlert }
+  error: { label: 'Failed', icon: CircleAlert },
+  pending: { label: 'Still running', icon: Loader2 }
 }
 
 function CallRow({ call }: { call: CallRecord }) {
@@ -63,8 +68,32 @@ export function ConnectionList({ connections, compact }: { connections: AgentCon
               {c.running ? ` · ${c.running} running` : ''}
             </span>
           </div>
-          <Button size="sm" icon={Unplug} onClick={() => disconnect(c.id)}>
+          <Button size="sm" icon={Unplug} title="It cannot connect again until you allow it." onClick={() => disconnect(c.id)}>
             Disconnect
+          </Button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** AI apps the person disconnected (by the name they report): they stay out until allowed again. */
+export function BlockedList({ blocked }: { blocked: string[] }) {
+  if (!blocked.length) return null
+  return (
+    <ul className={`${P}-connections`} aria-label="Disconnected AI apps">
+      {blocked.map((name) => (
+        <li key={name} className={`${P}-connection is-blocked`}>
+          <Unplug size={16} />
+          <div className={`${P}-connection-text`}>
+            <span className={`${P}-connection-name`}>
+              {appLabel(name)}
+              {name && appLabel(name) !== name ? <span className="shell-muted"> ({name})</span> : null}
+            </span>
+            <span className="shell-muted">Disconnected. It cannot connect again until you allow it.</span>
+          </div>
+          <Button size="sm" onClick={() => allow(name)}>
+            Allow again
           </Button>
         </li>
       ))}
@@ -93,6 +122,7 @@ export function ActivityView({ onLeave }: { onLeave?: () => void }) {
         }
       >
         <ConnectionList connections={connections} compact />
+        <BlockedList blocked={status?.blocked ?? []} />
       </Section>
       <Section title="Recent activity">
         {calls.length ? (

@@ -26,9 +26,11 @@ import { binderName } from '@features/organize-pages/CombineDialog'
 import type organizeOps from '@features/organize-pages/engine'
 import type { SourceRef } from '@features/organize-pages/engine'
 import { loadFile, orgOps, withPassword } from '@features/organize-pages/files'
+import { initialViewSettled } from '@features/navigation/initialView'
 import {
   ToolError,
   auditName,
+  clientLabel,
   describeDoc,
   parsePages,
   resolveDoc,
@@ -42,12 +44,15 @@ import {
   exportPath,
   imageExportPaths,
   imageFormatFor,
+  networkHost,
+  newNetworkHosts,
   openErrorCode,
   pathArg,
   pdfPath,
   samePath,
   unsupportedMessage
 } from './act-files'
+import { convertedFrom } from './context'
 import {
   cancelled,
   checked,
@@ -109,6 +114,63 @@ async function confirmReplace(ctx: ToolContext, doc: DocumentModel | null, paths
   )
 }
 
+// ---- network locations -----------------------------------------------------------------------
+
+/**
+ * Network computers the person allowed in this window, by AI app connection: an AI app that
+ * connects again (or works in another window) is asked about each computer again.
+ */
+const allowedHosts = new Map<number, Set<string>>()
+/** The network question on screen, so calls made meanwhile wait for its answer instead of asking again. */
+let asking: Promise<unknown> = Promise.resolve()
+
+/** Computers the connection may use without asking: those allowed, and those of open documents. */
+function knownHosts(connectionId: number): Set<string> {
+  const hosts = new Set(allowedHosts.get(connectionId))
+  for (const d of useApp.getState().docs) {
+    if (d.isClosed) continue
+    for (const p of [d.state.filePath, d.sourcePath]) {
+      const host = p ? networkHost(p) : null
+      if (host) hosts.add(host)
+    }
+  }
+  return hosts
+}
+
+/**
+ * Asks the person before an AI app first uses files on another computer on the network. On
+ * Windows, even checking whether a file exists there signs in to that computer with the person's
+ * account, so this runs before any file access. Declining ends the call.
+ */
+export async function confirmNetworkPaths(ctx: ToolContext, doc: DocumentModel | null, paths: string[], what: string) {
+  const connection = ctx.request.connectionId
+  if (!newNetworkHosts(paths, knownHosts(connection)).length) return
+  const ask = asking.then(async () => {
+    const hosts = newNetworkHosts(paths, knownHosts(connection))
+    if (!hosts.length) return
+    const one = hosts.length === 1
+    await requireConfirmation(
+      ctx,
+      doc,
+      {
+        title: one ? 'Use a network location?' : 'Use network locations?',
+        message: paragraphs(
+          `${what} uses ${one ? `files on \\\\${hosts[0]}, another computer` : `files on ${hosts.length} other computers`} on your network. Windows signs in to ${one ? 'it' : 'them'} with your account as soon as Fartcrobat looks for a file there.`,
+          `If you allow it, ${clientLabel(ctx)} can use files there without asking again until it disconnects or you close this window.`
+        ),
+        confirmLabel: 'Allow',
+        details: hosts.map((h) => `\\\\${h}`)
+      },
+      one ? `use the network location \\\\${hosts[0]}` : `use ${hosts.length} network locations`
+    )
+    const allowed = allowedHosts.get(connection) ?? new Set<string>()
+    for (const h of hosts) allowed.add(h)
+    allowedHosts.set(connection, allowed)
+  })
+  asking = ask.catch(() => {})
+  await ask
+}
+
 /** Shows a page once the tab's viewer is up (it may restore the last viewed page first). */
 async function showPage(doc: DocumentModel, index: number) {
   doc.set({ currentPage: index })
@@ -118,19 +180,39 @@ async function showPage(doc: DocumentModel, index: number) {
 
 // ---- open ------------------------------------------------------------------------------------
 
+/** The tab showing a file: opened from it, or converted from it and not saved as a PDF yet. */
+function openTabOf(path: string): DocumentModel | null {
+  const matches = (d: DocumentModel) =>
+    samePath(d.state.filePath, path, platform) || (!d.state.filePath && samePath(d.sourcePath, path, platform))
+  return useApp.getState().docs.find((d) => !d.isClosed && matches(d)) ?? null
+}
+
+/**
+ * Waits for a new tab's Initial View (the page the document asks to open at), which lands after
+ * the tab is added, so the page reported or shown is not overridden by it. Applying it needs the
+ * window to draw, which a hidden window may not do: wait 3 s at most.
+ */
+async function initialViewApplied(doc: DocumentModel) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  await Promise.race([initialViewSettled(doc), new Promise((r) => (timer = setTimeout(r, 3000)))])
+  clearTimeout(timer)
+}
+
 const openDocument: ToolHandler = async (args, ctx) => {
-  const path = checked(() => pathArg(args.path))
+  const path = checked(() => pathArg(args.path, platform))
   const page = checked(() => optInteger(args.page, 'page', 1, Number.MAX_SAFE_INTEGER))
-  let doc = useApp.getState().docs.find((d) => !d.isClosed && samePath(d.state.filePath, path, platform)) ?? null
+  let doc = openTabOf(path)
   const alreadyOpen = !!doc
   if (doc) useApp.setState({ activeDocId: doc.id })
   else {
+    await confirmNetworkPaths(ctx, null, [path], `Opening “${basename(path)}”`)
     if (!(await exists(path))) throw new ToolError('file_error', `There is no file at ${path}`)
     let failure: unknown = null
     const [opened] = await handoff(ctx, () => openPaths([path], { onError: (_p, err) => (failure = err) }))
     if (failure !== null) throw openFailure(path, failure)
     if (!opened) throw cancelled(ctx, null, `did not open ${path}`, `${basename(path)} was not opened: the person cancelled its password prompt.`)
     doc = opened
+    await initialViewApplied(doc)
   }
   let shown = doc.state.currentPage
   let note: string | undefined
@@ -141,7 +223,7 @@ const openDocument: ToolHandler = async (args, ctx) => {
   }
   // How a protected file was unlocked, never with the password.
   ctx.audit({ document: auditName(doc), summary: alreadyOpen ? 'already open' : (unlockAuditSummary(doc.state.unlock) ?? 'opened') })
-  return { data: { ...describeDoc(ctx, doc), alreadyOpen, page: shown + 1, ...(note ? { note } : {}) } }
+  return { data: { ...describeDoc(ctx, doc), ...convertedFrom(doc), alreadyOpen, page: shown + 1, ...(note ? { note } : {}) } }
 }
 
 // ---- save ------------------------------------------------------------------------------------
@@ -164,8 +246,9 @@ async function writeDocument(doc: DocumentModel, path: string): Promise<number> 
 
 const saveDocumentTool: ToolHandler = async (args, ctx) => {
   const doc = resolveDoc(ctx, args.handle)
-  const target = args.path === undefined ? null : checked(() => pdfPath(pathArg(args.path)))
+  const target = args.path === undefined ? null : checked(() => pdfPath(pathArg(args.path, platform)))
   const current = doc.state.filePath
+  if (target) await confirmNetworkPaths(ctx, doc, [target], `Saving “${doc.state.title}”`)
   await commitTyping()
   let path: string
   if (!target || samePath(target, current, platform)) {
@@ -209,14 +292,15 @@ const exportDocument: ToolHandler = async (args, ctx) => {
   const doc = resolveDoc(ctx, args.handle)
   const format = args.format as ExportFormat
   if (!FORMATS.includes(format)) throw new ToolError('invalid_args', `format must be one of ${FORMATS.join(', ')}`)
-  const raw = checked(() => pathArg(args.path))
+  const raw = checked(() => pathArg(args.path, platform))
   const pages = parsePages(args.pages, doc.pageCount)
   const imageFormat = checked(() => imageFormatFor(raw, args.image_format))
   const dpi = checked(() => optInteger(args.dpi, 'dpi', 36, 600)) ?? DEFAULT_EXPORT_OPTIONS.image.dpi
+  // Like Fartcrobat's own Export. Reading the text (get_page_text) stays possible, as on screen.
   if (!doc.state.info.permissions.copy)
     throw new ToolError(
       'failed',
-      `The security settings of “${doc.state.title}” don't allow copying or exporting its content. If the person knows its permissions password, remove_security can lift that.`
+      `The security settings of “${doc.state.title}” don't allow copying or exporting its content, so Fartcrobat does not export it. You can still read it with get_page_text. If the person wants it exported and knows its permissions password, remove_security can lift the restriction.`
     )
   const options: ExportOptions = {
     ...DEFAULT_EXPORT_OPTIONS,
@@ -226,6 +310,7 @@ const exportDocument: ToolHandler = async (args, ctx) => {
   const singleFile = format !== 'image' || imageFormat === 'tiff'
   const target = exportPath(raw, format, imageFormat)
   const targets = singleFile ? [target] : imageExportPaths(raw, pages, imageFormat as 'png' | 'jpeg')
+  await confirmNetworkPaths(ctx, doc, targets, `Exporting “${doc.state.title}”`)
   await confirmReplace(ctx, doc, targets, `Exporting “${doc.state.title}”`)
   const engine: ExportEngine = doc.ops<typeof exportOps>('export-create')
   let result
@@ -300,10 +385,13 @@ const extractPages: ToolHandler = async (args, ctx) => {
   if (args.pages === undefined || args.pages === null || args.pages === '')
     throw new ToolError('invalid_args', 'pages is required: the pages to extract, e.g. "3-5"')
   const pages = parsePages(args.pages, doc.pageCount)
-  const target = args.path === undefined ? null : checked(() => pdfPath(pathArg(args.path)))
+  const target = args.path === undefined ? null : checked(() => pdfPath(pathArg(args.path, platform)))
   if (target && samePath(target, doc.state.filePath, platform))
     throw new ToolError('invalid_args', 'path is the document\'s own file: choose another file for the extracted pages')
-  if (target) await confirmReplace(ctx, doc, [target], 'Extracting the pages')
+  if (target) {
+    await confirmNetworkPaths(ctx, doc, [target], 'Extracting the pages')
+    await confirmReplace(ctx, doc, [target], 'Extracting the pages')
+  }
   const bytes = await engineTask('Could not extract the pages', () => runAsAgent(doc, () => orgOps(doc).extract(pages)))
   const what = plural(pages.length, 'page')
   if (target) {
@@ -323,8 +411,9 @@ const extractPages: ToolHandler = async (args, ctx) => {
 
 const combineFiles: ToolHandler = async (args, ctx) => {
   if (!Array.isArray(args.paths) || args.paths.length < 2) throw new ToolError('invalid_args', 'paths must list at least two files to combine')
-  const paths = checked(() => (args.paths as unknown[]).map((p, i) => pathArg(p, `paths[${i}]`)))
-  const target = args.path === undefined ? null : checked(() => pdfPath(pathArg(args.path)))
+  const paths = checked(() => (args.paths as unknown[]).map((p, i) => pathArg(p, platform, `paths[${i}]`)))
+  const target = args.path === undefined ? null : checked(() => pdfPath(pathArg(args.path, platform)))
+  await confirmNetworkPaths(ctx, null, target ? [...paths, target] : paths, 'Combining the files')
   for (const p of paths) if (!(await exists(p))) throw new ToolError('file_error', `There is no file at ${p}`)
   if (target) await confirmReplace(ctx, null, [target], 'Combining the files')
   const engine = new EngineClient()

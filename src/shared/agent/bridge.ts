@@ -4,8 +4,11 @@
  * window, and writes the audit log; a window runs the tool and replies.
  *
  * Routing rules (main process):
- * - A call whose args.handle is set goes to the window named in the handle ("w<windowId>-<docId>").
- *   An unknown window gives the error stale_handle without reaching any renderer.
+ * - A call whose args.handle is set goes to the window named at the start of the handle
+ *   ("<windowId>-<boot>-doc-<n>", where windowId is "w<webContents id>"; <boot> changes on every
+ *   renderer load, so handles from before a reload are stale). An unknown window gives the error
+ *   stale_handle without reaching any renderer.
+ * - wait_for_result goes to the window named at the start of args.ticket ("<windowId>-...").
  * - list_documents goes to every window; main concatenates their `data.documents` arrays
  *   (in window creation order) and returns { documents }.
  * - Anything else goes to the focused window, or the most recently focused one, creating a
@@ -21,6 +24,11 @@ export interface AgentCallRequest {
   client: AgentClientInfo
   /** This window's id, as handles spell it ("w<webContents id>"). Handles minted here use it. */
   windowId: string
+  /**
+   * True when this window is the focused one, or the most recently focused: calls without a
+   * handle go there, and only its active document is reported as `active`.
+   */
+  currentWindow: boolean
   tool: string
   args: Record<string, unknown>
 }
@@ -36,8 +44,12 @@ export interface AgentCallReply {
 export interface AgentAuditDetail {
   /** File path, or "untitled: <title>" for documents that are not saved yet. */
   document?: string
-  /** 'done' | 'declined' (the person said no) | 'cancelled' (a dialog was dismissed) | 'error'. */
-  outcome: 'done' | 'declined' | 'cancelled' | 'error'
+  /**
+   * 'done' | 'declined' (the person said no) | 'cancelled' (a dialog was dismissed or the agent
+   * cancelled) | 'error' | 'pending' (answered still_running; the outcome is logged later with the
+   * wait_for_result call that returns it).
+   */
+  outcome: 'done' | 'declined' | 'cancelled' | 'error' | 'pending'
   /** Short description of what changed, never document content: "3 redaction marks", "saved to <path>". */
   summary?: string
 }
@@ -68,6 +80,8 @@ export interface AgentStatus {
   /** The pipe is listening. */
   listening: boolean
   connections: AgentConnectionInfo[]
+  /** AI apps (by reported name) the person disconnected this session; they cannot reconnect until allowed again. */
+  blocked: string[]
   /** Path of the audit log. */
   auditLog: string
   /** Last start-up problem (e.g. could not create the pipe), shown in Preferences. */

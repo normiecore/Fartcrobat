@@ -32,9 +32,9 @@ function trustedSender(e: IpcMainInvokeEvent): boolean {
 
 /** Registers the 'passwords:*' channels. Call once the app is ready. */
 export function registerPasswordHandlers() {
-  // Read once (rememberPolicy says what turns remembering off and what also wipes the store).
-  const policy = rememberPolicy(readMachinePolicy().rememberPasswords)
-  const policyOff = policy.off
+  // Read once (rememberPolicy says what turns remembering off and what also wipes the store). On
+  // Windows that takes a moment (reg.exe), so every handler waits for it, and any wipe, first.
+  let policyOff = true
   const disabled = () => (policyOff ? 'policy' : settings().prefs.rememberPasswords === false ? 'off' : null)
   let instance: SavedPasswordStore | null = null
   const store = () =>
@@ -45,7 +45,19 @@ export function registerPasswordHandlers() {
         : electronCipher(safeStorage, { platform: process.platform, disabled, ready: () => app.isReady() }),
       fs: nodeStoreFs
     }))
-  if (policy.wipe) void store().forget('all').catch(() => {})
+  const policyRead = readMachinePolicy()
+    .catch(() => ({ rememberPasswords: 'invalid' as const }))
+    .then(async (machine) => {
+      const policy = rememberPolicy(machine.rememberPasswords)
+      policyOff = policy.off
+      if (policy.wipe) await store().forget('all').catch(() => {})
+    })
   const handlers = passwordHandlers({ store, allowed: trustedSender, platform: process.platform, policyOff: () => policyOff })
-  for (const channel of Object.keys(handlers) as PasswordChannel[]) handle(channel, handlers[channel] as never)
+  for (const channel of Object.keys(handlers) as PasswordChannel[]) {
+    const run = handlers[channel] as (...args: unknown[]) => Promise<unknown>
+    handle(channel, (async (...args: unknown[]) => {
+      await policyRead
+      return run(...args)
+    }) as never)
+  }
 }

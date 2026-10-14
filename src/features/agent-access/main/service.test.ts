@@ -193,7 +193,10 @@ describeUnix('agent access pipe', () => {
     expect(statSync(ep.address).isSocket()).toBe(true)
     expect(statSync(ep.address).mode & 0o777).toBe(0o600)
     expect(statSync(dirname(ep.address)).mode & 0o777).toBe(0o700)
-    expect(JSON.parse(readFileSync(join(userData, 'agent-access', 'app.json'), 'utf8'))).toEqual(launch)
+    expect(JSON.parse(readFileSync(join(userData, 'agent-access', 'app.json'), 'utf8'))).toEqual({
+      ...launch,
+      enabled: true
+    })
     expect(service.status()).toMatchObject({
       enabled: true,
       policy: null,
@@ -347,10 +350,62 @@ describeUnix('agent access pipe', () => {
         .sort()
     ).toEqual(['claude-ai', 'other-app'])
     service.disconnect(a.connectionId)
+    // The AI app is told why before the connection closes.
+    expect((await a.client.next('notice')).event).toBe('disconnected')
     await a.client.whenClosed()
     await waitFor(() => expect(service.status().connections.map((c) => c.id)).toEqual([b.connectionId]))
     b.client.send({ t: 'ping' })
     await b.client.next('pong')
+  })
+
+  it('keeps a disconnected AI app out until the person allows it again', async () => {
+    await start()
+    const a = await connected('claude-ai')
+    a.client.send({ t: 'call', id: 'slow', tool: 'recognize_text', args: {} })
+    await waitFor(() => expect(host.requests).toHaveLength(1))
+    service.disconnect(a.connectionId)
+    await a.client.whenClosed()
+    // Its running call is cancelled in the window.
+    await waitFor(() => expect(host.cancels).toEqual([{ windowId: 'w1', id: `${a.connectionId}:slow` }]))
+    expect(service.status().blocked).toEqual(['claude-ai'])
+    await waitFor(() => expect(statuses.at(-1)?.blocked).toEqual(['claude-ai']))
+
+    // Reconnecting is refused with a reason; another AI app still connects.
+    const again = await connect()
+    const hello = await again.next('hello')
+    again.send({
+      t: 'auth',
+      protocol: AGENT_PROTOCOL_VERSION,
+      mac: hmac(endpoint().token, `client:${hello.nonce}`),
+      nonce: randomBytes(32).toString('hex'),
+      client: { name: 'claude-ai', version: '1.0' },
+      shimVersion: '0.1.0'
+    })
+    const refused = await again.next('reject')
+    expect(refused.code).toBe('blocked')
+    expect(refused.message).toMatch(/disconnected this AI app/)
+    await again.whenClosed()
+    await connected('other-app')
+
+    service.allow('claude-ai')
+    expect(service.status().blocked).toEqual([])
+    await connected('claude-ai')
+  })
+
+  it('drops the oldest connection still in its handshake rather than refusing new ones', async () => {
+    await start()
+    const idle: TestClient[] = []
+    for (let i = 0; i < 20; i++) {
+      const c = await connect()
+      await c.next('hello')
+      idle.push(c)
+    }
+    // Sixteen may wait for their handshake at once: the four oldest were closed.
+    await waitFor(() =>
+      expect(idle.map((c) => c.closed)).toEqual([...Array(4).fill(true), ...Array(16).fill(false)])
+    )
+    // A real AI app still gets in.
+    await connected('claude-ai')
   })
 
   it('routes a call to its window, relays progress and the result, and audits it without content', async () => {
@@ -360,7 +415,7 @@ describeUnix('agent access pipe', () => {
       t: 'call',
       id: 'c1',
       tool: 'find_text',
-      args: { handle: 'w1-doc-2', query: 'John Smith', pages: '1-3' }
+      args: { handle: 'w1-b1-doc-2', query: 'John Smith', pages: '1-3' }
     })
     await waitFor(() => expect(host.requests).toHaveLength(1))
     const { windowId, request } = host.requests[0]
@@ -370,8 +425,9 @@ describeUnix('agent access pipe', () => {
       connectionId,
       client: { name: 'claude-ai', version: '1.0' },
       windowId: 'w1',
+      currentWindow: expect.any(Boolean),
       tool: 'find_text',
-      args: { handle: 'w1-doc-2', query: 'John Smith', pages: '1-3' }
+      args: { handle: 'w1-b1-doc-2', query: 'John Smith', pages: '1-3' }
     })
     await waitFor(() => expect(service.status().connections[0].running).toBe(1))
     await waitFor(() => expect(statuses.at(-1)?.connections[0]?.running).toBe(1))
@@ -405,7 +461,7 @@ describeUnix('agent access pipe', () => {
       connection: connectionId,
       client: 'claude-ai',
       tool: 'find_text',
-      args: { handle: 'w1-doc-2', query: '[not recorded]', pages: '1-3' },
+      args: { handle: 'w1-b1-doc-2', query: '[not recorded]', pages: '1-3' },
       document: '/home/me/contract.pdf',
       outcome: 'done',
       summary: '1 match'
@@ -416,7 +472,7 @@ describeUnix('agent access pipe', () => {
     await start()
     const { client } = await connected()
     client.send({ t: 'call', id: 'a', tool: 'delete_everything', args: {} })
-    client.send({ t: 'call', id: 'b', tool: 'get_context', args: { handle: 'w99-doc-1' } })
+    client.send({ t: 'call', id: 'b', tool: 'get_context', args: { handle: 'w99-b1-doc-1' } })
     expect((await client.next('result')).result.error?.code).toBe('unknown_tool')
     expect((await client.next('result')).result.error?.code).toBe('stale_handle')
     expect(host.requests).toHaveLength(0)
@@ -446,7 +502,7 @@ describeUnix('agent access pipe', () => {
   it('answers stale_handle when the window closes with a call running', async () => {
     await start()
     const { client } = await connected()
-    client.send({ t: 'call', id: 'c1', tool: 'apply_redactions', args: { handle: 'w1-doc-1' } })
+    client.send({ t: 'call', id: 'c1', tool: 'apply_redactions', args: { handle: 'w1-b1-doc-1' } })
     await waitFor(() => expect(host.requests).toHaveLength(1))
     host.list = []
     service.windowGone('w1')
@@ -461,6 +517,9 @@ describeUnix('agent access pipe', () => {
     expect((await client.next('notice')).event).toBe('disabled')
     await client.whenClosed()
     expect(existsSync(endpointPath())).toBe(false)
+    // The shim reads this before starting the app for a call.
+    const appFile = () => JSON.parse(readFileSync(join(userData, 'agent-access', 'app.json'), 'utf8'))
+    expect(appFile()).toEqual({ ...launch, enabled: false })
     expect(existsSync(dirname(first.address))).toBe(false)
     expect(service.status()).toMatchObject({ enabled: false, listening: false, connections: [] })
     await waitFor(() => expect(statuses.at(-1)).toMatchObject({ enabled: false, listening: false }))
@@ -469,13 +528,18 @@ describeUnix('agent access pipe', () => {
     const second = endpoint()
     expect(second.token).not.toBe(first.token)
     expect(second.address).not.toBe(first.address)
+    expect(appFile()).toEqual({ ...launch, enabled: true })
     await connected()
   })
 
-  it('does not start when turned off in Preferences', async () => {
+  it('does not start when turned off in Preferences, and says so in app.json', async () => {
     await start({}, false)
     expect(existsSync(endpointPath())).toBe(false)
     expect(service.status()).toMatchObject({ enabled: false, policy: null, listening: false })
+    expect(JSON.parse(readFileSync(join(userData, 'agent-access', 'app.json'), 'utf8'))).toEqual({
+      ...launch,
+      enabled: false
+    })
   })
 
   it('removes an endpoint.json left by a run that crashed, but not one of a running app', async () => {

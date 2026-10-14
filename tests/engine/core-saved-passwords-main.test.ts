@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { electronCipher } from '@main/passwords/electronCipher'
 import { passwordHandlers, rememberPolicy, senderAllowed } from '@main/passwords/handlers'
-import { readMachinePolicy } from '@main/policy'
+import { readPolicyFile } from '@main/policy'
 import { SavedPasswordStore } from '@main/passwords/store'
 import { testCipher, testCipherEnabled } from '@main/passwords/testCipher'
 import type { LockInfo } from '@shared/types'
@@ -114,7 +114,7 @@ describe('machine policy at start-up', () => {
     writeFileSync(file, content)
     return file
   }
-  const effect = (content: string) => rememberPolicy(readMachinePolicy({ file: policyFile(content), env: {} }).rememberPasswords)
+  const effect = (content: string) => rememberPolicy(readPolicyFile(policyFile(content)).rememberPasswords)
 
   it('only an explicit "enabled": false wipes saved passwords; a broken file only turns remembering off', () => {
     expect(effect('{"rememberPasswords":{"enabled":false}}')).toEqual({ off: true, wipe: true })
@@ -126,8 +126,8 @@ describe('machine policy at start-up', () => {
     expect(effect('{"rememberPasswords":{"enabled":"true"}}')).toEqual({ off: true, wipe: false })
     expect(effect('{"rememberPasswords":{"enable":true}}')).toEqual({ off: true, wipe: false })
     // A file that exists but cannot be read (a folder here: EISDIR, like EACCES or EBUSY).
-    expect(rememberPolicy(readMachinePolicy({ file: dir, env: {} }).rememberPasswords)).toEqual({ off: true, wipe: false })
-    expect(rememberPolicy(readMachinePolicy({ file: join(dir, 'missing.json'), env: {} }).rememberPasswords)).toEqual({
+    expect(rememberPolicy(readPolicyFile(dir).rememberPasswords)).toEqual({ off: true, wipe: false })
+    expect(rememberPolicy(readPolicyFile(join(dir, 'missing.json')).rememberPasswords)).toEqual({
       off: false,
       wipe: false
     })

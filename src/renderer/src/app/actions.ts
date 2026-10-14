@@ -74,15 +74,17 @@ async function unlockOpen(
  * Opens bytes as a new tab. Asks for a password when needed (after trying the passwords saved on
  * this device). `filePath` is null for documents that do not exist on disk yet (created, combined,
  * converted); pass `dirty` for those so the tab asks to be saved: the engine then reports them
- * unsaved until they are. `password` is tried first (protected tool output; `derivedFrom` is how
- * its source was unlocked); the tab keeps it for later reloads. A file that cannot be opened is
- * reported with `onError` when given (agent access), else shown to the user.
+ * unsaved until they are. `sourcePath` is the file converted bytes were made from. `password` is
+ * tried first (protected tool output; `derivedFrom` is how its source was unlocked); the tab keeps
+ * it for later reloads. A file that cannot be opened is reported with `onError` when given (agent
+ * access), else shown to the user.
  */
 export async function openBytes(
   bytes: Uint8Array,
   name: string,
   opts: {
     filePath?: string | null
+    sourcePath?: string | null
     dirty?: boolean
     activate?: boolean
     password?: string
@@ -120,7 +122,7 @@ function addDocument(
   engine: EngineClient,
   info: DocInfo,
   name: string,
-  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean; unlock?: DocUnlock | null }
+  opts: { filePath?: string | null; sourcePath?: string | null; dirty?: boolean; activate?: boolean; unlock?: DocUnlock | null }
 ): DocumentModel {
   const prefs = useApp.getState().prefs
   const converted = info.converted
@@ -129,6 +131,8 @@ function addDocument(
   const doc = new DocumentModel(engine, info, {
     title,
     filePath,
+    // An image or other file the engine imported itself was opened from its own path.
+    sourcePath: opts.sourcePath ?? (converted ? (opts.filePath ?? null) : null),
     zoomMode: typeof prefs.defaultZoom === 'string' ? prefs.defaultZoom : 'custom',
     layout: prefs.defaultLayout,
     dirty: opts.dirty || converted,
@@ -174,7 +178,7 @@ async function openPath(path: string, onError?: (err: unknown) => void): Promise
         console.warn('Converter failed, falling back to built-in import', err)
         return null
       })
-      if (bytes) return await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, dirty: true, onError })
+      if (bytes) return await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, sourcePath: path, dirty: true, onError })
     }
     bytes = await readFile(path)
     const doc = await openBytes(bytes, name, { filePath: path, onError })

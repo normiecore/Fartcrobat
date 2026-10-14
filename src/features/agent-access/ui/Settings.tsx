@@ -2,7 +2,7 @@
 import { useEffect, useId, useState } from 'react'
 import { FileText, PlugZap } from 'lucide-react'
 import { Button, invoke, setPrefs, showError, usePrefs } from '@renderer/sdk'
-import { ConnectionList } from './ActivityPanel'
+import { BlockedList, ConnectionList } from './ActivityPanel'
 import { setAgentStatus, useAgentUi } from './store'
 import '../ipc'
 
@@ -78,6 +78,7 @@ export function AgentSettings() {
       <div className={`${P}-settings-block`}>
         <b>Connected apps</b>
         <ConnectionList connections={on ? (status?.connections ?? []) : []} />
+        <BlockedList blocked={status?.blocked ?? []} />
       </div>
       <div className={`${P}-settings-actions`}>
         <Button icon={PlugZap} disabled={installing} onClick={() => void install()}>

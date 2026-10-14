@@ -11,7 +11,7 @@ export const AGENT_ACTOR = 'Agent'
 
 export interface ToolContext {
   request: AgentCallRequest
-  /** Aborted when the agent cancels the call or disconnects. */
+  /** Aborted when the agent cancels the call (also through wait_for_result) or disconnects. */
   signal: AbortSignal
   /** Reports progress of a long call (0..total). */
   progress(progress: number, total?: number, message?: string): void
@@ -40,16 +40,23 @@ export class ToolError extends Error {
 
 // ---- documents and handles -------------------------------------------------------------------
 
-const HANDLE = /^(w\d+)-(doc-\d+)$/
+/**
+ * New on every load of this window: handles (and tickets) from before a crash-reload or an app
+ * restart name documents of an earlier load, whose numbers are given out again.
+ */
+export const BOOT = crypto.getRandomValues(new Uint32Array(1))[0].toString(36)
 
-/** The handle an agent uses for a document of this window: "w<window>-doc-<n>". */
+const HANDLE = /^(w\d+)-([a-z0-9]+)-(doc-\d+)$/
+
+/** The handle an agent uses for a document of this window: "w<window>-<boot>-doc-<n>". */
 export function handleOf(ctx: ToolContext, doc: DocumentModel): string {
-  return `${ctx.request.windowId}-${doc.id}`
+  return `${ctx.request.windowId}-${BOOT}-${doc.id}`
 }
 
-export function parseHandle(handle: string): { windowId: string; docId: string } | null {
+/** The parts of a handle; `current` is false for a handle from an earlier load of its window. */
+export function parseHandle(handle: string): { windowId: string; docId: string; current: boolean } | null {
   const m = HANDLE.exec(handle)
-  return m ? { windowId: m[1], docId: m[2] } : null
+  return m ? { windowId: m[1], docId: m[3], current: m[2] === BOOT } : null
 }
 
 /**
@@ -59,13 +66,23 @@ export function parseHandle(handle: string): { windowId: string; docId: string }
 export function resolveDoc(ctx: ToolContext, handle?: unknown): DocumentModel {
   if (handle === undefined || handle === null || handle === '') {
     const doc = getActiveDoc()
-    if (!doc) throw new ToolError('no_document', 'No document is open in Fartcrobat. Use open_document, or ask the person to open one.')
+    if (!doc) {
+      // Home can show while tabs stay open, and other windows may have documents.
+      const open = useApp.getState().docs.some((d) => !d.isClosed)
+      throw new ToolError(
+        'no_document',
+        open
+          ? 'The person is on the Home screen, not looking at a document. Call list_documents and pass a handle.'
+          : 'No document is shown in the Fartcrobat window the person is using. Call list_documents (other windows may have documents open), use open_document, or ask the person to open one.'
+      )
+    }
     return doc
   }
   if (typeof handle !== 'string') throw new ToolError('invalid_args', 'handle must be a string')
   const parsed = parseHandle(handle)
   if (!parsed) throw new ToolError('stale_handle', `"${handle}" is not a document handle. Call list_documents for current handles.`)
-  if (parsed.windowId !== ctx.request.windowId) throw new ToolError('stale_handle', `Document ${handle} is not open any more. Call list_documents.`)
+  if (parsed.windowId !== ctx.request.windowId || !parsed.current)
+    throw new ToolError('stale_handle', `Document ${handle} is not open any more. Call list_documents.`)
   const doc = useApp.getState().docs.find((d) => d.id === parsed.docId && !d.isClosed)
   if (!doc) throw new ToolError('stale_handle', `Document ${handle} is not open any more. Call list_documents.`)
   return doc
@@ -85,7 +102,8 @@ export function describeDoc(ctx: ToolContext, doc: DocumentModel) {
     path: s.filePath,
     pageCount: s.info.pageCount,
     currentPage: s.currentPage + 1,
-    active: useApp.getState().activeDocId === doc.id,
+    // Each window has an active tab; only the one in the window the person uses last counts.
+    active: ctx.request.currentWindow !== false && useApp.getState().activeDocId === doc.id,
     unsavedChanges: s.dirty,
     encrypted: !!s.info.encryption
   }
@@ -158,55 +176,85 @@ export function clientLabel(ctx: ToolContext): string {
   return /claude/i.test(name) ? 'Claude' : name
 }
 
+/** Confirmations agents asked for, by their dialog's render function (see isAgentConfirmation). */
+const agentConfirmations = new WeakSet<object>()
+
+/** True for an open dialog that is an agent's confirmation: a cancelled hand-off leaves it open. */
+export function isAgentConfirmation(dialog: { render: unknown }): boolean {
+  return typeof dialog.render === 'function' && agentConfirmations.has(dialog.render)
+}
+
+let confirming = 0
+
+/**
+ * Claims the person's attention for one agent confirmation. Only one at a time per window, and
+ * none over a dialog already open: stacked dialogs look alike, so one double-click could approve
+ * two of them. Throws busy otherwise. Returns the release.
+ */
+export function claimPerson(): () => void {
+  if (confirming > 0 || useApp.getState().dialogs.length > 0)
+    throw new ToolError('busy', 'The person is answering another dialog in Fartcrobat. Try again after they have closed it.')
+  confirming++
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    confirming--
+  }
+}
+
 /**
  * Asks the person in Fartcrobat whether the agent may go ahead. Decline is the default button and
- * Escape declines. Resolves false when the agent cancels the call meanwhile.
+ * Escape declines. Resolves false when the agent cancels the call meanwhile. Throws busy while
+ * another dialog is open (see claimPerson).
  */
 export async function confirmAgentAction(
   ctx: ToolContext,
   opts: { title: string; message: ReactNode; confirmLabel: string; details?: string[] }
 ): Promise<boolean> {
   throwIfAborted(ctx)
+  // Nothing is awaited between the claim and openDialog, so two calls cannot both get through.
+  const release = claimPerson()
   void invoke('feature:agent-access:attention').catch(() => {})
-  let close: ((r?: boolean) => void) | null = null
-  const onAbort = () => close?.(false)
+  const render = (c: (r?: boolean) => void) => (
+    <Dialog
+      title={opts.title}
+      onClose={() => c(false)}
+      width={460}
+      className="fc-agent-access-confirm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={() => c(false)}>
+            Decline
+          </Button>
+          <Button variant="danger" onClick={() => c(true)}>
+            {opts.confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <div className="ui-dialog-message">
+        <p className="fc-agent-access-confirm-who">Requested by {clientLabel(ctx)} through agent access.</p>
+        {opts.message}
+        {opts.details?.length ? (
+          <ul className="fc-agent-access-confirm-details">
+            {opts.details.map((d, i) => (
+              <li key={i}>{d}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </Dialog>
+  )
+  agentConfirmations.add(render)
+  // Found through the store, so it also closes before React first rendered it.
+  const onAbort = () => useApp.getState().dialogs.find((d) => d.render === render)?.resolve(false)
   ctx.signal.addEventListener('abort', onAbort)
   try {
-    const result = await openDialog<boolean>((c) => {
-      close = c
-      return (
-        <Dialog
-          title={opts.title}
-          onClose={() => c(false)}
-          width={460}
-          className="fc-agent-access-confirm"
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => c(false)}>
-                Decline
-              </Button>
-              <Button variant="danger" onClick={() => c(true)}>
-                {opts.confirmLabel}
-              </Button>
-            </>
-          }
-        >
-          <div className="ui-dialog-message">
-            <p className="fc-agent-access-confirm-who">Requested by {clientLabel(ctx)} through agent access.</p>
-            {opts.message}
-            {opts.details?.length ? (
-              <ul className="fc-agent-access-confirm-details">
-                {opts.details.map((d, i) => (
-                  <li key={i}>{d}</li>
-                ))}
-              </ul>
-            ) : null}
-          </div>
-        </Dialog>
-      )
-    })
+    const result = await openDialog<boolean>(render)
     return result === true && !ctx.signal.aborted
   } finally {
     ctx.signal.removeEventListener('abort', onAbort)
+    release()
   }
 }

@@ -250,7 +250,7 @@ Save --------------------------------------------------------------------- -> sa
     - defines the `RecipientKeySource` interface `{ probe(blobs), decrypt(blobs, opts) }`;
     - WindowsStoreSource implements it on Windows only, controlled by the preference `useWindowsCertificateStore` (default true);
     - DigitalIdSource implements it everywhere.
-- **`src/main/policy.ts`** (shared with agent access): `readMachinePolicy()` returns `{ agentAccess?, rememberPasswords?: { enabled? } }`.
+- **`src/main/policy.ts`** (shared with agent access): `readMachinePolicy()` resolves to `{ agentAccess, rememberPasswords }`, each `'enabled'`, `'disabled'`, `'invalid'` or null.
 
 ### IPC channels
 
@@ -395,19 +395,19 @@ Only public certificates are needed. After writing, the app reloads from the new
 
 **What agents cannot do.** Agents cannot create certificate encryption or change saved passwords. `protect_document` still opens Fartcrobat's own dialog.
 
-**Policy file.** The setting goes in `policy.json`, in the same place as for agent access. `{"rememberPasswords":{"enabled":false}}`:
+**Machine policy.** The setting goes in the same place as agent access's. On Windows that is the REG_DWORD `RememberPasswords` under `HKLM\SOFTWARE\Policies\Fartcrobat` (Group Policy or Intune), 0 for off. On macOS and Linux it is `policy.json`, `{"rememberPasswords":{"enabled":false}}`. Off:
 
 - hides the checkbox;
 - makes `find` return nothing;
 - wipes the store at start-up.
 
-A policy file that exists but cannot be read or understood (a JSON typo, a file only root can read, or `"enabled"` that is not `true` or `false`) turns remembering off for the session, like the explicit setting, but does not wipe the store: only `"enabled": false` written out does. `readMachinePolicy()` reports such a file as `'invalid'` and `rememberPolicy` (`src/main/passwords/handlers.ts`) decides what each reading does; `readPolicy` and `currentPolicy` still fail closed with `'disabled'`.
+A policy that exists but cannot be read or understood (a JSON typo, a file only root can read, `"enabled"` that is not `true` or `false`, a registry value that is not a REG_DWORD 0 or 1) turns remembering off for the session, like the explicit setting, but does not wipe the store: only an explicit off (`"enabled": false`, or 0) does. `readMachinePolicy()` reports such a policy as `'invalid'` and `rememberPolicy` (`src/main/passwords/handlers.ts`) decides what each reading does; `readPolicy` and agent access's `machinePolicy` still fail closed with `'disabled'`.
 
 ## Remembered passwords as built (phases 0 and 1)
 
 **Where the code is**
 
-- Main process: `src/main/policy.ts` (the machine policy file, shared with agent access, which keeps its own `agentAccessState`); `src/main/passwords/`: `keys.ts`, `store.ts`, `electronCipher.ts`, `testCipher.ts`, `fileStore.ts` (atomic writes, mode 0600), `handlers.ts` (the IPC handlers without Electron) and `index.ts` (`registerPasswordHandlers()`, called from `registerCoreHandlers`).
+- Main process: `src/main/policy.ts` (the machine policy, shared with agent access, which keeps its own `agentAccessState`; on Windows read from the registry with `reg.exe`, so the `passwords:*` handlers wait for it, and for any wipe, before answering); `src/main/passwords/`: `keys.ts`, `store.ts`, `electronCipher.ts`, `testCipher.ts`, `fileStore.ts` (atomic writes, mode 0600), `handlers.ts` (the IPC handlers without Electron) and `index.ts` (`registerPasswordHandlers()`, called from `registerCoreHandlers`).
 - Shared: `src/shared/passwords.ts` (the IPC types), `LockInfo` and `PasswordAccess` in `src/shared/types.ts`, the preferences `rememberPasswords` and `rememberPasswordChecked`.
 - Engine: `src/engine/util/lockInfo.ts`; in `ops/doc.ts`, `lock` on every `needsPassword` result (open, authenticate, reload), `access` on results opened with a password, and the ops `lockInfo()` and `checkFile(data, name, password?)`. `openSourceWithAccess` in `ops/pages.ts` carries the lock on its NEEDS_PASSWORD error, so the organize-pages `probe` and `openScratch` report `lock` and `access`.
 - Renderer: `src/renderer/src/app/unlock.ts` is the pure logic (no DOM, no IPC, unit-tested); `src/renderer/src/app/savedPasswords.ts` wires it to the IPC and to `promptPassword` (`src/renderer/src/ui/dialogs.tsx`), and has the helpers features use from `@renderer/sdk` (`unlockFile`, `rememberOffer`, `linkDocumentFiles`, `savedPasswordFor`, `forgetSavedPassword`, `rememberDocumentPassword`, `digitalIdTarget`). Preferences > Passwords is `PasswordSettings` in `src/renderer/src/core/dialogs.tsx`, registered by the core feature.
@@ -682,7 +682,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 2. Copy and rename the file, then reopen: no prompt. Protect it again with a new password: exactly one prompt.
 3. Sign in as a second Windows user and copy `%APPDATA%\Fartcrobat\saved-passwords.json` over. Nothing opens silently, and nothing crashes.
 4. Delete `%APPDATA%\Fartcrobat\Local State`. The records show as unreadable, and typing the password again replaces them.
-5. Use a policy file with `rememberPasswords.enabled=false`. The checkbox is gone, and the store is wiped at start-up.
+5. Set the REG_DWORD `HKLM\SOFTWARE\Policies\Fartcrobat\RememberPasswords` to 0. The checkbox is gone, and the store is wiped at start-up. Set it to 2: the checkbox is gone, and saved passwords are kept.
 
 **Certificate store**
 
