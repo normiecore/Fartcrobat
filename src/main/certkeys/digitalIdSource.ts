@@ -11,13 +11,15 @@
  *   no longer works is forgotten.
  * - Key transport runs on node-forge (RSAES-PKCS1-v1_5 and RSAES-OAEP), because Node and Electron
  *   refuse PKCS#1 v1.5 private-key decryption. The content is decrypted with node:crypto for AES
- *   and node-forge for DES-EDE3 and RC2, which Electron's BoringSSL may lack.
+ *   and node-forge for DES-EDE3 and RC2, which Electron's BoringSSL may lack. node-forge (and the
+ *   PKCS#12 reader built on it) is only loaded when a Digital ID first decrypts, so it costs
+ *   nothing at app start (main-bundle.test.ts keeps it that way).
  *
  * Nothing here logs, and error messages hold no paths or secrets.
  */
 import { createDecipheriv, createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
-import forge from 'node-forge'
+import type * as Forge from 'node-forge'
 import type { CertKeyCandidate, CertKeyVia } from '@shared/certkeys'
 import { bytesEqual, fromBase64 } from '@features/digital-signatures/lib/asn1'
 import {
@@ -29,14 +31,10 @@ import {
   recipientMatches,
   type ContentCipher,
   type EnvelopeRecipient,
+  type OaepParams,
   type ParsedEnvelope
 } from '@features/digital-signatures/lib/envelope'
-import {
-  DigitalIdError,
-  parseDigitalId,
-  WrongPasswordError,
-  type ParsedDigitalId
-} from '@features/digital-signatures/lib/pkcs12'
+import type { ParsedDigitalId } from '@features/digital-signatures/lib/pkcs12'
 import { displayName, parseCertificate, type Certificate } from '@features/digital-signatures/lib/x509'
 import { digitalIdKey } from '../passwords/keys'
 import type { SavedPasswordStore } from '../passwords/store'
@@ -102,10 +100,36 @@ interface Hit {
   parsed: ParsedEnvelope
 }
 
-const bin = (b: Uint8Array) => forge.util.binary.raw.encode(b)
-const unbin = (s: string) => new Uint8Array(forge.util.binary.raw.decode(s))
+type ForgeLib = typeof Forge
+type Pkcs12Lib = typeof import('@features/digital-signatures/lib/pkcs12')
+
+/** node-forge and the PKCS#12 reader: loaded on the first Digital ID decrypt, not at app start. */
+let libs: Promise<{ forge: ForgeLib; pkcs12: Pkcs12Lib }> | null = null
+
+function loadLibs(): Promise<{ forge: ForgeLib; pkcs12: Pkcs12Lib }> {
+  if (!libs) {
+    const loading = Promise.all([
+      import('node-forge'),
+      import('@features/digital-signatures/lib/pkcs12')
+    ]).then(([f, pkcs12]) => ({
+      forge: ((f as { default?: ForgeLib }).default ?? f) as ForgeLib,
+      pkcs12
+    }))
+    libs = loading
+    // A load that failed is tried again next time.
+    loading.catch(() => {
+      if (libs === loading) libs = null
+    })
+  }
+  return libs
+}
+
+/** Byte strings as node-forge takes them. */
+const bin = (forge: ForgeLib, b: Uint8Array) => forge.util.binary.raw.encode(b)
+const unbin = (forge: ForgeLib, s: string) => new Uint8Array(forge.util.binary.raw.decode(s))
 
 const sha256Hex = (b: Uint8Array) => createHash('sha256').update(b).digest('hex').toUpperCase()
+const sha1 = (b: Uint8Array) => new Uint8Array(createHash('sha1').update(b).digest())
 
 function keyTypeOf(cert: Certificate): CertKeyCandidate['keyType'] {
   return cert.publicKey.type === 'RSA' ? 'rsa' : cert.publicKey.type === 'EC' ? 'ec' : 'other'
@@ -126,7 +150,7 @@ function findRecipient(envelopes: (ParsedEnvelope | null)[], cert: Certificate):
     const parsed = envelopes[e]
     if (!parsed) continue
     for (const recipient of parsed.recipientInfos) {
-      if (!recipientMatches(recipient.rid, cert)) continue
+      if (!recipientMatches(recipient.rid, cert, sha1)) continue
       if (recipient.kind === 'ktri') return { envelope: e, recipient, parsed }
       fallback ??= { envelope: e, recipient, parsed }
     }
@@ -146,18 +170,21 @@ function parseAll(blobs: Uint8Array[]): (ParsedEnvelope | null)[] {
 
 const unsupported = (what: string) => new CertKeyError('UNSUPPORTED', what)
 
-/** The OAEP options node-forge takes, or null for an unknown hash. */
-function forgeOaep(
-  params: Uint8Array | null
-): { md: forge.md.MessageDigest; mgf1: { md: forge.md.MessageDigest }; label?: string } | null {
-  let p: ReturnType<typeof oaepParams>
+/** The OAEP parameters, or null when they are damaged or use an unknown hash. */
+function readOaep(params: Uint8Array | null): OaepParams | null {
   try {
-    p = oaepParams(params)
+    return oaepParams(params)
   } catch {
     return null
   }
-  if (!p) return null
-  const md = (name: string) => {
+}
+
+/** The OAEP options node-forge takes. */
+function forgeOaep(
+  forge: ForgeLib,
+  p: OaepParams
+): { md: Forge.md.MessageDigest; mgf1: { md: Forge.md.MessageDigest }; label?: string } {
+  const md = (name: OaepParams['hash']) => {
     switch (name) {
       case 'sha1':
         return forge.md.sha1.create()
@@ -169,14 +196,18 @@ function forgeOaep(
         return forge.md.sha512.create()
     }
   }
-  return { md: md(p.hash), mgf1: { md: md(p.mgf1Hash) }, ...(p.label.length ? { label: bin(p.label) } : {}) }
+  return {
+    md: md(p.hash),
+    mgf1: { md: md(p.mgf1Hash) },
+    ...(p.label.length ? { label: bin(forge, p.label) } : {})
+  }
 }
 
 /** Checks that the recipient can be opened here, before asking for a password. */
 function checkAlgorithms(hit: Hit): {
   cipher: ContentCipher
   scheme: 'RSAES-PKCS1-V1_5' | 'RSA-OAEP'
-  oaep: ReturnType<typeof forgeOaep>
+  oaep: OaepParams | null
 } {
   if (hit.recipient.kind === 'kari')
     throw unsupported(
@@ -195,13 +226,14 @@ function checkAlgorithms(hit: Hit): {
   const oid = hit.recipient.keyEncryption.oid
   if (oid === ENVELOPE_OID.rsaEncryption) return { cipher, scheme: 'RSAES-PKCS1-V1_5', oaep: null }
   if (oid === ENVELOPE_OID.rsaesOaep) {
-    const oaep = forgeOaep(hit.recipient.keyEncryption.params)
+    const oaep = readOaep(hit.recipient.keyEncryption.params)
     if (oaep) return { cipher, scheme: 'RSA-OAEP', oaep }
   }
   throw unsupported('This document is encrypted with an algorithm that Fartcrobat does not support.')
 }
 
-function decryptContent(c: ContentCipher, key: Uint8Array, data: Uint8Array): Uint8Array {
+function decryptContent(forge: ForgeLib, c: ContentCipher, key: Uint8Array, data: Uint8Array): Uint8Array {
+  const bytes = (b: Uint8Array) => bin(forge, b)
   const fail = () =>
     new CertKeyError('ERROR', 'This Digital ID could not open the document. The document may be damaged.')
   if (c.keyLength !== null && key.length !== c.keyLength) throw fail()
@@ -211,18 +243,18 @@ function decryptContent(c: ContentCipher, key: Uint8Array, data: Uint8Array): Ui
       return new Uint8Array(Buffer.concat([d.update(data), d.final()]))
     }
     if (c.name === 'des-ede3-cbc') {
-      const d = forge.cipher.createDecipher('3DES-CBC', bin(key))
-      d.start({ iv: bin(c.iv) })
-      d.update(forge.util.createBuffer(bin(data)))
+      const d = forge.cipher.createDecipher('3DES-CBC', bytes(key))
+      d.start({ iv: bytes(c.iv) })
+      d.update(forge.util.createBuffer(bytes(data)))
       if (!d.finish()) throw fail()
-      return unbin(d.output.getBytes())
+      return unbin(forge, d.output.getBytes())
     }
     if (!key.length || key.length > 128) throw fail()
-    const d = forge.rc2.createDecryptionCipher(bin(key), c.effectiveBits)
-    d.start(bin(c.iv))
-    d.update(forge.util.createBuffer(bin(data)))
+    const d = forge.rc2.createDecryptionCipher(bytes(key), c.effectiveBits)
+    d.start(bytes(c.iv))
+    d.update(forge.util.createBuffer(bytes(data)))
     if (!d.finish()) throw fail()
-    return unbin(d.output.getBytes())
+    return unbin(forge, d.output.getBytes())
   } catch (err) {
     if (err instanceof CertKeyError) throw err
     throw fail()
@@ -295,12 +327,12 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
   }
 
   /** Opens the .p12 with the password; maps its failures. */
-  function openId(id: DigitalId, bytes: Uint8Array, password: string): ParsedDigitalId {
+  function openId(pkcs12: Pkcs12Lib, id: DigitalId, bytes: Uint8Array, password: string): ParsedDigitalId {
     try {
-      return parseDigitalId(bytes, password)
+      return pkcs12.parseDigitalId(bytes, password)
     } catch (err) {
-      if (err instanceof WrongPasswordError) throw err
-      if (err instanceof DigitalIdError)
+      if (err instanceof pkcs12.WrongPasswordError) throw err
+      if (err instanceof pkcs12.DigitalIdError)
         throw new CertKeyError(
           'ID_UNAVAILABLE',
           `The Digital ID “${id.label}” could not be read. Remove it in Preferences > Digital IDs and add it again.`
@@ -386,11 +418,19 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
           throw new CertKeyError('PASSWORD_NEEDED', `Enter the password of the Digital ID “${id.label}”.`)
       }
 
+      let lib: { forge: ForgeLib; pkcs12: Pkcs12Lib }
+      try {
+        lib = await loadLibs()
+      } catch {
+        throw new CertKeyError('ERROR', `The Digital ID “${id.label}” could not be used.`)
+      }
+      const { forge, pkcs12 } = lib
+
       let p12: ParsedDigitalId
       try {
-        p12 = openId(id, bytes, typed ?? saved!.password)
+        p12 = openId(pkcs12, id, bytes, typed ?? saved!.password)
       } catch (err) {
-        if (!(err instanceof WrongPasswordError)) throw err
+        if (!(err instanceof pkcs12.WrongPasswordError)) throw err
         if (saved) {
           await o
             .passwords()
@@ -415,10 +455,15 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
         let contentKey: Uint8Array
         try {
           const priv = forge.pki.privateKeyFromAsn1(
-            forge.asn1.fromDer(bin(p12.pkcs8))
-          ) as forge.pki.rsa.PrivateKey
+            forge.asn1.fromDer(bin(forge, p12.pkcs8))
+          ) as Forge.pki.rsa.PrivateKey
           contentKey = unbin(
-            priv.decrypt(bin(hit.recipient.encryptedKey), algs.scheme, algs.oaep ?? undefined)
+            forge,
+            priv.decrypt(
+              bin(forge, hit.recipient.encryptedKey),
+              algs.scheme,
+              algs.oaep ? forgeOaep(forge, algs.oaep) : undefined
+            )
           )
         } catch {
           throw new CertKeyError(
@@ -427,7 +472,7 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
           )
         }
         try {
-          content = decryptContent(algs.cipher, contentKey, hit.parsed.encryptedContent)
+          content = decryptContent(forge, algs.cipher, contentKey, hit.parsed.encryptedContent)
         } finally {
           contentKey.fill(0)
         }

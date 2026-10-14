@@ -12,9 +12,10 @@ import {
   parseEnvelope,
   recipientMatches,
   stripLeadingZeros,
-  summarizeRecipients
+  summarizeRecipients,
+  type RecipientId
 } from '@features/digital-signatures/lib/envelope'
-import { parseCertificate } from '@features/digital-signatures/lib/x509'
+import { parseCertificate, type Certificate } from '@features/digital-signatures/lib/x509'
 import { certDer, expected, expectedFile, recipientsOf } from './certkeys-fixtures'
 
 const KEY_TYPE: Record<string, string> = {
@@ -187,6 +188,8 @@ describe('content ciphers and OAEP parameters', () => {
 })
 
 describe('recipientMatches', () => {
+  // SHA-1 comes from the caller (node:crypto in the main process).
+  const matches = (rid: RecipientId | null, cert: Certificate) => recipientMatches(rid, cert, sha1)
   const alice = parseCertificate(certDer('alice'))
   const bob = parseCertificate(certDer('bob'))
   const stranger = parseCertificate(certDer('stranger'))
@@ -197,37 +200,37 @@ describe('recipientMatches', () => {
     )
     expect(toHex((bobRid as { serial: Uint8Array }).serial).startsWith('00')).toBe(true)
     expect(toHex(bob.serial).startsWith('00')).toBe(true)
-    expect(recipientMatches(bobRid, bob)).toBe(true)
-    expect(recipientMatches(aliceRid, alice)).toBe(true)
-    expect(recipientMatches(bobRid, alice)).toBe(false)
-    expect(recipientMatches(aliceRid, stranger)).toBe(false) // same issuer, other serial
+    expect(matches(bobRid, bob)).toBe(true)
+    expect(matches(aliceRid, alice)).toBe(true)
+    expect(matches(bobRid, alice)).toBe(false)
+    expect(matches(aliceRid, stranger)).toBe(false) // same issuer, other serial
     // The same serial written without the leading zero still matches.
     const stripped = {
       issuer: (bobRid as { issuer: Uint8Array }).issuer,
       serial: stripLeadingZeros((bobRid as { serial: Uint8Array }).serial)
     }
-    expect(recipientMatches(stripped, bob)).toBe(true)
+    expect(matches(stripped, bob)).toBe(true)
     // An issuer that differs only in bytes (another string type) does not.
     const issuer = (aliceRid as { issuer: Uint8Array }).issuer.slice()
     issuer[issuer.length - 1] ^= 1
-    expect(recipientMatches({ issuer, serial: alice.serial }, alice)).toBe(false)
-    expect(recipientMatches(null, alice)).toBe(false)
+    expect(matches({ issuer, serial: alice.serial }, alice)).toBe(false)
+    expect(matches(null, alice)).toBe(false)
   })
 
   it('subjectKeyIdentifier: the extension, the SHA-1 of the key bits, or the SHA-1 of the whole key info', () => {
     const rid = parseEnvelope(recipientsOf('v5-ski.pdf')[0]).recipientInfos[0].rid!
     expect(toHex((rid as { ski: Uint8Array }).ski)).toBe('D7445486090C462D17C8AAFE207ECC1141FD9F4E')
-    expect(recipientMatches(rid, alice)).toBe(true)
-    expect(recipientMatches(rid, bob)).toBe(false)
+    expect(matches(rid, alice)).toBe(true)
+    expect(matches(rid, bob)).toBe(false)
     // alice's key in a certificate without the SKI extension (as Windows names keys then).
     const noSki = { ...alice, subjectKeyId: null }
-    expect(recipientMatches(rid, noSki)).toBe(true)
+    expect(matches(rid, noSki)).toBe(true)
     const spkiHash = sha1(noSki.publicKey.spki)
-    expect(recipientMatches({ ski: spkiHash }, noSki)).toBe(true)
+    expect(matches({ ski: spkiHash }, noSki)).toBe(true)
     expect(
-      recipientMatches({ ski: sha1(readBitString(parseAsn1(bob.publicKey.spki).children[1]).bytes) }, noSki)
+      matches({ ski: sha1(readBitString(parseAsn1(bob.publicKey.spki).children[1]).bytes) }, noSki)
     ).toBe(false)
-    expect(recipientMatches({ ski: new Uint8Array() }, alice)).toBe(false)
+    expect(matches({ ski: new Uint8Array() }, alice)).toBe(false)
   })
 })
 

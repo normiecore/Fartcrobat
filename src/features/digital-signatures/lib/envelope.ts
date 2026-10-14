@@ -12,11 +12,11 @@
  * PDF readers name a recipient's certificate by issuer and serial number, or by subject key
  * identifier. Issuer names are compared as DER bytes, never as text.
  *
- * SHA-1 comes from node-forge, not @noble/hashes: this module is in the main-process bundle, and
- * electron-vite's ESM shim (which defines __dirname there) is inserted after the last `import` it
- * finds by text, which can be one in @noble's doc comments (see main-bundle.test.ts).
+ * No crypto library here: matching a subject key identifier needs SHA-1, which the caller passes
+ * in (node:crypto in the main process). This module is in the main-process bundle, which must not
+ * load node-forge at start-up (it costs tens of milliseconds) nor include @noble/* at all (its doc
+ * comments break electron-vite's __dirname shim); main-bundle.test.ts checks both.
  */
-import forge from 'node-forge'
 import {
   Asn1Error,
   bytesEqual,
@@ -289,13 +289,10 @@ export function summarizeRecipients(blobs: Uint8Array[]): PubSecRecipient[] {
 
 // ---- matching certificates -------------------------------------------------------------------
 
-/** The subjectPublicKey BIT STRING's bytes (without the unused-bits byte). */
-function sha1(data: Uint8Array): Uint8Array {
-  const md = forge.md.sha1.create()
-  md.update(forge.util.binary.raw.encode(data))
-  return forge.util.binary.raw.decode(md.digest().getBytes())
-}
+/** SHA-1 of some bytes (20 bytes). */
+export type Sha1 = (data: Uint8Array) => Uint8Array
 
+/** The subjectPublicKey BIT STRING's bytes (without the unused-bits byte). */
 function subjectPublicKeyBits(cert: Certificate): Uint8Array | null {
   try {
     return readBitString(parseAsn1(cert.publicKey.spki).children[1]).bytes
@@ -309,9 +306,9 @@ function subjectPublicKeyBits(cert: Certificate): Uint8Array | null {
  * and serial number (ignoring leading zero bytes), or a subject key identifier equal to the
  * certificate's SubjectKeyIdentifier extension, to the SHA-1 of its public key bits (RFC 5280
  * method 1, what Windows uses for certificates without the extension) or to the SHA-1 of its whole
- * SubjectPublicKeyInfo.
+ * SubjectPublicKeyInfo (`sha1` computes those).
  */
-export function recipientMatches(rid: RecipientId | null, certificate: Certificate): boolean {
+export function recipientMatches(rid: RecipientId | null, certificate: Certificate, sha1: Sha1): boolean {
   if (!rid) return false
   if ('ski' in rid) {
     if (!rid.ski.length) return false
