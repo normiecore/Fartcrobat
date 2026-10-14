@@ -494,8 +494,8 @@ function inflateBounded(data: Uint8Array, maxLength: number, raw: boolean): Uint
 }
 
 /**
- * Decodes stream data with FlateDecode and predictors (enough for xref streams). Throws when the
- * data would decode to more than `maxLength` bytes.
+ * Decodes stream data with FlateDecode and predictors (enough for xref streams). Throws when
+ * inflating would give more than `maxLength` bytes (predictors never make data longer).
  */
 export function decodeStream(data: Uint8Array, dict: PdfDict, maxLength = MAX_DECODED_LENGTH): Uint8Array {
   const filter = dict.get('Filter')
@@ -514,7 +514,6 @@ export function decodeStream(data: Uint8Array, dict: PdfDict, maxLength = MAX_DE
     }
     out = unpredict(out, parms[k] ?? null)
   })
-  if (out.length > maxLength) throw new TooLong('Stream data too long')
   return out
 }
 
