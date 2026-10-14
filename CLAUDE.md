@@ -14,16 +14,16 @@ Office conversion when installed, with a built-in fallback.
   `.tar.gz`). It has no updater.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
   access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords).
-  Open: UPDATES_PR (in-app updates). #11 is a stray PR from `main` into the session branch; close
+  Open: #12 (in-app updates). #11 is a stray PR from `main` into the session branch; close
   it.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
-  (Settings > General). Everything on that branch is already in `main` once UPDATES_PR merges.
+  (Settings > General). Everything on that branch is already in `main` once #12 merges.
 - About 1110 unit tests (vitest) and 155 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
-- **In-app updates** (`docs/features/updates.md`, UPDATES_PR): checks
+- **In-app updates** (`docs/features/updates.md`, #12): checks
   `github.com/normiecore/Fartcrobat/releases/latest` 30 s after start and every 6 hours, shows a
   card in the bottom right (Download with a progress bar, then Restart now or Later), and installs
   silently through electron-updater 6.8.10 after the normal quit flow has asked about unsaved
@@ -51,7 +51,7 @@ Office conversion when installed, with a built-in fallback.
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Suggested order for the next session: merge UPDATES_PR and cut 0.2.0 (so people get the
+- Suggested order for the next session: merge #12 and cut 0.2.0 (so people get the
   updater), then certificate encryption.
 
 ## Where things are
