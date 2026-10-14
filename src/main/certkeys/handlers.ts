@@ -13,7 +13,8 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import type { CertKeyActor, CertKeyCandidate, CertKeysDecryptResult, CertKeyVia } from '@shared/certkeys'
 import type { IpcArgs, IpcChannel, IpcResult } from '@shared/ipc'
-import { summarizeRecipients } from '@features/digital-signatures/lib/envelope'
+import { describeRecipients } from '@features/digital-signatures/lib/envelope'
+import { requestEnvelopes } from './envelopes'
 import { CertKeyError, type RecipientKeySource } from './source'
 import type { WindowsStore } from './windowsStoreSource'
 
@@ -32,8 +33,20 @@ export interface CertKeyHandlerDeps {
   windowsStore: WindowsStore
 }
 
-/** Limits on what the renderer may send. */
-export const CERTKEY_LIMITS = { blobs: 1000, blobBytes: 1024 * 1024, password: 4096 } as const
+/**
+ * Limits on what the renderer may send, and on the recipients sent back. The /Recipients come from
+ * the file, so they are bounded before anything is parsed (and envelopes.ts bounds the parsing).
+ */
+export const CERTKEY_LIMITS = {
+  /** Envelopes (/Recipients entries) per request. */
+  blobs: 100,
+  /** Bytes per envelope, and in all. */
+  blobBytes: 1024 * 1024,
+  totalBytes: 4 * 1024 * 1024,
+  /** Recipients described in a probe result (the renderer names a few). */
+  recipients: 1000,
+  password: 4096
+} as const
 
 const SEED_BYTES = 20
 const CANDIDATE_ID = /^(?:digital-id:[0-9a-fA-F]{64}|windows-store:[0-9a-fA-F]{40})$/
@@ -47,8 +60,12 @@ class RequestError extends Error {}
 
 function parseBlobs(v: unknown): Uint8Array[] {
   if (!Array.isArray(v) || v.length > CERTKEY_LIMITS.blobs) throw new RequestError()
-  for (const b of v)
+  let total = 0
+  for (const b of v) {
     if (!(b instanceof Uint8Array) || b.length > CERTKEY_LIMITS.blobBytes) throw new RequestError()
+    total += b.length
+  }
+  if (total > CERTKEY_LIMITS.totalBytes) throw new RequestError()
   return v as Uint8Array[]
 }
 
@@ -151,6 +168,13 @@ export function certKeyHandlers(deps: CertKeyHandlerDeps): CertKeyHandlers {
   const sourceFor = (id: string): RecipientKeySource =>
     sourceKind(id) === 'windows-store' ? deps.windowsStore : deps.digitalIds
 
+  /**
+   * The request's blobs as a source gets them: the Windows helper never gets an envelope over the
+   * limits (it gets an empty one in its place). Each request is parsed once (requestEnvelopes).
+   */
+  const blobsFor = (source: RecipientKeySource, blobs: Uint8Array[]): Uint8Array[] =>
+    source.kind === 'windows-store' ? requestEnvelopes(blobs).forStore : blobs
+
   async function decrypt(r: DecryptRequest): Promise<CertKeysDecryptResult> {
     const fail = (
       code: Extract<CertKeysDecryptResult, { ok: false }>['code'],
@@ -164,9 +188,10 @@ export function certKeyHandlers(deps: CertKeyHandlerDeps): CertKeyHandlers {
     })
     try {
       const source = sourceFor(r.candidate)
-      const candidate = (await probeSource(source, r.blobs)).find((c) => sameId(c.id, r.candidate))
+      const blobs = blobsFor(source, r.blobs)
+      const candidate = (await probeSource(source, blobs)).find((c) => sameId(c.id, r.candidate))
       if (!candidate) return fail('NO_MATCHING_CERT', 'This certificate cannot open the document.')
-      const out = await source.decrypt(r.blobs, candidate, {
+      const out = await source.decrypt(blobs, candidate, {
         ...(r.password !== undefined ? { password: r.password } : {}),
         remember: r.remember,
         actor: r.actor
@@ -206,11 +231,15 @@ export function certKeyHandlers(deps: CertKeyHandlerDeps): CertKeyHandlers {
     }),
     'certkeys:probe': guarded(async (request: unknown) => {
       const blobs = parseBlobs(parseRequest(request).blobs)
+      const envelopes = requestEnvelopes(blobs)
       const [store, ids] = await Promise.all([
-        probeSource(deps.windowsStore, blobs),
+        probeSource(deps.windowsStore, envelopes.forStore),
         probeSource(deps.digitalIds, blobs)
       ])
-      return { candidates: orderCandidates([...store, ...ids]), recipients: summarizeRecipients(blobs) }
+      return {
+        candidates: orderCandidates([...store, ...ids]),
+        recipients: describeRecipients(envelopes.parsed, CERTKEY_LIMITS.recipients)
+      }
     }),
     'certkeys:decrypt': guarded(async (request: unknown) => decrypt(parseDecrypt(request))),
     'certkeys:listEncryptionCertificates': guarded(async (opts: unknown) => {

@@ -23,12 +23,13 @@ import type * as Forge from 'node-forge'
 import type { CertKeyCandidate, CertKeyVia } from '@shared/certkeys'
 import { bytesEqual, fromBase64 } from '@features/digital-signatures/lib/asn1'
 import {
+  certificateIds,
   contentCipher,
   ENVELOPE_OID,
   nameText,
   oaepParams,
-  parseEnvelope,
   recipientMatches,
+  type CertificateIds,
   type ContentCipher,
   type EnvelopeRecipient,
   type OaepParams,
@@ -38,6 +39,7 @@ import type { ParsedDigitalId } from '@features/digital-signatures/lib/pkcs12'
 import { displayName, parseCertificate, type Certificate } from '@features/digital-signatures/lib/x509'
 import { digitalIdKey } from '../passwords/keys'
 import type { SavedPasswordStore } from '../passwords/store'
+import { requestEnvelopes } from './envelopes'
 import {
   CertKeyError,
   type RecipientKeySource,
@@ -89,6 +91,8 @@ interface IdRecord {
 interface DigitalId {
   rec: IdRecord
   cert: Certificate
+  /** What recipients may name the certificate by. */
+  certIds: CertificateIds
   /** SHA-256 of the certificate, uppercase hex (the record id). */
   sha256: string
   label: string
@@ -143,29 +147,19 @@ function textOf(cert: Certificate, which: 'subject' | 'issuer'): string {
   }
 }
 
-/** The first recipient naming `cert`, key transport preferred. Damaged envelopes are skipped. */
-function findRecipient(envelopes: (ParsedEnvelope | null)[], cert: Certificate): Hit | null {
+/** The first recipient naming the certificate, key transport preferred. Damaged envelopes are skipped. */
+function findRecipient(envelopes: (ParsedEnvelope | null)[], certIds: CertificateIds): Hit | null {
   let fallback: Hit | null = null
   for (let e = 0; e < envelopes.length; e++) {
     const parsed = envelopes[e]
     if (!parsed) continue
     for (const recipient of parsed.recipientInfos) {
-      if (!recipientMatches(recipient.rid, cert, sha1)) continue
+      if (!recipientMatches(recipient.rid, certIds)) continue
       if (recipient.kind === 'ktri') return { envelope: e, recipient, parsed }
       fallback ??= { envelope: e, recipient, parsed }
     }
   }
   return fallback
-}
-
-function parseAll(blobs: Uint8Array[]): (ParsedEnvelope | null)[] {
-  return blobs.map((b) => {
-    try {
-      return parseEnvelope(b)
-    } catch {
-      return null
-    }
-  })
 }
 
 const unsupported = (what: string) => new CertKeyError('UNSUPPORTED', what)
@@ -265,7 +259,7 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
   const read = o.readFile ?? (async (path: string) => new Uint8Array(await readFile(path)))
   const now = o.now ?? Date.now
   // Parsed certificates by their base64, so probing does not parse every certificate every time.
-  const cache = new Map<string, { cert: Certificate; sha256: string } | null>()
+  const cache = new Map<string, { cert: Certificate; certIds: CertificateIds; sha256: string } | null>()
 
   function ids(): DigitalId[] {
     const raw = o.records()
@@ -285,7 +279,8 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
       if (parsed === undefined) {
         try {
           const der = fromBase64(r.certificate)
-          parsed = { cert: parseCertificate(der), sha256: sha256Hex(der) }
+          const cert = parseCertificate(der)
+          parsed = { cert, certIds: certificateIds(cert, sha1), sha256: sha256Hex(der) }
         } catch {
           parsed = null
         }
@@ -298,7 +293,7 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
       seen.add(parsed.sha256)
       const rec = r as IdRecord
       const label = (typeof rec.name === 'string' && rec.name.trim()) || displayName(parsed.cert.subject)
-      out.push({ rec, cert: parsed.cert, sha256: parsed.sha256, label })
+      out.push({ rec, cert: parsed.cert, certIds: parsed.certIds, sha256: parsed.sha256, label })
     }
     return out
   }
@@ -347,11 +342,11 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
     count: () => ids().length,
 
     async probe(blobs) {
-      const envelopes = parseAll(blobs)
+      const envelopes = requestEnvelopes(blobs).parsed
       if (!envelopes.some(Boolean)) return []
       const out: CertKeyCandidate[] = []
       for (const id of ids()) {
-        const hit = findRecipient(envelopes, id.cert)
+        const hit = findRecipient(envelopes, id.certIds)
         if (!hit) continue
         const saved = await passwordSaved(id)
         out.push({
@@ -381,7 +376,7 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
           'NO_MATCHING_CERT',
           'This Digital ID is no longer listed in Preferences > Digital IDs.'
         )
-      const hit = findRecipient(parseAll(blobs), id.cert)
+      const hit = findRecipient(requestEnvelopes(blobs).parsed, id.certIds)
       if (!hit)
         throw new CertKeyError(
           'NO_MATCHING_CERT',

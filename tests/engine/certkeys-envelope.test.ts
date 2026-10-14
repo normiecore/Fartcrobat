@@ -4,6 +4,7 @@ import { sha1 } from '@noble/hashes/legacy.js'
 import { describe, expect, it } from 'vitest'
 import { der, parseAsn1, readBitString, toHex } from '@features/digital-signatures/lib/asn1'
 import {
+  certificateIds,
   contentCipher,
   ENVELOPE_OID,
   EnvelopeError,
@@ -12,9 +13,10 @@ import {
   parseEnvelope,
   recipientMatches,
   stripLeadingZeros,
-  summarizeRecipients,
+  describeRecipients,
   type RecipientId
 } from '@features/digital-signatures/lib/envelope'
+import { requestEnvelopes } from '@main/certkeys/envelopes'
 import { parseCertificate, type Certificate } from '@features/digital-signatures/lib/x509'
 import { certDer, expected, expectedFile, recipientsOf } from './certkeys-fixtures'
 
@@ -26,7 +28,10 @@ const KEY_TYPE: Record<string, string> = {
 /** cryptography's rfc4514_string() has no space after the commas. */
 const rfc4514 = (text: string) => text.replace(/, /g, ',')
 
-describe('parseEnvelope and summarizeRecipients over every fixture', () => {
+/** What certkeys:probe tells the renderer about a file's recipients. */
+const summarizeRecipients = (blobs: Uint8Array[]) => describeRecipients(requestEnvelopes(blobs).parsed)
+
+describe('parseEnvelope and describeRecipients over every fixture', () => {
   for (const file of expected.files) {
     it(file.file, () => {
       const blobs = recipientsOf(file.file)
@@ -189,7 +194,8 @@ describe('content ciphers and OAEP parameters', () => {
 
 describe('recipientMatches', () => {
   // SHA-1 comes from the caller (node:crypto in the main process).
-  const matches = (rid: RecipientId | null, cert: Certificate) => recipientMatches(rid, cert, sha1)
+  const matches = (rid: RecipientId | null, cert: Certificate) =>
+    recipientMatches(rid, certificateIds(cert, sha1))
   const alice = parseCertificate(certDer('alice'))
   const bob = parseCertificate(certDer('bob'))
   const stranger = parseCertificate(certDer('stranger'))
