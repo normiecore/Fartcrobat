@@ -87,10 +87,33 @@ export function pubsecEncryptDict(recipients: Uint8Array[], encryptMetadata = tr
 }
 
 /**
+ * Makes a dictionary written directly in the trailer (/Info, or even /Root) an object of its own,
+ * before encrypting: only objects are encrypted, so its strings (the title, the author...) would
+ * otherwise be written in clear. Not conforming, but it occurs, and MuPDF keeps such a
+ * dictionary direct through a full save.
+ */
+function moveTrailerDictionaries(doc: PDFDocument): void {
+  for (const key of ['Info', 'Root']) {
+    const value = doc.getTrailer().get(key)
+    if (value.isNull() || value.isIndirect()) continue
+    const ref = doc.addObject(value)
+    // Fetched again: adding an object can leave an earlier trailer handle stale.
+    doc.getTrailer().put(key, ref)
+  }
+}
+
+/**
  * Writes `doc` object by object (raw stream data as it is, no recompression) and appends
  * `encryptDict` as the /Encrypt object, whose strings are therefore never encrypted. Keeps /ID[0].
+ * The trailer's /Root and /Info must be references (see moveTrailerDictionaries).
  */
 export function serialiseEncrypted(doc: PDFDocument, encryptDict: string): Uint8Array {
+  for (const key of ['Root', 'Info']) {
+    const v = doc.getTrailer().get(key)
+    if (!v.isNull() && !v.isIndirect()) {
+      throw new EngineError(`The file was not saved: its /${key} dictionary would have been written in clear`, 'SAVE_FAILED')
+    }
+  }
   const n = doc.countObjects()
   const objects: WrittenObject[] = [undefined]
   for (let i = 1; i < n; i++) {
@@ -170,6 +193,7 @@ export function writePubSecDocument(m: Mupdf, src: PDFDocument, key: PubSecWrite
   const doc = new m.PDFDocument(plain)
   try {
     if (!doc.getTrailer().get('Encrypt').isNull()) throw new EngineError('The document could not be decrypted', 'SAVE_FAILED')
+    moveTrailerDictionaries(doc)
     encryptObjectsInPlace(doc, key.fileKey, key.encryptMetadata)
     return serialiseEncrypted(doc, pubsecEncryptDict(key.recipients, key.encryptMetadata))
   } finally {

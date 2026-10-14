@@ -2,14 +2,21 @@
 // finish quickly and in bounded memory on anything a file controls, since it runs on every file
 // MuPDF refuses to open. Hostile inputs run in a worker with a deadline and a heap limit, so a
 // regression fails the test instead of hanging the run.
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
 import { buildSync } from 'esbuild'
 import { zlibSync } from 'fflate'
+import * as mupdf from 'mupdf'
 import { describe, expect, it } from 'vitest'
-import { appendUpdate, concat, readPubSec, verifyFileKey } from '@engine/crypt'
-import { latin1, md5, rc4, toLatin1 } from '@engine/crypt/primitives'
-import { expected, hexBytes, keyFor, openWithKey, pubsecFixture } from './passwordless-helpers'
+import { appendUpdate, concat, encryptObjectsInPlace, pubsecEncryptDict, readPubSec, serialiseEncrypted, verifyFileKey, writeKeyFor, writePubSecDocument } from '@engine/crypt'
+import { PdfString } from '@engine/crypt/pdfLex'
+import { latin1, md5, randomBytes, rc4, toHex, toLatin1 } from '@engine/crypt/primitives'
+import { createLocalEngine } from '@engine/local'
+import type docOps from '@engine/ops/doc'
+import type { CertificateKey } from '@shared/certkeys'
+import type { OpenResult } from '@shared/types'
+import { expected, hexBytes, includesBytes, keyFor, openWithKey, PKI, pubsecFixture } from './passwordless-helpers'
 
 const ROOT = resolve(__dirname, '../..')
 
@@ -352,5 +359,113 @@ describe('the RC4 key check', () => {
         expect(verifyFileKey(bytes, info, wrong)).toBe(false)
       }
     }
+  })
+})
+
+// ---- a direct /Info dictionary ------------------------------------------------------------------
+
+describe('a direct /Info dictionary in the trailer', () => {
+  /** A plain one-page file whose trailer holds /Info as a dictionary (not conforming, but it occurs). */
+  function directInfoFile(title: string): Uint8Array {
+    const content = 'BT /F1 24 Tf 20 100 Td (PageSecret) Tj ET'
+    const b = new Builder()
+      .add('%PDF-1.7\n')
+      .obj(1, '<< /Type /Catalog /Pages 2 0 R >>')
+      .obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+      .obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>')
+      .stream(4, '<< >>', latin1(content))
+      .obj(5, '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>')
+    const at = b.pos
+    let table = 'xref\n0 6\n0000000000 65535 f\r\n'
+    for (let n = 1; n < 6; n++) table += `${String(b.offsets.get(n)).padStart(10, '0')} 00000 n\r\n`
+    b.add(`${table}trailer\n<< /Size 6 /Root 1 0 R /Info << /Title (${title}) /Author (AuthorSecret) >> >>\nstartxref\n${at}\n%%EOF\n`)
+    return b.bytes()
+  }
+
+  /** `text` is nowhere in `bytes`, neither as written nor as a hex string. */
+  function expectNotInClear(bytes: Uint8Array, text: string, label: string) {
+    expect(includesBytes(bytes, text), `${label}: "${text}"`).toBe(false)
+    const hex = toHex(latin1(text))
+    const all = Buffer.from(bytes).toString('latin1').toLowerCase()
+    expect(all.includes(hex), `${label}: "${text}" in hex`).toBe(false)
+  }
+
+  const fakeEnvelope = () => latin1('not a real envelope: the key below is given to the engine directly')
+
+  it('MuPDF keeps it direct through a full save (why the writer has to move it)', () => {
+    const doc = new mupdf.PDFDocument(directInfoFile('DirectInfoSecret'))
+    try {
+      const saved = new mupdf.PDFDocument(doc.saveToBuffer('garbage=compact').asUint8Array().slice())
+      expect(saved.getTrailer().get('Info').isIndirect()).toBe(false)
+      expect(saved.getMetaData('info:Title')).toBe('DirectInfoSecret')
+      saved.destroy()
+    } finally {
+      doc.destroy()
+    }
+  })
+
+  it('the writer encrypts it like any other object, and it opens again', async () => {
+    const seed = randomBytes(20)
+    const envelope = fakeEnvelope()
+    const doc = new mupdf.PDFDocument(directInfoFile('DirectInfoSecret'))
+    let out: Uint8Array
+    try {
+      out = writePubSecDocument(mupdf, doc, writeKeyFor(seed, [envelope]))
+    } finally {
+      doc.destroy()
+    }
+    for (const s of ['DirectInfoSecret', 'AuthorSecret', 'PageSecret']) expectNotInClear(out, s, 'written')
+    const e = await openWithKey(out, { envelope, seed, permissions: null })
+    expect(e.info.metadata).toMatchObject({ title: 'DirectInfoSecret', author: 'AuthorSecret' })
+  })
+
+  it('serialising refuses a trailer that still holds a dictionary', () => {
+    const doc = new mupdf.PDFDocument(directInfoFile('DirectInfoSecret'))
+    try {
+      const recipients = [fakeEnvelope()]
+      const key = writeKeyFor(randomBytes(20), recipients)
+      encryptObjectsInPlace(doc, key.fileKey)
+      expect(() => serialiseEncrypted(doc, pubsecEncryptDict(recipients))).toThrow(/clear/)
+    } finally {
+      doc.destroy()
+    }
+  })
+
+  it('Encrypt with Certificate (the engine save)', async () => {
+    const engine = await createLocalEngine()
+    const doc = engine.ops<typeof docOps>('doc')
+    expect(await doc.open(directInfoFile('DirectInfoSecret'), { fileName: 'direct.pdf' })).toMatchObject({ ok: true })
+    const cert = new Uint8Array(readFileSync(resolve(PKI, 'alice.cer')))
+    const out = await doc.save({ mode: 'full', encryptCertificate: { groups: [{ certificates: [cert], permissions: {} }] } })
+    expect(readPubSec(out)?.version).toBe(5)
+    for (const s of ['DirectInfoSecret', 'AuthorSecret', 'PageSecret']) expectNotInClear(out, s, 'Encrypt with Certificate')
+    // The engine keeps the new key: the output opens again without asking, with its title.
+    const res: OpenResult = await doc.reload(out, {})
+    expect(res).toMatchObject({ ok: true })
+    if (res.ok) expect(res.info.metadata.title).toBe('DirectInfoSecret')
+  })
+
+  it('saving back a certificate-encrypted document whose newest trailer holds one', async () => {
+    const seed = randomBytes(20)
+    const envelope = fakeEnvelope()
+    const key: CertificateKey = { envelope, seed, permissions: null }
+    const doc = new mupdf.PDFDocument(directInfoFile('FirstTitle'))
+    let first: Uint8Array
+    try {
+      first = writePubSecDocument(mupdf, doc, writeKeyFor(seed, [envelope]))
+    } finally {
+      doc.destroy()
+    }
+    // An update (as another writer might append) whose trailer has /Info as a dictionary in clear.
+    const direct = new Map([['Title', new PdfString(latin1('SavedBackSecret'))]])
+    const updated = appendUpdate(first, readPubSec(first)!, [], { Info: direct })
+    expect(includesBytes(updated, toHex(latin1('SavedBackSecret')))).toBe(true)
+    const e = await openWithKey(updated, key)
+    expect(e.info.metadata.title).toBe('SavedBackSecret')
+    const saved = await e.doc.save({})
+    expect(readPubSec(saved)?.version).toBe(5)
+    expectNotInClear(saved, 'SavedBackSecret', 'saved back')
+    const again = await openWithKey(saved, key)
+    expect(again.info.metadata.title).toBe('SavedBackSecret')
   })
 })
