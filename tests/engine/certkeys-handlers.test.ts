@@ -134,7 +134,8 @@ describe('certkeys:* handlers', () => {
       ['certkeys:probe', [{ blobs }]],
       ['certkeys:decrypt', [{ blobs, candidate: aliceId, actor: 'person' }]],
       ['certkeys:listEncryptionCertificates', [{ includeOthers: true }]],
-      ['certkeys:lockSmartCard', []]
+      ['certkeys:lockSmartCard', []],
+      ['certkeys:cancel', ['request-1']]
     ]
     for (const [channel, args] of calls)
       await expect(
@@ -350,7 +351,11 @@ describe('certkeys:* handlers', () => {
     })
     expect(windowsStore.calls).toEqual(['probe', 'decrypt'])
     expect(windowsStore.decrypted[0].candidate).toMatchObject({ id, label: 'mine', hardware: true })
-    expect(windowsStore.decrypted[0].opts).toEqual({ remember: false, actor: 'agent' })
+    expect(windowsStore.decrypted[0].opts).toEqual({
+      remember: false,
+      actor: 'agent',
+      signal: expect.any(AbortSignal)
+    })
   })
 
   it('decrypt failures come back as results, with plain messages', async () => {

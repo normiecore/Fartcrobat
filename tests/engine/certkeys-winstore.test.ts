@@ -388,17 +388,44 @@ describe.skipIf(!PS)('the long-lived helper', () => {
     )
     const before = new AbortController()
     before.abort()
-    const alreadyCancelled = helper.run(
-      'Write-FcResult ([ordered]@{ ok = $true })',
-      {},
-      { timeoutMs: 60_000, signal: before.signal }
+    // fails at once, without waiting for its turn
+    const alreadyCancelled = code(
+      helper.run(
+        'Write-FcResult ([ordered]@{ ok = $true })',
+        {},
+        { timeoutMs: 60_000, signal: before.signal }
+      )
     )
     setTimeout(() => ac.abort(), 500)
     expect(await code(slow)).toBe('ABORTED')
     // the request after it runs in a new process
     const r = await queued
     expect(r.pid).not.toBe(first)
-    expect(await code(alreadyCancelled)).toBe('ABORTED')
+    expect(await alreadyCancelled).toBe('ABORTED')
+  })
+
+  it('fails a request still waiting in the queue at once on abort or timeout, and leaves the helper alone', async () => {
+    const first = await pidOf()
+    const busy = helper.run(
+      'Start-Sleep -Seconds 3; Write-FcResult ([ordered]@{ ok = $true; pid = $PID })',
+      {},
+      { timeoutMs: 60_000 }
+    )
+    const ac = new AbortController()
+    const cancelled = helper.run(
+      'Write-FcResult ([ordered]@{ ok = $true })',
+      {},
+      { timeoutMs: 60_000, signal: ac.signal }
+    )
+    const impatient = helper.run('Write-FcResult ([ordered]@{ ok = $true })', {}, { timeoutMs: 500 })
+    const t0 = Date.now()
+    ac.abort()
+    expect(await code(cancelled)).toBe('ABORTED')
+    expect(await code(impatient)).toBe('TIMEOUT')
+    expect(Date.now() - t0).toBeLessThan(2500)
+    // the request that was running finishes in the same process, which keeps serving
+    expect((await busy).pid).toBe(first)
+    expect(await pidOf()).toBe(first)
   })
 
   it('fails a request waiting in the process when stop() is called', async () => {
@@ -435,7 +462,7 @@ describe.skipIf(!PS)('the long-lived helper', () => {
     expect(r.codes).toEqual(hresults)
   })
 
-  it('counts every key provider but Microsoft\'s software ones as hardware (smart card, TPM, Windows Hello, vendors)', async () => {
+  it("counts every key provider but Microsoft's software ones as hardware (smart card, TPM, Windows Hello, vendors)", async () => {
     const providers: Record<string, boolean | null> = {
       'Microsoft Software Key Storage Provider': false,
       'Microsoft Enhanced RSA and AES Cryptographic Provider': false,

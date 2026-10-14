@@ -137,14 +137,43 @@ export class PowerShellHelper {
     return this.runScript((id) => buildScript(body, vars, id), opts)
   }
 
-  /** Sends one request built for its id; it must answer with one FCJSON:<id>: line. */
+  /**
+   * Sends one request built for its id; it must answer with one FCJSON:<id>: line. Requests wait for
+   * the ones before them (a decrypt may wait minutes for a PIN), and that wait is bounded too: a
+   * request still waiting after `timeoutMs`, or whose signal aborts while it waits, fails at once
+   * and is never sent, so the helper (and a smart card unlocked in it) is left alone. Once sent, it
+   * has `timeoutMs` again to answer; aborting it then stops the helper.
+   */
   runScript(build: (id: number) => string, opts: RequestOptions): Promise<Record<string, unknown>> {
-    const run = this.queue.then(
-      () => this.send(build, opts),
-      () => this.send(build, opts)
-    )
-    this.queue = run.catch(() => undefined)
-    return run
+    return new Promise((resolve, reject) => {
+      if (opts.signal?.aborted) {
+        reject(new WinStoreError('ABORTED', 'Cancelled'))
+        return
+      }
+      let waiting = true
+      const stopWaiting = () => {
+        waiting = false
+        clearTimeout(timer)
+        opts.signal?.removeEventListener('abort', onAbort)
+      }
+      const giveUp = (err: WinStoreError) => {
+        if (!waiting) return
+        stopWaiting()
+        reject(err)
+      }
+      const timer = setTimeout(
+        () => giveUp(new WinStoreError('TIMEOUT', 'The certificate helper was busy for too long')),
+        opts.timeoutMs
+      )
+      const onAbort = () => giveUp(new WinStoreError('ABORTED', 'Cancelled'))
+      opts.signal?.addEventListener('abort', onAbort, { once: true })
+      const turn = () => {
+        if (!waiting) return undefined
+        stopWaiting()
+        return this.send(build, opts).then(resolve, reject)
+      }
+      this.queue = this.queue.then(turn, turn).catch(() => undefined)
+    })
   }
 
   /**

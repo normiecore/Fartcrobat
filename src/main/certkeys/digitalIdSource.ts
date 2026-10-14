@@ -164,6 +164,11 @@ function findRecipient(envelopes: (ParsedEnvelope | null)[], certIds: Certificat
 
 const unsupported = (what: string) => new CertKeyError('UNSUPPORTED', what)
 
+/** A cancelled decrypt (certkeys:cancel) stops at its next step. */
+function checkCancelled(signal: AbortSignal | undefined): void {
+  if (signal?.aborted) throw new CertKeyError('CANCELLED', 'Cancelled.')
+}
+
 /** The OAEP parameters, or null when they are damaged or use an unknown hash. */
 function readOaep(params: Uint8Array | null): OaepParams | null {
   try {
@@ -390,8 +395,10 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
 
       let bytes: Uint8Array
       try {
+        checkCancelled(opts.signal)
         bytes = await read(id.rec.path)
-      } catch {
+      } catch (err) {
+        if (err instanceof CertKeyError) throw err
         throw new CertKeyError(
           'ID_UNAVAILABLE',
           `The file of the Digital ID “${id.label}” could not be found. Remove it in Preferences > Digital IDs and add it again.`
@@ -420,6 +427,8 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
         throw new CertKeyError('ERROR', `The Digital ID “${id.label}” could not be used.`)
       }
       const { forge, pkcs12 } = lib
+      // Before the slow part (the .p12's key derivation).
+      checkCancelled(opts.signal)
 
       let p12: ParsedDigitalId
       try {
@@ -473,6 +482,11 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
         }
       } finally {
         p12.pkcs8.fill(0)
+      }
+      // Nothing is saved for a cancelled open, and its content goes.
+      if (opts.signal?.aborted) {
+        content.fill(0)
+        checkCancelled(opts.signal)
       }
 
       const extra: Partial<CertKeyVia> = {}
