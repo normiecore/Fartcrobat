@@ -21,7 +21,8 @@ import {
 // tool calls whose effects are checked in the app (document state, undo labels, confirmations,
 // the indicator and the Agent activity panel) and in the audit log.
 
-const HANDLE = /^w\d+-doc-\d+$/
+/** "w<window>-<load>-doc-<n>": the middle part changes whenever the window loads again. */
+const HANDLE = /^w\d+-[a-z0-9]+-doc-\d+$/
 
 // Animations finished, so dialogs are not caught fading in.
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/agent-access-${name}.png`, animations: 'disabled' })
@@ -332,6 +333,131 @@ test('open_document on a protected file waits for the person to type the passwor
   }
 })
 
+test('a call still waiting for the person answers still_running; wait_for_result returns what the person chose', async () => {
+  // Packaged builds ignore FARTCROBAT_AGENT_WAIT_MS and always wait about 45 s.
+  test.skip(!!process.env.FARTCROBAT_EXECUTABLE, 'needs the shorter wait of an unpackaged build')
+  const dir = workDir()
+  const source = join(dir, 'minutes.pdf')
+  copyFileSync(fixturePath('text.pdf'), source)
+  // The window answers still_running after 2.5 s instead of 45 s (AI apps give up after about 60 s).
+  const s = await startSession([source], { FARTCROBAT_AGENT_WAIT_MS: '2500' })
+  try {
+    const { agent, page } = s
+    await waitForRender(page)
+    const [{ handle }] = dataOf(await agent.call('list_documents')).documents
+
+    // The person takes longer than the AI app waits: the call answers with a ticket while the
+    // confirmation stays open.
+    const saving = agent.start('save_document', { handle })
+    const dialog = await confirmation(page, 'Save over the file?')
+    // Only one question at a time: a second call is told the person is busy.
+    expect(errorOf(await agent.call('save_document', { handle }))).toMatch(/^\[busy\] /)
+    await expect(page.getByRole('dialog')).toHaveCount(1)
+    const answered = dataOf(await saving)
+    expect(answered).toEqual({ status: 'still_running', ticket: expect.stringMatching(/^w\d+-t\d+-[a-z0-9]+$/), message: expect.any(String) })
+    await expect(dialog).toBeVisible()
+    await shot(page, 'still-running')
+
+    // The person answers now; the agent collects the result with the ticket, once.
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    let saved = dataOf(await agent.call('wait_for_result', { ticket: answered.ticket }))
+    // As an agent does: ask again while it says still_running (a slow disk).
+    for (let i = 0; i < 5 && saved.status === 'still_running'; i++) saved = dataOf(await agent.call('wait_for_result', { ticket: answered.ticket }))
+    expect(saved).toMatchObject({ handle, saved: source, unsavedChanges: false })
+    expect(errorOf(await agent.call('wait_for_result', { ticket: answered.ticket }))).toMatch(/^\[invalid_args\] /)
+    // The activity panel shows the save as done once the person answered, and the refused call.
+    await page.getByRole('button', { name: /^Claude connected/ }).click()
+    const rows = page.getByRole('list', { name: 'Recent agent activity' }).getByRole('listitem')
+    await expect(rows).toHaveCount(3)
+    await expect(rows.first()).toContainText('minutes.pdf · Failed')
+    await expect(rows.nth(1)).toContainText('Save')
+    await expect(rows.nth(1).locator('svg[aria-label="Done"]')).toBeVisible()
+
+    // The agent can stop a call it no longer wants: the confirmation closes without saving.
+    const before = readFileSync(source)
+    const again = agent.start('save_document', { handle })
+    const second = await confirmation(page, 'Save over the file?')
+    const { ticket } = dataOf(await again)
+    expect(errorOf(await agent.call('wait_for_result', { ticket, cancel: true }))).toBe('[aborted] The call was cancelled.')
+    await expect(second).toBeHidden()
+    expect(readFileSync(source)).toEqual(before)
+
+    const lines = await expectAudit(s.userData, agent.calls)
+    // The refused call may be logged before or after the first one answered still_running.
+    const busy = lines.filter((l) => l.error === 'busy')
+    expect(busy.map((l) => [l.tool, l.outcome])).toEqual([['save_document', 'error']])
+    const rest = lines.filter((l) => l.error !== 'busy' && !(l.tool === 'wait_for_result' && l.outcome === 'pending'))
+    expect(rest.map((l) => [l.tool, l.outcome, l.summary ?? null])).toEqual([
+      ['list_documents', 'done', null],
+      ['save_document', 'pending', `still running, ticket ${answered.ticket}`],
+      ['wait_for_result', 'done', `save_document: saved to ${source}`],
+      ['wait_for_result', 'error', null],
+      ['save_document', 'pending', `still running, ticket ${ticket}`],
+      ['wait_for_result', 'cancelled', 'save_document']
+    ])
+    expect(rest[2]).toMatchObject({ args: { ticket: answered.ticket }, document: source })
+  } finally {
+    await s.close()
+  }
+})
+
+test('handles from before the window reloaded are stale, even where the same tab number is open again', async () => {
+  const s = await startSession()
+  try {
+    const { agent, page } = s
+    const before = dataOf(await agent.call('open_document', { path: fixturePath('text.pdf') }))
+    await waitForRender(page)
+    await page.reload()
+    await expect.poll(() => page.evaluate(() => !!(window as any).__fartcrobat)).toBe(true)
+    const after = dataOf(await agent.call('open_document', { path: fixturePath('form.pdf') }))
+    expect(after.handle).toMatch(HANDLE)
+    expect(after.handle).not.toBe(before.handle)
+    // Same window, and the first tab of this load: only the load part tells them apart.
+    expect(after.handle.replace(/-[a-z0-9]+-/, '-')).toBe(before.handle.replace(/-[a-z0-9]+-/, '-'))
+    expect(errorOf(await agent.call('get_document_info', { handle: before.handle }))).toMatch(/^\[stale_handle\] /)
+    expect(dataOf(await agent.call('get_document_info', { handle: after.handle })).title).toBe('form.pdf')
+    await expectAudit(s.userData, agent.calls)
+  } finally {
+    await s.close()
+  }
+})
+
+test('Disconnect keeps the AI app out until the person allows it again', async () => {
+  const s = await startSession()
+  try {
+    const { agent, page, userData } = s
+    expect(dataOf(await agent.call('list_documents'))).toEqual({ documents: [] })
+    const indicator = page.getByRole('button', { name: /^Claude connected/ })
+    await indicator.click()
+    const activity = page.getByRole('dialog', { name: 'Agent activity' })
+    await activity.getByRole('list', { name: 'Connected AI apps' }).getByRole('button', { name: 'Disconnect', exact: true }).click()
+    await expect(indicator).toBeHidden()
+
+    // The AI app is told why, and does not get back in on its next call.
+    expect(errorOf(await agent.call('list_documents'))).toContain('The person disconnected this AI app in Fartcrobat')
+    await expect(indicator).toBeHidden()
+
+    // Preferences lists it, and lets it back in.
+    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+    const prefs = page.getByRole('dialog', { name: 'Preferences' })
+    await prefs.getByRole('button', { name: 'AI apps', exact: true }).click()
+    const blocked = prefs.getByRole('list', { name: 'Disconnected AI apps' })
+    await expect(blocked).toContainText('Claude')
+    await shot(page, 'preferences-disconnected')
+    await blocked.getByRole('button', { name: 'Allow again', exact: true }).click()
+    await expect(blocked).toBeHidden()
+    expect(dataOf(await agent.call('list_documents'))).toEqual({ documents: [] })
+    await expect(prefs.getByRole('list', { name: 'Connected AI apps' })).toContainText('Claude')
+
+    // The refused call never reached a window.
+    const lines = await expectAudit(userData, ['list_documents', 'list_documents'])
+    expect(lines[0].connection).not.toBe(lines[1].connection)
+  } finally {
+    await s.close()
+  }
+})
+
 test('render_page returns a picture; set_form_values fills a field', async () => {
   const NAME = 'Ada Lovelace-Byron'
   const s = await startSession()
@@ -405,8 +531,7 @@ test('turning agent access off in Preferences refuses calls and removes the endp
     await shot(page, 'preferences-on-again')
 
     // The refused call never reached the app, so it has no audit line. (With no endpoint, the shim
-    // started a copy of the app, as it would for Claude Desktop; the copy handed over to this one,
-    // which holds the profile, and the shim then reported agent access as off.)
+    // read app.json, saw agent access marked off, and answered without starting the app.)
     const lines = await expectAudit(userData, ['list_documents', 'list_documents'])
     expect(lines.map((l) => [l.client, l.outcome])).toEqual([
       ['claude-ai', 'done'],

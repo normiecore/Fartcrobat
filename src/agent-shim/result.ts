@@ -1,6 +1,6 @@
 // How the shim presents Fartcrobat's tools and their results to an AI app over MCP.
 import type { CallToolResult, Tool } from '@modelcontextprotocol/server'
-import type { AgentErrorCode, AgentToolResult } from '@shared/agent/protocol'
+import type { AgentClientInfo, AgentErrorCode, AgentToolResult } from '@shared/agent/protocol'
 import { AGENT_TOOLS } from '@shared/agent/tools'
 
 /** The tool catalogue as MCP lists it: the shared definitions, minus the app's gate and category. */
@@ -12,6 +12,21 @@ export function mcpTools(): Tool[] {
     inputSchema: inputSchema as Tool['inputSchema'],
     annotations
   }))
+}
+
+/**
+ * The AI app as it introduced itself over MCP. A missing name stays empty, so Fartcrobat shows its
+ * own wording for an AI app that did not say who it is.
+ */
+export function clientInfo(info: unknown): AgentClientInfo {
+  const { name, version } = (info && typeof info === 'object' ? info : {}) as {
+    name?: unknown
+    version?: unknown
+  }
+  return {
+    name: typeof name === 'string' ? name.trim() : '',
+    version: typeof version === 'string' ? version : ''
+  }
 }
 
 export function errorResult(code: AgentErrorCode, message: string): AgentToolResult {

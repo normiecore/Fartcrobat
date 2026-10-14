@@ -65,14 +65,27 @@ export function writeAppFile(userData: string, info: AgentAppInfo): Promise<void
   return writeJson(appFile(userData), info)
 }
 
+/**
+ * The .AppImage file this process runs from, if it does. An AppImage runs from a temporary mount
+ * (APPDIR) that is gone once it quits, so it is started again from the file. APPIMAGE and APPDIR
+ * inherited from another AppImage (an AI app that started this one) do not contain execPath.
+ */
+function appImageFile(execPath: string, env: NodeJS.ProcessEnv): string | null {
+  const { APPIMAGE, APPDIR } = env
+  if (!APPIMAGE || !APPDIR) return null
+  return execPath.startsWith(APPDIR.replace(/\/+$/, '') + '/') ? APPIMAGE : null
+}
+
 /** How the shim starts this app: a packaged build starts by itself, a development build needs its app path. */
 export function launchInfo(
   execPath: string,
   isPackaged: boolean,
   appPath: string,
-  appVersion: string
-): AgentAppInfo {
-  return { executable: execPath, args: isPackaged ? [] : [appPath], appVersion }
+  appVersion: string,
+  env: NodeJS.ProcessEnv = process.env
+): Omit<AgentAppInfo, 'enabled'> {
+  const executable = (isPackaged && appImageFile(execPath, env)) || execPath
+  return { executable, args: isPackaged ? [] : [appPath], appVersion }
 }
 
 /**

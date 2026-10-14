@@ -27,8 +27,25 @@ async function waitForView(doc: DocumentModel, timeout = 4000): Promise<boolean>
   return !!doc.view
 }
 
+/** The Initial View being applied to each new document, settled either way. */
+const settling = new WeakMap<DocumentModel, Promise<void>>()
+
+/**
+ * Resolves once the Initial View of a document has been applied (or failed), so a caller that
+ * opened the document can read or change the page after it. Resolves at once for other documents.
+ */
+export function initialViewSettled(doc: DocumentModel): Promise<void> {
+  return settling.get(doc) ?? Promise.resolve()
+}
+
 /** Honours the document's Initial View (Document Properties > Initial View) when it opens. */
-export async function applyInitialView(doc: DocumentModel) {
+export function applyInitialView(doc: DocumentModel): Promise<void> {
+  const applied = apply(doc)
+  settling.set(doc, applied.catch(() => {}))
+  return applied
+}
+
+async function apply(doc: DocumentModel) {
   const props = await navOps(doc).properties()
   const iv = props.initialView
   const isDefault =

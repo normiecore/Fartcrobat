@@ -13,7 +13,7 @@ describe('agent audit log', () => {
 
   it('records argument names, and values only for handle, path, paths and pages', () => {
     const args = {
-      handle: 'w1-doc-2',
+      handle: 'w1-b1-doc-2',
       pages: '1-3',
       path: '/home/me/out.pdf',
       paths: ['/home/me/a.pdf', '/home/me/b.pdf'],
@@ -25,7 +25,7 @@ describe('agent audit log', () => {
     }
     const recorded = auditArgs(args)
     expect(recorded).toEqual({
-      handle: 'w1-doc-2',
+      handle: 'w1-b1-doc-2',
       pages: '1-3',
       path: '/home/me/out.pdf',
       paths: ['/home/me/a.pdf', '/home/me/b.pdf'],
@@ -55,7 +55,7 @@ describe('agent audit log', () => {
       'Merger plan'
     ])
       expect(line).not.toContain(secret)
-    expect(line).toContain('w1-doc-2')
+    expect(line).toContain('w1-b1-doc-2')
     expect(line).toContain('/home/me/out.pdf')
     expect(JSON.parse(line)).toMatchObject({
       connection: 3,
@@ -83,6 +83,20 @@ describe('agent audit log', () => {
     expect(auditOutcome({ error: { code: 'failed', message: '' } })).toBe('error')
     expect(auditOutcome({ error: { code: 'failed', message: '' } }, { outcome: 'done' })).toBe('error')
     expect(auditOutcome({ data: 1 }, { outcome: 'declined' })).toBe('declined')
+    // An agent's cancel, whether the window or the router ended the call.
+    expect(auditOutcome({ error: { code: 'aborted', message: '' } })).toBe('cancelled')
+    expect(auditOutcome({ error: { code: 'aborted', message: '' } }, { outcome: 'cancelled' })).toBe(
+      'cancelled'
+    )
+    // A call that answered still_running; its outcome is logged when wait_for_result returns it.
+    expect(auditOutcome({ data: { status: 'still_running' } }, { outcome: 'pending' })).toBe('pending')
+  })
+
+  it('records which running call a wait_for_result collects', () => {
+    expect(auditArgs({ ticket: 'w2-t3-b1', cancel: true })).toEqual({
+      ticket: 'w2-t3-b1',
+      cancel: NOT_RECORDED
+    })
   })
 
   it('appends lines readable by this user only and keeps one rotated backup', async () => {
@@ -93,7 +107,7 @@ describe('agent audit log', () => {
         connection: 1,
         client: 'claude-ai',
         tool: 'get_context',
-        args: { handle: `w1-doc-${n}` },
+        args: { handle: `w1-b1-doc-${n}` },
         result: { data: {} },
         started: 0,
         finished: 1
@@ -106,7 +120,7 @@ describe('agent audit log', () => {
         .trim()
         .split('\n')
         .map((l) => JSON.parse(l).args.handle)
-    ).toEqual(['w1-doc-1', 'w1-doc-2'])
+    ).toEqual(['w1-b1-doc-1', 'w1-b1-doc-2'])
     for (let n = 3; n <= 12; n++) void log.append(entry(n))
     await log.flush()
     expect(existsSync(file + '.1')).toBe(true)
@@ -118,7 +132,7 @@ describe('agent audit log', () => {
       ...readFileSync(file, 'utf8').trim().split('\n')
     ].map((l) => JSON.parse(l).args.handle)
     // The newest lines survive in order; the oldest went with the earlier backup.
-    expect(all[all.length - 1]).toBe('w1-doc-12')
+    expect(all[all.length - 1]).toBe('w1-b1-doc-12')
     expect(all).toEqual([...all].sort((a, b) => Number(a.split('-').pop()) - Number(b.split('-').pop())))
   })
 

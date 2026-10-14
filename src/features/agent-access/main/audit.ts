@@ -4,8 +4,11 @@ import { dirname } from 'node:path'
 import type { AgentAuditDetail, AgentAuditEntry } from '@shared/agent/bridge'
 import type { AgentToolResult } from '@shared/agent/protocol'
 
-/** Arguments whose values are recorded: they say which document and pages, not what is in them. */
-const RECORDED = new Set(['handle', 'path', 'paths', 'pages'])
+/**
+ * Arguments whose values are recorded: they say which document and pages (and which running call
+ * a wait_for_result collects), not what is in them.
+ */
+const RECORDED = new Set(['handle', 'path', 'paths', 'pages', 'ticket'])
 /** Stands in for every other argument's value (comment text, form values, search queries...). */
 export const NOT_RECORDED = '[not recorded]'
 /** The log is rotated (one .1 backup kept) once it grows past this. */
@@ -25,7 +28,7 @@ function recordedValue(value: unknown): unknown {
   return NOT_RECORDED
 }
 
-/** The argument names an agent gave, with values only for handle, path, paths and pages. */
+/** The argument names an agent gave, with values only for handle, path, paths, pages and ticket. */
 export function auditArgs(args: unknown): Record<string, unknown> {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return {}
   const out: Record<string, unknown> = {}
@@ -34,14 +37,15 @@ export function auditArgs(args: unknown): Record<string, unknown> {
   return out
 }
 
-const OUTCOMES = new Set<string>(['done', 'declined', 'cancelled', 'error'])
+const OUTCOMES = new Set<string>(['done', 'declined', 'cancelled', 'error', 'pending'])
 
 export function auditOutcome(result: AgentToolResult, detail?: AgentAuditDetail): AgentAuditEntry['outcome'] {
   const said = detail && OUTCOMES.has(detail.outcome) ? detail.outcome : undefined
   const code = result.error?.code
   if (!code) return said ?? 'done'
   if (said && said !== 'done') return said
-  return code === 'declined' ? 'declined' : code === 'cancelled' ? 'cancelled' : 'error'
+  // An agent's cancel is 'cancelled' whether the window or the router ended the call.
+  return code === 'declined' ? 'declined' : code === 'cancelled' || code === 'aborted' ? 'cancelled' : 'error'
 }
 
 export interface FinishedCall {
