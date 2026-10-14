@@ -220,7 +220,9 @@ export function certKeyHandlers(deps: CertKeyHandlerDeps): CertKeyHandlers {
     }),
     'certkeys:lockSmartCard': guarded(async () => {
       deps.windowsStore.stop()
-    })
+    }),
+    // CONTRACT STUB (main-process fixer replaces): stop the decrypt named by requestId.
+    'certkeys:cancel': guarded(async () => {})
   }
   return handlers as CertKeyHandlers
 }

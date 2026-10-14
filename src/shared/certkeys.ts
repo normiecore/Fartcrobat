@@ -118,6 +118,11 @@ export interface CertKeysProbeResult {
   candidates: CertKeyCandidate[]
   /** Everyone the file is encrypted for, to tell the person when none of their keys match. */
   recipients: PubSecRecipient[]
+  /**
+   * Whether the Windows certificate store could be searched ('constrained' or 'unavailable' explain
+   * why it found nothing). Absent from older main processes.
+   */
+  windowsStore?: WindowsStoreState
 }
 
 export interface CertKeysDecryptRequest {
@@ -129,6 +134,11 @@ export interface CertKeysDecryptRequest {
   /** Save the typed password on this device after it worked (Digital IDs). */
   remember?: boolean
   actor: CertKeyActor
+  /**
+   * Names this request for certkeys:cancel (letters, digits, '-' and '_', at most 64). Cancelling a
+   * Windows store request stops the helper, so a smart card PIN entered in it is asked again.
+   */
+  requestId?: string
 }
 
 /**
