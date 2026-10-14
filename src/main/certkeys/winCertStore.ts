@@ -378,7 +378,10 @@ export interface DecryptResult {
   name: string
   contentEncryptionAlgorithm: string
   keyEncryptionAlgorithm: string
-  /** The key that decrypted is on a smart card or the TPM; null when Windows did not say. */
+  /**
+   * The key that decrypted is held by a provider other than Microsoft's software ones (a smart card, the
+   * TPM, Windows Hello, a vendor's token); null when Windows did not say (winStoreScripts KEY_HARDWARE).
+   */
   hardware: boolean | null
   /** The CSP or KSP that holds the key, when known. */
   provider: string | null

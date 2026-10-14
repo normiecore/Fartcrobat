@@ -47,11 +47,14 @@ function Write-FcResult($obj) {
   [Console]::Out.WriteLine('FCJSON:' + $FcId + ':' + (ConvertTo-FcJson $obj))
   [Console]::Out.Flush()
 }
-# HRESULTs from winerror.h that the decrypt path can raise on Windows.
+# HRESULTs from winerror.h that the decrypt path can raise on Windows. Cancelled: SCARD_W_CANCELLED_BY_USER,
+# HRESULT_FROM_WIN32(ERROR_CANCELLED), and NTE_USER_CANCELLED (key storage providers with their own dialog,
+# such as Windows Hello's).
 $FcCodes = @{
   '8009100B' = 'NO_MATCHING_CERT'
   '8010006E' = 'CANCELLED'
   '800704C7' = 'CANCELLED'
+  '80090036' = 'CANCELLED'
   '8010006B' = 'WRONG_PIN'
   '8010006C' = 'PIN_BLOCKED'
   '8010000C' = 'CARD_NOT_PRESENT'
@@ -90,15 +93,64 @@ if (-not ('System.Security.Cryptography.Pkcs.EnvelopedCms' -as [type])) {
 `
 
 /**
+ * Whether the key that just decrypted is hardware, from the name of the provider that holds it
+ * (Windows only; elsewhere every key is software). Only Microsoft's own software providers count as
+ * software. Every other provider counts as hardware: smart card and TPM providers, the key storage
+ * providers of token, smart card and HSM middleware, and "Microsoft Passport Key Storage Provider"
+ * (Windows Hello for Business), whose keys usually live in the TPM and are unlocked with the Windows
+ * Hello PIN or gesture, which the helper process then keeps like a smart card PIN. Erring this way
+ * keeps "Lock smart card" offered whenever a key may stay unlocked in the helper. When Windows names
+ * no provider the answer is $null, which windowsStoreSource also treats as possibly unlocked.
+ * Get-FcKeyHardware is only called after a successful decrypt, so it never causes a PIN prompt.
+ */
+export const KEY_HARDWARE = String.raw`
+$FcSoftwareProviders = @(
+  'Microsoft Software Key Storage Provider',
+  'Microsoft Base Cryptographic Provider v1.0',
+  'Microsoft Enhanced Cryptographic Provider v1.0',
+  'Microsoft Strong Cryptographic Provider',
+  'Microsoft Enhanced RSA and AES Cryptographic Provider',
+  'Microsoft Enhanced RSA and AES Cryptographic Provider (Prototype)',
+  'Microsoft RSA SChannel Cryptographic Provider'
+)
+function Get-FcProviderHardware([string]$provider) {
+  $p = $provider.Trim()
+  if (-not $p) { return $null }
+  return (-not ($FcSoftwareProviders -contains $p))
+}
+function Get-FcKeyHardware($cert) {
+  $info = [ordered]@{ hardware = $null; provider = $null }
+  if ([string][System.Environment]::OSVersion.Platform -ne 'Win32NT') { $info.hardware = $false; return $info }
+  try {
+    $key = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
+    if ($null -eq $key) { return $info }
+    $type = $key.GetType().FullName
+    if ($type -eq 'System.Security.Cryptography.RSACng') {
+      $info.provider = [string]$key.Key.Provider.Provider
+    } elseif ($type -eq 'System.Security.Cryptography.RSACryptoServiceProvider') {
+      $csp = $key.CspKeyContainerInfo
+      $info.provider = [string]$csp.ProviderName
+      try { if ($csp.HardwareDevice -or $csp.Removable) { $info.hardware = $true } } catch { }
+    }
+    if ($null -eq $info.hardware) { $info.hardware = Get-FcProviderHardware ([string]$info.provider) }
+    try { $key.Dispose() } catch { }
+  } catch { }
+  return $info
+}
+`
+
+/**
  * Inputs: $Blobs (base64 PKCS#7 EnvelopedData, in /Recipients order), $Mode ('probe' or 'decrypt'),
  * $Thumbprint ('' or the SHA-1 thumbprint of the only certificate to use).
  * probe: says which of the person's certificates (with a private key) match a recipient, without using
  *        or opening any key, so it never shows a PIN prompt.
  * decrypt: decrypts the first matching recipient with EnvelopedCms (Windows asks for a smart card PIN
  *        itself) and returns ContentInfo.Content (for PubSec: 20-byte seed + 4 permission bytes), then
- *        says whether the key it just used is hardware (a smart card or the TPM).
+ *        says whether the key it just used is hardware (see KEY_HARDWARE).
  */
-export const DECRYPT_BODY = String.raw`
+export const DECRYPT_BODY =
+  KEY_HARDWARE +
+  String.raw`
 function Get-FcSerialKeys([string]$hex) {
   $h = ($hex -replace '[^0-9A-Fa-f]', '').ToUpperInvariant()
   if ($h.Length % 2) { $h = '0' + $h }
@@ -143,31 +195,6 @@ function Get-FcSkis($cert) {
   return $out
 }
 function Get-FcNorm([string]$s) { return ($s -replace '\s+', '').ToUpperInvariant() }
-# Which provider holds the private key that just decrypted: smart card and TPM providers are hardware.
-# Only called after a successful decrypt, so it never causes a PIN prompt of its own.
-function Get-FcKeyHardware($cert) {
-  $info = [ordered]@{ hardware = $null; provider = $null }
-  if ([string][System.Environment]::OSVersion.Platform -ne 'Win32NT') { $info.hardware = $false; return $info }
-  try {
-    $key = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
-    if ($null -eq $key) { return $info }
-    $type = $key.GetType().FullName
-    if ($type -eq 'System.Security.Cryptography.RSACng') {
-      $info.provider = [string]$key.Key.Provider.Provider
-    } elseif ($type -eq 'System.Security.Cryptography.RSACryptoServiceProvider') {
-      $csp = $key.CspKeyContainerInfo
-      $info.provider = [string]$csp.ProviderName
-      if ($csp.HardwareDevice) { $info.hardware = $true }
-    }
-    if ($info.provider) {
-      if ($info.provider -match 'Smart Card|Platform Crypto') { $info.hardware = $true }
-      elseif ($null -eq $info.hardware) { $info.hardware = $false }
-    }
-    try { $key.Dispose() } catch { }
-  } catch { }
-  return $info
-}
-
 $storeErrors = New-Object System.Collections.ArrayList
 $owned = New-Object System.Collections.ArrayList
 $opened = New-Object System.Collections.ArrayList
@@ -240,8 +267,11 @@ if ($ordered.Count -eq 0) {
   Write-FcResult ([ordered]@{ ok = $true; mode = 'probe'; candidates = $candOut; recipients = $recipients; storeErrors = $storeErrors })
 } else {
   $attempts = New-Object System.Collections.ArrayList
+  $absent = New-Object System.Collections.ArrayList
   $done = $false
   foreach ($c in $ordered) {
+    # a missing card is missing for every envelope that names its certificate
+    if ($absent -contains $c.cert.Thumbprint) { continue }
     try {
       $extra = New-Object "$X.X509Certificate2Collection"
       [void]$extra.Add($c.cert)
@@ -267,6 +297,7 @@ if ($ordered.Count -eq 0) {
       $fe.blob = $c.blob; $fe.index = $c.index; $fe.thumbprint = $c.cert.Thumbprint
       [void]$attempts.Add($fe)
       if (@('CANCELLED', 'WRONG_PIN', 'PIN_BLOCKED') -contains $fe.code) { break }
+      if ($fe.code -eq 'CARD_NOT_PRESENT') { [void]$absent.Add($c.cert.Thumbprint) }
     }
   }
   if (-not $done) {
