@@ -1,9 +1,18 @@
 /**
  * Certificate security in the Protect tools: the recipients and permission groups of Protect >
  * Encrypt with Certificate, the person's own certificate, and what the Protect panel says about a
- * certificate-encrypted document. Pure: no DOM, no IPC (the dialog and flows.tsx do those).
+ * certificate-encrypted document. Pure: no DOM, no IPC (the dialog and flows.tsx do those, and
+ * pass IPC to readRecipientSources as ports).
  */
-import type { CertKeyCandidate, CertKeysProbeResult, CertKeyVia, EncryptionCertificate, PubSecRecipient } from '@shared/certkeys'
+import type {
+  CertKeyCandidate,
+  CertKeysProbeResult,
+  CertKeysStatus,
+  CertKeyVia,
+  EncryptionCertificate,
+  PubSecRecipient,
+  WindowsStoreState
+} from '@shared/certkeys'
 import type { CertificateGroup, DocInfo, Permission } from '@shared/types'
 import type { DocUnlock } from '@renderer/sdk'
 import { fromBase64 } from '@features/digital-signatures/lib/asn1'
@@ -17,6 +26,20 @@ export const EC_REASON = 'Elliptic-curve certificates cannot be used for certifi
 export const OTHER_KEY_REASON = 'Only certificates with RSA keys can be used for certificate encryption.'
 export const OWN_REMOVED_WARNING = 'You will not be able to open this file yourself unless you have another certificate in the recipient list.'
 export const REPLACE_CERTIFICATE_SECURITY = 'This replaces the certificate security with a password.'
+/** Shown in the Protect dialog while a certificate-encrypted document would get no open password. */
+export const OPENS_FOR_ANYONE =
+  'Without a password to open it, the file will no longer be encrypted for its recipients: anyone with the file will be able to open it. The permissions password only limits what they can do with it.'
+
+/**
+ * The question before Protect using password or Restrict editing replaces certificate security.
+ * Restrict editing starts without an open password, so it says that anyone will be able to open it.
+ */
+export function replaceCertificateSecurityMessage(mode: 'password' | 'restrict'): string {
+  if (mode === 'restrict') {
+    return `${REPLACE_CERTIFICATE_SECURITY} The file will no longer be encrypted for its recipients: unless you also require a password to open it, anyone with the file will be able to open it.`
+  }
+  return `${REPLACE_CERTIFICATE_SECURITY} The people it is encrypted for will no longer open it with their certificates.`
+}
 
 // ---- recipients ---------------------------------------------------------------------------------
 
@@ -98,6 +121,56 @@ export function recipientsFromFile(certs: CertificateInfo[], fileName: string): 
   return certs.map((cert) => ({ id: cert.sha256, cert, source: 'file', sourceLabel: fileName, mine: false }))
 }
 
+/** The certificates the person can pick recipients from. */
+export interface RecipientSources {
+  /** Preferences > Digital IDs. */
+  ids: Recipient[]
+  /** The Windows store: the person's own certificates, then Other People. */
+  store: Recipient[]
+  storeState: WindowsStoreState
+  /** The store can be used but could not be listed this time: said in its tab instead of "no certificates". */
+  storeError?: string
+}
+
+export const STORE_LIST_FAILED =
+  'The Windows certificate store could not be read. Close this window and try again, or use Digital IDs or certificate files.'
+
+/** Where readRecipientSources() reads from (IPC in the app, fakes in tests). */
+export interface RecipientSourcePorts {
+  ids(): Promise<DigitalIdRecord[]>
+  status(): Promise<Pick<CertKeysStatus, 'windowsStore'>>
+  list(): Promise<EncryptionCertificate[]>
+}
+
+/** Reads the Digital IDs and, when it can be used, the Windows certificate store. Never prompts. */
+export async function readRecipientSources(ports: RecipientSourcePorts): Promise<RecipientSources> {
+  const ids = (await ports.ids()).map(recipientFromDigitalId).filter((r): r is Recipient => !!r)
+  let storeState: WindowsStoreState = 'unavailable'
+  let store: Recipient[] = []
+  let storeError: string | undefined
+  try {
+    storeState = (await ports.status()).windowsStore
+    if (storeState === 'available') {
+      try {
+        store = (await ports.list()).map(recipientFromStore).filter((r): r is Recipient => !!r)
+      } catch (err) {
+        console.warn('[protect-optimize] could not list the Windows certificates', err)
+        // 'available' also means "not tried yet": the first list can find PowerShell restricted
+        // (Constrained Language Mode) or missing, which the status says now.
+        storeState = await ports.status().then(
+          (s) => s.windowsStore,
+          () => 'unavailable' as const
+        )
+        if (storeState === 'available') storeError = STORE_LIST_FAILED
+      }
+    }
+  } catch (err) {
+    console.warn('[protect-optimize] could not read the Windows certificate store status', err)
+    storeState = 'unavailable'
+  }
+  return { ids, store, storeState, ...(storeError ? { storeError } : {}) }
+}
+
 function viaMatches(via: CertKeyVia, r: Recipient): boolean {
   const fp = via.fingerprint.replace(/[^0-9a-f]/gi, '').toUpperCase()
   return (via.source === 'digital-id' ? r.cert.sha256 : r.cert.sha1) === fp
@@ -126,7 +199,7 @@ export interface GroupSettings {
   edit: boolean
   /** Inserting, deleting and rotating pages. */
   assemble: boolean
-  /** Commenting. */
+  /** Commenting (also gives filling in form fields: one permission bit covers both). */
   annotate: boolean
   /** Filling in form fields and signing. */
   form: boolean
@@ -164,7 +237,8 @@ export function groupPermissions(s: GroupSettings): Record<Permission, boolean> 
     'print-hq': s.printing === 'high',
     edit: s.edit,
     annotate: s.annotate,
-    form: s.form,
+    // Commenting (bit 6) also allows filling in forms (ISO 32000-2, table 24), as in Acrobat.
+    form: s.form || s.annotate,
     assemble: s.assemble,
     copy: s.copy,
     // Copying implies access for screen readers, as in Acrobat.
@@ -254,6 +328,21 @@ export function removeGroup(groups: RecipientGroup[], groupId: number): Recipien
   return rest.map((g, i) => (i === 0 ? { ...g, recipients: [...g.recipients, ...gone.recipients] } : g))
 }
 
+/**
+ * What the dialog says after removeGroup() moved recipients: where they went and what that group
+ * allows (it may give them more, even the security settings). Null when nothing moved.
+ */
+export function removedGroupNotice(groups: RecipientGroup[], groupId: number): string | null {
+  const gone = groups.find((g) => g.id === groupId)
+  const rest = groups.filter((g) => g.id !== groupId)
+  if (!gone?.recipients.length || !rest.length) return null
+  const who = gone.recipients.length === 1 ? gone.recipients[0].cert.name : `${gone.recipients.length} recipients`
+  // Groups are numbered by position, so the first remaining group is Group 1 (or the only one).
+  const where = rest.length > 1 ? 'Group 1' : 'the remaining group'
+  const allows = permissionSummary(rest[0].settings).replace(/^./, (c) => c.toLowerCase())
+  return `${who} moved to ${where} (${allows}).`
+}
+
 /** One of the person's own certificates is a recipient, so they can open the file later. */
 export function hasOwnRecipient(groups: RecipientGroup[]): boolean {
   return groups.some((g) => g.recipients.some((r) => r.mine))
@@ -268,9 +357,14 @@ export function ownVia(groups: RecipientGroup[], preferred: Recipient | null): C
 
 // ---- certificate-encrypted documents in the Protect panel ---------------------------------------
 
-/** The certificate that opened it may change the security, or it allows everything. */
-export function hasFullAccess(info: Pick<DocInfo, 'permissions'>, unlock: DocUnlock | null | undefined): boolean {
-  return unlock?.access === 'owner' || PERMISSIONS.every((p) => info.permissions[p] !== false)
+/**
+ * The envelope the person's certificate opened may change the security (DocUnlock.access 'owner').
+ * Only that counts: an envelope that allows every permission but not changing the security (what
+ * "Add a Group with Other Permissions" starts with) cannot replace or remove it, and the engine
+ * refuses. Without an unlock it is not known which envelope opened it, so nothing is offered.
+ */
+export function hasFullAccess(unlock: DocUnlock | null | undefined): boolean {
+  return unlock?.access === 'owner'
 }
 
 /**
@@ -288,7 +382,7 @@ export function certificateSecurity(
     encrypted: true,
     method: encryptionLabel(info.encryption),
     needsOpenPassword: false,
-    ownerAccess: hasFullAccess(info, unlock),
+    ownerAccess: hasFullAccess(unlock),
     permissions,
     filePermissions: { ...permissions }
   }

@@ -3,14 +3,18 @@
 // (src/features/protect-optimize/certificates.ts).
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
-import type { CertKeyCandidate, CertKeyVia, EncryptionCertificate, PubSecRecipient } from '@shared/certkeys'
+import { describe, expect, it, vi } from 'vitest'
+import { PUBSEC_PERMISSION, type CertKeyCandidate, type CertKeyVia, type EncryptionCertificate, type PubSecRecipient, type WindowsStoreState } from '@shared/certkeys'
 import type { DocInfo, Permission } from '@shared/types'
 import type { DigitalIdRecord } from '@features/digital-signatures/types'
+import { certificatePermissionBits, certificatePermissions } from '@engine/crypt/keys'
+import { certificateAccess, type DocUnlock } from '@renderer/app/unlock'
 import { certificateInfo } from '@features/protect-optimize/certificateFiles'
 import {
   EC_REASON,
   FULL_ACCESS,
+  OPENS_FOR_ANYONE,
+  STORE_LIST_FAILED,
   addRecipients,
   certificateRecipientNames,
   certificateSecurity,
@@ -23,17 +27,21 @@ import {
   moveRecipient,
   ownVia,
   permissionSummary,
+  readRecipientSources,
   recipientFromDigitalId,
   recipientFromStore,
   recipientRefusal,
   recipientsFromFile,
   removeGroup,
   removeRecipient,
+  removedGroupNotice,
+  replaceCertificateSecurityMessage,
   toCertificateGroups,
   type GroupSettings,
   type Recipient,
   type RecipientGroup
 } from '@features/protect-optimize/certificates'
+import { DEFAULT_PROTECT_SETTINGS, permissionRows, protectedSummary, type ProtectSettings } from '@features/protect-optimize/shared'
 
 const PKI = join(__dirname, '../fixtures/passwordless/pki')
 const pki = (name: string) => new Uint8Array(readFileSync(join(PKI, name)))
@@ -178,6 +186,32 @@ describe('protect-optimize: certificate recipients', () => {
     expect(() => toCertificateGroups([group(1, [alice, fileRecipient('ec.cer')])])).toThrow(EC_REASON)
   })
 
+  it('lets a group that may comment fill in forms too, as the permission bits say', () => {
+    // ISO 32000-2, table 24: bit 6 allows commenting and filling in form fields; bit 9 only adds
+    // form filling when bit 6 is clear. "May comment but not fill forms" cannot be written.
+    const commentOnly: GroupSettings = {
+      printing: 'high',
+      edit: false,
+      assemble: false,
+      annotate: true,
+      form: false,
+      copy: false,
+      accessibility: true,
+      changeSecurity: false
+    }
+    expect(groupPermissions(commentOnly)).toMatchObject({ annotate: true, form: true })
+    expect(permissionSummary(commentOnly)).toBe('Not allowed: changing the document, inserting, deleting and rotating pages and copying text and images')
+    const [g] = toCertificateGroups([group(1, [fileRecipient('bob.cer')], commentOnly)])
+    const bits = certificatePermissionBits(g.permissions, g.changeSecurity)
+    expect(bits & PUBSEC_PERMISSION.annotate).not.toBe(0)
+    expect(bits & PUBSEC_PERMISSION.fillForms).not.toBe(0)
+    // Fartcrobat reads it back the same way.
+    expect(certificatePermissions(bits).permissions).toMatchObject({ annotate: true, form: true })
+    // Form filling alone is still possible.
+    expect(groupPermissions({ ...commentOnly, annotate: false, form: true })).toMatchObject({ annotate: false, form: true })
+    expect(groupPermissions({ ...commentOnly, annotate: false })).toMatchObject({ annotate: false, form: false })
+  })
+
   it('keeps every certificate once across the groups, and moves and removes them', () => {
     const alice = fileRecipient('alice.cer')
     const bob = fileRecipient('bob.cer')
@@ -206,6 +240,83 @@ describe('protect-optimize: certificate recipients', () => {
     expect(removeGroup(one, 1)).toBe(one)
   })
 
+  it('says where the recipients of a removed group went, with that group’s permissions', () => {
+    const alice = fileRecipient('alice.cer')
+    const bob = fileRecipient('bob.cer')
+    const stranger = fileRecipient('stranger.cer')
+    const printOnly: GroupSettings = { ...FULL_ACCESS, changeSecurity: false, edit: false, assemble: false, annotate: false, form: false, copy: false, accessibility: false }
+    // Reviewers in a print-only group 2 would get group 1's full access: say so.
+    const two = [group(1, [alice]), group(2, [bob], printOnly)]
+    expect(removedGroupNotice(two, 2)).toBe('Bob Tëst moved to the remaining group (full access, including the security settings).')
+    const three = [group(1, [alice], printOnly), group(2, [bob, stranger]), group(3, [])]
+    expect(removedGroupNotice(three, 2)).toBe(
+      '2 recipients moved to Group 1 (not allowed: changing the document, inserting, deleting and rotating pages, commenting, filling in forms and signing, copying text and images and screen reader access).'
+    )
+    // Removing group 1 moves them to the group that becomes group 1.
+    expect(removedGroupNotice(three, 1)).toBe('Alice Test moved to Group 1 (full access, including the security settings).')
+    // Nothing moved: nothing to say.
+    expect(removedGroupNotice(three, 3)).toBeNull()
+    expect(removedGroupNotice([group(1, [alice])], 1)).toBeNull()
+    expect(removedGroupNotice(three, 99)).toBeNull()
+  })
+
+  it('reads the recipient sources, and says why the Windows store list is empty when listing it failed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const ids = async () => [digitalId('Alice', 'alice.cer')]
+      const mine = storeCert('winstore/me-enc.cer', 'CurrentUser\\My', true)
+      const colleague = storeCert('winstore/colleague.cer', 'CurrentUser\\AddressBook', false)
+      const ok = await readRecipientSources({ ids, status: async () => ({ windowsStore: 'available' }), list: async () => [mine, colleague] })
+      expect(ok.ids.map((r) => r.cert.name)).toEqual(['Alice Test'])
+      expect(ok.store.map((r) => r.source)).toEqual(['windows-store', 'other-people'])
+      expect(ok).toMatchObject({ storeState: 'available' })
+      expect(ok.storeError).toBeUndefined()
+
+      // Not Windows, or the store is off: it is not listed at all.
+      let listed = false
+      const off = await readRecipientSources({
+        ids,
+        status: async () => ({ windowsStore: 'not-windows' }),
+        list: async () => {
+          listed = true
+          return []
+        }
+      })
+      expect(off).toMatchObject({ store: [], storeState: 'not-windows' })
+      expect(listed).toBe(false)
+
+      // The first use of the helper finds PowerShell in Constrained Language Mode: the status said
+      // 'available' (not tried yet) and says 'constrained' after the failed list.
+      const states: WindowsStoreState[] = ['available', 'constrained']
+      const constrained = await readRecipientSources({
+        ids,
+        status: async () => ({ windowsStore: states.shift()! }),
+        list: async () => {
+          throw new Error('The Windows certificate store is not available right now')
+        }
+      })
+      expect(constrained).toMatchObject({ store: [], storeState: 'constrained' })
+      expect(constrained.storeError).toBeUndefined()
+
+      // PowerShell missing: the tab goes away.
+      const missing = ['available', 'unavailable'] as WindowsStoreState[]
+      expect(
+        await readRecipientSources({ ids, status: async () => ({ windowsStore: missing.shift()! }), list: () => Promise.reject(new Error('no')) })
+      ).toMatchObject({ store: [], storeState: 'unavailable' })
+
+      // Still 'available' (a timeout): the tab stays, with the reason instead of "no certificates".
+      const timeout = await readRecipientSources({ ids, status: async () => ({ windowsStore: 'available' }), list: () => Promise.reject(new Error('timeout')) })
+      expect(timeout).toMatchObject({ store: [], storeState: 'available', storeError: STORE_LIST_FAILED })
+
+      // The status itself fails: no store tab, the Digital IDs still come.
+      const broken = await readRecipientSources({ ids, status: () => Promise.reject(new Error('ipc')), list: async () => [mine] })
+      expect(broken).toMatchObject({ store: [], storeState: 'unavailable' })
+      expect(broken.ids).toHaveLength(1)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('warns when none of the person’s own certificates is a recipient, and says how the reopened file was opened', () => {
     const own = chooseOwnCertificate({ ids: [recipientFromDigitalId(digitalId('Alice', 'alice.cer'))!], store: [] })!
     const bob = fileRecipient('bob.cer')
@@ -229,11 +340,63 @@ describe('protect-optimize: certificate-encrypted documents', () => {
     permissions: { ...ALL, ...permissions }
   })
 
-  it('gives full access to a certificate that may change the security or allows everything', () => {
-    expect(hasFullAccess(info({}), null)).toBe(true)
-    expect(hasFullAccess(info({ edit: false }), { method: 'certificate', access: 'owner' })).toBe(true)
-    expect(hasFullAccess(info({ edit: false }), { method: 'certificate', access: 'user' })).toBe(false)
-    expect(hasFullAccess(info({ 'print-hq': false }), undefined)).toBe(false)
+  it('gives full access only to a certificate that may change the security', () => {
+    expect(hasFullAccess({ method: 'certificate', access: 'owner' })).toBe(true)
+    expect(hasFullAccess({ method: 'source', access: 'owner' })).toBe(true)
+    expect(hasFullAccess({ method: 'certificate', access: 'user' })).toBe(false)
+    // Without knowing which envelope opened it, nothing is offered that the engine may refuse.
+    expect(hasFullAccess(null)).toBe(false)
+    expect(hasFullAccess(undefined)).toBe(false)
+  })
+
+  it('does not count an envelope that allows everything except changing the security as full access', () => {
+    // "Add a Group with Other Permissions" starts with exactly this group.
+    const [group2] = toCertificateGroups([group(2, [fileRecipient('bob.cer')], { ...FULL_ACCESS, changeSecurity: false })])
+    const bits = certificatePermissionBits(group2.permissions, group2.changeSecurity)
+    expect(bits).toBe(0xfffffffd)
+    // What Bob gets when he opens the file: every permission, but not the security settings.
+    const opened = certificatePermissions(bits)
+    expect(opened.permissions).toEqual(ALL)
+    const unlock: DocUnlock = { method: 'certificate', access: certificateAccess(bits) }
+    expect(unlock.access).toBe('user')
+    expect(hasFullAccess(unlock)).toBe(false)
+    const st = certificateSecurity(info(opened.permissions), unlock)
+    expect(st.ownerAccess).toBe(false)
+    expect(st.permissions).toEqual(ALL)
+    // The panel's table says why Protect and Remove security are disabled.
+    const rows = permissionRows(st.filePermissions, { changeSecurity: st.ownerAccess })
+    expect(rows.at(-1)).toEqual(['Changing the security', 'Not allowed', 'denied'])
+    expect(rows.slice(0, -1).every(([, , level]) => level === 'allowed')).toBe(true)
+    expect(permissionRows(ALL, { changeSecurity: true }).at(-1)).toEqual(['Changing the security', 'Allowed', 'allowed'])
+    // Password security has no such row (its permissions password changes the security).
+    expect(permissionRows(ALL).map(([label]) => label)).not.toContain('Changing the security')
+  })
+
+  it('says that replacing certificate security without an open password lets anyone open the file', () => {
+    // Protect using password: the recipients will need the password instead.
+    expect(replaceCertificateSecurityMessage('password')).toBe(
+      'This replaces the certificate security with a password. The people it is encrypted for will no longer open it with their certificates.'
+    )
+    // Restrict editing starts without an open password: say plainly what that means.
+    const restrict = replaceCertificateSecurityMessage('restrict')
+    expect(restrict).toContain('no longer be encrypted for its recipients')
+    expect(restrict).toContain('anyone with the file will be able to open it')
+    expect(OPENS_FOR_ANYONE).toContain('anyone with the file will be able to open it')
+
+    // The summary after saving says it too, whatever the document was.
+    const restrictOnly: ProtectSettings = { ...DEFAULT_PROTECT_SETTINGS, requireOpenPassword: false, restrictEditing: true, permissionsPassword: 'p', changes: 'comments', allowCopy: false }
+    expect(protectedSummary(restrictOnly, { certificate: true })).toEqual([
+      'It is no longer encrypted for its recipients: anyone with the file can open it without a password.',
+      'Without the permissions password, these are not allowed: changing the document, inserting, deleting and rotating pages and copying text and images.'
+    ])
+    expect(protectedSummary(restrictOnly)[0]).toBe('Anyone with the file can open it without a password.')
+    // With an open password nothing changes.
+    const both: ProtectSettings = { ...restrictOnly, requireOpenPassword: true, openPassword: 'o', changes: 'any', allowCopy: true }
+    expect(protectedSummary(both, { certificate: true, remembered: true })).toEqual([
+      'Opening it needs the password you set. It is saved on this device, so the file opens here without asking.',
+      'Changing its security needs the permissions password.'
+    ])
+    expect(protectedSummary({ ...DEFAULT_PROTECT_SETTINGS, openPassword: 'o' })).toEqual(['Opening it needs the password you set.'])
   })
 
   it('describes the security without a password', () => {
@@ -247,6 +410,7 @@ describe('protect-optimize: certificate-encrypted documents', () => {
       filePermissions: { ...ALL, edit: false, copy: false }
     })
     expect(certificateSecurity(info({}), { method: 'source', access: 'owner' })).toMatchObject({ method: '256-bit AES', ownerAccess: true })
+    expect(certificateSecurity(info({}), { method: 'certificate', access: 'user' })).toMatchObject({ ownerAccess: false })
     expect(certificateSecurity(info({}, 'Adobe.PubSec V4 128-bit RC4'), null).method).toBe('128-bit RC4')
   })
 

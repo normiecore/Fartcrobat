@@ -116,10 +116,30 @@ export type CertificateFileKind = 'pem' | 'certificate' | 'pkcs7' | 'pkcs12'
 
 const PEM_BLOCK = /-----BEGIN ([A-Z0-9 ]+)-----([\s\S]*?)-----END \1-----/g
 
+const PEM_BEGIN = new TextEncoder().encode('-----BEGIN ')
+
+/** Where `needle` starts in `bytes`, or -1. */
+function indexOfBytes(bytes: Uint8Array, needle: Uint8Array): number {
+  const first = needle[0]
+  const last = bytes.length - needle.length
+  outer: for (let i = bytes.indexOf(first); i !== -1 && i <= last; i = bytes.indexOf(first, i + 1)) {
+    for (let j = 1; j < needle.length; j++) if (bytes[i + j] !== needle[j]) continue outer
+    return i
+  }
+  return -1
+}
+
+/**
+ * The file as text when it is PEM. A DER file starts with a SEQUENCE byte (0x30) and parses as one
+ * of the kinds; anything else is PEM when it has a BEGIN line anywhere: OpenSSL writes a readable
+ * dump before it ("openssl ca", "openssl x509 -text"), several KB long for large keys.
+ */
 function asText(bytes: Uint8Array): string | null {
-  // PEM is ASCII; a DER file starts with a SEQUENCE byte (0x30).
-  const head = new TextDecoder('latin1').decode(bytes.subarray(0, Math.min(bytes.length, 4096)))
-  if (!head.includes('-----BEGIN ')) return null
+  if (bytes[0] === 0x30) {
+    const root = parseDer(bytes)
+    if (root && derKind(root)) return null
+  }
+  if (indexOfBytes(bytes, PEM_BEGIN) === -1) return null
   return new TextDecoder('latin1').decode(bytes)
 }
 

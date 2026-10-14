@@ -27,11 +27,11 @@ import {
 import { CertificateEncryptDialog, type CertificateEncryptChoice } from './CertificateEncryptDialog'
 import {
   OWN_REMOVED_WARNING,
-  REPLACE_CERTIFICATE_SECURITY,
   certificateSecurity,
   hasOwnRecipient,
   ownVia,
   permissionSummary,
+  replaceCertificateSecurityMessage,
   toCertificateGroups
 } from './certificates'
 import type ops from './engine'
@@ -42,9 +42,8 @@ import {
   encryptOptions,
   encryptionLabel,
   formatBytes,
-  permissionsFor,
+  protectedSummary,
   reductionSummary,
-  restrictionList,
   sentenceList,
   type OptimizeOptions,
   type ProtectSettings,
@@ -202,7 +201,7 @@ export async function protectDocument(
     if (isCertificateEncrypted(doc)) {
       const go = await confirm({
         title: opts.mode === 'restrict' ? 'Restrict editing' : 'Protect using password',
-        message: `${REPLACE_CERTIFICATE_SECURITY} The people it is encrypted for will no longer open it with their certificates.`,
+        message: replaceCertificateSecurityMessage(opts.mode ?? 'password'),
         confirmLabel: 'Continue'
       })
       if (!go) return false
@@ -238,6 +237,8 @@ async function mayChangeSecurity(doc: DocumentModel): Promise<boolean> {
 
 export async function applyProtection(doc: DocumentModel, settings: ProtectSettings): Promise<boolean> {
   const encrypt = encryptOptions(settings)
+  // Before the tab reopens from the new file: whether the password replaces certificate security.
+  const certificate = isCertificateEncrypted(doc)
   const path = await chooseSavePath('Save Protected PDF', doc.state.filePath ?? pdfName(doc.state.title))
   if (!path) return false
   try {
@@ -261,28 +262,19 @@ export async function applyProtection(doc: DocumentModel, settings: ProtectSetti
     if (saved) doc.set({ unlock: { method: 'typed', access: 'owner', savedRef: saved.ref, lock: saved.lock } })
     else toast(`The password for “${basename(path)}” could not be saved on this device.`, { kind: 'warning' })
   }
-  const restricted = settings.restrictEditing ? restrictionList(permissionsFor(settings)) : []
   const method = settings.method === 'aes-256' ? '256-bit AES' : settings.method === 'aes-128' ? '128-bit AES' : '128-bit RC4'
   await ask({
     title: 'Your PDF is protected',
     width: 480,
     message: (
-      <div className="fc-protect-optimize-summary">
+      <div className="fc-protect-optimize-summary" data-testid="protect-summary">
         <p>
           Saved <b>{basename(path)}</b> with {method} encryption.
         </p>
         <ul>
-          {settings.requireOpenPassword && (
-            <li>
-              Opening it needs the password you set{remembered ? '. It is saved on this device, so the file opens here without asking' : ''}.
-            </li>
-          )}
-          {settings.restrictEditing &&
-            (restricted.length ? (
-              <li>Without the permissions password, these are not allowed: {sentenceList(restricted)}.</li>
-            ) : (
-              <li>Changing its security needs the permissions password.</li>
-            ))}
+          {protectedSummary(settings, { remembered, certificate }).map((line) => (
+            <li key={line}>{line}</li>
+          ))}
         </ul>
         <p className="fc-protect-optimize-muted">Keep your passwords somewhere safe. They can’t be recovered if you lose them.</p>
       </div>
