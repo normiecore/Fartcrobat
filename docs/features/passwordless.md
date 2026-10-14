@@ -737,7 +737,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 **Certificate store**
 
 6. Put a software key in CurrentUser\My (made with `New-SelfSignedCertificate`, default KSP). Encrypt a file to it from Acrobat and open it in Fartcrobat: there is no prompt. Repeat on a machine whose execution policy is the client default, Restricted (`Get-ExecutionPolicy -List`): the helper only uses built-in cmdlets on stdin, which Restricted is expected to allow.
-7. Repeat with a legacy CSP key, a key marked non-exportable, and a TPM key (Microsoft Platform Crypto Provider). This is the biggest unknown: CNG keys with .NET Framework `EnvelopedCms`.
+7. Repeat with a legacy CSP key, a key marked non-exportable, and a TPM key (Microsoft Platform Crypto Provider). The `windows-helper` CI job already decrypts with non-exportable software keys made by `New-SelfSignedCertificate` in the Microsoft Software Key Storage Provider (CNG) and in the Enhanced RSA and AES CSP (CAPI), through Windows PowerShell 5.1 and .NET Framework `EnvelopedCms`, and reports both as software. TPM keys are the remaining unknown.
 8. Renew a certificate. A file encrypted to the old one still opens (archived certificates).
 9. With strong private key protection, the consent dialog appears in front of Fartcrobat.
 10. Turn off "Use certificates from the Windows certificate store". The file now asks for a Digital ID.
@@ -796,7 +796,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 
 **Recipient key types**
 
-- **EC (ECDH) recipients** are not supported, for opening or creating. .NET on Linux cannot do it (verified); .NET Framework on Windows is unknown.
+- **EC (ECDH) recipients** are not supported, for opening or creating. Neither .NET on Linux nor .NET Framework on Windows decrypts them with `EnvelopedCms` (both verified: UNSUPPORTED, the latter in the `windows-helper` CI job).
 - **RSA-OAEP recipients** are opened but never written. Both the Windows store helper (pwsh on Linux) and Digital IDs (tested with the OAEP fixture, SHA-256) open them.
 
 **Smart cards and locked-down machines**
