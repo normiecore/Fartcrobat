@@ -18,7 +18,7 @@ import { EngineError } from '../define'
 import type { Mupdf, PDFDocument } from '../session'
 import { certificatePermissions } from './keys'
 import { collectStrings, hasCryptFilter, isNamed, rawStream } from './objects'
-import { asName, objectAt, PdfRef, serialise, type PdfDict, type PdfValue } from './pdfLex'
+import { asName, objectAt, PdfRef, serialise, type PdfDict, type PdfValue, type Xref } from './pdfLex'
 import {
   aesCbcDecryptNoPad,
   bytesEqual,
@@ -234,9 +234,9 @@ export interface DecryptStats {
  * Skipped: the encryption dictionary, xref streams, signature /Contents, streams with their own
  * /Crypt filter, and /Type /Metadata streams when EncryptMetadata is false.
  */
-export function decryptAll(doc: PDFDocument, info: PubSecInfo, K: Uint8Array): DecryptStats {
+export function decryptAll(doc: PDFDocument, info: PubSecInfo, K: Uint8Array, xref: Xref = info.xref): DecryptStats {
   const stats: DecryptStats = { objectStreams: 0, streams: 0, strings: 0 }
-  const entries = info.xref.entries
+  const entries = xref.entries
   const objectStreams = new Set<number>()
   for (const e of entries.values()) if (e.type === 2) objectStreams.add(e.stream)
   const decrypt = (num: number, gen: number, data: Uint8Array) => decryptData(objectKey(K, info.cipher, num, gen), info.cipher, data)
