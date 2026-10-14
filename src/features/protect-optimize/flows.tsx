@@ -324,8 +324,12 @@ export async function applyCertificateEncryption(doc: DocumentModel, choice: Cer
   try {
     const bytes = await doc.busyWhile('Encrypting…', () => doc.saveBytes({ mode: 'full', encryptCertificate: { groups } }))
     await writeFile(path, bytes)
-    // The engine kept the key it made, so the tab reopens from the new file without asking.
+    // The engine kept the key it made, so the tab reopens from the new file without asking. The
+    // tab gets that key too, so files and tabs made from it later open without asking either.
     await reloadFromSaved(doc, bytes, path, { unlock: { method: 'certificate', access: 'owner', ...(via ? { via } : {}) } })
+    const certificateKey = await doc.core.doc.certificateKey()
+    const unlock = doc.state.unlock
+    if (certificateKey && unlock) doc.set({ unlock: { ...unlock, certificateKey } })
   } catch (err) {
     showError(err, 'Could not encrypt the document')
     return false

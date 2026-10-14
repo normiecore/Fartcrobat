@@ -22,16 +22,21 @@ export interface App {
  * FARTCROBAT_EXECUTABLE to a packaged app (e.g. release/linux-unpacked/fartcrobat) to test that instead.
  * Remembering passwords is off unless `opts.rememberPasswords` is set: otherwise specs would behave
  * differently on machines with a keyring (and would use it). Automatic update checks are off
- * unless `env` sets FARTCROBAT_UPDATE_CHECKS.
+ * unless `env` sets FARTCROBAT_UPDATE_CHECKS. `opts.kv` puts feature data in the settings store
+ * before the app starts (Digital IDs for tests/e2e/certificate-encryption.spec.ts).
  */
 export async function launch(
   files: string[] = [],
   env: Record<string, string> = {},
-  opts: { rememberPasswords?: boolean } = {}
+  opts: { rememberPasswords?: boolean; kv?: Record<string, unknown> } = {}
 ): Promise<App> {
   const userData = mkdtempSync(join(tmpdir(), 'fartcrobat-e2e-'))
-  if (!opts.rememberPasswords)
-    writeFileSync(join(userData, 'fartcrobat-settings.json'), JSON.stringify({ prefs: { rememberPasswords: false } }))
+  // `kv` seeds feature data in the settings store (e.g. 'digital-signatures:ids').
+  if (!opts.rememberPasswords || opts.kv)
+    writeFileSync(
+      join(userData, 'fartcrobat-settings.json'),
+      JSON.stringify({ prefs: opts.rememberPasswords ? {} : { rememberPasswords: false }, ...(opts.kv ? { kv: opts.kv } : {}) })
+    )
   const packaged = process.env.FARTCROBAT_EXECUTABLE
   const app = await electron.launch({
     ...(packaged ? { executablePath: resolve(ROOT, packaged) } : {}),

@@ -673,6 +673,16 @@ export default defineOps('doc', {
     s.certificateKeys.add(key)
   },
 
+  /**
+   * The key that opened the open document (null when it is not certificate-encrypted), for the
+   * renderer to give to new tabs made from it. After Encrypt with Certificate this is the new key,
+   * which only the engine has seen. Secret: see CertificateKey.
+   */
+  certificateKey(s): CertificateKey | null {
+    const k = s.doc ? s.pubsec?.key : null
+    return k ? { envelope: k.envelope.slice(), seed: k.seed.slice(), permissions: k.permissions } : null
+  },
+
   /** The open document's certificate security (public data), or null when it is not certificate-encrypted. */
   certificateLock(s): CertificateLock | null {
     const p = s.pubsec

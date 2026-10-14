@@ -11,8 +11,12 @@
  *
  * PDF readers name a recipient's certificate by issuer and serial number, or by subject key
  * identifier. Issuer names are compared as DER bytes, never as text.
+ *
+ * SHA-1 comes from node-forge, not @noble/hashes: this module is in the main-process bundle, and
+ * electron-vite's ESM shim (which defines __dirname there) is inserted after the last `import` it
+ * finds by text, which can be one in @noble's doc comments (see main-bundle.test.ts).
  */
-import { sha1 } from '@noble/hashes/legacy.js'
+import forge from 'node-forge'
 import {
   Asn1Error,
   bytesEqual,
@@ -286,6 +290,12 @@ export function summarizeRecipients(blobs: Uint8Array[]): PubSecRecipient[] {
 // ---- matching certificates -------------------------------------------------------------------
 
 /** The subjectPublicKey BIT STRING's bytes (without the unused-bits byte). */
+function sha1(data: Uint8Array): Uint8Array {
+  const md = forge.md.sha1.create()
+  md.update(forge.util.binary.raw.encode(data))
+  return forge.util.binary.raw.decode(md.digest().getBytes())
+}
+
 function subjectPublicKeyBits(cert: Certificate): Uint8Array | null {
   try {
     return readBitString(parseAsn1(cert.publicKey.spki).children[1]).bytes

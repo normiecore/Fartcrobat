@@ -7,15 +7,16 @@ import { rememberPasswordsPolicy, savedPasswordStore, trustedSender } from '../p
 import { store as settings } from '../store'
 import { createDigitalIdSource, DIGITAL_ID_RECORDS_KEY } from './digitalIdSource'
 import { certKeyHandlers, type CertKeyChannel } from './handlers'
-import { createWindowsStore } from './windowsStoreSource'
+import { createWindowsStore, testPowerShellOptions } from './windowsStoreSource'
 
 /** Registers the 'certkeys:*' channels. Call once the app is ready, after registerPasswordHandlers. */
 export function registerCertKeyHandlers() {
   const windowsStore = createWindowsStore({
     platform: process.platform,
     enabled: () => settings().prefs.useWindowsCertificateStore !== false,
-    // Tests only (unpackaged builds): a PowerShell to run instead of Windows PowerShell 5.1.
-    ...(!app.isPackaged ? { powershellPath: process.env.FARTCROBAT_TEST_POWERSHELL, env: process.env } : {})
+    // Tests only (unpackaged builds): a PowerShell to run instead of Windows PowerShell 5.1, with
+    // its own HOME so .NET on Linux keeps the test certificates out of the person's store.
+    ...testPowerShellOptions(process.env, app.isPackaged)
   })
   // The helper may hold a smart card unlocked: it never outlives the app.
   app.on('will-quit', () => windowsStore.stop())
