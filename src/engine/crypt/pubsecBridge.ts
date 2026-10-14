@@ -230,6 +230,23 @@ export function verifyFileKey(bytes: Uint8Array, info: PubSecInfo, K: Uint8Array
   return good + bad > 0 ? bad <= good : binary === 0
 }
 
+/**
+ * The decrypt pass reads every object through MuPDF, which reads an object that never ends (an
+ * unterminated string) to the end of the file, so a file made of such objects would take minutes.
+ * The reader walks the objects first with a meter and refuses the file when that costs more than a
+ * real file can (the objects of a real file do not overlap, so they cost about its size).
+ */
+export function assertWalkable(bytes: Uint8Array, xref: Xref): void {
+  const meter: ReadMeter = { scanned: 0 }
+  // Generous: a few objects this reader cannot parse (each counted as read to the end) still pass.
+  const budget = 4 * readBudget(bytes) + 1024 * 1024
+  for (const [num, e] of xref.entries) {
+    if (e.type !== 1 || num === 0) continue
+    objectAt(bytes, xref, num, 0, meter)
+    if (meter.scanned > budget) throw new Error('it is damaged')
+  }
+}
+
 export interface DecryptStats {
   objectStreams: number
   streams: number
@@ -309,6 +326,7 @@ export function openPubSec(m: Mupdf, bytes: Uint8Array, info: PubSecInfo, key: C
       if (!doc.needsPassword() || !doc.authenticatePassword(b.userPassword)) throw new Error('the key was refused')
       bridge = { userPassword: b.userPassword, ownerPassword: b.ownerPassword, U: b.U, O: b.O }
     } else {
+      assertWalkable(bytes, info.xref)
       doc = new m.PDFDocument(neutralise(bytes, info))
       decryptAll(doc, info, K)
     }

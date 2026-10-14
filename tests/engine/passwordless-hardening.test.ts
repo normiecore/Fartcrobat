@@ -441,6 +441,43 @@ describe('the key check reads a bounded amount', () => {
     expect(res).toMatchObject({ ok: true })
   })
 
+  it('streams whose /Length refers to an object that does not parse count what that costs', () => {
+    // Exempt streams (xref streams are never checked) parse fine, but each /Length lookup read
+    // object `bad` to the end of the file.
+    const bytes = pubsecFixture(FILE)
+    const info = readPubSec(bytes)!
+    const bad = info.trailer.size
+    const objects = [{ num: bad, gen: 0, source: '(xxxx' }]
+    for (let k = 1; k <= 4000; k++)
+      objects.push({ num: bad + k, gen: 0, source: `<< /Type /XRef /Length ${bad} 0 R >>\nstream\nxx\nendstream` })
+    const hostile = appendUpdate(bytes, info, objects)
+    const hostileInfo = readPubSec(hostile)!
+    const t0 = performance.now()
+    verifyFileKey(hostile, hostileInfo, fileKey(hostileInfo, keyFor(FILE, 'alice', hostile).seed))
+    expect(performance.now() - t0).toBeLessThan(1000)
+  })
+
+  it('a V4 file made of such objects is refused before the decrypt pass reads them all', async () => {
+    // MuPDF reads every object in the decrypt pass, each to the end of the file: about 8 s for these.
+    const V4 = 'v4-rc4.pdf'
+    const bytes = pubsecFixture(V4)
+    const info = readPubSec(bytes)!
+    const hostile = appendUpdate(bytes, info, Array.from({ length: 4000 }, (_, k) => ({ num: info.trailer.size + k, gen: 0, source: '(xxxx' })))
+    const engine = await createLocalEngine()
+    const doc = engine.ops<typeof docOps>('doc')
+    await doc.open(hostile, { fileName: V4 })
+    const t0 = performance.now()
+    await expect(doc.unlockCertificate(keyFor(V4, 'alice', hostile))).rejects.toMatchObject({
+      code: 'CERTIFICATE_OPEN_FAILED',
+      message: expect.stringMatching(/it is damaged/)
+    })
+    expect(performance.now() - t0).toBeLessThan(2000)
+    // The same file with a few such objects still opens.
+    const few = appendUpdate(bytes, info, Array.from({ length: 3 }, (_, k) => ({ num: info.trailer.size + k, gen: 0, source: '(xxxx' })))
+    const e = await openWithKey(few, keyFor(V4, 'alice', few))
+    expect(e.info.pageCount).toBe(expected(V4).pages)
+  })
+
   it('a sound file still checks the key: a wrong seed is refused', () => {
     const bytes = withUnterminated(10)
     const info = readPubSec(bytes)!

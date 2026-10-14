@@ -782,7 +782,9 @@ export function objectAt(b: Uint8Array, xref: Xref, num: number, depth = 0, mete
   }
   try {
     const obj = indirectAt(b, e.offset, resolveLength, num)
-    if (meter) meter.scanned += obj ? Math.max(1, obj.end - e.offset) : 32
+    // No object there: reading the header may have gone through a long run of digits or white
+    // space, so it counts as reading to the end (real files do not have such entries).
+    if (meter) meter.scanned += obj ? Math.max(1, obj.end - e.offset) : Math.max(1, b.length - e.offset)
     return obj
   } catch (err) {
     if (meter) meter.scanned += Math.max(1, (err instanceof PdfSyntaxError ? err.reached : b.length) - e.offset)
