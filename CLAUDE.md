@@ -20,7 +20,7 @@ Office conversion when installed, with a built-in fallback.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
-- About 1520 unit tests (vitest) and 163 end-to-end tests (Playwright on Electron).
+- About 1540 unit tests (vitest) and 163 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
@@ -50,7 +50,7 @@ Office conversion when installed, with a built-in fallback.
   PowerShell 5.1 helper per app session, so a PIN is asked once per session), saves them back as
   V5 AES-256 with the original seed and envelopes, and creates them (Protect > Encrypt with
   Certificate). Agents open them silently, except that a smart card PIN is typed by the person.
-  Two review rounds (findings verified independently) are fixed in the PR.
+  Three adversarial review rounds (each finding verified independently) are fixed in the PR.
   - Nothing has run on Windows, a smart card or Acrobat. Next: the owner's team runs the manual
     Windows checklist in the note (25 items); the `windows-helper` CI job already runs the helper
     tests against stock PowerShell 5.1 on `windows-latest`.

@@ -436,7 +436,7 @@ A policy that exists but cannot be read or understood (a JSON typo, a file only 
 
 ## Certificate encryption as built (phases 2 to 6)
 
-Built on 14 October 2026 by parallel builders on shared contracts, then reviewed adversarially (eight review lenses, each finding checked by two independent verifiers) and fixed. Nothing here has run on Windows hardware, a smart card or Acrobat: for those, the code, the automated tests and the manual checklist below are ready for the owner's team.
+Built on 14 October 2026 by parallel builders on shared contracts, then reviewed adversarially in three rounds (the first with eight review lenses, each finding checked by independent verifiers; the next two over the fixes) and fixed. Nothing here has run on Windows hardware, a smart card or Acrobat: for those, the code, the automated tests and the manual checklist below are ready for the owner's team.
 
 **Where the code is**
 
