@@ -874,6 +874,18 @@ describe.skipIf(!STORE_TESTS)('with PowerShell and a test certificate store', ()
     }
   )
 
+  it('a probe that does not finish in time says TIMEOUT, not "no match"', async () => {
+    const slow = createWindowsStore({ platform: 'win32', enabled: () => true, ...helperOpts, timeouts: { probeMs: 1 } })
+    try {
+      const err = await slow.probe(recipientsOf('v5-classic.pdf')).catch((e: unknown) => e)
+      expect(err).toBeInstanceOf(CertKeyError)
+      expect((err as CertKeyError).code).toBe('TIMEOUT')
+      expect(await slow.state()).toBe('available')
+    } finally {
+      slow.stop()
+    }
+  })
+
   it('says who a file is for when none of the certificates match', async () => {
     const blobs = recipientsOf('stranger-only.pdf')
     expect(await store.probe(blobs)).toEqual([])

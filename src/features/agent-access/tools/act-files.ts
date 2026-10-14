@@ -172,10 +172,13 @@ export function certificateFailure(name: string, err: unknown): { code: 'unsuppo
       message: `${name} was not opened: the person's key “${String(e.label ?? '')}” could not be used. Fartcrobat told them: ${message} Never ask for keys, PINs or passwords in chat.`
     }
   if (e.code !== 'NO_CERTIFICATE') return null
+  const busy = e.windowsStore === 'busy'
   const store = windowsStoreReason(e.windowsStore)
-  const storeNote = store
-    ? ` Fartcrobat could not search the Windows certificate store on this computer (${store}), so a certificate there may open it but cannot be used.`
-    : ''
+  const storeNote = busy
+    ? ' The Windows certificate store did not answer in time (it may have been waiting for a smart card PIN), so a certificate there may open it: try again later.'
+    : store
+      ? ` Fartcrobat could not search the Windows certificate store on this computer (${store}), so a certificate there may open it but cannot be used.`
+      : ''
   if (e.unsupportedKey)
     return {
       code: 'unsupported',
@@ -183,7 +186,7 @@ export function certificateFailure(name: string, err: unknown): { code: 'unsuppo
     }
   return {
     code: 'failed',
-    message: `${name} is encrypted with certificates, and none of the person's ${store ? 'Digital IDs' : 'certificates or Digital IDs'} opens it.${storeNote} Fartcrobat showed them who it is encrypted for; they can add the Digital ID it needs in Fartcrobat (Preferences > Digital IDs) and try again. Never ask for keys or passwords in chat.`
+    message: `${name} is encrypted with certificates, and none of the person's ${store || busy ? 'Digital IDs' : 'certificates or Digital IDs'} opens it.${storeNote} Fartcrobat showed them who it is encrypted for; they can add the Digital ID it needs in Fartcrobat (Preferences > Digital IDs) and try again. Never ask for keys or passwords in chat.`
   }
 }
 

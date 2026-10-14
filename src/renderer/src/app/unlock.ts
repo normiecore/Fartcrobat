@@ -206,7 +206,7 @@ export interface CertUnlockPorts {
   /**
    * None of the person's keys opens the file. `canAdd` offers "Add Digital ID..."; `unsupportedKey`:
    * only keys Fartcrobat cannot use yet (elliptic-curve) match; `windowsStore`: the probe's
-   * WindowsStoreState when the Windows certificate store could not be searched ('constrained',
+   * WindowsStoreState when the Windows certificate store could not be searched ('constrained', 'busy',
    * 'unavailable'), which the message says.
    */
   noKey(state: { message: string; canAdd: boolean; unsupportedKey: boolean; windowsStore?: BlockedWindowsStore }): Promise<'add' | 'cancel'>
@@ -262,15 +262,20 @@ function problemMessage(code: CertKeysErrorCode, message: string): string {
 }
 
 /** A Windows certificate store that could not be searched for the person's keys. */
-export type BlockedWindowsStore = Extract<WindowsStoreState, 'constrained' | 'unavailable'>
+export type BlockedWindowsStore = Extract<WindowsStoreState, 'constrained' | 'unavailable' | 'busy'>
 
 /** `state` when it says the Windows certificate store could not be searched. */
 export function blockedWindowsStore(state: WindowsStoreState | undefined): BlockedWindowsStore | undefined {
-  return state === 'constrained' || state === 'unavailable' ? state : undefined
+  return state === 'constrained' || state === 'unavailable' || state === 'busy' ? state : undefined
 }
+
+/** Said when the store was busy for too long with another request (usually a smart card PIN). */
+const STORE_BUSY_NOTE =
+  'The Windows certificate store did not answer in time. It may be waiting for a smart card PIN; try again when that is done.'
 
 /** Why the Windows certificate store could not be searched ("... You can still use a Digital ID."). */
 export function windowsStoreNote(state: BlockedWindowsStore): string {
+  if (state === 'busy') return STORE_BUSY_NOTE
   return DEFAULT_PROBLEMS[state === 'constrained' ? 'CONSTRAINED_LANGUAGE' : 'POWERSHELL_UNAVAILABLE']!
 }
 

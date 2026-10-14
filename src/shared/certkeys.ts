@@ -225,6 +225,11 @@ export type WindowsStoreState =
   | 'constrained'
   /** PowerShell could not be started (blocked, missing) or the helper keeps failing. */
   | 'unavailable'
+  /**
+   * Only in a certkeys:probe result: the helper did not answer in time, usually because it was
+   * busy with another request (a smart card waiting for its PIN), so the store was not searched.
+   */
+  | 'busy'
 
 export interface CertKeysStatus {
   windowsStore: WindowsStoreState

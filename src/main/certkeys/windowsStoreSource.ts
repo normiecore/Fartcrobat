@@ -11,6 +11,7 @@ import type {
 } from '@shared/certkeys'
 import {
   CertKeyError,
+  STORE_BUSY,
   type RecipientKeySource,
   type SourceDecryptOptions,
   type SourceDecryptResult
@@ -188,7 +189,10 @@ export function createWindowsStore(opts: WindowsStoreOptions): WindowsStore {
       let found
       try {
         found = await probeRecipients(helper, blobs, { timeoutMs: probeMs })
-      } catch {
+      } catch (err) {
+        // Busy for too long with another request (a smart card waiting for its PIN): say so, so the
+        // person is not told that no certificate of theirs opens the file.
+        if (err instanceof WinStoreError && err.code === 'TIMEOUT') throw new CertKeyError('TIMEOUT', STORE_BUSY)
         // No match, or the store cannot be used here (state() says why): Digital IDs are still tried.
         return []
       }

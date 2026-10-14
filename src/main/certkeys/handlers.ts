@@ -25,7 +25,7 @@ import {
 import type { IpcArgs, IpcChannel, IpcResult } from '@shared/ipc'
 import { describeRecipients } from '@features/digital-signatures/lib/envelope'
 import { requestEnvelopes } from './envelopes'
-import { CertKeyError, type RecipientKeySource } from './source'
+import { CertKeyError, STORE_BUSY, type RecipientKeySource } from './source'
 import type { WindowsStore } from './windowsStoreSource'
 
 export type CertKeyChannel = Extract<IpcChannel, `certkeys:${string}`>
@@ -147,16 +147,24 @@ export function orderCandidates(list: CertKeyCandidate[]): CertKeyCandidate[] {
 }
 
 /** A source's candidates; a source that fails finds nothing (the other one may still work). */
-async function probeSource(source: RecipientKeySource, blobs: Uint8Array[]): Promise<CertKeyCandidate[]> {
+/**
+ * A source's candidates (none when it fails), and whether it did not answer in time: the Windows
+ * store throws TIMEOUT when its helper was busy too long, which is not the same as no match.
+ */
+async function probeSource(
+  source: RecipientKeySource,
+  blobs: Uint8Array[]
+): Promise<{ candidates: CertKeyCandidate[]; timedOut: boolean }> {
   try {
     const found = await source.probe(blobs)
-    return Array.isArray(found)
+    const candidates = Array.isArray(found)
       ? found.filter(
           (c) => c && typeof c.id === 'string' && CANDIDATE_ID.test(c.id) && sourceKind(c.id) === source.kind
         )
       : []
-  } catch {
-    return []
+    return { candidates, timedOut: false }
+  } catch (err) {
+    return { candidates: [], timedOut: err instanceof CertKeyError && err.code === 'TIMEOUT' }
   }
 }
 
@@ -255,8 +263,11 @@ export function certKeyHandlers(deps: CertKeyHandlerDeps): CertKeyHandlers {
       // The probe is not stopped (it never prompts, and stopping the helper would lock a smart card).
       const found = await untilAborted(probeSource(source, blobs), signal)
       if (found === ABORTED) return fail('CANCELLED', CANCELLED)
-      const candidate = found.find((c) => sameId(c.id, r.candidate))
-      if (!candidate) return fail('NO_MATCHING_CERT', 'This certificate cannot open the document.')
+      const candidate = found.candidates.find((c) => sameId(c.id, r.candidate))
+      if (!candidate) {
+        if (found.timedOut) return fail('TIMEOUT', STORE_BUSY)
+        return fail('NO_MATCHING_CERT', 'This certificate cannot open the document.')
+      }
       const out = await untilAborted(
         source.decrypt(blobs, candidate, {
           ...(r.password !== undefined ? { password: r.password } : {}),
@@ -310,12 +321,13 @@ export function certKeyHandlers(deps: CertKeyHandlerDeps): CertKeyHandlers {
         probeSource(deps.windowsStore, envelopes.forStore),
         probeSource(deps.digitalIds, blobs)
       ])
-      // After probing: whether the store could be searched (a probe may have found it constrained).
-      const windowsStore: WindowsStoreState = await deps.windowsStore
-        .state()
-        .catch(() => 'unavailable' as const)
+      // After probing: whether the store could be searched (a probe may have found it constrained,
+      // or the helper too busy to answer in time).
+      const windowsStore: WindowsStoreState = store.timedOut
+        ? 'busy'
+        : await deps.windowsStore.state().catch(() => 'unavailable' as const)
       return {
-        candidates: orderCandidates([...store, ...ids]),
+        candidates: orderCandidates([...store.candidates, ...ids.candidates]),
         recipients: describeRecipients(envelopes.parsed, CERTKEY_LIMITS.recipients),
         windowsStore
       }

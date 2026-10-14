@@ -263,4 +263,28 @@ describe('certkeys:probe', () => {
     })
     expect((await stub['certkeys:probe'](from(1), { blobs })).windowsStore).toBe('not-windows')
   })
+
+  it("a store that did not answer in time is 'busy', and a decrypt that probes again says TIMEOUT", async () => {
+    // The helper was busy with another request (a smart card waiting for its PIN) for too long:
+    // the person must not be told that none of their certificates opens the file.
+    const { store } = waitingStore()
+    store.probe = async () => {
+      throw new CertKeyError('TIMEOUT', 'busy')
+    }
+    const h = certKeyHandlers({ allowed, digitalIds: noIds(), windowsStore: store })
+    expect(await h['certkeys:probe'](from(1), { blobs })).toMatchObject({ candidates: [], windowsStore: 'busy' })
+    expect(await h['certkeys:decrypt'](from(1), { blobs, candidate: storeId, actor: 'person' })).toMatchObject({
+      ok: false,
+      code: 'TIMEOUT',
+      message: expect.stringMatching(/did not answer in time/)
+    })
+    // Any other probe failure is still "no match" (state() says when the store cannot be used).
+    store.probe = async () => {
+      throw new CertKeyError('ERROR', 'failed')
+    }
+    expect(await h['certkeys:probe'](from(1), { blobs })).toMatchObject({ windowsStore: 'available' })
+    expect(await h['certkeys:decrypt'](from(1), { blobs, candidate: storeId, actor: 'person' })).toMatchObject({
+      code: 'NO_MATCHING_CERT'
+    })
+  })
 })

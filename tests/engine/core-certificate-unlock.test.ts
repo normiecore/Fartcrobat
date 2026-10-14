@@ -407,6 +407,13 @@ describe('unlockCertificate', () => {
     await unlockCertificate(unavailable.p, OPTS)
     expect(unavailable.noKeys[0]).toMatchObject({ windowsStore: 'unavailable', canAdd: true })
     expect(unavailable.noKeys[0].message).toMatch(/None of your Digital IDs can open it\. Windows PowerShell could not be started, so Fartcrobat cannot use the Windows certificate store\./)
+    // The helper was too busy to answer in time (a smart card waiting for its PIN in another window).
+    const busy = ports({ probes: [{ candidates: [], recipients, windowsStore: 'busy' }], decrypt: {} })
+    await unlockCertificate(busy.p, OPTS)
+    expect(busy.noKeys[0]).toMatchObject({ windowsStore: 'busy', canAdd: true })
+    expect(busy.noKeys[0].message).toMatch(
+      /None of your Digital IDs can open it\. The Windows certificate store did not answer in time\. It may be waiting for a smart card PIN; try again when that is done\.$/
+    )
     // A store that works, is off or is not on this system changes nothing.
     for (const windowsStore of ['available', 'off', 'not-windows', undefined] as const) {
       const fine = ports({ probes: [{ candidates: [], recipients, windowsStore }], decrypt: {} })
@@ -559,6 +566,11 @@ describe('messages', () => {
     expect(told.message).toMatch(/none of the person's Digital IDs opens it\. Fartcrobat could not search the Windows certificate store on this computer \(Windows only lets PowerShell run in Constrained Language Mode there\)/)
     const noPowerShell = Object.assign(new Error('...'), { code: 'NO_CERTIFICATE', unsupportedKey: false, windowsStore: 'unavailable' })
     expect(certificateFailure('a.pdf', noPowerShell)!.message).toMatch(/Windows PowerShell could not be started/)
+    // Busy for too long (a smart card PIN in another window): worth trying again later.
+    const busy = Object.assign(new Error('...'), { code: 'NO_CERTIFICATE', unsupportedKey: false, windowsStore: 'busy' })
+    expect(certificateFailure('a.pdf', busy)!.message).toMatch(
+      /none of the person's Digital IDs opens it\. The Windows certificate store did not answer in time .*try again later\./
+    )
   })
 
   it('agents are told when a key failed (not that the person cancelled), and when a file a key opened is damaged', () => {
