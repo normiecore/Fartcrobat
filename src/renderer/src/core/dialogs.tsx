@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { SavedPasswordInfo, SavedPasswordsStatus } from '@shared/passwords'
 import type { DefaultAppStatus, PageLayoutMode, Preferences, ThemePreference, ZoomMode } from '@shared/types'
+import type { UpdateStatus } from '@shared/updates'
 import { registry } from '../app/registry'
 import { useApp } from '../app/store'
 import { setPrefs } from '../app/actions'
 import { displayShortcut, commandLabel } from '../app/commands'
 import { NO_KEYRING_NOTE } from '../app/savedPasswords'
 import { openDialog, showError } from '../app/ui-services'
-import { invoke } from '../platform'
+import { invoke, onMainEvent } from '../platform'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
 import { confirm } from '../ui/dialogs'
@@ -272,6 +273,102 @@ export function openShortcuts() {
   ))
 }
 
+const CHECK_FAILED = "Couldn't check for updates. Check your internet connection and try again."
+const DOWNLOAD_FAILED = 'Could not start the download'
+
+interface AboutUpdateAction {
+  label: string
+  channel: 'feature:updates:download' | 'feature:updates:restart'
+  failed: string
+}
+
+/** What About says about updates, and the button that moves the flow on from there. */
+function aboutUpdateLine(s: UpdateStatus): { text: string | null; action?: AboutUpdateAction } {
+  const v = s.update?.version
+  if (s.checksOff === 'policy') return { text: 'Updates are managed by your organization.' }
+  switch (s.phase) {
+    case 'checking':
+      return { text: 'Checking for updates…' }
+    case 'upToDate':
+      return { text: `Fartcrobat ${s.currentVersion} is up to date.` }
+    case 'available':
+      return { text: `Fartcrobat ${v} is available.`, action: { label: 'Download', channel: 'feature:updates:download', failed: DOWNLOAD_FAILED } }
+    case 'downloading':
+      return { text: `Downloading Fartcrobat ${v}… ${Math.floor(s.progress?.percent ?? 0)}%` }
+    case 'ready':
+      return {
+        text: `Fartcrobat ${v} is ready to install.`,
+        action: { label: 'Restart now', channel: 'feature:updates:restart', failed: 'Could not restart Fartcrobat' }
+      }
+    case 'error':
+      if (s.errorDuring === 'download')
+        return { text: `Couldn't download Fartcrobat ${v}.`, action: { label: 'Try again', channel: 'feature:updates:download', failed: DOWNLOAD_FAILED } }
+      // Automatic checks that fail stay silent.
+      return { text: s.manual ? CHECK_FAILED : null }
+    default:
+      return { text: null }
+  }
+}
+
+/**
+ * Check for Updates in Help > About. The updates feature (src/features/updates) shows the rest of
+ * the flow; core does not import features, so this talks to the main process directly.
+ */
+function AboutUpdates() {
+  const [status, setStatus] = useState<UpdateStatus | null>(null)
+  const [checking, setChecking] = useState(false)
+  // Set when the check could not reach the main process at all (the status cannot say so).
+  const [unreachable, setUnreachable] = useState(false)
+  useEffect(() => {
+    let live = true
+    let received = false
+    const off = onMainEvent('updates:status', (s) => {
+      received = true
+      setStatus(s)
+      setUnreachable(false)
+    })
+    invoke('feature:updates:status').then(
+      (s) => live && !received && setStatus(s),
+      () => {}
+    )
+    return () => {
+      live = false
+      off()
+    }
+  }, [])
+  // No update service in this build: nothing to offer.
+  if (!status) return null
+  const check = async () => {
+    setChecking(true)
+    setUnreachable(false)
+    try {
+      // Main sends every step to every window first, so this answer is the newest status.
+      setStatus(await invoke('feature:updates:check'))
+    } catch {
+      setUnreachable(true)
+    } finally {
+      setChecking(false)
+    }
+  }
+  const line = checking ? { text: 'Checking for updates…' } : unreachable ? { text: CHECK_FAILED } : aboutUpdateLine(status)
+  const action = !checking && !unreachable ? line.action : undefined
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginTop: 14 }}>
+      <Button size="sm" disabled={checking || status.checksOff === 'policy'} onClick={() => void check()}>
+        Check for Updates
+      </Button>
+      <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 26 }}>
+        {line.text && <span className="shell-muted">{line.text}</span>}
+        {action && (
+          <Button size="sm" variant="quiet" onClick={() => void invoke(action.channel).catch((err) => showError(err, action.failed))}>
+            {action.label}
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function openAbout() {
   const info = useApp.getState().systemInfo
   void openDialog((close) => (
@@ -284,6 +381,7 @@ export function openAbout() {
           Licensed under the GNU Affero General Public License v3 or later. PDF engine: MuPDF by Artifex Software
           (AGPL). Built with Electron {info?.electron}, Chromium {info?.chrome}.
         </p>
+        <AboutUpdates />
       </div>
     </Dialog>
   ))
