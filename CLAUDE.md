@@ -11,15 +11,14 @@ fallback.
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`).
-- PRs #1 (the app), #2 (fixes), #3 (release publishing), #4 and #5 (agent access), #6 and #8
-  (passwordless design and prototypes, and the fix for the red CI after #5) are merged into
-  `main`. Open drafts: #9 (agent access review fixes) and the `claude/passwordless` PR
-  (remembered passwords; it contains #9, so merge #9 first).
+- PRs #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent access and its
+  review fixes), #6 and #8 (passwordless design and prototypes, and the fix for the red CI after
+  #5) are merged into `main`. #10 (remembered passwords) is open.
 - About 1040 unit tests (vitest) and 142 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
-- **Agent access** (`docs/features/agent-access.md`): merged; the review fixes are in PR #9
+- **Agent access** (`docs/features/agent-access.md`): merged, with the review fixes from #9
   (`wait_for_result` and "still_running" answers so waits on the person survive the AI app's
   ~60 s request timeout, one agent prompt per window, Disconnect that sticks, handles that change
   on reload, the Windows policy in HKLM, confirmation before the first use of each network
@@ -28,7 +27,7 @@ fallback.
   Desktop's MSIX AppData redirection). Known gaps are listed in #9. Nothing has been tried on
   Windows or with a real Claude Desktop yet.
 - **Passwordless** (`docs/features/passwordless.md`): phases 0 and 1 (remembered passwords with
-  safeStorage, also for Digital IDs, silent unlock for agents) are in the `claude/passwordless` PR. The machine
+  safeStorage, also for Digital IDs, silent unlock for agents) are in #10. The machine
   policy for both features is `src/main/policy.ts`: REG_DWORDs `AgentAccess` and
   `RememberPasswords` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows, `policy.json`
   elsewhere. Next session: certificate encryption (phases 2 to 5: open Adobe.PubSec files, save
