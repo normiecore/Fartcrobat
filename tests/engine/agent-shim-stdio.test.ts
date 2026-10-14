@@ -30,6 +30,10 @@ import { AGENT_TOOLS } from '@shared/agent/tools'
 const ROOT = resolve(__dirname, '../..')
 const VERSION: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
 const DISABLED = '[disabled] Agent access is turned off in Fartcrobat (Preferences > AI apps).'
+const DISCONNECTED =
+  '[disabled] The person disconnected this AI app in Fartcrobat, so the call was stopped and may or may not have taken effect. Do not use Fartcrobat again unless they ask.'
+const BLOCKED =
+  '[disabled] The person disconnected this AI app in Fartcrobat. Do not use Fartcrobat again unless they ask; they can allow it again in Fartcrobat (Preferences > AI apps).'
 const SLOW = { timeout: 20_000 }
 
 const hmac = (token: string, role: 'client' | 'server', nonce: string) =>
@@ -53,6 +57,7 @@ class FakeApp {
   readonly address: string
   private readonly server: Server
   private readonly sockets = new Set<Socket>()
+  private readonly authenticated = new Set<Socket>()
 
   constructor(
     private readonly userData: string,
@@ -85,9 +90,20 @@ class FakeApp {
     await new Promise<void>((done) => this.server.close(() => done()))
   }
 
+  /** What the app does when the person clicks Disconnect: it says so, then closes the connection. */
+  disconnectAll() {
+    for (const socket of this.authenticated) {
+      socket.write(encodeMessage({ t: 'notice', event: 'disconnected' }))
+      socket.end()
+    }
+  }
+
   private accept(socket: Socket) {
     this.sockets.add(socket)
-    socket.on('close', () => this.sockets.delete(socket))
+    socket.on('close', () => {
+      this.sockets.delete(socket)
+      this.authenticated.delete(socket)
+    })
     socket.on('error', () => {})
     socket.setEncoding('utf8')
     const nonce = randomBytes(32).toString('hex')
@@ -119,6 +135,7 @@ class FakeApp {
           return socket.end()
         }
         ready = true
+        this.authenticated.add(socket)
         this.connections++
         const mac = hmac(
           this.token,
@@ -166,7 +183,10 @@ describe('agent shim over stdio', () => {
     return app
   }
 
-  async function startShim(mode: 'legacy' | 'auto' = 'legacy') {
+  async function startShim(
+    mode: 'legacy' | 'auto' = 'legacy',
+    info = { name: 'test-client', version: '1.2.3' }
+  ) {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [shimPath],
@@ -175,10 +195,7 @@ describe('agent shim over stdio', () => {
     })
     let stderr = ''
     transport.stderr?.on('data', (chunk) => (stderr += String(chunk)))
-    const client = new Client(
-      { name: 'test-client', version: '1.2.3' },
-      mode === 'auto' ? { versionNegotiation: { mode: 'auto' } } : {}
-    )
+    const client = new Client(info, mode === 'auto' ? { versionNegotiation: { mode: 'auto' } } : {})
     await client.connect(transport)
     cleanup.push(() => client.close())
     return { client, stderr: () => stderr }
@@ -187,7 +204,7 @@ describe('agent shim over stdio', () => {
   const text = (result: { content?: unknown }) =>
     (result.content as { type: string; text?: string }[]).map((c) => c.text ?? `<${c.type}>`).join('\n')
 
-  it('advertises the 30 tools with their schemas, its name and the instructions', async () => {
+  it('advertises the 31 tools with their schemas, its name and the instructions', async () => {
     const { client } = await startShim()
     expect(client.getServerVersion()).toMatchObject({ name: 'fartcrobat', version: VERSION })
     expect(client.getInstructions()).toBe(SERVER_INSTRUCTIONS)
@@ -334,6 +351,50 @@ describe('agent shim over stdio', () => {
     expect(text(result)).toBe(DISABLED)
   })
 
+  it('stops the calls of an AI app the person disconnects, and stays out until they allow it again', async () => {
+    const app = await startApp()
+    app.behaviour = () => {}
+    // Something the shim could start: it must not, as the app is running and refusing.
+    const marker = join(userData, 'started.json')
+    const script = join(userData, 'fake-fartcrobat.cjs')
+    writeFileSync(script, "require('node:fs').writeFileSync(process.argv[2], '{}')\n")
+    writeFileSync(
+      join(userData, AGENT_DIR, APP_FILE),
+      JSON.stringify({
+        executable: process.execPath,
+        args: [script, marker],
+        appVersion: '9.9.9',
+        enabled: true
+      })
+    )
+    const { client, stderr } = await startShim()
+    const running = client.callTool({ name: 'recognize_text', arguments: {} })
+    await expect.poll(() => app.calls.length, SLOW).toBe(1)
+    app.disconnectAll()
+    expect(text(await running)).toBe(DISCONNECTED)
+    await expect
+      .poll(() => stderr(), SLOW)
+      .toContain('Disconnected from Fartcrobat (connection 1): the person disconnected this AI app.')
+
+    // The app now refuses this AI app; each call asks once and gives up, starting nothing.
+    app.rejectWith = { t: 'reject', code: 'blocked', message: 'Text from the app is not shown.' }
+    for (let i = 0; i < 2; i++) {
+      const refused = await client.callTool({ name: 'list_documents', arguments: {} })
+      expect(refused.isError).toBe(true)
+      expect(text(refused)).toBe(BLOCKED)
+    }
+    expect(app.auths).toHaveLength(3)
+    expect(app.connections).toBe(1)
+    expect(existsSync(marker)).toBe(false)
+
+    // The person allowed it again.
+    app.rejectWith = null
+    app.behaviour = (call, reply) => reply({ t: 'result', id: call.id, result: { data: 'ok' } })
+    expect(text(await client.callTool({ name: 'list_documents', arguments: {} }))).toBe('"ok"')
+    expect(app.connections).toBe(2)
+    expect(existsSync(marker)).toBe(false)
+  })
+
   it('says Fartcrobat closed when the connection drops mid-call, then reconnects', async () => {
     const app = await startApp()
     app.behaviour = (_call, _reply, socket) => socket.destroy()
@@ -412,7 +473,43 @@ describe('agent shim over stdio', () => {
     expect(app.calls.map((c) => c.tool)).toEqual(['list_documents'])
   })
 
-  it('says agent access is off when a started copy hands over to an open Fartcrobat', async () => {
+  it('says agent access is off, starting nothing, when app.json says so', async () => {
+    // A copy that would stay open without ever publishing an endpoint: starting it would make the
+    // call wait for the start timeout instead of answering.
+    const marker = join(userData, 'started.json')
+    const script = join(userData, 'fake-fartcrobat.cjs')
+    writeFileSync(
+      script,
+      [
+        "require('node:fs').writeFileSync(process.argv[2], JSON.stringify({ pid: process.pid }))",
+        'setTimeout(() => {}, 60000)'
+      ].join('\n')
+    )
+    mkdirSync(join(userData, AGENT_DIR), { recursive: true })
+    writeFileSync(
+      join(userData, AGENT_DIR, APP_FILE),
+      JSON.stringify({
+        executable: process.execPath,
+        args: [script, marker],
+        appVersion: '9.9.9',
+        enabled: false
+      })
+    )
+    cleanup.push(() => {
+      if (!existsSync(marker)) return
+      try {
+        process.kill(JSON.parse(readFileSync(marker, 'utf8')).pid)
+      } catch {}
+    })
+    const { client } = await startShim()
+    const result = await client.callTool({ name: 'list_documents', arguments: {} })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toBe(DISABLED)
+    expect(existsSync(marker)).toBe(false)
+  })
+
+  it('says an open Fartcrobat did not accept the connection when a started copy hands over to it', async () => {
+    // An app.json from an app that does not record whether agent access is on.
     const script = join(userData, 'second-instance.cjs')
     writeFileSync(script, 'process.exit(0)\n')
     mkdirSync(join(userData, AGENT_DIR), { recursive: true })
@@ -422,7 +519,10 @@ describe('agent shim over stdio', () => {
     )
     const { client } = await startShim()
     const result = await client.callTool({ name: 'list_documents', arguments: {} })
-    expect(text(result)).toBe(DISABLED)
+    expect(result.isError).toBe(true)
+    expect(text(result)).toBe(
+      '[failed] Fartcrobat is open but did not accept the connection. Check that Preferences > AI apps allows AI apps to work with your documents, then try again.'
+    )
   })
 
   it('says Fartcrobat is not running when there is nothing to start', async () => {
@@ -432,6 +532,15 @@ describe('agent shim over stdio', () => {
     expect(text(result)).toBe(
       '[failed] Fartcrobat is not running and could not be started. Open Fartcrobat, then try again.'
     )
+  })
+
+  it('leaves the name empty for an AI app that does not give one, so Fartcrobat words it', async () => {
+    const app = await startApp()
+    const { client } = await startShim('legacy', { name: '', version: '' })
+    expect(text(await client.callTool({ name: 'list_documents', arguments: {} }))).toBe(
+      JSON.stringify({ tool: 'list_documents', args: {} }, null, 1)
+    )
+    expect(app.auths[0].client).toEqual({ name: '', version: '' })
   })
 
   it('serves the 2026-07-28 protocol as well', async () => {

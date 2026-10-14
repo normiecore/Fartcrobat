@@ -31,20 +31,29 @@ const APP_NAME = 'Fartcrobat'
 export const START_TIMEOUT_MS = 30_000
 /** How long a connected app may take to finish the handshake (the app allows 10 s). */
 const HANDSHAKE_TIMEOUT_MS = 15_000
-/** After a second instance handed over to a running app, how long the endpoint may still take to appear. */
-const HANDOVER_GRACE_MS = 3_000
+/**
+ * After a second instance handed over to a running app, how long the endpoint may still take to
+ * appear (the running app may have been started moments before).
+ */
+const HANDOVER_GRACE_MS = 10_000
 
 export const MESSAGES = {
   disabled: 'Agent access is turned off in Fartcrobat (Preferences > AI apps).',
   notRunning: 'Fartcrobat is not running and could not be started. Open Fartcrobat, then try again.',
   startTimeout: `Fartcrobat did not answer within ${START_TIMEOUT_MS / 1000} seconds. Check that it is open and that Preferences > AI apps allows AI apps to work with your documents, then try again.`,
+  handedOver:
+    'Fartcrobat is open but did not accept the connection. Check that Preferences > AI apps allows AI apps to work with your documents, then try again.',
   closed:
     'Fartcrobat closed before the call finished, so it may or may not have taken effect. Check the document in Fartcrobat before trying again.',
   identity:
     'Could not verify that the program answering is Fartcrobat, so nothing was sent to it. Restart Fartcrobat, then try again.',
   handshake: 'Fartcrobat did not finish connecting. Try again in a moment.',
   notSent: 'The connection to Fartcrobat closed before the call was sent. Try again.',
-  aborted: 'The call was cancelled.'
+  aborted: 'The call was cancelled.',
+  disconnected:
+    'The person disconnected this AI app in Fartcrobat, so the call was stopped and may or may not have taken effect. Do not use Fartcrobat again unless they ask.',
+  blocked:
+    'The person disconnected this AI app in Fartcrobat. Do not use Fartcrobat again unless they ask; they can allow it again in Fartcrobat (Preferences > AI apps).'
 }
 
 /** A failure the agent sees as "[code] message". */
@@ -122,7 +131,9 @@ export interface WaitOptions {
 /**
  * Waits for a started app to publish a fresh endpoint.json. A started process that exits with 0
  * was a second instance handing over to a Fartcrobat that is already open; if that one still
- * publishes no endpoint, agent access is turned off there.
+ * publishes no endpoint, it is not accepting AI apps (agent access is off there, or it is still
+ * starting or on its way out). An app.json that says agent access is off is answered before
+ * anything is started, so this is only the fallback for apps that do not record it.
  */
 export async function waitForEndpoint(userData: string, opts: WaitOptions = {}): Promise<AgentEndpoint> {
   const started: { exit: Awaited<LaunchedApp['exited']> | null } = { exit: null }
@@ -143,9 +154,7 @@ export async function waitForEndpoint(userData: string, opts: WaitOptions = {}):
       deadline = Math.min(deadline, Date.now() + (opts.graceMs ?? HANDOVER_GRACE_MS))
     }
     if (Date.now() >= deadline)
-      throw handedOver
-        ? new ShimError('disabled', MESSAGES.disabled)
-        : new ShimError('failed', MESSAGES.startTimeout)
+      throw new ShimError('failed', handedOver ? MESSAGES.handedOver : MESSAGES.startTimeout)
     try {
       await sleep(opts.intervalMs ?? 200, undefined, { signal: opts.signal })
     } catch {
@@ -173,6 +182,9 @@ function rejection(msg: RejectMessage): ShimError {
   switch (msg.code) {
     case 'disabled':
       return new ShimError('disabled', MESSAGES.disabled)
+    // The person disconnected this AI app: it stays out (nothing is started) until they allow it.
+    case 'blocked':
+      return new ShimError('disabled', MESSAGES.blocked)
     case 'busy':
       return new ShimError('busy', appText(msg.message, 'Too many AI apps are connected to Fartcrobat.'))
     default:
@@ -241,6 +253,16 @@ export class AppSession {
     return this.phase === 'ready' && !this.socket.destroyed
   }
 
+  /** Why the app closed the connection, when it said. */
+  get closedBy(): NoticeMessage['event'] | null {
+    return this.notice
+  }
+
+  /**
+   * Sends a call and waits for its result, with no time limit of its own: a call that waits for the
+   * person or runs long is answered by the app with still_running (and a ticket for
+   * wait_for_result) before the AI app's request timeout, and the AI app cancels through `signal`.
+   */
   call(tool: string, args: Record<string, unknown>, opts: CallOptions = {}): Promise<AgentToolResult> {
     if (!this.alive) return Promise.resolve(errorResult('failed', MESSAGES.notSent))
     const { signal, onProgress } = opts
@@ -371,10 +393,18 @@ export class AppSession {
     const result =
       this.notice === 'disabled'
         ? errorResult('disabled', MESSAGES.disabled)
-        : errorResult('failed', MESSAGES.closed)
+        : this.notice === 'disconnected'
+          ? errorResult('disabled', MESSAGES.disconnected)
+          : errorResult('failed', MESSAGES.closed)
     for (const call of [...this.pending.values()]) call.finish(result)
     this.onClosed(this)
   }
+}
+
+const CLOSED_BY: Record<NoticeMessage['event'], string> = {
+  shutdown: 'it is quitting',
+  disabled: 'agent access was turned off',
+  disconnected: 'the person disconnected this AI app'
 }
 
 export interface AppLinkOptions {
@@ -393,6 +423,8 @@ export interface LinkCallOptions extends CallOptions {
 /**
  * The shim's one connection to the app, opened on the first tool call and reopened on the next
  * call after it drops (endpoint.json is read again each time: the token changes on every start).
+ * It never reconnects by itself. After the person disconnects this AI app, the app refuses it
+ * ('blocked') on every later call until they allow it again, and nothing is started for that.
  */
 export class AppLink {
   private session: AppSession | null = null
@@ -468,10 +500,12 @@ export class AppLink {
     }
     const target = await findApp(userData, this.env, this.platform)
     if (!target) throw new ShimError('failed', MESSAGES.notRunning)
+    // The app would only refuse (and a second instance would bring its window to the front).
+    if (target.enabled === false) throw new ShimError('disabled', MESSAGES.disabled)
     this.log(`Starting Fartcrobat: ${target.executable}`)
     let app: LaunchedApp
     try {
-      app = await startApp(target, this.env)
+      app = await startApp(target, { env: this.env, platform: this.platform, log: this.log })
     } catch (err) {
       this.log(`Could not start Fartcrobat: ${err instanceof Error ? err.message : String(err)}`)
       throw new ShimError('failed', MESSAGES.notRunning)
@@ -494,7 +528,9 @@ export class AppLink {
   private async authenticate(endpoint: AgentEndpoint, client: AgentClientInfo): Promise<AppSession> {
     const session = await AppSession.open(endpoint, client, this.opts.shimVersion, (closed) => {
       if (this.session === closed) this.session = null
-      this.log(`Disconnected from Fartcrobat (connection ${closed.connectionId}).`)
+      const reason = closed.closedBy && CLOSED_BY[closed.closedBy]
+      const why = reason ? `: ${reason}` : ''
+      this.log(`Disconnected from Fartcrobat (connection ${closed.connectionId})${why}.`)
     })
     this.log(`Connected to Fartcrobat ${session.appVersion} (connection ${session.connectionId}).`)
     return session
