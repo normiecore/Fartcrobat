@@ -140,7 +140,7 @@ export interface GroupSettings {
   edit: boolean
   /** Inserting, deleting and rotating pages. */
   assemble: boolean
-  /** Commenting. */
+  /** Commenting (also gives filling in form fields: one permission bit covers both). */
   annotate: boolean
   /** Filling in form fields and signing. */
   form: boolean
@@ -178,7 +178,8 @@ export function groupPermissions(s: GroupSettings): Record<Permission, boolean> 
     'print-hq': s.printing === 'high',
     edit: s.edit,
     annotate: s.annotate,
-    form: s.form,
+    // Commenting (bit 6) also allows filling in forms (ISO 32000-2, table 24), as in Acrobat.
+    form: s.form || s.annotate,
     assemble: s.assemble,
     copy: s.copy,
     // Copying implies access for screen readers, as in Acrobat.

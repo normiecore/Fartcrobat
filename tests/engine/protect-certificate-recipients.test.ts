@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { CertKeyCandidate, CertKeyVia, EncryptionCertificate, PubSecRecipient } from '@shared/certkeys'
+import { PUBSEC_PERMISSION, type CertKeyCandidate, type CertKeyVia, type EncryptionCertificate, type PubSecRecipient } from '@shared/certkeys'
 import type { DocInfo, Permission } from '@shared/types'
 import type { DigitalIdRecord } from '@features/digital-signatures/types'
 import { certificatePermissionBits, certificatePermissions } from '@engine/crypt/keys'
@@ -181,6 +181,32 @@ describe('protect-optimize: certificate recipients', () => {
     expect(toCertificateGroups([group(1, [])])).toEqual([])
     // RSA only: an EC certificate never reaches the engine.
     expect(() => toCertificateGroups([group(1, [alice, fileRecipient('ec.cer')])])).toThrow(EC_REASON)
+  })
+
+  it('lets a group that may comment fill in forms too, as the permission bits say', () => {
+    // ISO 32000-2, table 24: bit 6 allows commenting and filling in form fields; bit 9 only adds
+    // form filling when bit 6 is clear. "May comment but not fill forms" cannot be written.
+    const commentOnly: GroupSettings = {
+      printing: 'high',
+      edit: false,
+      assemble: false,
+      annotate: true,
+      form: false,
+      copy: false,
+      accessibility: true,
+      changeSecurity: false
+    }
+    expect(groupPermissions(commentOnly)).toMatchObject({ annotate: true, form: true })
+    expect(permissionSummary(commentOnly)).toBe('Not allowed: changing the document, inserting, deleting and rotating pages and copying text and images')
+    const [g] = toCertificateGroups([group(1, [fileRecipient('bob.cer')], commentOnly)])
+    const bits = certificatePermissionBits(g.permissions, g.changeSecurity)
+    expect(bits & PUBSEC_PERMISSION.annotate).not.toBe(0)
+    expect(bits & PUBSEC_PERMISSION.fillForms).not.toBe(0)
+    // Fartcrobat reads it back the same way.
+    expect(certificatePermissions(bits).permissions).toMatchObject({ annotate: true, form: true })
+    // Form filling alone is still possible.
+    expect(groupPermissions({ ...commentOnly, annotate: false, form: true })).toMatchObject({ annotate: false, form: true })
+    expect(groupPermissions({ ...commentOnly, annotate: false })).toMatchObject({ annotate: false, form: false })
   })
 
   it('keeps every certificate once across the groups, and moves and removes them', () => {
