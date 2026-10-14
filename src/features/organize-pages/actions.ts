@@ -1,6 +1,7 @@
 import { invoke, openNewDocument, showError, toast, useApp, withProgress, type DocUnlock, type DocumentModel } from '@renderer/sdk'
+import type { CertKeyActor } from '@shared/certkeys'
 import type pageOps from '@engine/ops/pages'
-import { loadFile, orgOps, withPassword, type LoadedFile } from './files'
+import { loadFile, orgOps, withUnlock, type LoadedFile } from './files'
 import type { OrganizeClipboard } from './ipc'
 import { isNoopMove, movedIndices } from './order'
 import { countLabel, describePages } from './ranges'
@@ -41,12 +42,13 @@ const pendingUnsaved = new Set<string>()
  * Opens tool output (combined or extracted pages) as a new, unsaved tab: closing it asks to save
  * and the tab shows the unsaved-changes marker. Protected output opens with `password` (the one
  * its source was opened with), so the person is not asked again and later saves keep it;
- * `derivedFrom` is how that source was unlocked.
+ * `derivedFrom` is how that source was unlocked (certificate-encrypted output opens with its key).
+ * `actor` says who opens it.
  */
 export async function openAsNewDocument(
   bytes: Uint8Array,
   name: string,
-  opts: { password?: string; derivedFrom?: DocUnlock | null } = {}
+  opts: { password?: string; derivedFrom?: DocUnlock | null; actor?: CertKeyActor } = {}
 ): Promise<DocumentModel | null> {
   const title = name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf'
   pendingUnsaved.add(title)
@@ -62,15 +64,17 @@ export async function openAsNewDocument(
 
 /**
  * Opens pages extracted from `source` (bytes from its `extract` op) as a new, unsaved tab. When
- * `source` is protected, so is the tab, and it opens without asking for the password again.
+ * `source` is protected, so is the tab, and it opens without asking for the password (or the
+ * certificate) again.
  */
 export async function openExtractedPages(
   source: DocumentModel,
   bytes: Uint8Array,
-  name: string
+  name: string,
+  opts: { actor?: CertKeyActor } = {}
 ): Promise<DocumentModel | null> {
   const password = (await orgOps(source).openPassword()) ?? undefined
-  return openAsNewDocument(bytes, name, { password, derivedFrom: source.state.unlock })
+  return openAsNewDocument(bytes, name, { password, derivedFrom: source.state.unlock, actor: opts.actor })
 }
 
 /**
@@ -245,6 +249,11 @@ export async function insertFileSources(
 ): Promise<number[] | null> {
   if (!sources.length) return null
   try {
+    // Pages of an open certificate-encrypted document (loadOpenDocument) open with its key.
+    for (const s of sources) {
+      const key = s.file.unlock?.certificateKey
+      if (key) await doc.core.doc.addCertificateKey(key)
+    }
     const created = await withProgress(
       sources.length > 1 ? `Inserting ${sources.length} files…` : `Inserting ${sources[0].file.name}…`,
       () =>
@@ -285,7 +294,7 @@ export async function insertPaths(doc: DocumentModel, gap: number, paths: string
       continue
     }
     try {
-      const probe = await withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
+      const probe = await withUnlock(file, doc, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
       if (!probe) continue
       sources.push({ file: { ...file, password: probe.password } })
     } catch (err) {

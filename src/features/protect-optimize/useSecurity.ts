@@ -10,6 +10,8 @@ export type FullSecurityStatus = SecurityStatus & { filePermissions: Record<Perm
 export function useSecurity(doc: DocumentModel): FullSecurityStatus | null {
   const info = useDocState(doc, (s) => s.info)
   const version = useDocState(doc, (s) => s.docVersion)
+  // How it was opened decides a certificate-encrypted document's access.
+  const unlock = useDocState(doc, (s) => s.unlock)
   const [status, setStatus] = useState<FullSecurityStatus | null>(null)
   useEffect(() => {
     let alive = true
@@ -21,6 +23,6 @@ export function useSecurity(doc: DocumentModel): FullSecurityStatus | null {
     return () => {
       alive = false
     }
-  }, [doc, info, version])
+  }, [doc, info, version, unlock])
   return status
 }

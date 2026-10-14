@@ -1,6 +1,19 @@
-import { useEffect, useState } from 'react'
-import { Download, FileKey2, FolderInput, Plus, ScrollText, ShieldCheck, Trash2 } from 'lucide-react'
-import { Button, confirm, digitalIdTarget, IconButton, invoke, showError, toast } from '@renderer/sdk'
+import { useCallback, useEffect, useState } from 'react'
+import { Download, FileKey2, FolderInput, Lock, Plus, ScrollText, ShieldCheck, Trash2 } from 'lucide-react'
+import type { CertKeysStatus } from '@shared/certkeys'
+import {
+  Button,
+  confirm,
+  digitalIdTarget,
+  IconButton,
+  invoke,
+  platform,
+  setPrefs,
+  showError,
+  Switch,
+  toast,
+  usePrefs
+} from '@renderer/sdk'
 import { parseCertificate } from '../lib/x509'
 import { describeCertificate } from '../lib/x509'
 import { exportCertificate, idStatus, recordCertificate, removeDigitalId, untrustCertificate } from './ids'
@@ -164,6 +177,7 @@ export function DigitalIdsSettings() {
           {!rec && <span className="shell-muted fc-digital-signatures-small">Select an ID to see, export or remove it.</span>}
         </div>
       )}
+      <WindowsStoreSettings />
       <h4 className="fc-digital-signatures-h4">Trusted certificates</h4>
       <p className="shell-muted fc-digital-signatures-small">
         Signatures made with these certificates (or certificates they issued) show the signer's identity as valid. Add one from a
@@ -191,5 +205,63 @@ export function DigitalIdsSettings() {
         </ul>
       )}
     </div>
+  )
+}
+
+function windowsStoreNote(state: CertKeysStatus['windowsStore'] | undefined): string | null {
+  if (state === 'constrained') {
+    return 'Not available: PowerShell runs in Constrained Language Mode on this computer. Use a Digital ID instead.'
+  }
+  if (state === 'unavailable') return 'Not available: Windows PowerShell could not be started.'
+  return null
+}
+
+/**
+ * Opening certificate-encrypted documents with the Windows certificate store and smart cards (Windows
+ * only, or wherever the main process runs a test PowerShell).
+ */
+function WindowsStoreSettings() {
+  const prefs = usePrefs()
+  const [status, setStatus] = useState<CertKeysStatus | null>(null)
+  const refresh = useCallback(() => {
+    invoke('certkeys:status').then(setStatus, () => setStatus(null))
+  }, [])
+  useEffect(refresh, [refresh, prefs.useWindowsCertificateStore])
+  if (platform !== 'win32' && (!status || status.windowsStore === 'not-windows')) return null
+
+  const lock = async () => {
+    try {
+      await invoke('certkeys:lockSmartCard')
+      toast('Smart card locked. Windows asks for its PIN the next time it is used.')
+    } catch (err) {
+      showError(err, 'Could not lock the smart card')
+    }
+    refresh()
+  }
+  const on = prefs.useWindowsCertificateStore
+  const note = on ? windowsStoreNote(status?.windowsStore) : null
+
+  return (
+    <>
+      <h4 className="fc-digital-signatures-h4">Certificate-encrypted documents</h4>
+      <Switch
+        checked={on}
+        onChange={(v) => void setPrefs({ useWindowsCertificateStore: v })}
+        label="Use certificates from the Windows certificate store"
+      />
+      <p className="shell-muted fc-digital-signatures-small">
+        Documents encrypted for one of your certificates in Windows, or on your smart card, open without a password. Windows asks
+        for the smart card PIN itself.
+      </p>
+      {note && <p className="fc-digital-signatures-small fc-digital-signatures-bad">{note}</p>}
+      {on && status?.helperRunning && (
+        <div className="fc-digital-signatures-row">
+          <span className="fc-digital-signatures-small">Your smart card stays unlocked until you lock it or quit Fartcrobat.</span>
+          <Button size="sm" icon={Lock} onClick={() => void lock()}>
+            Lock smart card
+          </Button>
+        </div>
+      )}
+    </>
   )
 }

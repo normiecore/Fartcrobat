@@ -50,3 +50,24 @@ jobs:
           name: e2e-results
           path: test-results/
           retention-days: 7
+
+  # The Windows certificate store helper (src/main/certkeys/) against the stock Windows PowerShell 5.1
+  # and .NET Framework EnvelopedCms, which only Windows has. The test file imports test certificates
+  # into the runner's CurrentUser\My and AddressBook stores and removes them afterwards.
+  windows-helper:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      # vitest does not need Electron itself.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      # Keep the fixtures byte for byte (git counts PDFs without NUL bytes as text).
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run tests/engine/certkeys-winstore.test.ts

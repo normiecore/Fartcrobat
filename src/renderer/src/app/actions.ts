@@ -1,15 +1,17 @@
+import type { CertificateKey, CertificateLock, CertKeyActor } from '@shared/certkeys'
 import { normalizePath, pathKey as platformPathKey } from '@shared/paths'
 import type { DocInfo, OpenResult, Preferences, SaveOptions } from '@shared/types'
 import { DocumentModel } from '../document/DocumentModel'
 import { EngineClient } from '../engine/EngineClient'
 import { basename, invoke, OPEN_FILTERS, PDF_FILTER, platform, readFile, stripExtension, writeFile } from '../platform'
 import { ask, confirm } from '../ui/dialogs'
+import { unlockCertificateFile } from './certificates'
 import { commitActiveEditors, hasActiveEditors } from './commands'
 import { registry } from './registry'
 import { linkDocumentFiles, unlockFile } from './savedPasswords'
 import { getActiveDoc, useApp } from './store'
 import { showError, toast, withProgress } from './ui-services'
-import type { DocUnlock } from './unlock'
+import { certificateAccess, type DocUnlock } from './unlock'
 
 // ---- preferences --------------------------------------------------------------------------
 
@@ -47,13 +49,11 @@ function extensionOf(name: string) {
  * when the person cancelled.
  */
 async function unlockOpen(
-  res: Extract<OpenResult, { ok: false }>,
+  res: Extract<OpenResult, { needsPassword: true }>,
   name: string,
   filePath: string | null,
   reopen: (password: string) => Promise<OpenResult>
 ): Promise<{ info: DocInfo; unlock: DocUnlock } | null> {
-  // CONTRACT STUB (renderer builder replaces): certificate-encrypted files unlock with the person's keys.
-  if (res.needsCertificate) throw new Error('Certificate-encrypted PDFs cannot be opened yet')
   let info: DocInfo | null = null
   const unlocked = await unlockFile({
     name,
@@ -73,13 +73,55 @@ async function unlockOpen(
 }
 
 /**
+ * Opens a certificate-encrypted document. `known` is a key it may open with silently (the key of
+ * the document it was made from, or the tab's own); else the person's keys open it (see
+ * unlockCertificateFile). `open` gives a key to the engine and opens the document with it (null
+ * when that key does not open it). Resolves with the info and how it was unlocked (`known.unlock`
+ * when that key opened it), or null when the person cancelled or no key opens it.
+ */
+async function unlockCertificateOpen(
+  certificate: CertificateLock,
+  name: string,
+  filePath: string | null,
+  open: (key: CertificateKey) => Promise<DocInfo | null>,
+  opts: { known?: { key: CertificateKey; unlock: DocUnlock } | null; actor?: CertKeyActor; failWithoutKey?: boolean } = {}
+): Promise<{ info: DocInfo; unlock: DocUnlock } | null> {
+  if (opts.known) {
+    const info = await open(opts.known.key)
+    if (info) return { info, unlock: opts.known.unlock }
+  }
+  let info: DocInfo | null = null
+  const unlocked = await unlockCertificateFile({
+    name,
+    filePath,
+    certificate,
+    actor: opts.actor,
+    failWithoutKey: opts.failWithoutKey,
+    attempt: async (key) => {
+      info = await open(key)
+      return !!info
+    }
+  })
+  if (!unlocked || !info) return null
+  return { info, unlock: { method: 'certificate', access: unlocked.access, via: unlocked.via, certificateKey: unlocked.key } }
+}
+
+/** How a document made from a certificate-encrypted one is unlocked: with that document's key. */
+function derivedCertificateUnlock(from: DocUnlock | null | undefined): { key: CertificateKey; unlock: DocUnlock } | null {
+  const key = from?.certificateKey
+  if (!key) return null
+  return { key, unlock: { method: 'source', access: certificateAccess(key.permissions), certificateKey: key, ...(from.via ? { via: from.via } : {}) } }
+}
+
+/**
  * Opens bytes as a new tab. Asks for a password when needed (after trying the passwords saved on
  * this device). `filePath` is null for documents that do not exist on disk yet (created, combined,
  * converted); pass `dirty` for those so the tab asks to be saved: the engine then reports them
  * unsaved until they are. `sourcePath` is the file converted bytes were made from. `password` is
  * tried first (protected tool output; `derivedFrom` is how its source was unlocked); the tab keeps
- * it for later reloads. A file that cannot be opened is reported with `onError` when given (agent
- * access), else shown to the user.
+ * it for later reloads. A certificate-encrypted file opens with the key of `derivedFrom` when it
+ * has one, else with the person's keys (`actor` says who opens it). A file that cannot be opened
+ * is reported with `onError` when given (agent access), else shown to the user.
  */
 export async function openBytes(
   bytes: Uint8Array,
@@ -91,6 +133,7 @@ export async function openBytes(
     activate?: boolean
     password?: string
     derivedFrom?: DocUnlock | null
+    actor?: CertKeyActor
     onError?: (err: unknown) => void
   } = {}
 ): Promise<DocumentModel | null> {
@@ -106,7 +149,19 @@ export async function openBytes(
         : null
       return addDocument(engine, res.info, name, { ...opts, unlock })
     }
-    const opened = await unlockOpen(res, name, opts.filePath ?? null, (pw) => doc.authenticate(pw, { dirty: opts.dirty }))
+    const opened = res.needsCertificate
+      ? await unlockCertificateOpen(
+          res.certificate,
+          name,
+          opts.filePath ?? null,
+          async (key) => {
+            const r = await doc.unlockCertificate(key, { dirty: opts.dirty })
+            return r.ok ? r.info : null
+          },
+          // An agent learns why when none of the person's keys opens it.
+          { known: derivedCertificateUnlock(opts.derivedFrom), actor: opts.actor, failWithoutKey: !!opts.onError }
+        )
+      : await unlockOpen(res, name, opts.filePath ?? null, (pw) => doc.authenticate(pw, { dirty: opts.dirty }))
     if (!opened) {
       engine.terminate()
       return null
@@ -169,7 +224,7 @@ const pathKey = (path: string) => platformPathKey(path, platform)
 /** Opens of files still in progress, by pathKey: a second request for the same file waits for the first. */
 const opening = new Map<string, Promise<DocumentModel | null>>()
 
-async function openPath(path: string, onError?: (err: unknown) => void): Promise<DocumentModel | null> {
+async function openPath(path: string, onError?: (err: unknown) => void, actor?: CertKeyActor): Promise<DocumentModel | null> {
   const name = basename(path)
   try {
     let bytes: Uint8Array | null = null
@@ -180,10 +235,10 @@ async function openPath(path: string, onError?: (err: unknown) => void): Promise
         console.warn('Converter failed, falling back to built-in import', err)
         return null
       })
-      if (bytes) return await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, sourcePath: path, dirty: true, onError })
+      if (bytes) return await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, sourcePath: path, dirty: true, onError, actor })
     }
     bytes = await readFile(path)
-    const doc = await openBytes(bytes, name, { filePath: path, onError })
+    const doc = await openBytes(bytes, name, { filePath: path, onError, actor })
     if (doc && doc.state.filePath) {
       const recent = await invoke('recent:add', { path, name, size: bytes.length, pageCount: doc.pageCount })
       useApp.setState({ recent: recent })
@@ -200,11 +255,12 @@ async function openPath(path: string, onError?: (err: unknown) => void): Promise
 /**
  * Opens files from disk (dialog, drag and drop, command line, recent list). Resolves with the tab
  * of each path (null when it was not opened). Files that cannot be opened are reported with
- * `opts.onError` when given (agent access), else shown to the user.
+ * `opts.onError` when given (agent access), else shown to the user. `actor` says who opens them
+ * (certificate-encrypted files).
  */
 export async function openPaths(
   paths: string[],
-  opts: { onError?: (path: string, err: unknown) => void } = {}
+  opts: { onError?: (path: string, err: unknown) => void; actor?: CertKeyActor } = {}
 ): Promise<(DocumentModel | null)[]> {
   const out: (DocumentModel | null)[] = []
   for (const raw of paths) {
@@ -226,7 +282,7 @@ export async function openPaths(
       continue
     }
     const onError = opts.onError
-    const task = openPath(path, onError ? (err) => onError(path, err) : undefined)
+    const task = openPath(path, onError ? (err) => onError(path, err) : undefined, opts.actor)
     opening.set(key, task)
     try {
       out.push(await task)
@@ -245,22 +301,61 @@ export async function openFileDialog() {
 /**
  * Creates a new untitled tab from PDF bytes produced by a tool (combine, create, convert...).
  * Pass the `password` of protected output so the person is not asked for it again, and
- * `derivedFrom`, how the file it came from was unlocked (its saved password then covers the copy).
+ * `derivedFrom`, how the file it came from was unlocked (its saved password then covers the copy,
+ * and certificate-encrypted output opens with its key).
  */
 export async function openNewDocument(
   bytes: Uint8Array,
   name: string,
-  opts: { password?: string; derivedFrom?: DocUnlock | null } = {}
+  opts: { password?: string; derivedFrom?: DocUnlock | null; actor?: CertKeyActor } = {}
 ): Promise<DocumentModel | null> {
   return openBytes(bytes, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', {
     filePath: null,
     dirty: true,
     password: opts.password,
-    derivedFrom: opts.derivedFrom
+    derivedFrom: opts.derivedFrom,
+    actor: opts.actor
   })
 }
 
 // ---- saving ---------------------------------------------------------------------------------
+
+/** Tabs whose person agreed that saving invalidates the signatures (see signaturesLostOnSave). */
+const signatureLossAccepted = new WeakSet<DocumentModel>()
+
+/**
+ * Signatures a save would invalidate that the person has not agreed to yet in this tab: a
+ * certificate-encrypted document is rewritten in full on every save to keep its certificate
+ * security, so the signatures in it no longer validate. 0 when that does not apply.
+ */
+export function signaturesLostOnSave(doc: DocumentModel): number {
+  const info = doc.state.info
+  if (info.security !== 'certificate' || !info.signatureCount || signatureLossAccepted.has(doc)) return 0
+  return info.signatureCount
+}
+
+/** The person agreed: later saves in this tab do not ask again. */
+export function acceptSignatureLoss(doc: DocumentModel) {
+  signatureLossAccepted.add(doc)
+}
+
+/** "Saving will invalidate 2 signatures. ..." (also what an agent's save asks the person). */
+export function signatureLossMessage(doc: DocumentModel, count: number): string {
+  const one = count === 1
+  return (
+    `Saving will invalidate ${count} signature${one ? '' : 's'}. “${doc.state.title}” is encrypted with certificates, so ` +
+    `Fartcrobat rewrites the whole file to keep its certificate security, and ${one ? 'its signature' : 'its signatures'} will no longer validate.`
+  )
+}
+
+/** Before the first save in the tab of a signed certificate-encrypted document: false when the person cancels. */
+async function confirmSignatureLoss(doc: DocumentModel): Promise<boolean> {
+  const count = signaturesLostOnSave(doc)
+  if (!count) return true
+  const ok = await confirm({ title: 'Invalidate signatures?', message: signatureLossMessage(doc, count), confirmLabel: 'Save' })
+  if (ok) acceptSignatureLoss(doc)
+  return ok
+}
 
 /** Saves a document. Asks for a location when it has none (or when saveAs is set). */
 export async function saveDocument(
@@ -268,6 +363,7 @@ export async function saveDocument(
   opts: { saveAs?: boolean; saveOptions?: SaveOptions } = {}
 ): Promise<boolean> {
   if (hasActiveEditors()) await commitActiveEditors()
+  if (!(await confirmSignatureLoss(doc))) return false
   let path = doc.state.filePath
   if (!path || opts.saveAs) {
     const suggested = path ?? doc.state.title
@@ -308,11 +404,39 @@ export async function saveDocument(
 }
 
 /**
+ * Unlocks new bytes a tab's engine was given (`res` from doc.reload): with a password (saved, or
+ * typed by the person), or for certificate encryption with the tab's own key, else the person's
+ * keys. `reload` loads the bytes again with a password; certificate keys are given to the engine
+ * first (doc.addCertificateKey). Null when the person cancelled or nothing opened them.
+ */
+async function unlockReload(
+  doc: DocumentModel,
+  res: Extract<OpenResult, { ok: false }>,
+  name: string,
+  filePath: string | null,
+  reload: (password?: string) => Promise<OpenResult>
+): Promise<{ info: DocInfo; unlock: DocUnlock } | null> {
+  if (!res.needsCertificate) return unlockOpen(res, name, filePath, reload)
+  const own = doc.state.unlock
+  return unlockCertificateOpen(
+    res.certificate,
+    name,
+    filePath,
+    async (key) => {
+      await doc.core.doc.addCertificateKey(key)
+      const r = await reload()
+      return r.ok ? r.info : null
+    },
+    { known: own?.certificateKey ? { key: own.certificateKey, unlock: own } : null }
+  )
+}
+
+/**
  * Replaces the document content with new bytes (e.g. after signing or optimising), writes them to
  * disk at `path` and reloads the tab from that file. With `path` null the new content is only in
- * memory and the tab stays unsaved. The password the document was opened with is reused; when
- * the new bytes need another one, pass it as `opts.password`, or a saved password or the user
- * supplies it.
+ * memory and the tab stays unsaved. The password (or certificate key) the document was opened with
+ * is reused; when the new bytes need another one, pass it as `opts.password`, or a saved password,
+ * the person's keys or the person supply it.
  */
 export async function replaceDocumentBytes(
   doc: DocumentModel,
@@ -329,8 +453,8 @@ export async function replaceDocumentBytes(
     info = res.info
     if (opts.password && res.access) unlock = { method: 'source', access: res.access }
   } else {
-    const opened = await unlockOpen(res, path ? basename(path) : doc.state.title, path ?? doc.state.filePath, reload)
-    if (!opened) throw new Error('The new document requires a password')
+    const opened = await unlockReload(doc, res, path ? basename(path) : doc.state.title, path ?? doc.state.filePath, reload)
+    if (!opened) throw new Error(res.needsCertificate ? 'The new document is encrypted with certificates and was not opened' : 'The new document requires a password')
     info = opened.info
     unlock = opened.unlock
   }
@@ -361,8 +485,8 @@ export async function revertDocument(doc: DocumentModel): Promise<boolean> {
     let unlock = doc.state.unlock
     if (res.ok) info = res.info
     else {
-      // The file was protected again elsewhere: a saved password or the person opens it.
-      const opened = await unlockOpen(res, doc.state.title, path, (password) => doc.core.doc.reload(bytes, { password }))
+      // The file was protected again elsewhere: a saved password, a certificate key or the person opens it.
+      const opened = await unlockReload(doc, res, doc.state.title, path, (password) => doc.core.doc.reload(bytes, { password }))
       if (!opened) return false
       info = opened.info
       unlock = opened.unlock
