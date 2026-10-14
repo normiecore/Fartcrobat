@@ -545,5 +545,10 @@ describe('after a certificate-encrypted document is saved to its file', () => {
     await e.doc.saveWithVersion({})
     await e.doc.markSaved('v4-rc4.pdf', version)
     expect((await e.doc.facts()).encryption).toBe('Adobe.PubSec V4 128-bit RC4')
+    // Nor after a save with other security (Remove Security reloads the tab from what it wrote).
+    const again = await e.doc.saveWithVersion({})
+    expect(await e.doc.save({ mode: 'full', decrypt: true })).toBeInstanceOf(Uint8Array)
+    await e.doc.markSaved('v4-rc4.pdf', again.version)
+    expect((await e.doc.facts()).encryption).toBe('Adobe.PubSec V4 128-bit RC4')
   })
 })

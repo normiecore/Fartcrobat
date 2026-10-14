@@ -247,6 +247,12 @@ export const REQUIRED_SAVE_OPTIONS = 'core:requiredSaveOptions'
 
 const GARBAGE_LEVELS: NonNullable<SaveOptions['garbage']>[] = ['none', 'collect', 'compact', 'deduplicate']
 
+/**
+ * Session state key: the last save of a certificate-encrypted document with its own seed and
+ * envelopes, and the edit version it holds, until markSaved says it became the document's file.
+ */
+const CERTIFICATE_SAVE = 'core:certificateSave'
+
 /** Merges the session's required save options (if any) over the caller's options. */
 export function withRequiredSaveOptions(s: Session, opts: SaveOptions): SaveOptions {
   const req = s.state.get(REQUIRED_SAVE_OPTIONS) as SaveOptions | undefined
@@ -304,6 +310,8 @@ function saveIncrementally(s: Session): Uint8Array {
  * its own security settings.
  */
 export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
+  // Only the latest save can become the document's file (see adoptSavedCertificateFile).
+  s.state.delete(CERTIFICATE_SAVE)
   if (opts.encryptCertificate) return saveWithNewCertificateSecurity(s, opts)
   if (s.pubsec) return saveCertificateDocument(s, s.pubsec, opts)
   opts = withRequiredSaveOptions(s, opts)
@@ -427,12 +435,6 @@ function saveCertificateDocument(s: Session, state: PubSecState, opts: SaveOptio
   s.state.set(CERTIFICATE_SAVE, { bytes: bytes.slice(), version: s.editVersion() })
   return bytes
 }
-
-/**
- * Session state key: the last save of a certificate-encrypted document with its own seed and
- * envelopes, and the edit version it holds, until markSaved says it became the document's file.
- */
-const CERTIFICATE_SAVE = 'core:certificateSave'
 
 /**
  * After a certificate-encrypted document was written to its file (markSaved): the session describes
