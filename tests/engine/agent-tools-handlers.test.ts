@@ -184,7 +184,7 @@ describe('network locations', () => {
 
   it('asks before reading a file to insert from a network location', async () => {
     const doc = modelFor(await openFixture('text.pdf'), 'text.pdf', { filePath: 'C:\\docs\\text.pdf' })
-    const inserting = call('organize_pages', { handle: `w1-${doc.id}`, operation: 'insert_file', path: '\\\\scanner\\out\\scan.pdf' })
+    const inserting = call('organize_pages', { handle: `w1-${common.BOOT}-${doc.id}`, operation: 'insert_file', path: '\\\\scanner\\out\\scan.pdf' })
     const d = await nextDialog()
     expect(dialogText(d)).toMatch(/Inserting pages from “scan\.pdf”/)
     d.resolve(false)
@@ -206,7 +206,7 @@ describe('undo and redo of the person\'s steps', () => {
     const e = await openFixture('text.pdf')
     const doc = modelFor(e, 'text.pdf', { filePath: 'C:\\docs\\text.pdf' })
     const annots = e.ops<typeof annotOps>('annots')
-    return { e, doc, annots, handle: `w1-${doc.id}` }
+    return { e, doc, annots, handle: `w1-${common.BOOT}-${doc.id}` }
   }
 
   it('undoes the agent\'s own step straight away', async () => {
@@ -281,7 +281,7 @@ describe('copy-restricted documents', () => {
   it('reads their text with a flag, and refuses to export them', async () => {
     const doc = modelFor(await openFixture('derived-protection/aes256-restricted.pdf'), 'restricted.pdf', { filePath: 'C:\\docs\\restricted.pdf' })
     expect(doc.state.info.permissions.copy).toBe(false)
-    const handle = `w1-${doc.id}`
+    const handle = `w1-${common.BOOT}-${doc.id}`
     const text = (await call('get_page_text', { handle, pages: '1' })).data
     expect(text.copyRestricted).toBe(true)
     expect(text.pages[0].text).toMatch(/Confidential text on page 1/)
@@ -297,7 +297,7 @@ describe('copy-restricted documents', () => {
     expect(invoked).toEqual([])
 
     const plain = modelFor(await openFixture('text.pdf'), 'text.pdf')
-    expect((await call('get_page_text', { handle: `w1-${plain.id}`, pages: '1' })).data.copyRestricted).toBeUndefined()
+    expect((await call('get_page_text', { handle: `w1-${common.BOOT}-${plain.id}`, pages: '1' })).data.copyRestricted).toBeUndefined()
   })
 })
 
@@ -305,7 +305,7 @@ describe('open_document', () => {
   it('returns the tab converted from a file until it is saved as a PDF', async () => {
     const doc = modelFor(await openFixture('text.pdf'), 'report.pdf', { sourcePath: 'C:\\Docs\\Report.docx' })
     const { data } = await call('open_document', { path: 'c:/docs/report.docx' })
-    expect(data).toMatchObject({ handle: `w1-${doc.id}`, path: null, convertedFrom: 'C:\\Docs\\Report.docx', alreadyOpen: true })
+    expect(data).toMatchObject({ handle: `w1-${common.BOOT}-${doc.id}`, path: null, convertedFrom: 'C:\\Docs\\Report.docx', alreadyOpen: true })
     expect(invoked).toEqual([])
     const { data: list } = await call('list_documents')
     expect(list.documents[0].convertedFrom).toBe('C:\\Docs\\Report.docx')
