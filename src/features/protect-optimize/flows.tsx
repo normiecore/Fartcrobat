@@ -2,19 +2,21 @@
  * The user-facing flows: protecting, unlocking and removing security, and compressing. Everything
  * that writes files asks where first and reports success or failure visibly.
  */
-import type { DocumentModel } from '@renderer/sdk'
+import type { DocUnlock, DocumentModel } from '@renderer/sdk'
 import {
   PDF_FILTER,
   ask,
   basename,
   confirm,
   dirname,
+  forgetSavedPassword,
   invoke,
   joinPath,
   openDialog,
   openNewDocument,
   openPaths,
   prompt,
+  rememberDocumentPassword,
   showError,
   stripExtension,
   toast,
@@ -69,14 +71,27 @@ async function chooseSavePath(title: string, defaultPath: string): Promise<strin
 
 /**
  * After writing new bytes for the document to `path`, reopens the tab from them so the session
- * matches the file (security, size) and later saves keep it. Undo history starts afresh.
+ * matches the file (security, size) and later saves keep it. Undo history starts afresh. Pass
+ * `unlock` when the security changed (how the new file was opened, null for none).
  */
-async function reloadFromSaved(doc: DocumentModel, bytes: Uint8Array, path: string, password?: string, ownerPassword?: string) {
-  const res = await doc.core.doc.reload(bytes, { password })
+async function reloadFromSaved(
+  doc: DocumentModel,
+  bytes: Uint8Array,
+  path: string,
+  opts: { password?: string; ownerPassword?: string; unlock?: DocUnlock | null } = {}
+) {
+  const res = await doc.core.doc.reload(bytes, { password: opts.password })
   if (!res.ok) throw new Error('The saved file could not be reopened')
-  if (ownerPassword) await poOps(doc).checkPassword(ownerPassword, { apply: true })
+  if (opts.ownerPassword) await poOps(doc).checkPassword(opts.ownerPassword, { apply: true })
   const info = await doc.core.doc.info()
-  doc.set({ info, filePath: path, title: basename(path), dirty: false, selection: { kind: 'none' } })
+  doc.set({
+    info,
+    filePath: path,
+    title: basename(path),
+    dirty: false,
+    selection: { kind: 'none' },
+    ...(opts.unlock !== undefined ? { unlock: opts.unlock } : {})
+  })
   await doc.core.doc.markSaved(basename(path))
   try {
     const recent = await invoke('recent:add', { path, name: basename(path), size: bytes.length, pageCount: info.pageCount })
@@ -180,10 +195,22 @@ export async function applyProtection(doc: DocumentModel, settings: ProtectSetti
     const bytes = await doc.busyWhile('Protecting…', () => doc.saveBytes({ mode: 'full', encrypt }))
     await writeFile(path, bytes)
     // Reopen with the permissions password: you keep full access while the file is restricted for others.
-    await reloadFromSaved(doc, bytes, path, encrypt.ownerPassword || encrypt.userPassword, encrypt.userPassword ? undefined : encrypt.ownerPassword)
+    await reloadFromSaved(doc, bytes, path, {
+      password: encrypt.ownerPassword || encrypt.userPassword,
+      ownerPassword: encrypt.userPassword ? undefined : encrypt.ownerPassword,
+      unlock: encrypt.userPassword ? { method: 'typed', access: 'owner' } : null
+    })
   } catch (err) {
     showError(err, 'Could not protect the document')
     return false
+  }
+  // The open password, so the file opens without asking (with the restrictions others get).
+  let remembered = false
+  if (settings.rememberPassword && encrypt.userPassword) {
+    const saved = await rememberDocumentPassword(doc, path, encrypt.userPassword, 'user').catch(() => null)
+    remembered = !!saved
+    if (saved) doc.set({ unlock: { method: 'typed', access: 'owner', savedRef: saved.ref, lock: saved.lock } })
+    else toast(`The password for “${basename(path)}” could not be saved on this device.`, { kind: 'warning' })
   }
   const restricted = settings.restrictEditing ? restrictionList(permissionsFor(settings)) : []
   const method = settings.method === 'aes-256' ? '256-bit AES' : settings.method === 'aes-128' ? '128-bit AES' : '128-bit RC4'
@@ -196,7 +223,11 @@ export async function applyProtection(doc: DocumentModel, settings: ProtectSetti
           Saved <b>{basename(path)}</b> with {method} encryption.
         </p>
         <ul>
-          {settings.requireOpenPassword && <li>Opening it needs the password you set.</li>}
+          {settings.requireOpenPassword && (
+            <li>
+              Opening it needs the password you set{remembered ? '. It is saved on this device, so the file opens here without asking' : ''}.
+            </li>
+          )}
           {settings.restrictEditing &&
             (restricted.length ? (
               <li>Without the permissions password, these are not allowed: {sentenceList(restricted)}.</li>
@@ -276,7 +307,7 @@ export async function removeDocumentSecurity(doc: DocumentModel, opts: { confirm
       toast(`Saved an unprotected copy: ${basename(path)}`, { kind: 'success', action: { label: 'Open', run: () => void openPaths([path]) } })
       return path
     }
-    await reloadFromSaved(doc, bytes, path)
+    await reloadFromSaved(doc, bytes, path, { unlock: null })
     toast(`Security removed. “${basename(path)}” no longer has a password or restrictions.`, { kind: 'success' })
     return path
   } catch (err) {
@@ -337,7 +368,7 @@ export async function compressDocument(doc: DocumentModel, options: OptimizeOpti
       path = await chooseSavePath('Save Compressed PDF', siblingPath(doc, name))
       if (!path) return null
       await writeFile(path, bytes)
-      if (path === doc.state.filePath) await reloadFromSaved(doc, bytes, path, password)
+      if (path === doc.state.filePath) await reloadFromSaved(doc, bytes, path, { password })
     }
     const result: CompressResult = { ...base, smaller: true, path, openedInTab: output === 'tab' }
     setResult(doc, result)
@@ -369,4 +400,18 @@ export function describeReport(r: CompressResult): string[] {
   if (removed.length) out.push(`Removed: ${sentenceList(removed)}`)
   if (r.report.keptEncryption) out.push('Password protection kept')
   return out
+}
+
+// ---- saved password -------------------------------------------------------------------------
+
+/** "Forget": the password saved on this device no longer opens the document (or its copies). */
+export async function forgetDocumentPassword(doc: DocumentModel): Promise<boolean> {
+  try {
+    await forgetSavedPassword(doc)
+    toast(`Fartcrobat will ask for the password of “${doc.state.title}” the next time it is opened.`)
+    return true
+  } catch (err) {
+    showError(err, 'Could not forget the saved password')
+    return false
+  }
 }

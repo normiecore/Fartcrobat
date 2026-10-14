@@ -305,7 +305,8 @@ export function blankSize(b: BlankOptions): { width: number; height: number } | 
 
 /** A piece of a new PDF (Create a PDF). */
 export type CreatePart =
-  | { kind: 'file'; name: string; data: Uint8Array; password?: string }
+  /** `path`: where the file was read from (to find a password saved for it). */
+  | { kind: 'file'; name: string; data: Uint8Array; password?: string; path?: string }
   | { kind: 'blank'; width: number; height: number; count: number }
 
 export interface HtmlConvertOptions {

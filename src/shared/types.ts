@@ -75,7 +75,33 @@ export interface ChangeSet {
   dirty: boolean
 }
 
-export type OpenResult = { ok: true; info: DocInfo } | { ok: false; needsPassword: true; wrongPassword?: boolean }
+/**
+ * Facts about a PDF's security handler that can be read before its password is known. Used to find
+ * a password saved on this device (the main process hashes them into lookup keys).
+ */
+export interface LockInfo {
+  /** /Filter of the /Encrypt dictionary ('Standard', 'Adobe.PubSec'...). */
+  handler: string
+  /** Hex of the first element of the trailer /ID; null when missing or empty. */
+  id: string | null
+  /**
+   * Everything the password check depends on, as text. Two files with the same value accept
+   * exactly the same passwords; it changes whenever the password (or AES-256's salts) changes.
+   */
+  security: string
+}
+
+/** What a password gave: 'owner' (the permissions password) opens with full access. */
+export type PasswordAccess = 'user' | 'owner'
+
+export type OpenResult =
+  | {
+      ok: true
+      info: DocInfo
+      /** Set when a password opened the document. */
+      access?: PasswordAccess
+    }
+  | { ok: false; needsPassword: true; wrongPassword?: boolean; lock?: LockInfo | null }
 
 export interface SaveOptions {
   /**
@@ -134,6 +160,13 @@ export interface Preferences {
    * documents. A machine policy file can force it on or off.
    */
   agentAccess: boolean
+  /**
+   * Offer to remember document and Digital ID passwords on this device (Preferences > Passwords).
+   * A machine policy file can turn it off.
+   */
+  rememberPasswords: boolean
+  /** The last choice in the password prompt's "Remember password on this device" checkbox. */
+  rememberPasswordChecked: boolean
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -158,7 +191,9 @@ export const DEFAULT_PREFERENCES: Preferences = {
   ocrLanguage: 'eng',
   libreOfficePath: '',
   hardwareAcceleration: true,
-  agentAccess: true
+  agentAccess: true,
+  rememberPasswords: true,
+  rememberPasswordChecked: true
 }
 
 export interface RecentFile {

@@ -113,6 +113,29 @@ export function Checkbox({
   )
 }
 
+/** An on/off switch: a checkbox with the "switch" role. */
+export function Switch({
+  checked,
+  onChange,
+  label,
+  disabled
+}: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: ReactNode
+  disabled?: boolean
+}) {
+  return (
+    <label className={`ui-switch ${disabled ? 'is-disabled' : ''}`}>
+      <input type="checkbox" role="switch" checked={checked} disabled={disabled} aria-checked={checked} onChange={(e) => onChange(e.target.checked)} />
+      <span className="ui-switch-track" aria-hidden>
+        <span className="ui-switch-thumb" />
+      </span>
+      <span className="ui-switch-label">{label}</span>
+    </label>
+  )
+}
+
 export function Radio({
   checked,
   onChange,

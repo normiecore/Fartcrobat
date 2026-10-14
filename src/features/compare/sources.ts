@@ -4,19 +4,20 @@
  * used by a slot or by the results.
  */
 import type docOpsT from '@engine/ops/doc'
-import type { OpenResult } from '@shared/types'
+import type { DocInfo } from '@shared/types'
 import {
   basename,
   DocumentModel,
   EngineClient,
   invoke,
   OPEN_FILTERS,
-  prompt,
   readFile,
   registry,
   showError,
   stripExtension,
-  useApp
+  unlockFile,
+  useApp,
+  type DocUnlock
 } from '@renderer/sdk'
 import { compareStore, emptySlot, getCompare, patchSlot, setCompare, type Side } from './store'
 
@@ -71,24 +72,35 @@ async function openPrivate(path: string): Promise<DocumentModel | null> {
   try {
     await engine.ready()
     const docOps = engine.ops<typeof docOpsT>('doc')
-    let res: OpenResult = await docOps.open(bytes, { fileName: title })
-    while (!res.ok) {
-      const pw = await prompt({
-        title: 'Password required',
-        message: res.wrongPassword
-          ? `The password for “${name}” is incorrect. Try again.`
-          : `“${name}” is protected. Enter the document open password to compare it.`,
-        label: 'Password',
-        password: true,
-        okLabel: 'Open'
+    const res = await docOps.open(bytes, { fileName: title })
+    let info: DocInfo | null = res.ok ? res.info : null
+    let unlock: DocUnlock | null = null
+    if (!res.ok) {
+      const unlocked = await unlockFile({
+        name,
+        filePath: path,
+        lock: res.lock,
+        purpose: 'to compare it',
+        attempt: async (pw) => {
+          const r = await docOps.authenticate(pw)
+          if (!r.ok) return null
+          info = r.info
+          return r.access ?? 'user'
+        }
       })
-      if (pw === null) {
+      if (!unlocked || !info) {
         engine.terminate()
         return null
       }
-      res = await docOps.authenticate(pw)
+      const { password: _password, ...rest } = unlocked
+      unlock = rest
     }
-    const doc = new DocumentModel(engine, res.info, { title: res.info.converted ? stripExtension(name) + '.pdf' : title, filePath: path })
+    const opened: DocInfo = info!
+    const doc = new DocumentModel(engine, opened, {
+      title: opened.converted ? stripExtension(name) + '.pdf' : title,
+      filePath: path,
+      unlock
+    })
     owned.set(doc, 0)
     return doc
   } catch (err) {

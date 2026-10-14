@@ -122,6 +122,8 @@ App-level helpers from `@renderer/sdk`: `openDialog(close => <Dialog .../>)`, `a
 `openNewDocument(bytes, name)` (new unsaved tab), `saveDocument`,
 `replaceDocumentBytes(doc, bytes, path | null, { password? })` (path null: unsaved in-memory
 content; the open password is reused, a new one is asked for),
+`unlockFile({ name, filePath, lock, attempt })` (opens a protected input with a password saved on
+this device, else asks with "Remember password on this device"; see docs/features/passwordless.md),
 `saveBytesAs(bytes, name, filters)`, `invoke('file:openDialog', ...)`, `readFile`, `setTool`,
 `openToolGroup`, `openRightPanel`, `runCommand`, `authorName()`, `usePrefs()`, `setPrefs()`.
 UI kit: `Button`, `IconButton`, `Dialog`, `Field`, `TextInput`, `NumberInput`, `TextArea`, `Select`,
@@ -210,7 +212,9 @@ The main and preload bundles include every package they import (installers ship 
 `node_modules`), so a `main.ts` may import pure-JS dependencies but nothing that loads files from
 its own package folder at runtime.
 
-Core channels worth knowing: `file:tempPath(name)` gives a path in a new private folder (only the
+Core channels worth knowing: `passwords:*` (passwords remembered on this device; the store and
+safeStorage live in `src/main/passwords/`, and only the top frame of an app window may call them),
+`file:tempPath(name)` gives a path in a new private folder (only the
 user can read it; removed when the app quits) and `file:write` there marks the file as downloaded
 on Windows; `shell:openPath(path)` refuses programs and scripts (.exe, .js, .app, .desktop...) and
 returns the message to show; `file:saveDialog` asks before replacing a file whose extension it

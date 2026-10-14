@@ -3,11 +3,13 @@ import type { DocInfo, OpenResult, Preferences, SaveOptions } from '@shared/type
 import { DocumentModel } from '../document/DocumentModel'
 import { EngineClient } from '../engine/EngineClient'
 import { basename, invoke, OPEN_FILTERS, PDF_FILTER, platform, readFile, stripExtension, writeFile } from '../platform'
-import { ask, confirm, prompt } from '../ui/dialogs'
+import { ask, confirm } from '../ui/dialogs'
 import { commitActiveEditors, hasActiveEditors } from './commands'
 import { registry } from './registry'
+import { linkDocumentFiles, unlockFile } from './savedPasswords'
 import { getActiveDoc, useApp } from './store'
 import { showError, toast, withProgress } from './ui-services'
+import type { DocUnlock } from './unlock'
 
 // ---- preferences --------------------------------------------------------------------------
 
@@ -39,44 +41,73 @@ function extensionOf(name: string) {
   return (/\.([^.]+)$/.exec(name)?.[1] ?? '').toLowerCase()
 }
 
-function askPassword(name: string, wrong: boolean | undefined): Promise<string | null> {
-  return prompt({
-    title: 'Password required',
-    message: wrong
-      ? `The password for “${name}” is incorrect. Try again.`
-      : `“${name}” is protected. Enter the document open password.`,
-    label: 'Password',
-    password: true,
-    okLabel: 'Open'
+/**
+ * Tries passwords on a document that needs one: saved passwords first, then the person. `reopen`
+ * opens it with a password (OpenResult). Resolves with the info and how it was unlocked, or null
+ * when the person cancelled.
+ */
+async function unlockOpen(
+  res: Extract<OpenResult, { ok: false }>,
+  name: string,
+  filePath: string | null,
+  reopen: (password: string) => Promise<OpenResult>
+): Promise<{ info: DocInfo; unlock: DocUnlock } | null> {
+  let info: DocInfo | null = null
+  const unlocked = await unlockFile({
+    name,
+    filePath,
+    lock: res.lock,
+    wrong: res.wrongPassword,
+    attempt: async (pw) => {
+      const r = await reopen(pw)
+      if (!r.ok) return null
+      info = r.info
+      return r.access ?? 'user'
+    }
   })
+  if (!unlocked || !info) return null
+  const { password: _password, ...unlock } = unlocked
+  return { info, unlock }
 }
 
 /**
- * Opens bytes as a new tab. Prompts for a password when needed. `filePath` is null for documents
- * that do not exist on disk yet (created, combined, converted); pass `dirty` for those so the
- * tab asks to be saved: the engine then reports them unsaved until they are. `password` is tried
- * first (protected tool output); the tab keeps it for later reloads. A file that cannot be opened
- * is reported with `onError` when given (agent access), else shown to the user.
+ * Opens bytes as a new tab. Asks for a password when needed (after trying the passwords saved on
+ * this device). `filePath` is null for documents that do not exist on disk yet (created, combined,
+ * converted); pass `dirty` for those so the tab asks to be saved: the engine then reports them
+ * unsaved until they are. `password` is tried first (protected tool output; `derivedFrom` is how
+ * its source was unlocked); the tab keeps it for later reloads. A file that cannot be opened is
+ * reported with `onError` when given (agent access), else shown to the user.
  */
 export async function openBytes(
   bytes: Uint8Array,
   name: string,
-  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean; password?: string; onError?: (err: unknown) => void } = {}
+  opts: {
+    filePath?: string | null
+    dirty?: boolean
+    activate?: boolean
+    password?: string
+    derivedFrom?: DocUnlock | null
+    onError?: (err: unknown) => void
+  } = {}
 ): Promise<DocumentModel | null> {
   const engine = new EngineClient()
   try {
     await engine.ready()
     const doc = engine.ops<typeof import('@engine/ops/doc').default>('doc')
-    let res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty, password: opts.password })
-    while (!res.ok) {
-      const pw = await askPassword(name, res.wrongPassword)
-      if (pw === null) {
-        engine.terminate()
-        return null
-      }
-      res = await doc.authenticate(pw, { dirty: opts.dirty })
+    const res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty, password: opts.password })
+    if (res.ok) {
+      const from = opts.derivedFrom
+      const unlock: DocUnlock | null = res.access
+        ? { method: 'source', access: res.access, ...(from?.savedRef ? { savedRef: from.savedRef, lock: from.lock } : {}) }
+        : null
+      return addDocument(engine, res.info, name, { ...opts, unlock })
     }
-    return addDocument(engine, res.info, name, opts)
+    const opened = await unlockOpen(res, name, opts.filePath ?? null, (pw) => doc.authenticate(pw, { dirty: opts.dirty }))
+    if (!opened) {
+      engine.terminate()
+      return null
+    }
+    return addDocument(engine, opened.info, name, { ...opts, unlock: opened.unlock })
   } catch (err) {
     engine.terminate()
     if (opts.onError) opts.onError(err)
@@ -89,7 +120,7 @@ function addDocument(
   engine: EngineClient,
   info: DocInfo,
   name: string,
-  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean }
+  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean; unlock?: DocUnlock | null }
 ): DocumentModel {
   const prefs = useApp.getState().prefs
   const converted = info.converted
@@ -100,7 +131,8 @@ function addDocument(
     filePath,
     zoomMode: typeof prefs.defaultZoom === 'string' ? prefs.defaultZoom : 'custom',
     layout: prefs.defaultLayout,
-    dirty: opts.dirty || converted
+    dirty: opts.dirty || converted,
+    unlock: opts.unlock ?? null
   })
   if (typeof prefs.defaultZoom === 'number') doc.set({ zoom: prefs.defaultZoom, zoomMode: 'custom' })
   if (filePath && prefs.restoreLastView) {
@@ -206,10 +238,20 @@ export async function openFileDialog() {
 
 /**
  * Creates a new untitled tab from PDF bytes produced by a tool (combine, create, convert...).
- * Pass the `password` of protected output so the person is not asked for it again.
+ * Pass the `password` of protected output so the person is not asked for it again, and
+ * `derivedFrom`, how the file it came from was unlocked (its saved password then covers the copy).
  */
-export async function openNewDocument(bytes: Uint8Array, name: string, opts: { password?: string } = {}): Promise<DocumentModel | null> {
-  return openBytes(bytes, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', { filePath: null, dirty: true, password: opts.password })
+export async function openNewDocument(
+  bytes: Uint8Array,
+  name: string,
+  opts: { password?: string; derivedFrom?: DocUnlock | null } = {}
+): Promise<DocumentModel | null> {
+  return openBytes(bytes, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', {
+    filePath: null,
+    dirty: true,
+    password: opts.password,
+    derivedFrom: opts.derivedFrom
+  })
 }
 
 // ---- saving ---------------------------------------------------------------------------------
@@ -248,6 +290,7 @@ export async function saveDocument(
     // and reports the dirty state with this call, so it is not set here.
     await doc.core.doc.markSaved(basename(path), version)
     doc.set({ filePath: path, title: basename(path) })
+    void linkDocumentFiles(doc, [path])
     const recent = await invoke('recent:add', { path, name: basename(path), size: bytes.length, pageCount: doc.pageCount })
     useApp.setState({ recent })
     toast(`Saved ${basename(path)}`, { kind: 'success', timeout: 2000 })
@@ -262,7 +305,8 @@ export async function saveDocument(
  * Replaces the document content with new bytes (e.g. after signing or optimising), writes them to
  * disk at `path` and reloads the tab from that file. With `path` null the new content is only in
  * memory and the tab stays unsaved. The password the document was opened with is reused; when
- * the new bytes need another one, pass it as `opts.password` or the user is asked for it.
+ * the new bytes need another one, pass it as `opts.password`, or a saved password or the user
+ * supplies it.
  */
 export async function replaceDocumentBytes(
   doc: DocumentModel,
@@ -271,18 +315,26 @@ export async function replaceDocumentBytes(
   opts: { password?: string } = {}
 ) {
   if (path) await writeFile(path, bytes)
-  let res = await doc.core.doc.reload(bytes, { password: opts.password, dirty: !path })
-  while (!res.ok) {
-    const pw = await askPassword(doc.state.title, res.wrongPassword)
-    if (pw === null) throw new Error('The new document requires a password')
-    res = await doc.core.doc.reload(bytes, { password: pw, dirty: !path })
+  const reload = (password?: string) => doc.core.doc.reload(bytes, { password, dirty: !path })
+  const res = await reload(opts.password)
+  let info: DocInfo
+  let unlock = doc.state.unlock
+  if (res.ok) {
+    info = res.info
+    if (opts.password && res.access) unlock = { method: 'source', access: res.access }
+  } else {
+    const opened = await unlockOpen(res, path ? basename(path) : doc.state.title, path ?? doc.state.filePath, reload)
+    if (!opened) throw new Error('The new document requires a password')
+    info = opened.info
+    unlock = opened.unlock
   }
   doc.set({
-    info: res.info,
+    info,
     filePath: path ?? doc.state.filePath,
     title: path ? basename(path) : doc.state.title,
     dirty: !path,
-    selection: { kind: 'none' }
+    selection: { kind: 'none' },
+    unlock
   })
   if (path) await doc.core.doc.markSaved(basename(path))
 }
@@ -298,15 +350,20 @@ export async function revertDocument(doc: DocumentModel): Promise<boolean> {
   const page = doc.state.currentPage
   try {
     const bytes = await doc.busyWhile('Reverting…', () => readFile(path))
-    let res = await doc.core.doc.reload(bytes, {})
-    while (!res.ok) {
-      const pw = await askPassword(doc.state.title, res.wrongPassword)
-      if (pw === null) return false
-      res = await doc.core.doc.reload(bytes, { password: pw })
+    const res = await doc.core.doc.reload(bytes, {})
+    let info: DocInfo
+    let unlock = doc.state.unlock
+    if (res.ok) info = res.info
+    else {
+      // The file was protected again elsewhere: a saved password or the person opens it.
+      const opened = await unlockOpen(res, doc.state.title, path, (password) => doc.core.doc.reload(bytes, { password }))
+      if (!opened) return false
+      info = opened.info
+      unlock = opened.unlock
     }
     await doc.core.doc.markSaved(basename(path))
-    doc.set({ info: res.info, selection: { kind: 'none' } })
-    const target = Math.min(page, res.info.pageCount - 1)
+    doc.set({ info, selection: { kind: 'none' }, unlock })
+    const target = Math.min(page, info.pageCount - 1)
     if (doc.state.currentPage !== target) doc.view?.goToPage(target)
     return true
   } catch (err) {

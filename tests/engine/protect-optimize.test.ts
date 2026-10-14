@@ -102,7 +102,7 @@ describe('protect-optimize: security', () => {
     const bytes = await e.doc.save({ mode: 'full', encrypt: encryptOptions(settings) })
 
     const locked = await openBytes(bytes)
-    expect(locked.res).toEqual({ ok: false, needsPassword: true, wrongPassword: false })
+    expect(locked.res).toEqual({ ok: false, needsPassword: true, wrongPassword: false, lock: expect.objectContaining({ handler: 'Standard' }) })
     expect((await locked.doc.authenticate('nope')).ok).toBe(false)
     const ok = await locked.doc.authenticate('abc')
     expect(ok.ok).toBe(true)

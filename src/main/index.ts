@@ -8,6 +8,7 @@ import type { MainContext, MainFeatureModule } from './context'
 import { defaultAppStatus, setDefaultApp } from './defaultApp'
 import { handle, send } from './ipc'
 import { applyDefaultMenu, applyMenu } from './menu'
+import { registerPasswordHandlers } from './passwords'
 import { destroyPrintWindows, listPrinters, printImages } from './print'
 import { registerAppScheme, serveRenderer } from './protocol'
 import { store } from './store'
@@ -307,6 +308,8 @@ function registerCoreHandlers() {
   handle('clipboard:writeImage', (_e, png) =>
     clipboard.write([new ClipboardItem({ 'image/png': new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' }) })])
   )
+
+  registerPasswordHandlers()
 }
 
 function registerFeatureHandlers() {

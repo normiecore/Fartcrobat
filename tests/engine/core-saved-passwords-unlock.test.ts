@@ -1,8 +1,12 @@
-// Port target: tests/engine/core-unlock.test.ts
+// Saved passwords: the unlock logic shared by every place that opens a protected file.
 import { describe, expect, it } from 'vitest'
-import { promptMessage, unlock, unlockAuditSummary, type AskState, type SavedCandidate, type UnlockPorts } from '../src/unlock.ts'
+import { promptMessage, unlock, unlockAuditSummary, type AskState, type SavedCandidate, type UnlockPorts } from '@renderer/app/unlock'
 
-function ports(o: { saved?: SavedCandidate[]; correct: Record<string, 'user' | 'owner'>; answers?: ({ password: string; remember: boolean } | null)[] }) {
+function ports(o: {
+  saved?: SavedCandidate[]
+  correct: Record<string, 'user' | 'owner'>
+  answers?: ({ password: string; remember: boolean } | null)[]
+}) {
   const log: string[] = []
   const asked: AskState[] = []
   const answers = [...(o.answers ?? [])]
@@ -23,6 +27,7 @@ function ports(o: { saved?: SavedCandidate[]; correct: Record<string, 'user' | '
     },
     async remember(pw, level) {
       log.push(`remember:${pw}:${level}`)
+      return 'new-ref'
     },
     async ask(state) {
       asked.push(state)
@@ -37,7 +42,7 @@ const OFFER = { offer: true as const, checked: true }
 describe('unlock', () => {
   it('opens silently with a saved password', async () => {
     const { p, log, asked } = ports({ saved: [{ ref: 'r1', password: 'pw', via: 'lock' }], correct: { pw: 'user' } })
-    expect(await unlock(p, { trySaved: true, remember: OFFER, prompt: true })).toEqual({ method: 'saved', level: 'user', ref: 'r1' })
+    expect(await unlock(p, { trySaved: true, remember: OFFER, prompt: true })).toEqual({ method: 'saved-password', level: 'user', ref: 'r1' })
     expect(log).toEqual(['find', 'attempt:pw', 'used:r1:user'])
     expect(asked).toEqual([])
   })
@@ -48,7 +53,12 @@ describe('unlock', () => {
       correct: { new: 'user' },
       answers: [{ password: 'new', remember: true }]
     })
-    expect(await unlock(p, { trySaved: true, remember: OFFER, prompt: true })).toEqual({ method: 'typed', level: 'user', remembered: true })
+    expect(await unlock(p, { trySaved: true, remember: OFFER, prompt: true })).toEqual({
+      method: 'typed',
+      level: 'user',
+      remembered: true,
+      ref: 'new-ref'
+    })
     expect(log).toEqual(['find', 'attempt:old', 'failed:r1', 'attempt:new', 'remember:new:user'])
     expect(asked).toEqual([{ wrong: false, savedStale: true, remember: OFFER }])
     expect(promptMessage('a.pdf', asked[0])).toContain('no longer opens it')
@@ -63,7 +73,7 @@ describe('unlock', () => {
       ],
       correct: { y: 'owner' }
     })
-    expect(await unlock(p, { trySaved: true, remember: OFFER, prompt: true })).toMatchObject({ method: 'saved', ref: 'r3', level: 'owner' })
+    expect(await unlock(p, { trySaved: true, remember: OFFER, prompt: true })).toMatchObject({ method: 'saved-password', ref: 'r3', level: 'owner' })
     expect(log).toEqual(['find', 'attempt:x', 'failed:r1', 'failed:r2', 'attempt:y', 'used:r3:owner'])
   })
 
@@ -74,22 +84,32 @@ describe('unlock', () => {
     expect(a.log).not.toContain('remember:right:user')
 
     const b = ports({ correct: { right: 'user' }, answers: [{ password: 'right', remember: true }] })
-    const off = { offer: false as const, reason: 'Remembering passwords needs a keyring (GNOME Keyring or KWallet).' }
-    expect(await unlock(b.p, { trySaved: true, remember: off, prompt: true })).toMatchObject({ remembered: false })
+    const off = { offer: false as const, reason: 'To remember passwords on this computer, Fartcrobat needs GNOME Keyring or KWallet.' }
+    expect(await unlock(b.p, { trySaved: true, remember: async () => off, prompt: true })).toMatchObject({ remembered: false })
     expect(b.asked[0].remember).toEqual(off)
   })
 
-  it('policy off: never looks up saved passwords', async () => {
+  it('remembering off: never looks up saved passwords; the offer is only fetched when asking', async () => {
     const { p, log } = ports({ saved: [{ ref: 'r1', password: 'pw', via: 'lock' }], correct: { pw: 'user' }, answers: [null] })
-    expect(await unlock(p, { trySaved: false, remember: { offer: false }, prompt: true })).toBeNull()
+    let offers = 0
+    const remember = async () => {
+      offers++
+      return { offer: false as const }
+    }
+    expect(await unlock(p, { trySaved: false, remember, prompt: true })).toBeNull()
     expect(log).not.toContain('find')
+    expect(offers).toBe(1)
+    const silent = ports({ saved: [{ ref: 'r1', password: 'pw', via: 'lock' }], correct: { pw: 'user' } })
+    await unlock(silent.p, { trySaved: true, remember, prompt: true })
+    expect(offers).toBe(1) // opened with the saved password: no prompt, no keyring question
   })
 
-  it('without a prompt (prompt: false) gives up after saved passwords; cancel returns null', async () => {
+  it('without a prompt (prompt: false) gives up after saved passwords; cancel returns null; a given wrong password shows first', async () => {
     const { p } = ports({ saved: [], correct: {} })
     expect(await unlock(p, { trySaved: true, remember: OFFER, prompt: false })).toBeNull()
     const c = ports({ correct: {}, answers: [null] })
-    expect(await unlock(c.p, { trySaved: true, remember: OFFER, prompt: true })).toBeNull()
+    expect(await unlock(c.p, { trySaved: true, remember: OFFER, prompt: true, wrong: true })).toBeNull()
+    expect(c.asked[0]).toMatchObject({ wrong: true, savedStale: false })
   })
 
   it('a failing store never blocks opening', async () => {
@@ -104,8 +124,10 @@ describe('unlock', () => {
   })
 
   it('audit summaries never contain the password', () => {
-    expect(unlockAuditSummary({ method: 'saved', level: 'user', ref: 'r1' })).toBe('unlocked with a password saved on this device')
-    expect(unlockAuditSummary({ method: 'typed', level: 'owner', remembered: true })).toBe('unlocked with a password the person typed')
+    expect(unlockAuditSummary({ method: 'saved-password', level: 'user', ref: 'r1' })).toBe('unlocked with a password saved on this device')
+    expect(unlockAuditSummary({ method: 'typed', level: 'owner', remembered: true })).toBe('the person typed the password')
+    expect(unlockAuditSummary({ method: 'source', access: 'user' })).toBeUndefined()
+    expect(unlockAuditSummary({ method: 'saved-password', access: 'owner', savedRef: 'r1' })).toBe('unlocked with a password saved on this device')
     expect(unlockAuditSummary(null)).toBeUndefined()
   })
 })

@@ -317,7 +317,7 @@ test('organize dialogs: rotate, page labels, insert from file, replace, split, c
     await page.keyboard.press('Control+Shift+I')
     dialog = page.getByRole('dialog')
     await expect(dialog).toContainText('“encrypted.pdf” is protected')
-    await dialog.getByLabel('Password').fill('secret')
+    await dialog.getByLabel('Password', { exact: true }).fill('secret')
     await dialog.getByRole('button', { name: 'OK', exact: true }).click()
     dialog = page.getByRole('dialog')
     await expect(dialog).toContainText('Insert Pages')

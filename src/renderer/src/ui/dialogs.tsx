@@ -1,8 +1,9 @@
 import { useState, type ReactNode } from 'react'
+import type { RememberOffer } from '../app/unlock'
 import { openDialog } from '../app/ui-services'
 import { Button } from './Button'
 import { Dialog } from './Dialog'
-import { TextInput } from './Field'
+import { Checkbox, TextInput } from './Field'
 
 export interface ConfirmButton<T extends string> {
   id: T
@@ -132,6 +133,75 @@ export async function prompt(opts: {
       placeholder={opts.placeholder}
       validate={opts.validate}
       okLabel={opts.okLabel ?? 'OK'}
+      onDone={(v) => close(v)}
+    />
+  ))
+  return r ?? null
+}
+
+export interface PasswordAnswer {
+  password: string
+  /** "Remember password on this device" was ticked (always false when it was not offered). */
+  remember: boolean
+}
+
+function PasswordPromptBody({
+  title,
+  message,
+  okLabel,
+  remember,
+  onDone
+}: {
+  title: string
+  message: ReactNode
+  okLabel: string
+  remember: RememberOffer
+  onDone: (v?: PasswordAnswer) => void
+}) {
+  const [value, setValue] = useState('')
+  const [keep, setKeep] = useState(remember.offer && remember.checked)
+  const submit = () => onDone({ password: value, remember: remember.offer && keep })
+  return (
+    <Dialog
+      title={title}
+      onClose={() => onDone()}
+      onSubmit={submit}
+      footer={
+        <>
+          <Button onClick={() => onDone()}>Cancel</Button>
+          <Button variant="primary" onClick={submit}>
+            {okLabel}
+          </Button>
+        </>
+      }
+    >
+      <div className="ui-dialog-message">{message}</div>
+      <label className="ui-field">
+        <span className="ui-field-label">Password</span>
+        <TextInput data-autofocus type="password" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
+      </label>
+      {remember.offer ? (
+        <Checkbox checked={keep} onChange={setKeep} label="Remember password on this device" />
+      ) : (
+        remember.reason && <p className="ui-dialog-note">{remember.reason}</p>
+      )}
+    </Dialog>
+  )
+}
+
+/** Asks for a document or Digital ID password, offering to remember it. Null if cancelled. */
+export async function promptPassword(opts: {
+  title?: string
+  message: ReactNode
+  okLabel?: string
+  remember: RememberOffer
+}): Promise<PasswordAnswer | null> {
+  const r = await openDialog<PasswordAnswer>((close) => (
+    <PasswordPromptBody
+      title={opts.title ?? 'Password required'}
+      message={opts.message}
+      okLabel={opts.okLabel ?? 'Open'}
+      remember={opts.remember}
       onDone={(v) => close(v)}
     />
   ))

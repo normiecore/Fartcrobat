@@ -1,8 +1,8 @@
-// Port target: tests/engine/core-saved-passwords-store.test.ts
+// Saved passwords: the store in the main process, with a fake cipher and an in-memory disk.
 import { describe, expect, it } from 'vitest'
-import { deriveKey, digitalIdKey } from '../src/keys.ts'
-import { SavedPasswordStore } from '../src/store.ts'
-import { fakeCipher, memoryFs } from './fakes.ts'
+import { deriveKey, digitalIdKey } from '@main/passwords/keys'
+import { SavedPasswordStore } from '@main/passwords/store'
+import { fakeCipher, memoryFs } from './saved-passwords-fakes'
 
 const FILE = '/userData/saved-passwords.json'
 const k = (kind: 'lock' | 'id' | 'path', s: string) => deriveKey(kind, s)
@@ -30,7 +30,9 @@ describe('SavedPasswordStore', () => {
 
     // A new store instance (app restart) reads the file back.
     const again = new SavedPasswordStore({ file: FILE, cipher: fakeCipher(), fs })
-    expect(await again.find([k('path', '/home/me/contract.pdf')])).toEqual([{ ref: 'r1', password: 'hunter2-pässword', level: 'user', via: 'path' }])
+    expect(await again.find([k('path', '/home/me/contract.pdf')])).toEqual([
+      { ref: 'r1', password: 'hunter2-pässword', level: 'user', via: 'path' }
+    ])
   })
 
   it('orders candidates by key strength, then by last use', async () => {
@@ -98,12 +100,20 @@ describe('SavedPasswordStore', () => {
     const before = cipher.state.encrypts
     await store.find([k('id', 'ID')])
     expect(cipher.state.encrypts).toBe(before + 1)
+    // Re-encrypting is only an upgrade: when it fails, the password is still found.
+    cipher.encrypt = async () => {
+      throw new Error('keyring went away')
+    }
+    expect(await store.find([k('id', 'ID')])).toEqual([expect.objectContaining({ password: 'pw' })])
+    expect((await store.list())[0].unreadable).toBeUndefined()
   })
 
   it('stores Digital ID passwords under the certificate hash', async () => {
     const { store } = setup()
     await store.remember({ kind: 'digital-id', keys: [digitalIdKey('ab'.repeat(32))], label: 'Jane Doe', password: 'p12-pass' })
-    expect(await store.find([digitalIdKey('AB'.repeat(32))])).toEqual([expect.objectContaining({ password: 'p12-pass', via: 'digital-id' })])
+    expect(await store.find([digitalIdKey('AB'.repeat(32))])).toEqual([
+      expect.objectContaining({ password: 'p12-pass', via: 'digital-id' })
+    ])
     expect((await store.list())[0]).toMatchObject({ kind: 'digital-id', label: 'Jane Doe' })
   })
 
@@ -143,7 +153,22 @@ describe('SavedPasswordStore', () => {
     const fs = memoryFs()
     fs.files.set(FILE, '{not json')
     expect(await setup({ fs }).store.list()).toEqual([])
-    fs.files.set(FILE, JSON.stringify({ version: 1, records: [{ id: 1 }, { id: 'ok', kind: 'pdf', label: 'x', keys: [], secret: '', created: 1, used: 1 }] }))
+    fs.files.set(
+      FILE,
+      JSON.stringify({ version: 1, records: [{ id: 1 }, { id: 'ok', kind: 'pdf', label: 'x', keys: [], secret: '', created: 1, used: 1 }] })
+    )
     expect((await setup({ fs }).store.list()).map((r) => r.ref)).toEqual(['ok'])
+  })
+
+  it('only uses the keyring when a record matches; savedFor() and count() never decrypt', async () => {
+    const { store, cipher } = setup()
+    expect(await store.find([k('lock', 'nothing saved')])).toEqual([])
+    expect(cipher.state.unavailableCalls).toBe(0)
+    const ref = await store.remember({ kind: 'pdf', keys: [k('lock', 'L'), k('path', '/a.pdf')], label: 'a.pdf', level: 'owner', password: 'pw' })
+    const decrypts = cipher.state.decrypts
+    expect(await store.savedFor([k('path', '/a.pdf')])).toMatchObject({ ref, label: 'a.pdf', level: 'owner' })
+    expect(await store.savedFor([k('path', '/b.pdf')])).toBeNull()
+    expect(await store.count()).toBe(1)
+    expect(cipher.state.decrypts).toBe(decrypts)
   })
 })

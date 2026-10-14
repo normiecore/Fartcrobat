@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { computeMac, isNonce, verifyMac } from './auth'
 import { launchInfo } from './endpoint'
+import { readMachinePolicy } from '@main/policy'
 import { agentAccessState, currentPolicy, machinePolicyFile, readPolicy } from './policy'
 
 describe('agent access policy', () => {
@@ -46,6 +47,21 @@ describe('agent access policy', () => {
     expect(currentPolicy(missing, { FARTCROBAT_POLICY_FILE: off })).toBe('disabled')
     expect(currentPolicy(off, { FARTCROBAT_POLICY_FILE: on })).toBe('disabled')
     expect(currentPolicy(on, { FARTCROBAT_POLICY_FILE: off })).toBe('enabled')
+  })
+
+  it('reads each section on its own (agent access and remembered passwords share the file)', () => {
+    const both = policy('both.json', '{"agentAccess":{"enabled":true},"rememberPasswords":{"enabled":false}}')
+    expect(readPolicy(both)).toBe('enabled')
+    expect(readPolicy(both, 'rememberPasswords')).toBe('disabled')
+    const agentOnly = policy('agent.json', '{"agentAccess":{"enabled":false}}')
+    expect(readPolicy(agentOnly, 'rememberPasswords')).toBeNull()
+    expect(readPolicy(policy('broken.json', '{'), 'rememberPasswords')).toBe('disabled')
+    // Sections fall back to FARTCROBAT_POLICY_FILE one by one.
+    expect(readMachinePolicy({ file: agentOnly, env: { FARTCROBAT_POLICY_FILE: both } })).toEqual({
+      agentAccess: 'disabled',
+      rememberPasswords: 'disabled'
+    })
+    expect(readMachinePolicy({ file: join(dir, 'missing.json'), env: {} })).toEqual({ agentAccess: null, rememberPasswords: null })
   })
 
   it('knows where each system keeps the machine policy', () => {

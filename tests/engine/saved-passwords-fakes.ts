@@ -1,18 +1,20 @@
 /** Test doubles for the saved-password store: a fake cipher and an in-memory file system. */
-import type { SecretCipher, StoreFs, Unavailable } from '../src/store.ts'
+import type { SecretCipher, StoreFs } from '@main/passwords/store'
+import type { SavedPasswordsUnavailable } from '@shared/passwords'
 
 /**
- * Not plaintext (so tests can check the file never holds a password), bound to `key` (so a
- * "keyring reset" is a cipher with another key, whose decrypt throws).
+ * Not plain text (so tests can check the store file never holds a password) and bound to `key`
+ * (so a "keyring reset" is a cipher with another key, whose decrypt throws).
  */
-export function fakeCipher(o: { key?: string; unavailable?: Unavailable | null; reencrypt?: boolean } = {}) {
+export function fakeCipher(o: { key?: string; unavailable?: SavedPasswordsUnavailable | null; reencrypt?: boolean } = {}) {
   const key = o.key ?? 'k1'
-  const state = { encrypts: 0, decrypts: 0, unavailable: o.unavailable ?? null, reencrypt: !!o.reencrypt }
+  const state = { encrypts: 0, decrypts: 0, unavailableCalls: 0, unavailable: o.unavailable ?? null, reencrypt: !!o.reencrypt }
   const mask = (b: Uint8Array) => b.map((x, i) => x ^ (0x5a + i) % 256)
   const cipher: SecretCipher & { state: typeof state } = {
     state,
     backend: () => 'fake',
     async unavailable() {
+      state.unavailableCalls++
       return state.unavailable ? { reason: state.unavailable, backend: 'fake' } : null
     },
     async encrypt(plain) {

@@ -1,7 +1,20 @@
+import { useEffect, useState } from 'react'
 import { KeyRound, Lock, LockOpen, PenOff } from 'lucide-react'
+import type { SavedPasswordInfo } from '@shared/passwords'
 import type { Permission } from '@shared/types'
-import { EmptyState, Section, ToolPanelFrame, ToolRow, openToolGroup, registry, type DocumentModel } from '@renderer/sdk'
-import { enterPermissionsPassword, openProtectDialog, removeSecurity } from './flows'
+import {
+  Button,
+  EmptyState,
+  Section,
+  ToolPanelFrame,
+  ToolRow,
+  openToolGroup,
+  registry,
+  savedPasswordFor,
+  useDocState,
+  type DocumentModel
+} from '@renderer/sdk'
+import { enterPermissionsPassword, forgetDocumentPassword, openProtectDialog, removeSecurity } from './flows'
 import { isRestricted } from './shared'
 import { useSecurity } from './useSecurity'
 
@@ -26,8 +39,30 @@ function permissionRows(p: Record<Permission, boolean>): [string, string, Level]
   ]
 }
 
+/** The password saved on this device for the document, refreshed when its file or security changes. */
+function useSavedPassword(doc: DocumentModel, encrypted: boolean): [SavedPasswordInfo | null, () => void] {
+  const info = useDocState(doc, (s) => s.info)
+  const filePath = useDocState(doc, (s) => s.filePath)
+  const unlock = useDocState(doc, (s) => s.unlock)
+  const [saved, setSaved] = useState<SavedPasswordInfo | null>(null)
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    let alive = true
+    if (!encrypted) setSaved(null)
+    else
+      savedPasswordFor(doc)
+        .then((r) => alive && setSaved(r))
+        .catch(() => alive && setSaved(null))
+    return () => {
+      alive = false
+    }
+  }, [doc, encrypted, info, filePath, unlock, tick])
+  return [saved, () => setTick((t) => t + 1)]
+}
+
 function ProtectPanelBody({ doc }: { doc: DocumentModel }) {
   const st = useSecurity(doc)
+  const [saved, refreshSaved] = useSavedPassword(doc, !!st?.encrypted)
   if (!st) return <div className="shell-muted">Checking security…</div>
   const fileRestricted = st.encrypted && isRestricted(st.filePermissions)
   const redact = registry.toolGroups.find((g) => g.id === 'redact')
@@ -52,6 +87,15 @@ function ProtectPanelBody({ doc }: { doc: DocumentModel }) {
       )}
       {st.ownerAccess && fileRestricted && (
         <p className={`${P}-hint`}>You have full access for now (permissions password entered). Others still get the restrictions below.</p>
+      )}
+      {saved && (
+        <div className={`${P}-saved`} data-testid="saved-password">
+          <KeyRound size={14} aria-hidden />
+          <span>Password saved on this device</span>
+          <Button size="sm" variant="quiet" onClick={() => void forgetDocumentPassword(doc).then(refreshSaved)}>
+            Forget
+          </Button>
+        </div>
       )}
 
       <Section>

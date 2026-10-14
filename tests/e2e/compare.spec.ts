@@ -172,10 +172,10 @@ test('compares two files from Home: page changes, filters, keyboard and dark the
     await stubOpenDialog(app, fixturePath('encrypted.pdf'), fixturePath('compare/contract-new.pdf'))
     await browseFor(page, 'old', host.locator('.fc-compare-card').first())
     const dialog = page.locator('.ui-dialog', { hasText: 'Password required' })
-    await dialog.getByLabel('Password').fill('nope')
+    await dialog.getByLabel('Password', { exact: true }).fill('nope')
     await dialog.getByRole('button', { name: 'Open' }).click()
     await expect(dialog).toContainText('incorrect')
-    await dialog.getByLabel('Password').fill('secret')
+    await dialog.getByLabel('Password', { exact: true }).fill('secret')
     await dialog.getByRole('button', { name: 'Open' }).click()
     await expect(host.locator('.fc-compare-card').first()).toContainText('encrypted.pdf')
     // Pick both files with the big cards.

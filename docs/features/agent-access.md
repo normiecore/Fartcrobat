@@ -9,7 +9,9 @@ Decisions (from the owner):
 - Default: **on for everyone** (Preferences switch "Allow AI apps to work with your documents";
   a machine policy file can force it on or off).
 - The agent can reach **whatever the person can**: any file their account can read or write, every
-  open document, including password-protected ones they already unlocked. No per-document sharing.
+  open document, including password-protected ones they already unlocked, and protected files whose
+  password is saved on this device (they open without a prompt; see passwordless.md). No
+  per-document sharing.
 - **Irreversible actions ask first** in Fartcrobat (Decline is the default): overwriting a file on
   disk (save over the original, export or extract over an existing file), discarding unsaved
   changes, applying redactions, removing security. Signing and protecting open Fartcrobat's own
@@ -42,7 +44,8 @@ Contracts (do not change without updating every side):
 - Starts when agent access is enabled (preference `agentAccess`, default true, overridden by the
   machine policy file: Windows `%ProgramData%\Fartcrobat\policy.json`, macOS
   `/Library/Application Support/Fartcrobat/policy.json`, Linux `/etc/fartcrobat/policy.json`,
-  `{ "agentAccess": { "enabled": true | false } }`; tests may point `FARTCROBAT_POLICY_FILE` at
+  `{ "agentAccess": { "enabled": true | false } }`, read by `src/main/policy.ts`, which remembered
+  passwords share; tests may point `FARTCROBAT_POLICY_FILE` at
   another file). Stops and removes the endpoint file when turned off; restarts when turned on.
 - Listens on a random address: `\\.\pipe\fartcrobat-agent-<32 hex>` on Windows; on other systems
   `<private 0700 temp dir>/agent.sock`. Writes `<userData>/agent-access/endpoint.json`

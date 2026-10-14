@@ -5,14 +5,19 @@ import {
   basename,
   closeDocument,
   invoke,
+  linkDocumentFiles,
+  linkSavedPassword,
   openPaths,
   platform,
   stripExtension,
   toast,
+  unlockAuditSummary,
   useApp,
   writeFile,
+  type DocUnlock,
   type DocumentModel
 } from '@renderer/sdk'
+import type docOps from '@engine/ops/doc'
 import type exportOps from '@features/export-create/engine'
 import { ExportCancelled, runExport, type ExportEngine } from '@features/export-create/exporter'
 import { DEFAULT_EXPORT_OPTIONS, FORMAT_INFO, type ExportFormat, type ExportOptions } from '@features/export-create/shared'
@@ -134,7 +139,8 @@ const openDocument: ToolHandler = async (args, ctx) => {
     if (page > doc.pageCount) note = `The document has only ${plural(doc.pageCount, 'page')}; showing the last one.`
     await showPage(doc, shown)
   }
-  ctx.audit({ document: auditName(doc), summary: alreadyOpen ? 'already open' : 'opened' })
+  // How a protected file was unlocked, never with the password.
+  ctx.audit({ document: auditName(doc), summary: alreadyOpen ? 'already open' : (unlockAuditSummary(doc.state.unlock) ?? 'opened') })
   return { data: { ...describeDoc(ctx, doc), alreadyOpen, page: shown + 1, ...(note ? { note } : {}) } }
 }
 
@@ -147,6 +153,7 @@ async function writeDocument(doc: DocumentModel, path: string): Promise<number> 
   // Edits made while the file was written are not in it: the engine keeps those unsaved.
   await doc.core.doc.markSaved(basename(path), version)
   doc.set({ filePath: path, title: basename(path) })
+  void linkDocumentFiles(doc, [path])
   try {
     const recent = await invoke('recent:add', { path, name: basename(path), size: bytes.length, pageCount: doc.pageCount })
     useApp.setState({ recent })
@@ -301,6 +308,7 @@ const extractPages: ToolHandler = async (args, ctx) => {
   const what = plural(pages.length, 'page')
   if (target) {
     await write(target, bytes)
+    await linkDocumentFiles(doc, [target])
     ctx.audit({ document: auditName(doc), summary: `extracted ${what} to ${target}` })
     return { data: { path: target, pageCount: pages.length } }
   }
@@ -326,6 +334,7 @@ const combineFiles: ToolHandler = async (args, ctx) => {
       onProgress: (fraction, message) => ctx.progress(paths.length + Math.round(fraction * 100), paths.length + 100, message)
     })
     const sources: SourceRef[] = []
+    const unlocks: (DocUnlock | undefined)[] = []
     for (let i = 0; i < paths.length; i++) {
       throwIfAborted(ctx)
       const path = paths[i]
@@ -335,27 +344,33 @@ const combineFiles: ToolHandler = async (args, ctx) => {
       })
       let probe
       try {
-        probe = await handoff(ctx, () => withPassword(file.name, (pw) => ops.probe(file.bytes, file.engineName, pw)))
+        probe = await handoff(ctx, () => withPassword(file, (pw) => ops.probe(file.bytes, file.engineName, pw)))
       } catch (err) {
         if (err instanceof ToolError) throw err
         throw openFailure(path, err)
       }
       if (!probe) throw cancelled(ctx, null, `password prompt for ${path} cancelled`, `Nothing was combined: the person cancelled the password prompt for ${file.name}.`)
       sources.push({ data: file.bytes, fileName: file.engineName, password: probe.password, title: stripExtension(file.name) })
+      unlocks.push(probe.unlock)
     }
     const { bytes, protection } = await engineTask('Could not combine the files', () =>
       ops.combineWithProtection(sources, { bookmarks: true, keepBookmarks: true })
     )
     throwIfAborted(ctx)
+    const derivedFrom = protection ? unlocks[protection.index] : undefined
     if (target) {
       await write(target, bytes)
+      if (derivedFrom?.savedRef) {
+        const checked = await engine.ops<typeof docOps>('doc').checkFile(bytes, 'combined.pdf').catch(() => null)
+        if (checked?.needsPassword) await linkSavedPassword(derivedFrom, checked.lock, [target])
+      }
       ctx.audit({ document: target, summary: `combined ${paths.length} files to ${target}` })
       return { data: { path: target, files: paths.length, protectedLike: protection?.fileName ?? null } }
     }
     const name = binderName(useApp.getState().docs.map((d) => d.state.title))
     // When a file was protected, the result has its protection and opens with its password.
     const password = protection ? sources[protection.index]?.password : undefined
-    const opened = await withAttention(() => openAsNewDocument(bytes, name, { password }))
+    const opened = await withAttention(() => openAsNewDocument(bytes, name, { password, derivedFrom }))
     if (!opened) throw new ToolError('failed', 'The combined file could not be opened in a new tab (Fartcrobat showed the person why).')
     ctx.audit({ document: auditName(opened), summary: `combined ${paths.length} files into a new tab` })
     return { data: { ...describeDoc(ctx, opened), files: paths.length, protectedLike: protection?.fileName ?? null } }

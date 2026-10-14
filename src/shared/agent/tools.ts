@@ -279,7 +279,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'open_document',
     title: 'Open a file',
     description:
-      'Open a file in Fartcrobat (PDF, images, Office documents, XPS, EPUB and others it can convert) and return its handle. If the file is already open, returns that tab. A password-protected file waits for the person to type its password in Fartcrobat (you never see it).',
+      'Open a file in Fartcrobat (PDF, images, Office documents, XPS, EPUB and others it can convert) and return its handle. If the file is already open, returns that tab. A password-protected file opens without a prompt when its password is saved on this device; otherwise it waits for the person to type it in Fartcrobat. You never see passwords.',
     inputSchema: obj({ path, page: { ...page, description: 'Page to show. Default 1.' } }, ['path']),
     annotations: { ...READ, readOnlyHint: false, idempotentHint: true },
     gate: 'none',

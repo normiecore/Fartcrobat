@@ -1,8 +1,10 @@
 import type { Rect } from '@shared/geometry'
 import { normalizeRect, transformRect } from '@shared/geometry'
+import type { LockInfo, PasswordAccess } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, PDFObject, Session } from '../session'
 import { copyPages, removePageFields } from '../util/graft'
+import { accessOf, readLockInfo } from '../util/lockInfo'
 import { catalog, isNull, pageRotation, readNumber } from '../util/pdf'
 import { protectBytes, sessionProtection } from '../util/protection'
 import { convertToPdf, OPENABLE_FORMATS } from './doc'
@@ -16,18 +18,51 @@ function plural(n: number, one: string, many: string) {
   return n === 1 ? one : many
 }
 
-/** Opens bytes (PDF or any format MuPDF reads) as a PDF document for grafting pages. */
-export function openSource(s: Session, data: Uint8Array, fileName = 'file.pdf', password?: string): PDFDocument {
+/** NEEDS_PASSWORD from openSource. It carries the file's lock, to find a password saved for it. */
+export class PasswordNeededError extends EngineError {
+  constructor(
+    fileName: string,
+    readonly lock: LockInfo | null
+  ) {
+    super(`${fileName} is password protected`, 'NEEDS_PASSWORD')
+  }
+}
+
+/**
+ * Opens bytes (PDF or any format MuPDF reads) as a PDF document for grafting pages, and says what
+ * `password` gave (null when none was needed).
+ */
+export function openSourceWithAccess(
+  s: Session,
+  data: Uint8Array,
+  fileName = 'file.pdf',
+  password?: string
+): { doc: PDFDocument; access: PasswordAccess | null } {
   const ext = (/\.([a-z0-9]+)$/i.exec(fileName)?.[1] ?? 'pdf').toLowerCase()
   const src = s.mupdf.Document.openDocument(data, OPENABLE_FORMATS[ext] ? fileName : 'application/pdf')
-  if (src.needsPassword() && !(password && src.authenticatePassword(password))) {
-    throw new EngineError(`${fileName} is password protected`, 'NEEDS_PASSWORD')
+  let access: PasswordAccess | null = null
+  if (src.needsPassword()) {
+    access = password ? accessOf(src.authenticatePassword(password)) : null
+    if (!access) {
+      let lock: LockInfo | null = null
+      try {
+        const pdf = src.asPDF()
+        lock = pdf ? readLockInfo(pdf) : null
+      } catch {}
+      src.destroy()
+      throw new PasswordNeededError(fileName, lock)
+    }
   }
   const pdf = src.asPDF()
-  if (pdf) return pdf
+  if (pdf) return { doc: pdf, access }
   const converted = convertToPdf(s, src)
   src.destroy()
-  return converted
+  return { doc: converted, access }
+}
+
+/** Opens bytes (PDF or any format MuPDF reads) as a PDF document for grafting pages. */
+export function openSource(s: Session, data: Uint8Array, fileName = 'file.pdf', password?: string): PDFDocument {
+  return openSourceWithAccess(s, data, fileName, password).doc
 }
 
 /**

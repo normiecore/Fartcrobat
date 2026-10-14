@@ -21,6 +21,19 @@ export {
   setPrefs
 } from './app/actions'
 export { runCommand, displayShortcut, registerActiveEditor, type ActiveEditor } from './app/commands'
+export {
+  unlockFile,
+  rememberOffer,
+  linkSavedPassword,
+  linkDocumentFiles,
+  savedPasswordFor,
+  forgetSavedPassword,
+  rememberDocumentPassword,
+  digitalIdTarget,
+  NO_KEYRING_NOTE,
+  type Unlocked
+} from './app/savedPasswords'
+export { unlockAuditSummary, type DocUnlock, type RememberOffer } from './app/unlock'
 export { DocumentModel, useDocState, usePageVersion, type Selection, type DocState } from './document/DocumentModel'
 export * from './document/textModel'
 export { PageGeometry, type CssRect } from './viewer/geometry'

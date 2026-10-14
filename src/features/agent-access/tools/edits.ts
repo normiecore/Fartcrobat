@@ -329,7 +329,7 @@ const organizePages: ToolHandler = async (args, ctx) => {
       const file = await loadFile(plan.path).catch((err) => {
         throw new ToolError(openErrorCode(String(err?.message ?? err)) === 'unsupported' ? 'unsupported' : 'file_error', `Could not read ${plan.path}: ${err?.message ?? err}`)
       })
-      const probe = await handoff(ctx, () => withPassword(file.name, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))).catch((err) => {
+      const probe = await handoff(ctx, () => withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))).catch((err) => {
         if (err instanceof ToolError) throw err
         const message = String(err?.message ?? err)
         throw new ToolError(openErrorCode(message), `Could not open ${plan.path}: ${message}`)

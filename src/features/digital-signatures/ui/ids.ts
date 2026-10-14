@@ -1,5 +1,5 @@
 /** Digital ID management in the UI: create, import, export, remove, and unlock for signing. */
-import { basename, invoke, joinPath, readFile, saveBytesAs, stripExtension } from '@renderer/sdk'
+import { basename, digitalIdTarget, invoke, joinPath, readFile, saveBytesAs, stripExtension } from '@renderer/sdk'
 import { fromBase64, toBase64 } from '../lib/asn1'
 import { describePublicKey } from '../lib/crypto'
 import { createSelfSignedId, digitalIdFileName, type NewDigitalIdOptions } from '../lib/digitalId'
@@ -65,10 +65,11 @@ export async function importDigitalId(sourcePath: string, password: string): Pro
   return addRecord(await recordFor(parsed.signer, path, true))
 }
 
-/** Removes an ID from the list (and deletes Fartcrobat's copy of the file). */
+/** Removes an ID from the list (and deletes Fartcrobat's copy of the file and its saved password). */
 export async function removeDigitalId(rec: DigitalIdRecord) {
   if (rec.createdByApp) await invoke('feature:digital-signatures:deleteId', rec.path)
   await saveIds(useSigStore.getState().ids.filter((x) => x.id !== rec.id))
+  await invoke('passwords:forgetFor', digitalIdTarget(rec.id)).catch(() => {})
 }
 
 /** Saves the public certificate (.cer, DER) so others can trust your signatures. */
@@ -81,7 +82,7 @@ export function recordCertificate(rec: DigitalIdRecord): Uint8Array {
   return fromBase64(rec.certificate)
 }
 
-/** Reads the ID file and unlocks it with the password (never stored). */
+/** Reads the ID file and unlocks it with the password. */
 export async function unlockDigitalId(rec: DigitalIdRecord, password: string): Promise<ParsedDigitalId> {
   let bytes: Uint8Array
   try {

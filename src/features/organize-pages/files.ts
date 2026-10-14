@@ -2,11 +2,12 @@ import {
   basename,
   invoke,
   OPEN_FILTERS,
-  prompt,
   readFile,
   registry,
   stripExtension,
+  unlockFile,
   withProgress,
+  type DocUnlock,
   type DocumentModel
 } from '@renderer/sdk'
 import type { FileFilter } from '@shared/types'
@@ -94,30 +95,32 @@ export async function loadOpenDocument(doc: DocumentModel): Promise<LoadedFile> 
 }
 
 /**
- * Asks the engine about a file, prompting for its password when it has one. Returns null when the
- * user cancels the password prompt. `probe` is called with the password to try.
+ * Asks the engine about a file, unlocking it when it has a password: with a password saved on this
+ * device, else by asking the person. Returns null when they cancel. `probe` is called with the
+ * password to try; `unlock` says how the file was unlocked (for outputs that keep its protection).
  */
 export async function withPassword(
-  name: string,
+  file: { name: string; path: string | null },
   probe: (password?: string) => Promise<ProbeResult>
-): Promise<{ result: Extract<ProbeResult, { ok: true }>; password?: string } | null> {
-  let password: string | undefined
-  let res = await probe()
-  while (!res.ok) {
-    const pw = await prompt({
-      title: 'Password required',
-      message: res.wrongPassword
-        ? `The password for “${name}” is incorrect. Try again.`
-        : `“${name}” is protected. Enter its open password.`,
-      label: 'Password',
-      password: true,
-      okLabel: 'OK'
-    })
-    if (pw === null) return null
-    password = pw
-    res = await probe(pw)
-  }
-  return { result: res, password }
+): Promise<{ result: Extract<ProbeResult, { ok: true }>; password?: string; unlock?: DocUnlock } | null> {
+  const first = await probe()
+  if (first.ok) return { result: first }
+  let result: Extract<ProbeResult, { ok: true }> | null = null
+  const unlocked = await unlockFile({
+    name: file.name,
+    filePath: file.path,
+    lock: first.lock,
+    okLabel: 'OK',
+    attempt: async (pw) => {
+      const r = await probe(pw)
+      if (!r.ok) return null
+      result = r
+      return r.access ?? 'user'
+    }
+  })
+  if (!unlocked || !result) return null
+  const { password, ...unlock } = unlocked
+  return { result, password, unlock }
 }
 
 /** Shows the open dialog for files to insert or combine. */

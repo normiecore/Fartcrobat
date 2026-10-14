@@ -1,8 +1,16 @@
 import type { AgentCallRequest, AgentStatus } from './agent/bridge'
 import type {
+  RememberPasswordRequest,
+  SavedPasswordCandidate,
+  SavedPasswordInfo,
+  SavedPasswordsStatus,
+  SavedPasswordTarget
+} from './passwords'
+import type {
   DefaultAppStatus,
   MenuModel,
   OpenDialogOptions,
+  PasswordAccess,
   Preferences,
   PrintJob,
   RecentFile,
@@ -70,6 +78,23 @@ export interface IpcApi {
   'clipboard:writeText': (text: string) => void
   'clipboard:readImage': () => Uint8Array | null
   'clipboard:writeImage': (png: Uint8Array) => void
+  /** Whether passwords can be remembered on this device now, and how many are. */
+  'passwords:status': () => SavedPasswordsStatus
+  /** Saved passwords that may open the target, best first ([] when remembering is off). */
+  'passwords:find': (target: SavedPasswordTarget) => SavedPasswordCandidate[]
+  /** Saves a password the person typed; its ref, or null when remembering is unavailable. */
+  'passwords:remember': (request: RememberPasswordRequest) => string | null
+  /** A saved password opened the target: link the target's keys to it and note the use. */
+  'passwords:used': (ref: string, target: SavedPasswordTarget, meta?: { label?: string; level?: PasswordAccess }) => void
+  /** A saved password did not open the target: the target's keys no longer lead to it. */
+  'passwords:failed': (ref: string, target: SavedPasswordTarget) => void
+  /** The saved password that would be tried first for the target (no secret), or null. */
+  'passwords:savedFor': (target: SavedPasswordTarget) => SavedPasswordInfo | null
+  'passwords:list': () => SavedPasswordInfo[]
+  /** Forgets the given saved passwords, or all of them; returns how many were removed. */
+  'passwords:forget': (refs: string[] | 'all') => number
+  /** Forgets whatever the target's keys lead to ("Forget" in Protect, removing a Digital ID). */
+  'passwords:forgetFor': (target: SavedPasswordTarget) => number
 }
 
 /** Events pushed from the main process to the renderer. */

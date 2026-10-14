@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Eye, EyeOff, Info, TriangleAlert } from 'lucide-react'
-import { Button, Checkbox, Dialog, Select, useDocState, type DocumentModel } from '@renderer/sdk'
+import { Button, Checkbox, Dialog, Select, rememberOffer, setPrefs, useDocState, type DocumentModel, type RememberOffer } from '@renderer/sdk'
 import {
   CHANGES_OPTIONS,
   DEFAULT_PROTECT_SETTINGS,
@@ -117,7 +117,19 @@ export function ProtectDialog({
   const [confirmOpen, setConfirmOpen] = useState('')
   const [confirmPerms, setConfirmPerms] = useState('')
   const [attempted, setAttempted] = useState(false)
+  const [offer, setOffer] = useState<RememberOffer>({ offer: false })
   const set = (patch: Partial<ProtectSettings>) => setS((prev) => ({ ...prev, ...patch }))
+  useEffect(() => {
+    let alive = true
+    void rememberOffer().then((o) => {
+      if (!alive) return
+      setOffer(o)
+      if (o.offer) setS((prev) => ({ ...prev, rememberPassword: o.checked }))
+    })
+    return () => {
+      alive = false
+    }
+  }, [])
   const errors = validateProtect(s, confirmOpen, confirmPerms)
   const shown = attempted ? errors : {}
   // Live feedback that is useful while typing.
@@ -126,7 +138,7 @@ export function ProtectDialog({
   const valid = Object.keys(errors).length === 0
   const submit = () => {
     setAttempted(true)
-    if (valid) onDone(s)
+    if (valid) onDone({ ...s, rememberPassword: offer.offer && s.requireOpenPassword && !!s.rememberPassword })
   }
   return (
     <Dialog
@@ -172,6 +184,19 @@ export function ProtectDialog({
               />
             </div>
             {s.requireOpenPassword && <StrengthMeter password={s.openPassword} />}
+            {offer.offer ? (
+              <Checkbox
+                checked={!!s.rememberPassword}
+                disabled={!s.requireOpenPassword}
+                onChange={(v) => {
+                  set({ rememberPassword: v })
+                  void setPrefs({ rememberPasswordChecked: v })
+                }}
+                label="Remember password on this device"
+              />
+            ) : (
+              offer.reason && s.requireOpenPassword && <p className={`${P}-hint`}>{offer.reason}</p>
+            )}
           </div>
         </section>
 

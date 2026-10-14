@@ -29,6 +29,7 @@ import {
   useApp,
   withProgress,
   type ContextMenuItem,
+  type DocUnlock,
   type DocumentModel
 } from '@renderer/sdk'
 import type { ClientOps } from '@engine/define'
@@ -159,8 +160,10 @@ function CombineFiles({ close }: { close: () => void }) {
   const [dragIndex, setDragIndex] = useState<{ from: number; to: number } | null>(null)
   const engineRef = useRef<EngineClient | null>(null)
   const opsRef = useRef<Ops | null>(null)
-  /** Open passwords typed for items, to open a protected result without asking again. */
+  /** Open passwords of items, to open a protected result without asking again. */
   const passwordsRef = useRef(new Map<string, string>())
+  /** How protected items were unlocked: a saved password of theirs also opens the result. */
+  const unlocksRef = useRef(new Map<string, DocUnlock>())
   const itemsRef = useRef(items)
   itemsRef.current = items
   const listRef = useRef<HTMLDivElement>(null)
@@ -206,7 +209,7 @@ function CombineFiles({ close }: { close: () => void }) {
     ])
     try {
       const file = await load()
-      const opened = await withPassword(file.name, (pw) =>
+      const opened = await withPassword(file, (pw) =>
         ops.openScratch(id, file.bytes, file.engineName, pw)
       )
       if (!opened) {
@@ -214,6 +217,7 @@ function CombineFiles({ close }: { close: () => void }) {
         return
       }
       if (opened.password) passwordsRef.current.set(id, opened.password)
+      if (opened.unlock) unlocksRef.current.set(id, opened.unlock)
       update(id, {
         name: file.name,
         path: file.path,
@@ -249,6 +253,7 @@ function CombineFiles({ close }: { close: () => void }) {
     if (it?.thumb) URL.revokeObjectURL(it.thumb)
     void opsRef.current?.closeScratch(id).catch(() => {})
     passwordsRef.current.delete(id)
+    unlocksRef.current.delete(id)
     setItems((list) => list.filter((x) => x.id !== id))
   }
 
@@ -356,9 +361,10 @@ function CombineFiles({ close }: { close: () => void }) {
       )
       const name = binderName(useApp.getState().docs.map((d) => d.state.title))
       // The result has the protection of the first protected file: it opens with that file's password.
-      const password = protection ? passwordsRef.current.get(readyItems[protection.index].id) : undefined
+      const source = protection ? readyItems[protection.index].id : null
+      const password = source ? passwordsRef.current.get(source) : undefined
       close()
-      const doc = await openAsNewDocument(bytes, name, { password })
+      const doc = await openAsNewDocument(bytes, name, { password, derivedFrom: source ? unlocksRef.current.get(source) : null })
       if (doc)
         toast(
           `Combined ${countLabel(readyItems.length, 'file', 'files')} into ${name}` +

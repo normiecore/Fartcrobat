@@ -235,6 +235,10 @@ button.fc-digital-signatures-entry-toggle:hover {
   line-height: 1.45;
   margin: 4px 0;
 }
+/* Belongs to the password field above it. */
+.fc-digital-signatures-remember {
+  margin: -6px 0 12px;
+}
 .fc-digital-signatures-note {
   margin: 10px;
   padding: 8px 10px;

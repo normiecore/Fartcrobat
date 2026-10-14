@@ -7,6 +7,7 @@ import {
   Field,
   invoke,
   joinPath,
+  linkDocumentFiles,
   NumberInput,
   openDialog,
   Radio,
@@ -95,6 +96,8 @@ export async function runSplit(
         await writeFile(joinPath(settings.folder, name), bytes)
         written.push(name)
       }
+      // The parts keep the document's protection, so its saved password opens them too.
+      await linkDocumentFiles(doc, written.map((n) => joinPath(settings.folder, n)))
       report(1)
       return written
     })

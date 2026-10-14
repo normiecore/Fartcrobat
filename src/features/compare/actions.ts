@@ -244,7 +244,7 @@ export async function exportReport() {
       }
     })
     const name = `Compare report – ${stripExtension(session.old.name)} vs ${stripExtension(session.new.name)}.pdf`
-    const doc = await openNewDocument(bytes, name, { password })
+    const doc = await openNewDocument(bytes, name, { password, derivedFrom: protectedBy?.doc.state.unlock })
     if (!doc) return
     // Show the report itself; the results stay available under Compare files.
     openToolGroup(null)

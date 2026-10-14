@@ -60,7 +60,7 @@ export async function pickInsertFile(
   if (!path) return null
   try {
     const file = await loadFile(path)
-    const probe = await withPassword(file.name, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
+    const probe = await withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
     if (!probe) return null
     return { file: { ...file, password: probe.password }, pageCount: probe.result.pageCount }
   } catch (err) {

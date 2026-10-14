@@ -140,6 +140,52 @@
 .ui-check.is-disabled {
   opacity: 0.5;
 }
+.ui-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.ui-switch.is-disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.ui-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.ui-switch-track {
+  position: relative;
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--border-strong);
+  transition: background 0.15s;
+}
+.ui-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s;
+}
+.ui-switch input:checked + .ui-switch-track {
+  background: var(--accent);
+}
+.ui-switch input:checked + .ui-switch-track .ui-switch-thumb {
+  transform: translateX(14px);
+}
+.ui-switch input:focus-visible + .ui-switch-track {
+  box-shadow: var(--focus);
+}
 .ui-slider {
   display: inline-flex;
   align-items: center;
@@ -350,6 +396,12 @@
   margin-bottom: 12px;
   user-select: text;
 }
+.ui-dialog-note {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
 .ui-dialog-footer {
   display: flex;
   justify-content: flex-end;
@@ -470,4 +522,14 @@
 .ui-empty-title {
   font-weight: 600;
   color: var(--text);
+}
+
+/* Read by screen readers, not shown. */
+.ui-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

@@ -546,3 +546,14 @@
   min-width: 200px;
   line-height: 1.4;
 }
+
+.fc-protect-optimize-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  font-size: var(--fs-sm);
+}
+.fc-protect-optimize-saved > span {
+  flex: 1;
+}

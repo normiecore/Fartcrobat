@@ -9,15 +9,16 @@ import {
   openNewDocument,
   openPaths,
   openToolGroup,
-  prompt,
   readFile,
   showError,
   stripExtension,
   toast,
+  unlockFile,
   useApp,
   withProgress,
   type DocumentModel
 } from '@renderer/sdk'
+import type docOpsT from '@engine/ops/doc'
 import type exportOps from './engine'
 import {
   BUILTIN_OFFICE_EXTENSIONS,
@@ -124,19 +125,25 @@ async function buildPdf(
           const name = m[1] ?? m[2]
           const part = parts.find((p) => p.kind === 'file' && p.name === name)
           if (!part || part.kind !== 'file') throw err
+          // Tried on the file alone: a password saved on this device, else the person.
+          const docOps = engine.ops<typeof docOpsT>('doc')
+          const checked = await docOps.checkFile(part.data, part.name)
+          const lock = checked.needsPassword ? checked.lock : null
           // The progress window would cover the question: put it away while asking.
           const progress = useApp.getState().progress
           useApp.setState({ progress: null })
-          const pw = await prompt({
-            title: 'Password required',
-            message: code === 'WRONG_PASSWORD' ? `The password for “${name}” is incorrect. Try again.` : `“${name}” is protected. Enter the document open password.`,
-            label: 'Password',
-            password: true,
-            okLabel: 'Open'
-          })
-          useApp.setState({ progress })
-          if (pw === null) throw new Cancelled()
-          part.password = pw
+          const unlocked = await unlockFile({
+            name,
+            filePath: part.path ?? null,
+            lock,
+            wrong: code === 'WRONG_PASSWORD',
+            attempt: async (pw) => {
+              const r = await docOps.checkFile(part.data, part.name, pw)
+              return r.needsPassword ? r.access : 'user'
+            }
+          }).finally(() => useApp.setState({ progress }))
+          if (!unlocked) throw new Cancelled()
+          part.password = unlocked.password
           continue
         }
         throw err
@@ -157,7 +164,7 @@ async function partFromPath(path: string): Promise<CreatePart> {
     if (pdf) return { kind: 'file', name: stripExtension(name) + '.pdf', data: pdf }
     if (!BUILTIN_OFFICE_EXTENSIONS.includes(ext)) throw new Error(`${name} needs LibreOffice to be converted`)
   }
-  return { kind: 'file', name, data: await readFile(path) }
+  return { kind: 'file', name, data: await readFile(path), path }
 }
 
 function newName(paths: string[], fallback: string): string {
