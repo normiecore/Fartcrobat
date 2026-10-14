@@ -35,8 +35,11 @@ self.onmessage = async (event: MessageEvent<EngineRequest>) => {
     return
   }
   try {
-    const { result, transfer, changes } = await dispatcher.call(req.method, req.args, (fraction, message) =>
-      post({ kind: 'progress', id: req.id, fraction, message })
+    const { result, transfer, changes } = await dispatcher.call(
+      req.method,
+      req.args,
+      (fraction, message) => post({ kind: 'progress', id: req.id, fraction, message }),
+      req.actor
     )
     post({ kind: 'result', id: req.id, result, changes }, transfer)
   } catch (err: any) {

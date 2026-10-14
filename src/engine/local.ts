@@ -9,6 +9,8 @@ export interface LocalEngine {
   session: Session
   dispatcher: Dispatcher
   lastChanges: ChangeSet | null
+  /** Who makes the following calls when it is an AI agent (undo labels read "<actor>: <label>"). */
+  actor: string | null
   call<T = unknown>(method: string, ...args: unknown[]): Promise<T>
   ops<M extends OpModule>(namespace: M['namespace'] | string): ClientOps<M>
 }
@@ -22,8 +24,9 @@ export async function createLocalEngine(): Promise<LocalEngine> {
     session,
     dispatcher,
     lastChanges: null,
+    actor: null,
     async call<T>(method: string, ...args: unknown[]) {
-      const r = await dispatcher.call(method, args)
+      const r = await dispatcher.call(method, args, undefined, engine.actor)
       engine.lastChanges = r.changes
       return r.result as T
     },

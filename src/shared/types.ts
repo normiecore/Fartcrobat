@@ -129,6 +129,11 @@ export interface Preferences {
   libreOfficePath: string
   /** Use the GPU for drawing (needs a restart). Turn off if pages look blank or flicker. */
   hardwareAcceleration: boolean
+  /**
+   * Let AI apps on this computer (Claude Desktop through the Fartcrobat extension) work with open
+   * documents. A machine policy file can force it on or off.
+   */
+  agentAccess: boolean
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -152,7 +157,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   checkDefaultAppOnStartup: true,
   ocrLanguage: 'eng',
   libreOfficePath: '',
-  hardwareAcceleration: true
+  hardwareAcceleration: true,
+  agentAccess: true
 }
 
 export interface RecentFile {

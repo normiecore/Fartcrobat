@@ -54,18 +54,20 @@ function askPassword(name: string, wrong: boolean | undefined): Promise<string |
 /**
  * Opens bytes as a new tab. Prompts for a password when needed. `filePath` is null for documents
  * that do not exist on disk yet (created, combined, converted); pass `dirty` for those so the
- * tab asks to be saved: the engine then reports them unsaved until they are.
+ * tab asks to be saved: the engine then reports them unsaved until they are. `password` is tried
+ * first (protected tool output); the tab keeps it for later reloads. A file that cannot be opened
+ * is reported with `onError` when given (agent access), else shown to the user.
  */
 export async function openBytes(
   bytes: Uint8Array,
   name: string,
-  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean } = {}
+  opts: { filePath?: string | null; dirty?: boolean; activate?: boolean; password?: string; onError?: (err: unknown) => void } = {}
 ): Promise<DocumentModel | null> {
   const engine = new EngineClient()
   try {
     await engine.ready()
     const doc = engine.ops<typeof import('@engine/ops/doc').default>('doc')
-    let res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty })
+    let res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty, password: opts.password })
     while (!res.ok) {
       const pw = await askPassword(name, res.wrongPassword)
       if (pw === null) {
@@ -77,7 +79,8 @@ export async function openBytes(
     return addDocument(engine, res.info, name, opts)
   } catch (err) {
     engine.terminate()
-    showError(err, `Could not open ${name}`)
+    if (opts.onError) opts.onError(err)
+    else showError(err, `Could not open ${name}`)
     return null
   }
 }
@@ -128,7 +131,7 @@ const pathKey = (path: string) => platformPathKey(path, platform)
 /** Opens of files still in progress, by pathKey: a second request for the same file waits for the first. */
 const opening = new Map<string, Promise<DocumentModel | null>>()
 
-async function openPath(path: string): Promise<DocumentModel | null> {
+async function openPath(path: string, onError?: (err: unknown) => void): Promise<DocumentModel | null> {
   const name = basename(path)
   try {
     let bytes: Uint8Array | null = null
@@ -139,47 +142,61 @@ async function openPath(path: string): Promise<DocumentModel | null> {
         console.warn('Converter failed, falling back to built-in import', err)
         return null
       })
-      if (bytes) return await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, dirty: true })
+      if (bytes) return await openBytes(bytes, stripExtension(name) + '.pdf', { filePath: null, dirty: true, onError })
     }
     bytes = await readFile(path)
-    const doc = await openBytes(bytes, name, { filePath: path })
+    const doc = await openBytes(bytes, name, { filePath: path, onError })
     if (doc && doc.state.filePath) {
       const recent = await invoke('recent:add', { path, name, size: bytes.length, pageCount: doc.pageCount })
       useApp.setState({ recent: recent })
     }
     return doc
   } catch (err) {
-    showError(err, `Could not open ${name}`)
+    if (onError) onError(err)
+    else showError(err, `Could not open ${name}`)
     void invoke('recent:remove', path).then((recent) => useApp.setState({ recent }))
     return null
   }
 }
 
-/** Opens files from disk (dialog, drag and drop, command line, recent list). */
-export async function openPaths(paths: string[]) {
+/**
+ * Opens files from disk (dialog, drag and drop, command line, recent list). Resolves with the tab
+ * of each path (null when it was not opened). Files that cannot be opened are reported with
+ * `opts.onError` when given (agent access), else shown to the user.
+ */
+export async function openPaths(
+  paths: string[],
+  opts: { onError?: (path: string, err: unknown) => void } = {}
+): Promise<(DocumentModel | null)[]> {
+  const out: (DocumentModel | null)[] = []
   for (const raw of paths) {
     const path = normalizePath(raw)
     const key = pathKey(path)
     const existing = useApp.getState().docs.find((d) => d.state.filePath && pathKey(d.state.filePath) === key)
     if (existing) {
       useApp.setState({ activeDocId: existing.id })
+      out.push(existing)
       continue
     }
     // Already being opened (a double-click on a recent file, a second launch...): show that tab.
     const pending = opening.get(key)
     if (pending) {
       const doc = await pending
-      if (doc && useApp.getState().docs.includes(doc)) useApp.setState({ activeDocId: doc.id })
+      const open = !!doc && useApp.getState().docs.includes(doc)
+      if (open) useApp.setState({ activeDocId: doc.id })
+      out.push(open ? doc : null)
       continue
     }
-    const task = openPath(path)
+    const onError = opts.onError
+    const task = openPath(path, onError ? (err) => onError(path, err) : undefined)
     opening.set(key, task)
     try {
-      await task
+      out.push(await task)
     } finally {
       opening.delete(key)
     }
   }
+  return out
 }
 
 export async function openFileDialog() {
@@ -187,9 +204,12 @@ export async function openFileDialog() {
   if (paths.length) await openPaths(paths)
 }
 
-/** Creates a new untitled tab from PDF bytes produced by a tool (combine, create, convert...). */
-export async function openNewDocument(bytes: Uint8Array, name: string): Promise<DocumentModel | null> {
-  return openBytes(bytes, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', { filePath: null, dirty: true })
+/**
+ * Creates a new untitled tab from PDF bytes produced by a tool (combine, create, convert...).
+ * Pass the `password` of protected output so the person is not asked for it again.
+ */
+export async function openNewDocument(bytes: Uint8Array, name: string, opts: { password?: string } = {}): Promise<DocumentModel | null> {
+  return openBytes(bytes, name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf', { filePath: null, dirty: true, password: opts.password })
 }
 
 // ---- saving ---------------------------------------------------------------------------------
@@ -327,10 +347,13 @@ async function settleUnsaved(doc: DocumentModel): Promise<boolean> {
   return true
 }
 
-/** Closes a tab, asking to save unsaved changes. Returns false if the user cancelled. */
-export async function closeDocument(doc: DocumentModel): Promise<boolean> {
+/**
+ * Closes a tab, asking to save unsaved changes. Returns false if the user cancelled.
+ * `discardChanges` closes without asking (agent access, after the person agreed).
+ */
+export async function closeDocument(doc: DocumentModel, opts: { discardChanges?: boolean } = {}): Promise<boolean> {
   if (hasActiveEditors()) await commitActiveEditors()
-  if (!(await settleUnsaved(doc))) return false
+  if (!opts.discardChanges && !(await settleUnsaved(doc))) return false
   await removeDocument(doc)
   return true
 }

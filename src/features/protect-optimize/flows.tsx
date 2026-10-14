@@ -141,6 +141,17 @@ async function askOpenPassword(doc: DocumentModel): Promise<string | null> {
 // ---- protect --------------------------------------------------------------------------------
 
 export async function openProtectDialog(doc: DocumentModel, mode: 'password' | 'restrict' = 'password') {
+  await protectDocument(doc, { mode })
+}
+
+/**
+ * The Protect flow, optionally with the dialog's choices ticked in advance (agent access).
+ * Resolves true once the protected copy was saved and the tab reopened from it.
+ */
+export async function protectDocument(
+  doc: DocumentModel,
+  opts: { mode?: 'password' | 'restrict'; initial?: Partial<Pick<ProtectSettings, 'requireOpenPassword' | 'restrictEditing'>> } = {}
+): Promise<boolean> {
   try {
     const st = await securityOf(doc)
     if (st.encrypted && !st.ownerAccess) {
@@ -148,13 +159,16 @@ export async function openProtectDialog(doc: DocumentModel, mode: 'password' | '
         doc,
         `“${doc.state.title}” is protected with a permissions password. Enter it to change the security settings.`
       )
-      if (!ok) return
+      if (!ok) return false
     }
-    const settings = await openDialog<ProtectSettings>((close) => <ProtectDialog doc={doc} mode={mode} onDone={close} />)
-    if (!settings) return
-    await applyProtection(doc, settings)
+    const settings = await openDialog<ProtectSettings>((close) => (
+      <ProtectDialog doc={doc} mode={opts.mode ?? 'password'} initial={opts.initial} onDone={close} />
+    ))
+    if (!settings) return false
+    return await applyProtection(doc, settings)
   } catch (err) {
     showError(err, 'Could not protect the document')
+    return false
   }
 }
 
@@ -201,18 +215,27 @@ export async function applyProtection(doc: DocumentModel, settings: ProtectSetti
 // ---- remove security ------------------------------------------------------------------------
 
 export async function removeSecurity(doc: DocumentModel) {
+  await removeDocumentSecurity(doc)
+}
+
+/**
+ * Remove Security. With `confirmed` the person already agreed elsewhere (agent access): the
+ * question is skipped and the document is saved over its file, or where the person chooses when
+ * it has none. Resolves with the path written, or null when nothing was saved.
+ */
+export async function removeDocumentSecurity(doc: DocumentModel, opts: { confirmed?: boolean } = {}): Promise<string | null> {
   try {
     const st = await securityOf(doc)
     if (!st.encrypted) {
       toast('This document has no security to remove.')
-      return
+      return null
     }
     if (!st.ownerAccess) {
       const ok = await unlockWithPermissionsPassword(doc, `Enter the permissions password to remove security from “${doc.state.title}”.`)
-      if (!ok) return
+      if (!ok) return null
     }
     const hasPath = !!doc.state.filePath
-    const answer = await ask<'cancel' | 'copy' | 'remove'>({
+    const answer = opts.confirmed ? 'remove' : await ask<'cancel' | 'copy' | 'remove'>({
       title: 'Remove security',
       width: 500,
       message: (
@@ -237,7 +260,7 @@ export async function removeSecurity(doc: DocumentModel) {
         { id: 'remove', label: 'Remove Security', variant: 'danger' }
       ]
     })
-    if (answer !== 'copy' && answer !== 'remove') return
+    if (answer !== 'copy' && answer !== 'remove') return null
     const asCopy = answer === 'copy'
     const path =
       !asCopy && doc.state.filePath
@@ -246,17 +269,19 @@ export async function removeSecurity(doc: DocumentModel) {
             asCopy ? 'Save Unprotected Copy' : 'Save Unprotected PDF',
             asCopy ? siblingPath(doc, `${stripExtension(doc.state.title)}_unprotected.pdf`) : pdfName(doc.state.title)
           )
-    if (!path) return
+    if (!path) return null
     const bytes = await doc.busyWhile('Removing security…', () => doc.saveBytes({ mode: 'full', decrypt: true }))
     await writeFile(path, bytes)
     if (asCopy && path !== doc.state.filePath) {
       toast(`Saved an unprotected copy: ${basename(path)}`, { kind: 'success', action: { label: 'Open', run: () => void openPaths([path]) } })
-      return
+      return path
     }
     await reloadFromSaved(doc, bytes, path)
     toast(`Security removed. “${basename(path)}” no longer has a password or restrictions.`, { kind: 'success' })
+    return path
   } catch (err) {
     showError(err, 'Could not remove security')
+    return null
   }
 }
 

@@ -9,6 +9,7 @@ import {
   withProgress,
   type DocumentModel
 } from '@renderer/sdk'
+import type { ProtectionSummary } from '@engine/util/protection'
 import { parsePageRange } from './core'
 import type compareOps from './engine'
 import { CancelledError, runComparison } from './pipeline'
@@ -183,6 +184,20 @@ function alive(doc: DocumentModel) {
   return !doc.isClosed
 }
 
+/** The compared document whose protection the report keeps: the first protected one, Old then New. */
+function protectingSide(session: Session): Session['old'] | null {
+  return [session.old, session.new].find((side) => !!side.doc.state.info.encryption) ?? null
+}
+
+/** "It keeps the protection of “a.pdf”: 256-bit AES encryption and the same open password." */
+function protectionNote(p: ProtectionSummary, name: string): string {
+  const parts = [`${p.method} encryption`]
+  if (p.needsPassword) parts.push('the same open password')
+  if (p.restricted) parts.push('the same restrictions')
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
+  return `It keeps the protection of “${name}”: ${list}.`
+}
+
 /** Creates the compare report PDF and opens it in a new tab. */
 export async function exportReport() {
   const session = getCompare().session
@@ -193,7 +208,13 @@ export async function exportReport() {
   }
   const { result } = session
   try {
-    const bytes = await withProgress('Creating compare report…', async () => {
+    // The report shows text of both documents, so it keeps the protection of the first protected one.
+    const protectedBy = protectingSide(session)
+    if (protectedBy && !alive(protectedBy.doc)) {
+      showError(new Error(`“${protectedBy.name}” was closed. Compare again to create a report.`), 'Could not create the report')
+      return
+    }
+    const { bytes, password, note } = await withProgress('Creating compare report…', async () => {
       const removedPages = result.changes.filter((c) => c.type === 'pageRemoved').map((c) => c.old!.page)
       let removedPdf: Uint8Array | null = null
       if (removedPages.length && alive(session.old.doc)) removedPdf = await compareOf(session.old.doc).copyPages(removedPages)
@@ -212,14 +233,22 @@ export async function exportReport() {
         removedPdf,
         removedPages
       }
-      return compareOf(session.new.doc).report(input)
+      const plain = await compareOf(session.new.doc).report(input)
+      const protection = protectedBy ? await compareOf(protectedBy.doc).protection() : null
+      if (!protectedBy || !protection) return { bytes: plain, password: undefined, note: '' }
+      const ops = compareOf(protectedBy.doc)
+      return {
+        bytes: await ops.protectReport(plain),
+        password: (await ops.openPassword()) ?? undefined,
+        note: '. ' + protectionNote(protection, protectedBy.name)
+      }
     })
     const name = `Compare report – ${stripExtension(session.old.name)} vs ${stripExtension(session.new.name)}.pdf`
-    const doc = await openNewDocument(bytes, name)
+    const doc = await openNewDocument(bytes, name, { password })
     if (!doc) return
     // Show the report itself; the results stay available under Compare files.
     openToolGroup(null)
-    toast('Compare report created', { kind: 'success', action: { label: 'Back to results', run: () => openToolGroup('compare') } })
+    toast(`Compare report created${note}`, { kind: 'success', action: { label: 'Back to results', run: () => openToolGroup('compare') } })
   } catch (err) {
     showError(err, 'Could not create the report')
   }

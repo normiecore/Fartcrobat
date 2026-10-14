@@ -20,6 +20,7 @@
     "src/shared/**/*",
     "src/features/*/main.ts",
     "src/features/*/main/**/*",
+    "src/agent-shim/**/*",
     "tests/e2e/**/*"
   ]
 }

@@ -13,6 +13,7 @@ interface StoreData {
 class Store {
   private data: StoreData
   private timer: NodeJS.Timeout | null = null
+  private prefsListeners = new Set<(prefs: Preferences, prev: Preferences) => void>()
   readonly file: string
 
   constructor() {
@@ -61,9 +62,23 @@ class Store {
   }
 
   setPrefs(patch: Partial<Preferences>): Preferences {
+    const prev = this.data.prefs
     this.data.prefs = { ...this.data.prefs, ...patch }
     this.scheduleSave()
+    for (const listener of this.prefsListeners) {
+      try {
+        listener(this.data.prefs, prev)
+      } catch (err) {
+        console.error('Preferences listener failed', err)
+      }
+    }
     return this.data.prefs
+  }
+
+  /** Calls `listener` after every change of the preferences. Returns a function that removes it. */
+  onPrefsChange(listener: (prefs: Preferences, prev: Preferences) => void): () => void {
+    this.prefsListeners.add(listener)
+    return () => this.prefsListeners.delete(listener)
   }
 
   get recent(): RecentFile[] {

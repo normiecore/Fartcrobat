@@ -4,6 +4,7 @@ import type { Session } from '@engine/session'
 import { extractPageText } from '@engine/ops/text'
 import { viewMatrix } from '@engine/ops/render'
 import { extractToBytes } from '@engine/ops/pages'
+import { protectBytes, sessionProtection, type ProtectionSummary } from '@engine/util/protection'
 import { tokenizePage } from './tokens'
 import { buildReport, type ReportInput } from './report'
 import { THUMB_H, THUMB_W, type PageTokens, type Raster } from './types'
@@ -118,10 +119,30 @@ export default defineOps('compare', {
 
   /**
    * Builds the compare report from this (the new) document: a summary followed by annotated
-   * copies of the changed pages. Does not modify the open document.
+   * copies of the changed pages. Does not modify the open document. The report is not protected:
+   * give it the protection of a compared document with protectReport.
    */
   report(s, input: ReportInput) {
     const bytes = buildReport(s, input)
     return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
+  },
+
+  /** How a report protected like this document would be protected, or null when it has no protection. */
+  protection(s): ProtectionSummary | null {
+    return sessionProtection(s)?.summary ?? null
+  },
+
+  /** Report bytes with this document's encryption, permissions and passwords. */
+  protectReport(s, bytes: Uint8Array) {
+    const out = protectBytes(s.mupdf, bytes, sessionProtection(s))
+    return withTransfer(out, [out.buffer as ArrayBuffer])
+  },
+
+  /**
+   * The password that opens a report protected like this document, or null when none is needed.
+   * Only for opening the report in a new tab: never show it or pass it on.
+   */
+  openPassword(s): string | null {
+    return sessionProtection(s)?.password ?? null
   }
 })

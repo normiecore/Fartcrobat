@@ -39,6 +39,9 @@ export class EngineClient {
   private terminated = false
   /** Number of calls in flight (for busy indicators). */
   inFlight = 0
+  /** Set while an AI agent's request runs (see runAs): its undo steps read "<actor>: <label>". */
+  private actor: string | null = null
+  private actorDepth = 0
 
   constructor() {
     this.worker = new Worker(new URL('../../../engine/worker.ts', import.meta.url), { type: 'module', name: 'engine' })
@@ -89,12 +92,27 @@ export class EngineClient {
   call<T = unknown>(method: string, args: unknown[], opts: CallOptions = {}): Promise<T> {
     if (this.terminated) return Promise.reject(new EngineCallError('Document is closed', 'CLOSED'))
     const id = this.nextId++
-    const req: EngineRequest = { kind: 'call', id, method, args }
+    const req: EngineRequest = this.actor ? { kind: 'call', id, method, args, actor: this.actor } : { kind: 'call', id, method, args }
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, onProgress: opts.onProgress, method })
       this.inFlight++
       this.worker.postMessage(req, opts.transfer ?? [])
     })
+  }
+
+  /**
+   * Runs `fn` on behalf of an AI agent: engine calls made meanwhile (also by helpers fn uses) are
+   * tagged so their undo steps read "<actor>: <label>". Calls the person makes in that window are
+   * tagged too, which only changes a label.
+   */
+  async runAs<T>(actor: string, fn: () => Promise<T>): Promise<T> {
+    this.actorDepth++
+    this.actor = actor
+    try {
+      return await fn()
+    } finally {
+      if (--this.actorDepth === 0) this.actor = null
+    }
   }
 
   /** Typed proxy for an op module: `client.ops<typeof import('./engine').default>('stamps').add(...)` */

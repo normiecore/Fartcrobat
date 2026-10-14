@@ -1,3 +1,4 @@
+import type { AgentCallRequest, AgentStatus } from './agent/bridge'
 import type {
   DefaultAppStatus,
   MenuModel,
@@ -77,6 +78,12 @@ export interface IpcEvents {
   'menu:command': (commandId: string) => void
   'app:beforeQuit': () => void
   'window:fullScreenChanged': (on: boolean) => void
+  /** Agent access: run a tool in this window (see src/shared/agent/bridge.ts). */
+  'agent:request': (request: AgentCallRequest) => void
+  /** Agent access: the agent cancelled a call (close its dialog, stop its work). */
+  'agent:cancel': (id: string) => void
+  /** Agent access: connections or settings changed. */
+  'agent:status': (status: AgentStatus) => void
 }
 
 /** Native text-editing commands (the Edit menu acting on a focused text field). */
@@ -99,5 +106,8 @@ export const ALLOWED_EVENT_CHANNELS: (keyof IpcEvents)[] = [
   'app:openFiles',
   'menu:command',
   'app:beforeQuit',
-  'window:fullScreenChanged'
+  'window:fullScreenChanged',
+  'agent:request',
+  'agent:cancel',
+  'agent:status'
 ]

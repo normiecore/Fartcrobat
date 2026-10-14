@@ -15,8 +15,9 @@ import {
   writeFile,
   type DocumentModel
 } from '@renderer/sdk'
-import { deletePages, openAsNewDocument } from '../actions'
+import { deletePages, openExtractedPages } from '../actions'
 import { orgOps } from '../files'
+import { protectionNote } from '../protection'
 import { countLabel, describePages } from '../ranges'
 import { sanitizeFileName, uniqueName } from '../split'
 import { PageScope, Summary, initialScope, resolveScope, type Scope } from './common'
@@ -47,6 +48,8 @@ export async function extractPages(
     return false
   }
   try {
+    // Extracted files keep the document's protection (see docs/features/organize-pages.md).
+    const protection = await orgOps(doc).protection()
     if (opts.separate) {
       const dir = await chooseFolder('Choose a folder for the extracted pages', defaultFolder(doc))
       if (!dir) return false
@@ -67,7 +70,10 @@ export async function extractPages(
         report(1)
       })
       if (opts.deleteAfter) await deletePages(doc, pages)
-      toast(`Extracted ${countLabel(written.length, 'file', 'files')} to ${dir}`, {
+      const note = protection
+        ? '. ' + protectionNote(protection, doc.state.title, written.length > 1 ? 'They keep' : 'It keeps')
+        : ''
+      toast(`Extracted ${countLabel(written.length, 'file', 'files')} to ${dir}${note}`, {
         kind: 'success',
         action: showFolderAction(dir)
       })
@@ -77,7 +83,8 @@ export async function extractPages(
       orgOps(doc).extract(pages)
     )
     if (opts.deleteAfter) await deletePages(doc, pages)
-    await openAsNewDocument(bytes, `Pages from ${base}.pdf`)
+    const opened = await openExtractedPages(doc, bytes, `Pages from ${base}.pdf`)
+    if (opened && protection) toast(protectionNote(protection, doc.state.title, 'The new document keeps'))
     return true
   } catch (err) {
     showError(err, 'Could not extract the pages')

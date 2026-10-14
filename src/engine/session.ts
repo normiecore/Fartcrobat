@@ -68,6 +68,8 @@ export class Session {
   private editCounter = 0
   private opDepth = 0
   private progressSink: ((fraction: number, message?: string) => void) | null = null
+  /** Who asked for the running call when it was an AI agent (see Dispatcher.call); null for the person. */
+  actor: string | null = null
 
   constructor(public readonly mupdf: Mupdf) {}
 
@@ -363,7 +365,7 @@ export class Session {
     this.opDepth++
     let began = false
     try {
-      doc.beginOperation(label)
+      doc.beginOperation(this.actor ? `${this.actor}: ${label}` : label)
       began = true
     } catch {}
     const before = this.journalPosition()
