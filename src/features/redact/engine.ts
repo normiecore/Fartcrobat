@@ -158,12 +158,12 @@ export default defineOps('redact', {
     return listMarks(s)
   },
 
-  /** Adds redaction marks (text quads or areas). */
+  /** Adds redaction marks (text quads or areas), signed with the session's author unless `by` is given. */
   mark: mutation(
     (specs: MarkSpec[]) => (specs.length > 1 ? 'Mark for Redaction' : specs[0]?.kind === 'page' ? 'Mark Page for Redaction' : 'Mark for Redaction'),
-    (s, specs: MarkSpec[], props: RedactionProps): MarkInfo[] => {
+    (s, specs: MarkSpec[], props: RedactionProps, by?: string): MarkInfo[] => {
       const created: { page: number; num: number }[] = []
-      const author = s.state.get('author')
+      const author = by || s.state.get('author')
       for (const spec of specs) {
         const page = s.page(spec.page)
         const hasQuads = !!spec.quads && spec.quads.length > 0

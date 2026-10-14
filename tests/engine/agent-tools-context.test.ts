@@ -350,6 +350,45 @@ describe('list_form_fields output', () => {
     expect(a.value).toBeUndefined()
     expect(a.password).toBe(true)
   })
+
+  it('gives the value of each box of a check box group, and marks comb fields', () => {
+    const base = {
+      id: 1,
+      page: 0,
+      name: 'color',
+      type: 'checkbox',
+      rect: [0, 0, 10, 10],
+      value: 'Off',
+      checked: false,
+      onState: 'Red',
+      options: [],
+      tooltip: '',
+      readOnly: false,
+      required: false,
+      password: false,
+      multiline: false,
+      comb: false,
+      maxLen: 0,
+      multiSelect: false,
+      editable: false,
+      hidden: false,
+      signed: false
+    } as unknown as Parameters<typeof fieldsOut>[0][number]
+    const [color, copy, pin] = fieldsOut([
+      base,
+      { ...base, id: 2, rect: [20, 0, 30, 10], onState: 'Green' },
+      { ...base, id: 3, rect: [40, 0, 50, 10], onState: 'Blue' },
+      // mirrored boxes: one value
+      { ...base, id: 4, name: 'copy', onState: 'Yes' },
+      { ...base, id: 5, name: 'copy', onState: 'Yes', page: 1 },
+      { ...base, id: 6, name: 'pin', type: 'text', onState: null, value: '', comb: true, maxLen: 6 }
+    ])
+    expect(color).toMatchObject({ type: 'checkbox', onValue: 'Red', options: [{ value: 'Red' }, { value: 'Green' }, { value: 'Blue' }] })
+    expect(color.widgets?.map((w) => w.onValue)).toEqual(['Red', 'Green', 'Blue'])
+    expect(copy.options).toBeUndefined()
+    expect(copy.widgets?.map((w) => w.onValue)).toEqual(['Yes', 'Yes'])
+    expect(pin).toMatchObject({ type: 'text', maxLength: 6, comb: true })
+  })
 })
 
 describe('list_signatures output', () => {

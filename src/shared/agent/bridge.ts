@@ -5,10 +5,10 @@
  *
  * Routing rules (main process):
  * - A call whose args.handle is set goes to the window named at the start of the handle
- *   ("w<windowId>-<boot>-doc-<n>"; <boot> changes on every renderer load, so handles from before
- *   a reload are stale). An unknown window gives the error stale_handle without reaching any
- *   renderer.
- * - wait_for_result goes to the window named at the start of args.ticket ("w<windowId>-...").
+ *   ("<windowId>-<boot>-doc-<n>", where windowId is "w<webContents id>"; <boot> changes on every
+ *   renderer load, so handles from before a reload are stale). An unknown window gives the error
+ *   stale_handle without reaching any renderer.
+ * - wait_for_result goes to the window named at the start of args.ticket ("<windowId>-...").
  * - list_documents goes to every window; main concatenates their `data.documents` arrays
  *   (in window creation order) and returns { documents }.
  * - Anything else goes to the focused window, or the most recently focused one, creating a

@@ -9,6 +9,8 @@ import {
   imageExportPaths,
   imageFormatFor,
   isAbsolutePath,
+  networkHost,
+  newNetworkHosts,
   openErrorCode,
   pathArg,
   pdfPath,
@@ -49,11 +51,50 @@ describe('agent tools: paths and overwrite decisions', () => {
     expect(isAbsolutePath('\\\\server\\share\\a.pdf')).toBe(true)
     expect(isAbsolutePath('a.pdf')).toBe(false)
     expect(isAbsolutePath('~/a.pdf')).toBe(false)
-    expect(pathArg('/home/me/./docs/../a.pdf')).toBe('/home/me/a.pdf')
-    expect(pathArg('C:/Users/me/a.pdf')).toBe('C:\\Users\\me\\a.pdf')
-    invalid(() => pathArg('docs/a.pdf'), /absolute path/)
-    invalid(() => pathArg(''), /absolute path/)
-    invalid(() => pathArg('/'), /not a folder/)
+    expect(pathArg('/home/me/./docs/../a.pdf', 'linux')).toBe('/home/me/a.pdf')
+    expect(pathArg('C:/Users/me/a.pdf', 'win32')).toBe('C:\\Users\\me\\a.pdf')
+    invalid(() => pathArg('docs/a.pdf', 'linux'), /absolute path/)
+    invalid(() => pathArg('', 'linux'), /absolute path/)
+    invalid(() => pathArg('/', 'linux'), /not a folder/)
+  })
+
+  it('keeps network paths on Windows and refuses device and namespace paths', () => {
+    expect(pathArg('\\\\server\\share\\a.pdf', 'win32')).toBe('\\\\server\\share\\a.pdf')
+    // Windows reads any two leading separators as a network path, so these are network paths too.
+    expect(pathArg('/\\host\\s\\a.pdf', 'win32')).toBe('\\\\host\\s\\a.pdf')
+    expect(pathArg('//host/s/a.pdf', 'win32')).toBe('\\\\host\\s\\a.pdf')
+    expect(pathArg('\\\\h@SSL@443\\dav\\a.txt', 'win32')).toBe('\\\\h@SSL@443\\dav\\a.txt')
+    for (const platform of ['win32', 'linux', 'darwin']) {
+      invalid(() => pathArg('\\\\?\\UNC\\h\\s\\a.pdf', platform), /device/)
+      invalid(() => pathArg('\\\\?\\C:\\a.pdf', platform), /device/)
+      invalid(() => pathArg('\\\\?\\GLOBALROOT\\Device\\Mup\\h\\s\\a.pdf', platform), /device/)
+      invalid(() => pathArg('\\\\.\\pipe\\x', platform), /device/)
+      invalid(() => pathArg('//?/C:/a.pdf', platform), /device/)
+      invalid(() => pathArg('/\\.\\PhysicalDrive0', platform), /device/)
+    }
+    invalid(() => pathArg('C:\\docs\\nul.pdf', 'win32'), /devices/)
+    invalid(() => pathArg('C:\\docs\\COM1', 'win32'), /devices/)
+    invalid(() => pathArg('C:\\docs\\CONIN$', 'win32'), /devices/)
+    invalid(() => pathArg('\\\\server\\share\\aux.txt', 'win32'), /devices/)
+    expect(pathArg('C:\\docs\\console.pdf', 'win32')).toBe('C:\\docs\\console.pdf')
+    // A computer's name is not a file name.
+    expect(pathArg('\\\\aux.example.com\\share\\a.pdf', 'win32')).toBe('\\\\aux.example.com\\share\\a.pdf')
+    // Elsewhere a backslash is part of a name: such a path would be relative.
+    invalid(() => pathArg('\\\\server\\share\\a.pdf', 'linux'), /only work on Windows/)
+    expect(pathArg('//host/s/a.pdf', 'linux')).toBe('/host/s/a.pdf')
+    expect(pathArg('/home/me/nul.pdf', 'linux')).toBe('/home/me/nul.pdf')
+  })
+
+  it('names the network server of a path, once per server', () => {
+    expect(networkHost('\\\\Server.Example\\share\\a.pdf')).toBe('server.example')
+    expect(networkHost('\\\\h@SSL@443\\dav\\a.txt')).toBe('h')
+    expect(networkHost('\\\\10.0.0.5\\s\\a.pdf')).toBe('10.0.0.5')
+    expect(networkHost('C:\\a.pdf')).toBeNull()
+    expect(networkHost('/home/a.pdf')).toBeNull()
+    const paths = ['\\\\a\\s\\1.pdf', 'C:\\x.pdf', '\\\\B\\s\\2.pdf', '\\\\b@SSL\\dav\\3.pdf', '\\\\c\\s\\4.pdf']
+    expect(newNetworkHosts(paths, new Set())).toEqual(['a', 'b', 'c'])
+    expect(newNetworkHosts(paths, new Set(['a', 'c']))).toEqual(['b'])
+    expect(newNetworkHosts(['/home/a.pdf'], new Set())).toEqual([])
   })
 
   it('adds the right extensions', () => {
@@ -168,6 +209,12 @@ describe('agent tools: annotation specs', () => {
     invalid(() => buildUpdate({ id: 9, text: 'x' }, 0, typeOf), /No comment with id 9/)
     invalid(() => buildUpdate({ id: 2 }, 1, typeOf), /updates\[1\] changes nothing/)
   })
+
+  it('never moves a redaction mark, which could change what the person approves', () => {
+    const typeOf = () => 'Redact'
+    invalid(() => buildUpdate({ id: 5, rect: [0, 0, 612, 792] }, 0, typeOf), /cannot be moved or resized; delete the mark/)
+    expect(buildUpdate({ id: 5, text: 'Account number' }, 0, typeOf)).toEqual({ id: 5, spec: { contents: 'Account number' }, rect: undefined })
+  })
 })
 
 describe('agent tools: organize pages arithmetic', () => {
@@ -182,28 +229,30 @@ describe('agent tools: organize pages arithmetic', () => {
   })
 
   it('plans every operation', () => {
-    expect(planOrganize({ operation: 'rotate', angle: 90 }, null, 3)).toEqual({ op: 'rotate', pages: [0, 1, 2], degrees: 90 })
-    expect(planOrganize({ operation: 'delete' }, [1], 3)).toEqual({ op: 'delete', pages: [1] })
+    expect(planOrganize({ operation: 'rotate', angle: 90 }, null, 3, 'linux')).toEqual({ op: 'rotate', pages: [0, 1, 2], degrees: 90 })
+    expect(planOrganize({ operation: 'delete' }, [1], 3, 'linux')).toEqual({ op: 'delete', pages: [1] })
     // pages 1 and 2 go in front of page 5: the moved pages end up at 3 and 4
-    expect(planOrganize({ operation: 'move', before: 5 }, [0, 1], 5)).toEqual({ op: 'move', pages: [0, 1], gap: 4, after: [2, 3] })
-    expect(planOrganize({ operation: 'move' }, [0], 3)).toEqual({ op: 'move', pages: [0], gap: 3, after: [2] })
-    expect(planOrganize({ operation: 'insert_blank', before: 2, count: 3 }, null, 4)).toEqual({ op: 'insert_blank', gap: 1, count: 3 })
-    expect(planOrganize({ operation: 'insert_file', path: '/tmp/x.pdf' }, null, 4)).toEqual({ op: 'insert_file', gap: 4, path: '/tmp/x.pdf' })
-    expect(planOrganize({ operation: 'duplicate' }, [2, 0], 4)).toEqual({ op: 'duplicate', pages: [2, 0] })
+    expect(planOrganize({ operation: 'move', before: 5 }, [0, 1], 5, 'linux')).toEqual({ op: 'move', pages: [0, 1], gap: 4, after: [2, 3] })
+    expect(planOrganize({ operation: 'move' }, [0], 3, 'linux')).toEqual({ op: 'move', pages: [0], gap: 3, after: [2] })
+    expect(planOrganize({ operation: 'insert_blank', before: 2, count: 3 }, null, 4, 'linux')).toEqual({ op: 'insert_blank', gap: 1, count: 3 })
+    expect(planOrganize({ operation: 'insert_file', path: '/tmp/x.pdf' }, null, 4, 'linux')).toEqual({ op: 'insert_file', gap: 4, path: '/tmp/x.pdf' })
+    expect(planOrganize({ operation: 'duplicate' }, [2, 0], 4, 'linux')).toEqual({ op: 'duplicate', pages: [2, 0] })
     expect(insertedIndices(1, 3)).toEqual([1, 2, 3])
     expect(duplicatedIndices([2, 0])).toEqual([3, 4])
   })
 
   it('refuses what would break the document or change nothing', () => {
-    invalid(() => planOrganize({ operation: 'delete' }, [0, 1, 2], 3), /at least one page/)
-    invalid(() => planOrganize({ operation: 'delete' }, null, 3), /Give the pages to delete/)
-    invalid(() => planOrganize({ operation: 'move', before: 1 }, [0], 3), /already there/)
-    invalid(() => planOrganize({ operation: 'move', before: 4 }, [2], 3), /already there/)
-    invalid(() => planOrganize({ operation: 'insert_file' }, null, 3), /needs path/)
-    invalid(() => planOrganize({ operation: 'insert_file', path: 'x.pdf' }, null, 3), /absolute/)
-    invalid(() => planOrganize({ operation: 'rotate' }, null, 3), /angle/)
-    invalid(() => planOrganize({ operation: 'shuffle' }, null, 3), /operation must be one of/)
-    invalid(() => planOrganize({ operation: 'insert_blank', count: 0 }, null, 3), /count/)
+    invalid(() => planOrganize({ operation: 'delete' }, [0, 1, 2], 3, 'linux'), /at least one page/)
+    invalid(() => planOrganize({ operation: 'delete' }, null, 3, 'linux'), /Give the pages to delete/)
+    invalid(() => planOrganize({ operation: 'move', before: 1 }, [0], 3, 'linux'), /already there/)
+    invalid(() => planOrganize({ operation: 'move', before: 4 }, [2], 3, 'linux'), /already there/)
+    invalid(() => planOrganize({ operation: 'insert_file' }, null, 3, 'linux'), /needs path/)
+    invalid(() => planOrganize({ operation: 'insert_file', path: 'x.pdf' }, null, 3, 'linux'), /absolute/)
+    invalid(() => planOrganize({ operation: 'insert_file', path: '\\\\.\\pipe\\x' }, null, 3, 'win32'), /device/)
+    expect(planOrganize({ operation: 'insert_file', path: '//h/s/x.pdf' }, null, 3, 'win32')).toMatchObject({ path: '\\\\h\\s\\x.pdf' })
+    invalid(() => planOrganize({ operation: 'rotate' }, null, 3, 'linux'), /angle/)
+    invalid(() => planOrganize({ operation: 'shuffle' }, null, 3, 'linux'), /operation must be one of/)
+    invalid(() => planOrganize({ operation: 'insert_blank', count: 0 }, null, 3, 'linux'), /count/)
   })
 })
 
@@ -284,6 +333,35 @@ describe('agent tools: form values', () => {
     expect(normalizeValue(f('languages'), 'French')).toEqual(['fr'])
     expect(normalizeValue(f('languages'), '')).toEqual([])
     invalid(() => normalizeValue(f('signature1'), 'x'), /sign_document/)
+  })
+
+  it('keeps text within the field\'s length, as typing does', () => {
+    const comb = formFields([widget('ssn', { maxLen: 9, comb: true }), widget('code', { maxLen: 4 })])
+    expect(normalizeValue(comb.get('ssn')!, '123456789')).toBe('123456789')
+    invalid(() => normalizeValue(comb.get('ssn')!, '123-45-6789'), /"ssn" takes at most 9 characters, one per box \(got 11\)/)
+    invalid(() => normalizeValue(comb.get('code')!, 'ABCDE'), /"code" takes at most 4 characters \(got 5\)$/)
+    invalid(() => resolveValues([{ name: 'ssn', value: '1234567890' }], comb), /at most 9/)
+    // no limit
+    expect(normalizeValue(fields.get('name')!, 'x'.repeat(500))).toHaveLength(500)
+  })
+
+  it('asks which box of a check box group to tick', () => {
+    const group = formFields([
+      widget('color', { type: 'checkbox', onState: 'Red' }),
+      widget('color', { type: 'checkbox', onState: 'Green' }),
+      widget('color', { type: 'checkbox', onState: 'Blue' }),
+      // two boxes that mirror each other are one choice
+      widget('copy', { type: 'checkbox', onState: 'Yes' }),
+      widget('copy', { type: 'checkbox', onState: 'Yes' })
+    ])
+    const color = group.get('color')!
+    expect(normalizeValue(color, 'Green')).toBe('Green')
+    expect(normalizeValue(color, 'blue')).toBe('Blue')
+    expect(normalizeValue(color, false)).toBe('Off')
+    invalid(() => normalizeValue(color, true), /group of check boxes: give the value of the box to tick, one of "Red", "Green", "Blue", or false/)
+    invalid(() => normalizeValue(color, 'yes'), /group of check boxes/)
+    invalid(() => normalizeValue(color, 'Purple'), /or one of "Red", "Green", "Blue"/)
+    expect(normalizeValue(group.get('copy')!, true)).toBe('Yes')
   })
 
   it('suggests close field names', () => {
