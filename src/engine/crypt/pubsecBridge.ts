@@ -52,9 +52,9 @@ export interface PubSecState {
   permissions: number | null
   access: PasswordAccess
   recipients: Uint8Array[]
-  /** EncryptMetadata of the file as it was opened. */
+  /** EncryptMetadata of the document's file (as opened, or as last saved to it). */
   encryptMetadata: boolean
-  /** The file's own encryption: /V, cipher and key length. */
+  /** The encryption of the document's file: /V, cipher and key length (V5 AES-256 once saved to it). */
   source: { version: number; cipher: PubSecCipher; keyBits: number }
   /** What outputs are written with: the original seed and envelopes, V5, EncryptMetadata true. */
   writeKey: PubSecWriteKey
@@ -185,19 +185,27 @@ function looksLikeText(data: Uint8Array): boolean {
 }
 
 /**
- * Cheap check that K is right, before anything is opened: AES streams must end in valid PKCS#7
- * padding; RC4 streams must start with a zlib header (Flate) or read as text (no filter). Looks at
- * up to 8 streams and accepts when most pass (files with no suitable stream pass). A wrong key
- * fails nearly every stream.
+ * Cheap check that K is right, before anything is opened. Looks at up to 8 streams that tell, and
+ * accepts when most of them pass (files with no suitable stream pass):
+ * - AES: the data must end in valid PKCS#7 padding, which a wrong key gives 1 time in 256.
+ * - RC4: a Flate stream must start with a zlib header (a wrong key gives one about 1 time in 500),
+ *   and an unfiltered stream that reads as text passes. Unfiltered binary data (images, fonts...)
+ *   is binary with the right key too, so it does not tell: it only decides against the key when
+ *   no stream told (a wrong key turns text into binary).
  */
 export function verifyFileKey(bytes: Uint8Array, info: PubSecInfo, K: Uint8Array): boolean {
   let good = 0
   let bad = 0
+  let binary = 0
+  // Objects whose data overlaps (a hostile file) must not make the walk quadratic.
+  let budget = 2 * bytes.length + 65536
   for (const [num, e] of info.xref.entries) {
-    if (good + bad >= 8) break
+    if (good + bad >= 8 || budget < 0) break
     if (e.type !== 1 || num === info.encryptRef?.num) continue
     const obj = objectAt(bytes, info.xref, num)
-    if (!obj?.stream || exemptStream(obj.stream.dict, info.encryptMetadata)) continue
+    if (!obj) continue
+    budget -= obj.end - e.offset
+    if (!obj.stream || exemptStream(obj.stream.dict, info.encryptMetadata)) continue
     const data = bytes.subarray(obj.stream.start, obj.stream.end)
     const key = objectKey(K, info.cipher, num, e.gen)
     if (info.cipher === 'RC4') {
@@ -209,7 +217,7 @@ export function verifyFileKey(bytes: Uint8Array, info: PubSecInfo, K: Uint8Array
         else bad++
       } else if ((first === undefined || first === null) && data.length >= 16) {
         if (looksLikeText(rc4(key, data.subarray(0, 256)))) good++
-        else bad++
+        else binary++
       }
     } else {
       if (data.length < 32 || data.length % 16) continue
@@ -218,7 +226,7 @@ export function verifyFileKey(bytes: Uint8Array, info: PubSecInfo, K: Uint8Array
       else bad++
     }
   }
-  return bad <= good
+  return good + bad > 0 ? bad <= good : binary === 0
 }
 
 export interface DecryptStats {

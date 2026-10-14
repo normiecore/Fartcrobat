@@ -3,7 +3,7 @@
 // xref streams, following /Prev), and single top-level objects. Enough to find the encryption
 // dictionary, append an update section and walk every object; not a general PDF parser.
 // ISO 32000-2, 7.2 (lexical conventions), 7.3 (objects), 7.5 (file structure).
-import { unzlibSync, inflateSync } from 'fflate'
+import { Inflate, Unzlib } from 'fflate'
 import { latin1, toLatin1 } from './primitives'
 
 export class PdfName {
@@ -331,6 +331,37 @@ interface Section {
   kind: 'table' | 'stream'
   entries: Map<number, XrefEntry>
   trailer: PdfDict
+  /** Where the section's data ends (after the trailer, or the xref stream's data). */
+  end: number
+}
+
+/** The highest object number MuPDF (and so this reader) accepts. */
+export const MAX_OBJECT_NUMBER = 8388607
+
+/**
+ * How much cross-reference data one file may make the reader go through. Sections of a sound file
+ * do not overlap and list each object a few times at most, and even a dense file spends more than
+ * a byte on each object. More than that (sections inside one another, millions of entries packed
+ * into a few kilobytes) is damaged or hostile, and the reader gives up rather than spend seconds
+ * and gigabytes on it.
+ */
+class XrefBudget {
+  private bytes: number
+  private entries: number
+  constructor(b: Uint8Array) {
+    this.bytes = 2 * b.length + 65536
+    this.entries = Math.max(1 << 19, b.length)
+  }
+  /** Entries a section is about to list. */
+  takeEntries(n: number, at: number) {
+    this.entries -= n
+    if (this.entries < 0) throw new PdfSyntaxError('Too many cross-reference entries', at)
+  }
+  /** Bytes from `start` to `end` that a section was read from. */
+  takeBytes(start: number, end: number) {
+    this.bytes -= end - start
+    if (this.bytes < 0) throw new PdfSyntaxError('Too much cross-reference data', start)
+  }
 }
 
 /** `num gen obj` at `i` (after whitespace): [num, gen, end of the header] or null. */
@@ -349,9 +380,9 @@ function readTableSection(b: Uint8Array, i: number): Section {
   for (;;) {
     i = skipWs(b, i)
     if (keywordAt(b, i, 'trailer')) {
-      const [trailer] = parseValue(b, i + 7)
+      const [trailer, end] = parseValue(b, i + 7)
       if (!(trailer instanceof Map)) throw new PdfSyntaxError('Trailer is not a dictionary', i)
-      return { kind: 'table', entries, trailer }
+      return { kind: 'table', entries, trailer, end }
     }
     const first = uintAt(b, i)
     const count = first && uintAt(b, first[1])
@@ -373,13 +404,22 @@ function readTableSection(b: Uint8Array, i: number): Section {
   }
 }
 
+/** A sane bound on a predictor's /Columns. */
+const MAX_PREDICTOR_COLUMNS = 1 << 24
+
 /** Applies a PNG (10 to 15) or TIFF (2) predictor to decoded data (ISO 32000-2, 7.4.4.4). */
 function unpredict(data: Uint8Array, parms: PdfDict | null): Uint8Array {
   const predictor = asNumber(parms?.get('Predictor')) ?? 1
-  if (predictor < 2) return data
+  // 1 and values the standard does not define: no predictor.
+  if (predictor !== 2 && !(Number.isInteger(predictor) && predictor >= 10 && predictor <= 15)) return data
   const colors = asNumber(parms?.get('Colors')) ?? 1
   const bpc = asNumber(parms?.get('BitsPerComponent')) ?? 8
   const columns = asNumber(parms?.get('Columns')) ?? 1
+  // The file sets these: a row of 0 bytes (or fewer) would never move the TIFF loop forward.
+  const whole = (n: number, max: number) => Number.isInteger(n) && n >= 1 && n <= max
+  if (!whole(colors, 32) || ![1, 2, 4, 8, 16].includes(bpc) || !whole(columns, MAX_PREDICTOR_COLUMNS)) {
+    throw new Error('Bad predictor parameters')
+  }
   const bpp = Math.max(1, Math.ceil((colors * bpc) / 8))
   const rowBytes = Math.ceil((colors * bpc * columns) / 8)
   if (predictor === 2) {
@@ -419,8 +459,45 @@ function unpredict(data: Uint8Array, parms: PdfDict | null): Uint8Array {
   return out
 }
 
-/** Decodes stream data with FlateDecode and predictors (enough for xref streams). */
-export function decodeStream(data: Uint8Array, dict: PdfDict): Uint8Array {
+/** Most bytes decodeStream produces unless told otherwise. */
+export const MAX_DECODED_LENGTH = 64 * 1024 * 1024
+
+class TooLong extends Error {}
+
+/**
+ * Inflates zlib (or, with `raw`, bare deflate) data, stopping as soon as the output passes
+ * `maxLength`: the input goes in in small pieces, so a small stream that inflates to gigabytes
+ * costs no more than `maxLength` of work and memory.
+ */
+function inflateBounded(data: Uint8Array, maxLength: number, raw: boolean): Uint8Array {
+  const chunks: Uint8Array[] = []
+  let length = 0
+  const sink = (chunk: Uint8Array) => {
+    length += chunk.length
+    if (length > maxLength) throw new TooLong('Stream data too long')
+    chunks.push(chunk)
+  }
+  const stream = raw ? new Inflate(sink) : new Unzlib(sink)
+  const PIECE = 4096
+  for (let at = 0; ; at += PIECE) {
+    const end = Math.min(at + PIECE, data.length)
+    stream.push(data.subarray(at, end), end === data.length)
+    if (end === data.length) break
+  }
+  const out = new Uint8Array(length)
+  let at = 0
+  for (const c of chunks) {
+    out.set(c, at)
+    at += c.length
+  }
+  return out
+}
+
+/**
+ * Decodes stream data with FlateDecode and predictors (enough for xref streams). Throws when
+ * inflating would give more than `maxLength` bytes (predictors never make data longer).
+ */
+export function decodeStream(data: Uint8Array, dict: PdfDict, maxLength = MAX_DECODED_LENGTH): Uint8Array {
   const filter = dict.get('Filter')
   const filters = Array.isArray(filter) ? filter.map(asName) : filter === undefined || filter === null ? [] : [asName(filter)]
   const parmsValue = dict.get('DecodeParms')
@@ -429,10 +506,11 @@ export function decodeStream(data: Uint8Array, dict: PdfDict): Uint8Array {
   filters.forEach((f, k) => {
     if (f !== 'FlateDecode' && f !== 'Fl') throw new Error(`Unsupported filter ${f}`)
     try {
-      out = unzlibSync(out)
-    } catch {
+      out = inflateBounded(out, maxLength, false)
+    } catch (err) {
+      if (err instanceof TooLong) throw err
       // Some writers leave out or damage the zlib header or checksum.
-      out = inflateSync(out.subarray(2))
+      out = inflateBounded(out.subarray(2), maxLength, true)
     }
     out = unpredict(out, parms[k] ?? null)
   })
@@ -465,37 +543,69 @@ export interface TopLevelObject {
   value: PdfValue
   /** Stream data, raw (still encrypted and filtered). */
   stream: { dict: PdfDict; start: number; end: number } | null
+  /** Where the value (for a stream, its data) ends. */
+  end: number
 }
 
-/** Parses the indirect object whose header is at `offset`. */
-function indirectAt(b: Uint8Array, offset: number, resolveLength: (ref: PdfRef) => number | null): TopLevelObject | null {
+/** Parses the indirect object whose header is at `offset` (null when it is not object `expected`). */
+function indirectAt(
+  b: Uint8Array,
+  offset: number,
+  resolveLength: (ref: PdfRef) => number | null,
+  expected?: number
+): TopLevelObject | null {
   const header = objHeader(b, offset)
   if (!header) return null
   const [num, gen, at] = header
+  // Checked before the value is parsed: entries that point at another object cost nothing.
+  if (expected !== undefined && num !== expected) return null
   const [value, end] = parseValue(b, at)
   const k = skipWs(b, end)
   if (value instanceof Map && keywordAt(b, k, 'stream')) {
-    return { num, gen, value, stream: { dict: value, ...streamSpan(b, value, k, resolveLength) } }
+    const span = streamSpan(b, value, k, resolveLength)
+    return { num, gen, value, stream: { dict: value, ...span }, end: span.end }
   }
-  return { num, gen, value, stream: null }
+  return { num, gen, value, stream: null, end }
 }
 
-function readStreamSection(b: Uint8Array, offset: number): Section {
+/** A free entry (shared: a section can list millions). */
+const FREE: XrefEntry = Object.freeze({ type: 0 as const })
+
+/**
+ * An xref stream (ISO 32000-2, 7.5.8). Everything the file controls is checked before the data is
+ * decoded: /W, /Size and /Index (as MuPDF checks them, and no more entries than /Size), and the
+ * data may not decode to more than those entries need.
+ */
+function readStreamSection(b: Uint8Array, offset: number, budget: XrefBudget): Section {
   const obj = indirectAt(b, offset, () => null)
   if (!obj?.stream || asName(obj.stream.dict.get('Type')) !== 'XRef') {
     throw new PdfSyntaxError('startxref does not point at a cross-reference section', offset)
   }
   const dict = obj.stream.dict
-  const data = decodeStream(b.subarray(obj.stream.start, obj.stream.end), dict)
   const w = dict.get('W')
-  if (!Array.isArray(w) || w.length < 3 || !w.every((x) => typeof x === 'number' && x >= 0 && x <= 8)) {
+  if (!Array.isArray(w) || w.length < 3 || !w.every((x) => Number.isInteger(x) && (x as number) >= 0 && (x as number) <= 8)) {
     throw new PdfSyntaxError('Bad /W in cross-reference stream', offset)
   }
   const [w0, w1, w2] = w as number[]
+  const width = w0 + w1 + w2
+  if (width < 1) throw new PdfSyntaxError('Bad /W in cross-reference stream', offset)
   const size = asNumber(dict.get('Size')) ?? 0
+  if (!Number.isInteger(size) || size < 0 || size > MAX_OBJECT_NUMBER + 1) throw new PdfSyntaxError('Bad /Size in cross-reference stream', offset)
   const indexValue = dict.get('Index')
   const index = Array.isArray(indexValue) ? (indexValue as PdfValue[]).map((x) => asNumber(x) ?? 0) : [0, size]
-  const width = w0 + w1 + w2
+  let total = 0
+  for (let s = 0; s + 1 < index.length; s += 2) {
+    const [first, count] = [index[s], index[s + 1]]
+    if (!Number.isInteger(first) || !Number.isInteger(count) || first < 0 || count < 0 || first + count > MAX_OBJECT_NUMBER + 1) {
+      throw new PdfSyntaxError('Cross-reference subsection out of range', offset)
+    }
+    total += count
+  }
+  if (total > size) throw new PdfSyntaxError('Cross-reference stream has more entries than /Size', offset)
+  budget.takeEntries(total, offset)
+  // Predictors add a byte to each row, more when a row is shorter than an entry; allow some slack.
+  const data = decodeStream(b.subarray(obj.stream.start, obj.stream.end), dict, 2 * total * width + 65536)
+  if (total * width > data.length) throw new PdfSyntaxError('Cross-reference stream too short', offset)
   const entries = new Map<number, XrefEntry>()
   let pos = 0
   const field = (n: number) => {
@@ -505,26 +615,30 @@ function readStreamSection(b: Uint8Array, offset: number): Section {
   }
   for (let s = 0; s + 1 < index.length; s += 2) {
     for (let k = 0; k < index[s + 1]; k++) {
-      if (pos + width > data.length) throw new PdfSyntaxError('Cross-reference stream too short', offset)
       const type = w0 ? field(w0) : 1
       const f1 = field(w1)
       const f2 = field(w2)
       const num = index[s] + k
       if (entries.has(num)) continue
-      if (type === 0) entries.set(num, { type: 0 })
+      if (type === 0) entries.set(num, FREE)
       else if (type === 1) entries.set(num, { type: 1, offset: f1, gen: w2 ? f2 : 0 })
       else if (type === 2) entries.set(num, { type: 2, stream: f1, index: f2 })
       // Other types are reserved: treated as references to the null object.
     }
   }
-  return { kind: 'stream', entries, trailer: dict }
+  return { kind: 'stream', entries, trailer: dict, end: obj.stream.end }
 }
 
-function readSection(b: Uint8Array, offset: number): Section {
+function readSection(b: Uint8Array, offset: number, budget = new XrefBudget(b)): Section {
   if (!Number.isInteger(offset) || offset < 0 || offset >= b.length) throw new PdfSyntaxError('Cross-reference offset out of range', offset)
   const i = skipWs(b, offset)
-  if (keywordAt(b, i, 'xref')) return readTableSection(b, i)
-  return readStreamSection(b, i)
+  let section: Section
+  if (keywordAt(b, i, 'xref')) {
+    section = readTableSection(b, i)
+    budget.takeEntries(section.entries.size, i)
+  } else section = readStreamSection(b, i, budget)
+  budget.takeBytes(i, section.end)
+  return section
 }
 
 /**
@@ -545,10 +659,12 @@ export function readXref(b: Uint8Array): Xref {
     const trailers: PdfDict[] = []
     let kind: 'table' | 'stream' = 'table'
     const seen = new Set<number>()
+    // One budget for the whole chain: a chain of many sections is no cheaper to make than one.
+    const budget = new XrefBudget(b)
     for (let offset: number | null = startxref; offset !== null; ) {
       if (seen.has(offset)) break
       seen.add(offset)
-      const section = readSection(b, offset)
+      const section = readSection(b, offset, budget)
       if (!trailers.length) kind = section.kind
       trailers.push(section.trailer)
       const own = section.entries
@@ -557,7 +673,7 @@ export function readXref(b: Uint8Array): Xref {
       const stm = asNumber(section.trailer.get('XRefStm'))
       if (section.kind === 'table' && stm !== null && !seen.has(stm)) {
         seen.add(stm)
-        for (const [num, e] of readSection(b, stm).entries) {
+        for (const [num, e] of readSection(b, stm, budget).entries) {
           const t = own.get(num)
           if (!t || t.type === 0) own.set(num, e)
         }
@@ -571,31 +687,60 @@ export function readXref(b: Uint8Array): Xref {
   }
 }
 
+/** How many trailer dictionaries scanXref reads, newest first. */
+const MAX_SCANNED_TRAILERS = 256
+
 /**
  * Damaged files: every `num gen obj` header (the last definition of a number wins) and the last
- * trailer that names a catalog. Object streams are not looked into.
+ * trailer that names a catalog. Object streams are not looked into. Takes time linear in the size
+ * of the file, whatever it holds.
  */
 export function scanXref(b: Uint8Array): Xref {
   const text = toLatin1(b)
   const entries = new Map<number, XrefEntry>()
+  // Object headers and `trailer` keywords, in file order. A header starts after white space or a
+  // delimiter: the lookbehind is checked first, so the pattern never starts inside a run of digits
+  // (rescanning the rest of the run from every digit made long runs take quadratic time).
+  const marks: { at: number; from: number; header: boolean }[] = []
+  for (const m of text.matchAll(/(?<![^\0\t\n\f\r ()<>[\]{}/%])(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?![^\0\t\n\f\r ()<>[\]{}/%])/g)) {
+    entries.set(Number(m[1]), { type: 1, offset: m.index, gen: Number(m[2]) })
+    marks.push({ at: m.index, from: m.index + m[0].length, header: true })
+  }
+  for (const m of text.matchAll(/trailer/g)) marks.push({ at: m.index, from: m.index + 7, header: false })
+  marks.sort((x, y) => x.at - y.at)
+  // Only a dictionary that names a catalog can be a trailer (a classic one, or an xref stream's):
+  // where /Root is written. Positions in file order.
+  const roots = Array.from(text.matchAll(/\/Root(?![^\0\t\n\f\r ()<>[\]{}/%])/g), (m) => m.index)
+  const hasRoot = (from: number, to: number) => {
+    let lo = 0
+    let hi = roots.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (roots[mid] < from) lo = mid + 1
+      else hi = mid
+    }
+    return lo < roots.length && roots[lo] < to
+  }
+  // Newest first. A dictionary is read only up to the next mark, so damaged data such as an
+  // unterminated string costs its own stretch of the file, not the rest of the file once per
+  // mark; and a sound file has one trailer per revision, so only the newest are read.
   const candidates: { at: number; dict: PdfDict }[] = []
-  for (const m of text.matchAll(/(\d+)[\0\t\n\f\r ]+(\d+)[\0\t\n\f\r ]+obj(?![^\0\t\n\f\r ()<>[\]{}/%])/g)) {
-    const at = m.index
-    if (at > 0 && CLASS[b[at - 1]] === 0) continue
-    entries.set(Number(m[1]), { type: 1, offset: at, gen: Number(m[2]) })
+  for (let k = marks.length - 1, read = 0; k >= 0 && read < MAX_SCANNED_TRAILERS; k--) {
+    const mark = marks[k]
+    const end = k + 1 < marks.length ? marks[k + 1].at : b.length
+    if (!hasRoot(mark.from, end)) continue
+    const part = b.subarray(0, end)
+    const i = skipWs(part, mark.from)
+    if (part[i] !== 0x3c || part[i + 1] !== 0x3c) continue
+    read++
     try {
-      const [value] = parseValue(b, at + m[0].length)
-      if (value instanceof Map && asName(value.get('Type')) === 'XRef') candidates.push({ at, dict: value })
+      const [value] = parseValue(part, i)
+      if (value instanceof Map && value.has('Root') && (!mark.header || asName(value.get('Type')) === 'XRef')) {
+        candidates.push({ at: mark.at, dict: value })
+      }
     } catch {}
   }
-  for (const m of text.matchAll(/trailer/g)) {
-    try {
-      const [value] = parseValue(b, m.index + 7)
-      if (value instanceof Map) candidates.push({ at: m.index, dict: value })
-    } catch {}
-  }
-  candidates.sort((x, y) => y.at - x.at)
-  const trailers = candidates.filter((c) => c.dict.has('Root')).map((c) => c.dict)
+  const trailers = candidates.map((c) => c.dict)
   let startxref = 0
   try {
     startxref = lastStartxref(b)
@@ -616,8 +761,7 @@ export function objectAt(b: Uint8Array, xref: Xref, num: number, depth = 0): Top
     return typeof v === 'number' ? v : null
   }
   try {
-    const obj = indirectAt(b, e.offset, resolveLength)
-    return obj && obj.num === num ? obj : null
+    return indirectAt(b, e.offset, resolveLength, num)
   } catch {
     return null
   }
