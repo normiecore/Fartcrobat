@@ -2,6 +2,7 @@
 import type { AgentToolName } from '@shared/agent/tools'
 import { toast } from '@renderer/sdk'
 import type { SignTarget } from '@features/digital-signatures/types'
+import { CERTIFICATE_ENCRYPTED_SIGNING, isCertificateEncrypted } from '@features/digital-signatures/ui/encrypted'
 import { startSigning } from '@features/digital-signatures/ui/flow'
 import { sigOps, trustedSet, validateDocument } from '@features/digital-signatures/ui/store'
 import { overallStatus, signatureStatus } from '@features/digital-signatures/status'
@@ -105,6 +106,7 @@ const signDocument: ToolHandler = async (args, ctx) => {
   const reason = checked(() => optString(args.reason, 'reason'))
   const location = checked(() => optString(args.location, 'location'))
   const certify = checked(() => optBoolean(args.certify, 'certify')) ?? false
+  if (isCertificateEncrypted(doc)) throw new ToolError('failed', CERTIFICATE_ENCRYPTED_SIGNING)
   const cap = await engineTask('Could not check the document', () => sigOps(doc).capability())
   if (certify && !cap.canCertify) throw new ToolError('failed', cap.certifyReason ?? 'This document cannot be certified.')
   if (!cap.canSign) throw new ToolError('failed', cap.reason ?? 'This document cannot be signed.')
