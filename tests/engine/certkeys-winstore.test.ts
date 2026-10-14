@@ -1104,9 +1104,12 @@ describe.skipIf(!IS_WIN || !STORE_TESTS)('real Windows key storage (Windows only
     ]
   ] as const) {
     it(`decrypts with a ${label} and says it is not hardware`, async () => {
+      // Windows PowerShell 5.1 loads the module with the Cert: drive only when one of its own
+      // commands runs, and New-SelfSignedCertificate (PKI module) needs the drive.
       const [thumbprint, derB64] = runPs([
         '-Command',
-        `$c = New-SelfSignedCertificate -Type DocumentEncryptionCert -Subject 'CN=Fartcrobat helper test' ` +
+        `Import-Module Microsoft.PowerShell.Security -ErrorAction Stop; ` +
+          `$c = New-SelfSignedCertificate -Type DocumentEncryptionCert -Subject 'CN=Fartcrobat helper test' ` +
           `-CertStoreLocation Cert:\\CurrentUser\\My -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy NonExportable ${extra} ` +
           `-NotAfter (Get-Date).AddDays(1); [Console]::Out.WriteLine($c.Thumbprint + ' ' + [Convert]::ToBase64String($c.RawData))`
       ])
