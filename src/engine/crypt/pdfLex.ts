@@ -687,6 +687,9 @@ export function readXref(b: Uint8Array): Xref {
   }
 }
 
+/** How many trailer dictionaries scanXref reads, newest first. */
+const MAX_SCANNED_TRAILERS = 256
+
 /**
  * Damaged files: every `num gen obj` header (the last definition of a number wins) and the last
  * trailer that names a catalog. Object streams are not looked into. Takes time linear in the size
@@ -705,21 +708,39 @@ export function scanXref(b: Uint8Array): Xref {
   }
   for (const m of text.matchAll(/trailer/g)) marks.push({ at: m.index, from: m.index + 7, header: false })
   marks.sort((x, y) => x.at - y.at)
-  // A dictionary after a header (an xref stream's) or a trailer is read only up to the next mark:
-  // damaged data such as an unterminated string then costs its own stretch of the file, not the
-  // rest of the file once per mark.
+  // Only a dictionary that names a catalog can be a trailer (a classic one, or an xref stream's):
+  // where /Root is written. Positions in file order.
+  const roots = Array.from(text.matchAll(/\/Root(?![^\0\t\n\f\r ()<>[\]{}/%])/g), (m) => m.index)
+  const hasRoot = (from: number, to: number) => {
+    let lo = 0
+    let hi = roots.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (roots[mid] < from) lo = mid + 1
+      else hi = mid
+    }
+    return lo < roots.length && roots[lo] < to
+  }
+  // Newest first. A dictionary is read only up to the next mark, so damaged data such as an
+  // unterminated string costs its own stretch of the file, not the rest of the file once per
+  // mark; and a sound file has one trailer per revision, so only the newest are read.
   const candidates: { at: number; dict: PdfDict }[] = []
-  marks.forEach((mark, k) => {
-    const part = b.subarray(0, k + 1 < marks.length ? marks[k + 1].at : b.length)
+  for (let k = marks.length - 1, read = 0; k >= 0 && read < MAX_SCANNED_TRAILERS; k--) {
+    const mark = marks[k]
+    const end = k + 1 < marks.length ? marks[k + 1].at : b.length
+    if (!hasRoot(mark.from, end)) continue
+    const part = b.subarray(0, end)
     const i = skipWs(part, mark.from)
-    if (part[i] !== 0x3c || part[i + 1] !== 0x3c) return
+    if (part[i] !== 0x3c || part[i + 1] !== 0x3c) continue
+    read++
     try {
       const [value] = parseValue(part, i)
-      if (value instanceof Map && (!mark.header || asName(value.get('Type')) === 'XRef')) candidates.push({ at: mark.at, dict: value })
+      if (value instanceof Map && value.has('Root') && (!mark.header || asName(value.get('Type')) === 'XRef')) {
+        candidates.push({ at: mark.at, dict: value })
+      }
     } catch {}
-  })
-  candidates.sort((x, y) => y.at - x.at)
-  const trailers = candidates.filter((c) => c.dict.has('Root')).map((c) => c.dict)
+  }
+  const trailers = candidates.map((c) => c.dict)
   let startxref = 0
   try {
     startxref = lastStartxref(b)

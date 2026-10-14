@@ -317,6 +317,14 @@ describe('scanning damaged files takes linear time', () => {
     })
   }
 
+  it('a hundred thousand trailers: only the newest are read', async () => {
+    const bytes = pdf(`1 0 obj << /Type /Catalog >> endobj\n4 0 obj ${PUBSEC_ENCRYPT} endobj\n${'trailer<</Root 1 0 R/Encrypt 4 0 R/Size 5>>\n'.repeat(100_000)}`)
+    const read = await inWorker('readPubSec', bytes)
+    expect(read.result).toEqual({ recipients: 1, damaged: true, version: 5 })
+    expect(read.elapsed).toBeLessThan(1000)
+    expect((await inWorker('scanXref', bytes)).result).toEqual({ entries: 2, trailers: 256 })
+  })
+
   it('still finds the headers, the xref stream dictionary and the trailer', async () => {
     const bytes = pdf(
       '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n' +
