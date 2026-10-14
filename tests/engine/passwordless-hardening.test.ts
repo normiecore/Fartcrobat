@@ -1,0 +1,356 @@
+// Certificate encryption against hostile or unusual files: the small PDF reader (pdfLex.ts) must
+// finish quickly and in bounded memory on anything a file controls, since it runs on every file
+// MuPDF refuses to open. Hostile inputs run in a worker with a deadline and a heap limit, so a
+// regression fails the test instead of hanging the run.
+import { resolve } from 'node:path'
+import { Worker } from 'node:worker_threads'
+import { buildSync } from 'esbuild'
+import { zlibSync } from 'fflate'
+import { describe, expect, it } from 'vitest'
+import { appendUpdate, concat, readPubSec, verifyFileKey } from '@engine/crypt'
+import { latin1, md5, rc4, toLatin1 } from '@engine/crypt/primitives'
+import { expected, hexBytes, keyFor, openWithKey, pubsecFixture } from './passwordless-helpers'
+
+const ROOT = resolve(__dirname, '../..')
+
+// ---- running the reader in a worker -----------------------------------------------------------
+
+let bundled: string | null = null
+
+/** pdfLex.ts and readPubSec as one CommonJS script (built once per file). */
+function readerBundle(): string {
+  bundled ??= buildSync({
+    stdin: {
+      contents: "export * from './src/engine/crypt/pdfLex'\nexport { readPubSec } from './src/engine/crypt/pubsecRead'\n",
+      resolveDir: ROOT,
+      loader: 'ts'
+    },
+    bundle: true,
+    write: false,
+    format: 'cjs',
+    platform: 'node',
+    logLevel: 'error'
+  }).outputFiles[0].text
+  return bundled
+}
+
+const WORKER_OPS = `
+const ops = {
+  readXref(b) {
+    const x = lib.readXref(b)
+    return { damaged: x.damaged, entries: x.entries.size, root: x.trailer.has('Root') }
+  },
+  scanXref(b) {
+    const x = lib.scanXref(b)
+    return { entries: x.entries.size, trailers: x.trailers.length }
+  },
+  readPubSec(b) {
+    const i = lib.readPubSec(b)
+    return i && { recipients: i.recipients.length, damaged: i.xref.damaged, version: i.version }
+  },
+  decodeStream(b, [dict, max]) {
+    try {
+      return { length: lib.decodeStream(b, lib.parseValue(Buffer.from(dict, 'latin1'), 0)[0], max).length }
+    } catch (err) {
+      return { error: err.message }
+    }
+  }
+}
+const { parentPort, workerData } = require('node:worker_threads')
+const t0 = performance.now()
+const result = ops[workerData.op](workerData.bytes, workerData.arg)
+parentPort.postMessage({ result, elapsed: performance.now() - t0 })
+`
+
+type Op = 'readXref' | 'scanXref' | 'readPubSec' | 'decodeStream'
+
+/**
+ * Runs one reader call on `bytes` in a worker with a 256 MB heap. Rejects when it has not finished
+ * after `deadline` ms (the worker is stopped) or runs out of memory; `elapsed` is the call alone.
+ */
+function inWorker(op: Op, bytes: Uint8Array, arg?: [string, number?], deadline = 8000): Promise<{ result: any; elapsed: number }> {
+  const source = `const m = { exports: {} };\n(function (module, exports, require) {\n${readerBundle()}\n})(m, m.exports, require);\nconst lib = m.exports;\n${WORKER_OPS}`
+  const worker = new Worker(source, { eval: true, workerData: { op, bytes, arg }, resourceLimits: { maxOldGenerationSizeMb: 256 } })
+  return new Promise((done, fail) => {
+    const timer = setTimeout(() => {
+      void worker.terminate()
+      fail(new Error(`${op} did not finish within ${deadline} ms`))
+    }, deadline)
+    worker.once('message', (m) => {
+      clearTimeout(timer)
+      void worker.terminate()
+      done(m)
+    })
+    worker.once('error', (err) => {
+      clearTimeout(timer)
+      fail(err)
+    })
+  })
+}
+
+// ---- building files ---------------------------------------------------------------------------
+
+/** Builds a file from pieces, remembering where each object starts. */
+class Builder {
+  private parts: Uint8Array[] = []
+  pos = 0
+  readonly offsets = new Map<number, number>()
+  add(piece: string | Uint8Array): this {
+    const b = typeof piece === 'string' ? latin1(piece) : piece
+    this.parts.push(b)
+    this.pos += b.length
+    return this
+  }
+  obj(num: number, body: string): this {
+    this.offsets.set(num, this.pos)
+    return this.add(`${num} 0 obj\n${body}\nendobj\n`)
+  }
+  /** `dict` is a dictionary's source; /Length is added before its final >>. */
+  stream(num: number, dict: string, data: Uint8Array): this {
+    this.offsets.set(num, this.pos)
+    const d = dict.trimEnd()
+    return this.add(`${num} 0 obj\n${d.slice(0, -2)} /Length ${data.length} >>\nstream\n`).add(data).add('\nendstream\nendobj\n')
+  }
+  bytes(): Uint8Array {
+    return Buffer.concat(this.parts)
+  }
+}
+
+/** A certificate encryption dictionary (the envelope is not real; nothing here decrypts). */
+const PUBSEC_ENCRYPT =
+  '<< /Filter /Adobe.PubSec /SubFilter /adbe.pkcs7.s5 /V 5 /Length 256 /CF << /DefaultCryptFilter << /CFM /AESV3 ' +
+  '/Recipients [<3082010a0201>] >> >> /StmF /DefaultCryptFilter /StrF /DefaultCryptFilter >>'
+
+/**
+ * A one-page certificate-encrypted file whose only cross-reference section is the xref stream 5
+ * with `dict` (added to /Type /XRef /Size 6 /Root /Encrypt) and `data`, or with rows for objects
+ * 0 to 5 (W [1 2 1]) passed through `encode` when `data` is a function.
+ */
+function xrefStreamFile(dict: string, data: Uint8Array | ((rows: Uint8Array) => Uint8Array)): Uint8Array {
+  const b = new Builder()
+    .add('%PDF-1.7\n')
+    .obj(1, '<< /Type /Catalog /Pages 2 0 R >>')
+    .obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+    .obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>')
+    .obj(4, PUBSEC_ENCRYPT)
+  const at = b.pos
+  let bytes: Uint8Array
+  if (typeof data === 'function') {
+    const rows: number[] = [0, 0, 0, 255]
+    for (const n of [1, 2, 3, 4]) rows.push(1, (b.offsets.get(n)! >> 8) & 255, b.offsets.get(n)! & 255, 0)
+    rows.push(1, (at >> 8) & 255, at & 255, 0)
+    bytes = data(Uint8Array.from(rows))
+  } else bytes = data
+  b.stream(5, `<< /Type /XRef /Size 6 /Root 1 0 R /Encrypt 4 0 R ${dict} >>`, bytes)
+  b.add(`startxref\n${at}\n%%EOF\n`)
+  return b.bytes()
+}
+
+/** TIFF predictor 2 on rows of `columns` bytes (one 8-bit colour): each byte minus the one before. */
+function tiffEncode(rows: Uint8Array, columns: number): Uint8Array {
+  const out = rows.slice()
+  for (let i = rows.length - 1; i >= 0; i--) if (i % columns) out[i] = (rows[i] - rows[i - 1]) & 255
+  return out
+}
+
+// ---- predictors -------------------------------------------------------------------------------
+
+describe('predictor parameters', () => {
+  it('a sound TIFF predictor still reads (the control file)', async () => {
+    const bytes = xrefStreamFile('/W [1 2 1] /Filter /FlateDecode /DecodeParms << /Predictor 2 /Columns 4 >>', (rows) => zlibSync(tiffEncode(rows, 4)))
+    const { result } = await inWorker('readXref', bytes)
+    expect(result).toEqual({ damaged: false, entries: 6, root: true })
+    expect((await inWorker('readPubSec', bytes)).result).toEqual({ recipients: 1, damaged: false, version: 5 })
+  })
+
+  // /Columns 0, /Colors 0 or a negative value made the TIFF predictor loop step by 0 bytes.
+  for (const parms of [
+    '/Predictor 2 /Columns 0',
+    '/Predictor 2 /Colors 0 /Columns 4',
+    '/Predictor 2 /Columns -1',
+    '/Predictor 2 /Colors -2 /Columns 4',
+    '/Predictor 2 /Columns 1.5',
+    '/Predictor 2 /Columns 99999999999',
+    '/Predictor 12 /Columns 0',
+    '/Predictor 12 /Columns -4',
+    '/Predictor 12 /Colors 33 /Columns 4',
+    '/Predictor 12 /BitsPerComponent 3 /Columns 4'
+  ]) {
+    it(`refuses ${parms} at once and falls back to scanning`, async () => {
+      const bytes = xrefStreamFile(`/W [1 2 1] /Filter /FlateDecode /DecodeParms << ${parms} >>`, (rows) => zlibSync(rows))
+      const decoded = await inWorker('decodeStream', zlibSync(new Uint8Array(4096).fill(7)), [`<< /Filter /FlateDecode /DecodeParms << ${parms} >> >>`])
+      expect(decoded.result.error).toMatch(/predictor/i)
+      expect(decoded.elapsed).toBeLessThan(1000)
+      const read = await inWorker('readPubSec', bytes)
+      expect(read.result).toEqual({ recipients: 1, damaged: true, version: 5 })
+      expect(read.elapsed).toBeLessThan(1000)
+    })
+  }
+})
+
+// ---- xref streams -----------------------------------------------------------------------------
+
+describe('cross-reference streams', () => {
+  const zeros = (n: number) => new Uint8Array(n)
+  // With /W [0 0 0] nothing ever ran out of data, so the loop made 4 billion entries (12 s, 1.5 GB).
+  const hostile: [string, string, () => Uint8Array][] = [
+    ['entries of no bytes and a huge /Index', '/W [0 0 0] /Index [0 4000000000]', () => zeros(0)],
+    ['entries of no bytes', '/W [0 0 0]', () => zeros(0)],
+    ['a huge /Index count', '/W [1 2 1] /Index [0 4000000000]', () => zeros(24)],
+    ['/Index past the highest object number', '/W [1 2 1] /Index [8388604 6]', () => zeros(24)],
+    ['a negative /Index start', '/W [1 2 1] /Index [-3 6]', () => zeros(24)],
+    ['a negative /Index count', '/W [1 2 1] /Index [0 -6]', () => zeros(24)],
+    ['a fractional /Index count', '/W [1 2 1] /Index [0 5.5]', () => zeros(24)],
+    ['more /Index entries than /Size', '/W [1 2 1] /Index [0 6 0 6]', () => zeros(48)],
+    ['a fractional /W', '/W [1 1.5 1]', () => zeros(24)],
+    ['a /W entry over 8 bytes', '/W [1 9 1]', () => zeros(66)],
+    // 20 MB of zeros in 20 KB: inflating stops once the output passes what 6 entries need.
+    ['data that inflates far beyond its entries', '/W [0 0 1] /Index [0 4000000000] /Filter /FlateDecode', () => zlibSync(zeros(20 << 20))],
+    ['a zip bomb', '/W [1 2 1] /Filter /FlateDecode', () => zlibSync(zeros(20 << 20))]
+  ]
+  for (const [what, dict, data] of hostile) {
+    it(`refuses ${what} at once and falls back to scanning`, async () => {
+      const bytes = xrefStreamFile(dict, data())
+      const read = await inWorker('readXref', bytes)
+      expect(read.result).toMatchObject({ damaged: true, root: true })
+      expect(read.result.entries).toBeLessThan(10)
+      expect(read.elapsed).toBeLessThan(1000)
+      const info = await inWorker('readPubSec', bytes)
+      expect(info.result).toEqual({ recipients: 1, damaged: true, version: 5 })
+      expect(info.elapsed).toBeLessThan(1000)
+    })
+  }
+
+  it('sound xref streams still read: two subsections and a PNG predictor', async () => {
+    const png = (rows: Uint8Array) => {
+      const out: number[] = []
+      for (let r = 0; r < rows.length / 4; r++) out.push(0, ...rows.subarray(r * 4, r * 4 + 4))
+      return zlibSync(Uint8Array.from(out))
+    }
+    const bytes = xrefStreamFile('/W [1 2 1] /Index [0 4 4 2] /Filter /FlateDecode /DecodeParms << /Predictor 12 /Columns 4 >>', png)
+    expect((await inWorker('readXref', bytes)).result).toEqual({ damaged: false, entries: 6, root: true })
+  })
+
+  it('decoding stops past the limit (64 MB unless told otherwise)', async () => {
+    const flate = '<< /Filter /FlateDecode >>'
+    const bomb = zlibSync(zeros(80 << 20))
+    expect((await inWorker('decodeStream', bomb, [flate])).result.error).toMatch(/too long/)
+    expect((await inWorker('decodeStream', bomb, [flate, 80 << 20])).result).toEqual({ length: 80 << 20 })
+    const capped = await inWorker('decodeStream', bomb, [flate, 1 << 20])
+    expect(capped.result.error).toMatch(/too long/)
+    expect(capped.elapsed).toBeLessThan(1000)
+    // Without a zlib header (the second try) the limit holds too.
+    expect((await inWorker('decodeStream', Uint8Array.of(0, 0, ...bomb.subarray(2)), [flate, 1 << 20])).result.error).toMatch(/too long/)
+  })
+
+  it('a chain of sections that reads far more than the file is given up', async () => {
+    // 40 xref streams chained by /Prev, each listing 300,000 free entries in 300 bytes: one is
+    // allowed (a sound file of this size could have that many), the second is too many.
+    const b = new Builder()
+      .add('%PDF-1.7\n')
+      .obj(1, '<< /Type /Catalog /Pages 2 0 R >>')
+      .obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+      .obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>')
+      .obj(4, PUBSEC_ENCRYPT)
+    const data = zlibSync(zeros(300_000))
+    let prev = -1
+    for (let k = 0; k < 40; k++) {
+      const at = b.pos
+      b.stream(10 + k, `<< /Type /XRef /Size 300000 /W [1 0 0] /Root 1 0 R /Encrypt 4 0 R /Filter /FlateDecode${prev >= 0 ? ` /Prev ${prev}` : ''} >>`, data)
+      prev = at
+    }
+    b.add(`startxref\n${prev}\n%%EOF\n`)
+    const read = await inWorker('readXref', b.bytes())
+    expect(read.result).toMatchObject({ damaged: true, root: true })
+    expect(read.elapsed).toBeLessThan(1000)
+  })
+})
+
+// ---- damaged files ----------------------------------------------------------------------------
+
+describe('scanning damaged files takes linear time', () => {
+  const pdf = (body: string) => latin1(`%PDF-1.7\n${body}`)
+  const x = 'x'.repeat(90)
+
+  const damaged: [string, string][] = [
+    // Each start inside the run made the header pattern rescan the rest of it.
+    ['a long run of digits', '7'.repeat(400_000)],
+    ['digits and spaces', '12 '.repeat(150_000)],
+    // Each header (or trailer) was parsed to the end of the file.
+    ['headers followed by unterminated strings', `1 0 obj (${x}\n`.repeat(8000)],
+    ['headers followed by unterminated dictionaries', `1 0 obj << /A (${x}\n`.repeat(8000)],
+    ['trailers followed by unterminated strings', `trailer << /Root 1 0 R /X (${x}\n`.repeat(8000)],
+    ['headers in one long comment', '1 0 obj %'.repeat(60_000)]
+  ]
+  for (const [what, body] of damaged) {
+    it(what, async () => {
+      const bytes = pdf(body)
+      const scan = await inWorker('scanXref', bytes)
+      expect(scan.elapsed).toBeLessThan(1000)
+      const read = await inWorker('readPubSec', bytes)
+      expect(read.result).toBeNull()
+      expect(read.elapsed).toBeLessThan(1000)
+    })
+  }
+
+  it('still finds the headers, the xref stream dictionary and the trailer', async () => {
+    const bytes = pdf(
+      '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n' +
+        '2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\n' +
+        '3 0 obj (unterminated\n' +
+        '4 0 obj\n<< /Type /XRef /Size 5 /Root 1 0 R >>\nstream\nxx\nendstream\nendobj\n' +
+        'x12 0 obj\n' +
+        'trailer\n<< /Size 5 /Root 1 0 R >>\n'
+    )
+    // Objects 1 to 4 ("x12 0 obj" is not a header: one starts after a delimiter or white space).
+    expect((await inWorker('scanXref', bytes)).result).toEqual({ entries: 4, trailers: 2 })
+  })
+})
+
+// ---- the RC4 key check --------------------------------------------------------------------------
+
+describe('the RC4 key check', () => {
+  const FILE = 'v4-rc4.pdf'
+  const K = () => hexBytes(expected(FILE).fileKeyHex)
+
+  /** The RC4 key of one object (ISO 32000-2, algorithm 1). */
+  const objectKey = (k: Uint8Array, num: number, gen: number) =>
+    md5(concat([k, Uint8Array.of(num & 255, (num >> 8) & 255, (num >> 16) & 255, gen & 255, (gen >> 8) & 255)])).slice(0, Math.min(k.length + 5, 16))
+
+  /** Binary image samples: bytes above 127, never text. */
+  const samples = (seed: number) => Uint8Array.from({ length: 300 }, (_, i) => 128 + ((i * 37 + seed * 101) % 128))
+
+  /** v4-rc4.pdf with an update that adds unfiltered images, encrypted with the right keys. */
+  function withRawImages(count: number): { bytes: Uint8Array; nums: number[] } {
+    const bytes = pubsecFixture(FILE)
+    const info = readPubSec(bytes)!
+    const nums = Array.from({ length: count }, (_, k) => info.trailer.size + k)
+    const objects = nums.map((num, k) => {
+      const data = toLatin1(rc4(objectKey(K(), num, 0), samples(k)))
+      const dict = `<< /Type /XObject /Subtype /Image /Width 10 /Height 10 /ColorSpace /DeviceRGB /BitsPerComponent 8 /Length ${data.length} >>`
+      return { num, gen: 0, source: `${dict}\nstream\n${data}\nendstream` }
+    })
+    return { bytes: appendUpdate(bytes, info, objects), nums }
+  }
+
+  it('unfiltered binary streams do not outvote the right key (they are newest, so they come first)', async () => {
+    const { bytes, nums } = withRawImages(5)
+    const info = readPubSec(bytes)!
+    expect([...info.xref.entries.keys()].filter((n) => n > 0).slice(0, 5)).toEqual(nums)
+    expect(verifyFileKey(bytes, info, K())).toBe(true)
+    const e = await openWithKey(bytes, keyFor(FILE, 'alice', bytes))
+    expect(e.info.pageCount).toBe(expected(FILE).pages)
+    // The images were decrypted with the rest.
+    expect(new Uint8Array(e.session.pdf.newIndirect(nums[2]).readRawStream().asUint8Array())).toEqual(samples(2))
+  })
+
+  it('a wrong key is still refused', () => {
+    for (const bytes of [pubsecFixture(FILE), withRawImages(5).bytes]) {
+      const info = readPubSec(bytes)!
+      for (let flip = 0; flip < 16; flip++) {
+        const wrong = K().map((x, i) => (i === flip ? x ^ 0x5a : x))
+        expect(verifyFileKey(bytes, info, wrong)).toBe(false)
+      }
+    }
+  })
+})
