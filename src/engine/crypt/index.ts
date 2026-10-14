@@ -33,9 +33,9 @@
  * - assertNoBridge(bytes, state, kind): run it on every output of a certificate-encrypted session
  *   ('pubsec', 'plain' for Remove Security, 'password' for password security).
  * - assertCertificateOutput(bytes, state): outputs that keep the session's protection (Extract,
- *   Split, Combine...) must be certificate-encrypted with its envelopes; pages.extract checks this,
- *   so until protection.ts writes certificate security, Extract refuses instead of writing plain
- *   pages.
+ *   Split, Combine...) must be certificate-encrypted with its envelopes. protection.ts writes them
+ *   (sessionProtection(s) is certificate protection for such a session), and pages.extract
+ *   double-checks what protectBytes returns with assertCertificateOutput.
  * - sessionReadPassword(s): the password MuPDF needs to read the session's document.
  */
 export {
