@@ -12,11 +12,11 @@
  * PDF readers name a recipient's certificate by issuer and serial number, or by subject key
  * identifier. Issuer names are compared as DER bytes, never as text.
  *
- * SHA-1 comes from node-forge, not @noble/hashes: this module is in the main-process bundle, and
- * electron-vite's ESM shim (which defines __dirname there) is inserted after the last `import` it
- * finds by text, which can be one in @noble's doc comments (see main-bundle.test.ts).
+ * No crypto library here: matching a subject key identifier needs SHA-1, which the caller passes
+ * in (node:crypto in the main process). This module is in the main-process bundle, which must not
+ * load node-forge at start-up (it costs tens of milliseconds) nor include @noble/* at all (its doc
+ * comments break electron-vite's __dirname shim); main-bundle.test.ts checks both.
  */
-import forge from 'node-forge'
 import {
   Asn1Error,
   bytesEqual,
@@ -90,6 +90,14 @@ export class EnvelopeError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'EnvelopeError'
+  }
+}
+
+/** An envelope over ENVELOPE_LIMITS (or the budget it was given); never parsed. */
+export class EnvelopeLimitError extends EnvelopeError {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EnvelopeLimitError'
   }
 }
 
@@ -172,8 +180,95 @@ function otherRecipient(ri: Asn1Node, index: number): EnvelopeRecipient {
   }
 }
 
-/** Reads one /Recipients entry (DER ContentInfo with EnvelopedData). Throws on malformed input. */
-export function parseEnvelope(blob: Uint8Array): ParsedEnvelope {
+/**
+ * Limits on what an envelope may hold. A file chooses its /Recipients, so a crafted one could list
+ * hundreds of thousands of 2-byte RecipientInfos per megabyte and keep the main process busy for
+ * minutes; these bound the work before anything is parsed. A real envelope has about 30 ASN.1
+ * elements per RSA recipient.
+ */
+export const ENVELOPE_LIMITS = {
+  /** ASN.1 elements in one envelope (a caller may give a smaller budget). */
+  elements: 50_000,
+  /** RecipientInfos (and key agreement recipient keys) in one envelope. */
+  recipientInfos: 1000
+} as const
+
+export interface EnvelopeLimits {
+  /**
+   * ASN.1 elements left to read, counted from the headers alone before anything is parsed; the
+   * envelope uses up what it reads (so a caller can see what it cost).
+   */
+  elements?: { left: number }
+  recipientInfos?: number
+}
+
+const MAX_DEPTH = 64
+
+/**
+ * Walks the ASN.1 element at the start of `buf` reading only headers, and takes one from
+ * `budget.left` per element. Returns false as soon as the budget runs out; throws EnvelopeError
+ * when the encoding is malformed (the elements read until then are used up too).
+ */
+export function countAsn1Elements(buf: Uint8Array, budget: { left: number }): boolean {
+  const damaged = (what: string) => new EnvelopeError(`Damaged envelope: ${what}`)
+  let exhausted = false
+  // Returns the offset just after the element at p.
+  const walk = (p: number, limit: number, depth: number): number => {
+    if (depth > MAX_DEPTH) throw damaged('ASN.1 nesting too deep')
+    if (--budget.left < 0) {
+      exhausted = true
+      return limit
+    }
+    if (p >= limit) throw damaged('unexpected end of ASN.1 data')
+    const first = buf[p++]
+    const constructed = (first & 0x20) !== 0
+    if ((first & 0x1f) === 0x1f) {
+      let b: number
+      do {
+        if (p >= limit) throw damaged('truncated ASN.1 tag')
+        b = buf[p++]
+      } while (b & 0x80)
+    }
+    if (p >= limit) throw damaged('truncated ASN.1 length')
+    let len = buf[p++]
+    if (len === 0x80) {
+      if (!constructed) throw damaged('indefinite length on a primitive ASN.1 element')
+      for (;;) {
+        if (exhausted) return limit
+        if (p + 1 >= limit) throw damaged('unterminated indefinite-length ASN.1 element')
+        if (buf[p] === 0 && buf[p + 1] === 0) return p + 2
+        p = walk(p, limit, depth + 1)
+      }
+    }
+    if (len & 0x80) {
+      const n = len & 0x7f
+      if (n > 6) throw damaged('ASN.1 length too large')
+      len = 0
+      for (let i = 0; i < n; i++) {
+        if (p >= limit) throw damaged('truncated ASN.1 length')
+        len = len * 256 + buf[p++]
+      }
+    }
+    const end = p + len
+    if (end > limit) throw damaged('ASN.1 element runs past the end of the data')
+    if (constructed) {
+      let q = p
+      while (q < end && !exhausted) q = walk(q, end, depth + 1)
+    }
+    return end
+  }
+  walk(0, buf.length, 0)
+  return !exhausted
+}
+
+/**
+ * Reads one /Recipients entry (DER ContentInfo with EnvelopedData). Throws on malformed input, and
+ * on an envelope over the limits (ENVELOPE_LIMITS unless given), which counts as damaged.
+ */
+export function parseEnvelope(blob: Uint8Array, limits: EnvelopeLimits = {}): ParsedEnvelope {
+  const maxRecipients = limits.recipientInfos ?? ENVELOPE_LIMITS.recipientInfos
+  if (!countAsn1Elements(blob, limits.elements ?? { left: ENVELOPE_LIMITS.elements }))
+    throw new EnvelopeLimitError('The envelope is too large')
   try {
     const ci = expectUniversal(parseAsn1(blob), TAG.SEQUENCE, 'content info')
     if (readOid(expectUniversal(ci.children[0], TAG.OID, 'content type')) !== ENVELOPE_OID.envelopedData)
@@ -190,11 +285,14 @@ export function parseEnvelope(blob: Uint8Array): ParsedEnvelope {
     const contentEncryption = algorithm(eci.children[1], 'content encryption algorithm')
     const content = eci.children[2]
     if (!isContext(content, 0)) throw new EnvelopeError('The envelope has no encrypted content')
+    const tooMany = () => new EnvelopeLimitError('The envelope lists too many recipients')
+    if (infos.children.length > maxRecipients) throw tooMany()
     const recipientInfos: EnvelopeRecipient[] = []
     infos.children.forEach((ri, index) => {
       if (isUniversal(ri, TAG.SEQUENCE)) recipientInfos.push(keyTrans(ri, index))
       else if (isContext(ri, 1)) recipientInfos.push(...keyAgree(ri, index))
       else recipientInfos.push(otherRecipient(ri, index))
+      if (recipientInfos.length > maxRecipients) throw tooMany()
     })
     return { recipientInfos, contentEncryption, encryptedContent: contentOf(content).slice() }
   } catch (err) {
@@ -250,17 +348,20 @@ function keyTypeOf(r: EnvelopeRecipient): PubSecRecipient['keyType'] {
   return 'other'
 }
 
-/** Everyone the envelopes are for, as people are shown them. Damaged envelopes are skipped. */
-export function summarizeRecipients(blobs: Uint8Array[]): PubSecRecipient[] {
+/**
+ * Everyone the envelopes are for, as people are shown them, at most `max` of them. `envelopes` are
+ * parsed /Recipients entries in file order; damaged ones (null) are skipped.
+ */
+export function describeRecipients(
+  envelopes: readonly (ParsedEnvelope | null)[],
+  max = Infinity
+): PubSecRecipient[] {
   const out: PubSecRecipient[] = []
-  blobs.forEach((blob, envelope) => {
-    let parsed: ParsedEnvelope
-    try {
-      parsed = parseEnvelope(blob)
-    } catch {
-      return
-    }
+  for (let envelope = 0; envelope < envelopes.length; envelope++) {
+    const parsed = envelopes[envelope]
+    if (!parsed) continue
     for (const r of parsed.recipientInfos) {
+      if (out.length >= max) return out
       const item: PubSecRecipient = {
         envelope,
         index: r.index,
@@ -283,19 +384,16 @@ export function summarizeRecipients(blobs: Uint8Array[]): PubSecRecipient[] {
       }
       out.push(item)
     }
-  })
+  }
   return out
 }
 
 // ---- matching certificates -------------------------------------------------------------------
 
-/** The subjectPublicKey BIT STRING's bytes (without the unused-bits byte). */
-function sha1(data: Uint8Array): Uint8Array {
-  const md = forge.md.sha1.create()
-  md.update(forge.util.binary.raw.encode(data))
-  return forge.util.binary.raw.decode(md.digest().getBytes())
-}
+/** SHA-1 of some bytes (20 bytes). */
+export type Sha1 = (data: Uint8Array) => Uint8Array
 
+/** The subjectPublicKey BIT STRING's bytes (without the unused-bits byte). */
 function subjectPublicKeyBits(cert: Certificate): Uint8Array | null {
   try {
     return readBitString(parseAsn1(cert.publicKey.spki).children[1]).bytes
@@ -304,27 +402,42 @@ function subjectPublicKeyBits(cert: Certificate): Uint8Array | null {
   }
 }
 
+/** What a recipient identifier may name a certificate by (certificateIds). */
+export interface CertificateIds {
+  /** The issuer Name, DER exactly as encoded in the certificate. */
+  issuer: Uint8Array
+  /** The serial number without leading zero bytes. */
+  serial: Uint8Array
+  /**
+   * Subject key identifiers: the SubjectKeyIdentifier extension, the SHA-1 of the public key bits
+   * (RFC 5280 method 1, what Windows uses for certificates without the extension) and the SHA-1 of
+   * the whole SubjectPublicKeyInfo.
+   */
+  keyIds: Uint8Array[]
+}
+
 /**
- * Whether `certificate` is the one a recipient identifier names: the same issuer Name (DER bytes)
- * and serial number (ignoring leading zero bytes), or a subject key identifier equal to the
- * certificate's SubjectKeyIdentifier extension, to the SHA-1 of its public key bits (RFC 5280
- * method 1, what Windows uses for certificates without the extension) or to the SHA-1 of its whole
- * SubjectPublicKeyInfo.
+ * A certificate's identifiers for recipientMatches, computed once per certificate (matching a long
+ * recipient list then only compares bytes). `sha1` is the caller's (node:crypto in the main process).
  */
-export function recipientMatches(rid: RecipientId | null, certificate: Certificate): boolean {
+export function certificateIds(certificate: Certificate, sha1: Sha1): CertificateIds {
+  const keyIds: Uint8Array[] = []
+  if (certificate.subjectKeyId?.length) keyIds.push(certificate.subjectKeyId)
+  const bits = subjectPublicKeyBits(certificate)
+  if (bits) keyIds.push(sha1(bits))
+  keyIds.push(sha1(certificate.publicKey.spki))
+  return { issuer: certificate.issuer.raw, serial: stripLeadingZeros(certificate.serial), keyIds }
+}
+
+/**
+ * Whether the certificate with these identifiers is the one a recipient identifier names: the same
+ * issuer Name (DER bytes) and serial number (ignoring leading zero bytes), or a subject key
+ * identifier equal to one of its key identifiers.
+ */
+export function recipientMatches(rid: RecipientId | null, ids: CertificateIds): boolean {
   if (!rid) return false
-  if ('ski' in rid) {
-    if (!rid.ski.length) return false
-    if (certificate.subjectKeyId && bytesEqual(rid.ski, certificate.subjectKeyId)) return true
-    if (rid.ski.length !== 20) return false
-    const bits = subjectPublicKeyBits(certificate)
-    if (bits && bytesEqual(rid.ski, sha1(bits))) return true
-    return bytesEqual(rid.ski, sha1(certificate.publicKey.spki))
-  }
-  return (
-    bytesEqual(rid.issuer, certificate.issuer.raw) &&
-    bytesEqual(stripLeadingZeros(rid.serial), stripLeadingZeros(certificate.serial))
-  )
+  if ('ski' in rid) return rid.ski.length > 0 && ids.keyIds.some((k) => bytesEqual(rid.ski, k))
+  return bytesEqual(rid.issuer, ids.issuer) && bytesEqual(stripLeadingZeros(rid.serial), ids.serial)
 }
 
 // ---- algorithms ----------------------------------------------------------------------------

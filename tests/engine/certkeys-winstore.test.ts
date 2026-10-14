@@ -5,9 +5,10 @@
 //
 // PowerShell: $PWSH, else /usr/local/bin/pwsh or /usr/bin/pwsh (pwsh 7 on Linux, with HOME set to a
 // temporary folder so .NET uses a private certificate store), or the stock Windows PowerShell 5.1 on
-// Windows. Without one that runs `exit 0`, those blocks are skipped. On Windows the store tests import
-// the test certificates into the real CurrentUser\My and AddressBook (and remove them afterwards), so
-// they only run on CI or with FARTCROBAT_WINSTORE_TESTS=1.
+// Windows. Without one that runs `exit 0`, those blocks are skipped. The store tests run on Linux, and on
+// Windows only on CI or with FARTCROBAT_WINSTORE_TESTS=1, because there they import the test
+// certificates into the real CurrentUser\My and AddressBook (and remove them afterwards). Never on macOS,
+// where .NET keeps CurrentUser\My in the keychain whatever HOME says.
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -28,6 +29,7 @@ import {
 } from '@main/certkeys/winCertStore'
 import {
   DECRYPT_BODY,
+  KEY_HARDWARE,
   LIST_BODY,
   PRELUDE,
   buildScript,
@@ -55,8 +57,9 @@ function findPowerShell(): string | null {
 }
 
 const PS = findPowerShell()
-// Off Windows, HOME decides where .NET keeps CurrentUser stores: a temporary one keeps the person's own
-// store (and pwsh's caches) out of the tests.
+// On Linux, HOME decides where .NET keeps CurrentUser stores: a temporary one keeps the person's own
+// store (and pwsh's caches) out of the tests. (On macOS it only keeps pwsh's caches out: the stores are
+// keychains, so the store tests do not run there.)
 const HOME = !IS_WIN && PS ? mkdtempSync(join(tmpdir(), 'fc-winstore-home-')) : null
 const helperOpts: HelperOptions =
   IS_WIN && !process.env.PWSH
@@ -385,17 +388,44 @@ describe.skipIf(!PS)('the long-lived helper', () => {
     )
     const before = new AbortController()
     before.abort()
-    const alreadyCancelled = helper.run(
-      'Write-FcResult ([ordered]@{ ok = $true })',
-      {},
-      { timeoutMs: 60_000, signal: before.signal }
+    // fails at once, without waiting for its turn
+    const alreadyCancelled = code(
+      helper.run(
+        'Write-FcResult ([ordered]@{ ok = $true })',
+        {},
+        { timeoutMs: 60_000, signal: before.signal }
+      )
     )
     setTimeout(() => ac.abort(), 500)
     expect(await code(slow)).toBe('ABORTED')
     // the request after it runs in a new process
     const r = await queued
     expect(r.pid).not.toBe(first)
-    expect(await code(alreadyCancelled)).toBe('ABORTED')
+    expect(await alreadyCancelled).toBe('ABORTED')
+  })
+
+  it('fails a request still waiting in the queue at once on abort or timeout, and leaves the helper alone', async () => {
+    const first = await pidOf()
+    const busy = helper.run(
+      'Start-Sleep -Seconds 3; Write-FcResult ([ordered]@{ ok = $true; pid = $PID })',
+      {},
+      { timeoutMs: 60_000 }
+    )
+    const ac = new AbortController()
+    const cancelled = helper.run(
+      'Write-FcResult ([ordered]@{ ok = $true })',
+      {},
+      { timeoutMs: 60_000, signal: ac.signal }
+    )
+    const impatient = helper.run('Write-FcResult ([ordered]@{ ok = $true })', {}, { timeoutMs: 500 })
+    const t0 = Date.now()
+    ac.abort()
+    expect(await code(cancelled)).toBe('ABORTED')
+    expect(await code(impatient)).toBe('TIMEOUT')
+    expect(Date.now() - t0).toBeLessThan(2500)
+    // the request that was running finishes in the same process, which keeps serving
+    expect((await busy).pid).toBe(first)
+    expect(await pidOf()).toBe(first)
   })
 
   it('fails a request waiting in the process when stop() is called', async () => {
@@ -404,6 +434,63 @@ describe.skipIf(!PS)('the long-lived helper', () => {
     setTimeout(() => helper.stop(), 500)
     expect(await code(slow)).toBe('ABORTED')
     expect(helper.running()).toBe(false)
+  })
+
+  it('maps the HRESULTs of cancelled PIN and consent dialogs to CANCELLED', async () => {
+    const hresults = {
+      // NTE_USER_CANCELLED: key storage providers with their own dialog (Windows Hello, vendor KSPs)
+      '80090036': 'CANCELLED',
+      // SCARD_W_CANCELLED_BY_USER, HRESULT_FROM_WIN32(ERROR_CANCELLED)
+      '8010006E': 'CANCELLED',
+      '800704C7': 'CANCELLED',
+      '8010006B': 'WRONG_PIN',
+      '80090016': 'KEY_UNAVAILABLE',
+      '80004005': 'ERROR'
+    }
+    const tests = Object.keys(hresults)
+      .map(
+        (h) =>
+          `try { throw (New-Object System.Security.Cryptography.CryptographicException -ArgumentList ([int]${parseInt(h, 16) | 0})) } ` +
+          `catch { $fe = Get-FcError $_; $out['${h}'] = $fe.code }`
+      )
+      .join('\n')
+    const r = await helper.run(
+      `$out = [ordered]@{}\n${tests}\nWrite-FcResult ([ordered]@{ ok = $true; codes = $out })`,
+      {},
+      { timeoutMs: 60_000 }
+    )
+    expect(r.codes).toEqual(hresults)
+  })
+
+  it("counts every key provider but Microsoft's software ones as hardware (smart card, TPM, Windows Hello, vendors)", async () => {
+    const providers: Record<string, boolean | null> = {
+      'Microsoft Software Key Storage Provider': false,
+      'Microsoft Enhanced RSA and AES Cryptographic Provider': false,
+      'Microsoft Enhanced Cryptographic Provider v1.0': false,
+      'Microsoft Strong Cryptographic Provider': false,
+      'Microsoft Base Cryptographic Provider v1.0': false,
+      'Microsoft RSA SChannel Cryptographic Provider': false,
+      'Microsoft Smart Card Key Storage Provider': true,
+      'Microsoft Base Smart Card Crypto Provider': true,
+      'Microsoft Platform Crypto Provider': true,
+      // Windows Hello for Business: TPM keys unlocked with the Windows Hello PIN, kept by the helper
+      'Microsoft Passport Key Storage Provider': true,
+      'SafeNet Key Storage Provider': true,
+      'eToken Base Cryptographic Provider': true,
+      'Some HSM KSP': true,
+      '': null
+    }
+    const r = await helper.run(
+      KEY_HARDWARE +
+        '\n$out = [ordered]@{}\n' +
+        Object.keys(providers)
+          .map((p) => `$out['${p}'] = Get-FcProviderHardware '${p}'`)
+          .join('\n') +
+        '\nWrite-FcResult ([ordered]@{ ok = $true; kinds = $out })',
+      {},
+      { timeoutMs: 60_000 }
+    )
+    expect(r.kinds).toEqual(providers)
   })
 
   it('turns an unexpected failure inside a body into a structured answer', async () => {
@@ -628,8 +715,12 @@ function opensslEnvelope(certPem: string, content: Uint8Array): Uint8Array {
 
 // Windows PowerShell 5.1 (.NET Framework) cannot make some envelopes .NET 5+ can.
 const IS_PS51 = IS_WIN && !process.env.PWSH
+// Linux (a private file store under the temporary HOME), or Windows when asked (the real store). Not
+// macOS: CurrentUser\My is the login keychain there.
 const STORE_TESTS =
-  Boolean(PS) && (!IS_WIN || Boolean(process.env.CI) || process.env.FARTCROBAT_WINSTORE_TESTS === '1')
+  Boolean(PS) &&
+  (process.platform === 'linux' ||
+    (IS_WIN && (Boolean(process.env.CI) || process.env.FARTCROBAT_WINSTORE_TESTS === '1')))
 
 function runPs(args: string[]): string {
   const env: NodeJS.ProcessEnv = { ...(helperOpts.env ?? process.env), TERM: 'dumb' }
@@ -677,7 +768,7 @@ describe.skipIf(!STORE_TESTS)('with PowerShell and a test certificate store', ()
   let store: ReturnType<typeof createWindowsStore>
 
   beforeAll(() => {
-    // Off Windows this fills the private store under the temporary HOME.
+    // On Linux this fills the private store under the temporary HOME.
     runPs(['-ExecutionPolicy', 'Bypass', '-File', join(FIX, 'winstore', 'import_store.ps1'), '-Pki', PKI])
     helper = new PowerShellHelper(helperOpts)
     store = createWindowsStore({ platform: 'win32', enabled: () => true, ...helperOpts })
