@@ -536,7 +536,9 @@ test('the main and preload bundles contain their dependencies (installers ship n
   const allowed = new Set(['electron', ...builtinModules, ...builtinModules.map((m) => `node:${m}`)])
   for (const file of ['out/main/index.js', 'out/preload/index.cjs']) {
     const code = readFileSync(join(ROOT, file), 'utf8')
-    const specs = [...code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"'./][^"']*)["']/g)].map((m) => m[1])
+    // Specifiers have no spaces and no `${`: that skips log text such as electron-updater's
+    // `downloading it from "${url}"`.
+    const specs = [...code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)["']([^"'./$\s][^"'\s]*)["']/g)].map((m) => m[1])
     expect(specs.length, file).toBeGreaterThan(0)
     expect(specs.filter((s) => !allowed.has(s)), file).toEqual([])
   }

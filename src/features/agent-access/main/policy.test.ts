@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { computeMac, isNonce, verifyMac } from './auth'
 import { launchInfo } from './endpoint'
-import { parseRegQuery, readMachinePolicy, windowsPolicy, type RunFile } from '@main/policy'
+import { WINDOWS_POLICY_VALUES, parseRegQuery, readMachinePolicy, windowsPolicy, type RunFile } from '@main/policy'
 import { agentAccessState, currentPolicy, machinePolicy, machinePolicyFile, readPolicy } from './policy'
 
 describe('agent access policy', () => {
@@ -60,11 +60,13 @@ describe('agent access policy', () => {
     // Sections fall back to FARTCROBAT_POLICY_FILE one by one.
     expect(await readMachinePolicy({ file: agentOnly, env: { FARTCROBAT_POLICY_FILE: both } })).toEqual({
       agentAccess: 'disabled',
-      rememberPasswords: 'disabled'
+      rememberPasswords: 'disabled',
+      autoUpdate: null
     })
     expect(await readMachinePolicy({ file: join(dir, 'missing.json'), env: {} })).toEqual({
       agentAccess: null,
-      rememberPasswords: null
+      rememberPasswords: null,
+      autoUpdate: null
     })
   })
 
@@ -74,13 +76,25 @@ describe('agent access policy', () => {
     const typo = policy('typo.json', '{"agentAccess":{"enabled":false},}')
     expect(readPolicy(typo)).toBe('disabled')
     expect(readPolicy(typo, 'rememberPasswords')).toBe('disabled')
-    expect(await readMachinePolicy({ file: typo, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
+    expect(await readMachinePolicy({ file: typo, env: {} })).toEqual({
+      agentAccess: 'invalid',
+      rememberPasswords: 'invalid',
+      autoUpdate: 'invalid'
+    })
     const notBoolean = policy('no.json', '{"rememberPasswords":{"enabled":"no"}}')
     expect(readPolicy(notBoolean, 'rememberPasswords')).toBe('disabled')
-    expect(await readMachinePolicy({ file: notBoolean, env: {} })).toEqual({ agentAccess: null, rememberPasswords: 'invalid' })
+    expect(await readMachinePolicy({ file: notBoolean, env: {} })).toEqual({
+      agentAccess: null,
+      rememberPasswords: 'invalid',
+      autoUpdate: null
+    })
     // A file that exists but cannot be read (here a folder: EISDIR).
     expect(currentPolicy(await machinePolicy('linux', {}, dir), {})).toBe('disabled')
-    expect(await readMachinePolicy({ file: dir, env: {} })).toEqual({ agentAccess: 'invalid', rememberPasswords: 'invalid' })
+    expect(await readMachinePolicy({ file: dir, env: {} })).toEqual({
+      agentAccess: 'invalid',
+      rememberPasswords: 'invalid',
+      autoUpdate: 'invalid'
+    })
     // Only an explicit false reads as 'disabled'.
     const off = policy('off.json', '\uFEFF{"rememberPasswords":{"enabled":false}}')
     expect((await readMachinePolicy({ file: off, env: {} })).rememberPasswords).toBe('disabled')
@@ -111,36 +125,65 @@ describe('agent access policy', () => {
       `\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Fartcrobat\r\n${values.map((v) => `    ${v}\r\n`).join('')}\r\n`
     expect(await windowsPolicy({ SystemRoot: 'D:\\Win' }, reg(null, out('AgentAccess    REG_DWORD    0x1')))).toEqual({
       agentAccess: 'enabled',
-      rememberPasswords: null
+      rememberPasswords: null,
+      autoUpdate: null
     })
     expect(calls[0]).toEqual({ file: 'D:\\Win\\System32\\reg.exe', args: ['query', 'HKLM\\SOFTWARE\\Policies\\Fartcrobat'] })
     expect(
       await windowsPolicy({}, reg(null, out('AgentAccess    REG_DWORD    0x0', 'RememberPasswords    REG_DWORD    0x0')))
-    ).toEqual({ agentAccess: 'disabled', rememberPasswords: 'disabled' })
+    ).toEqual({ agentAccess: 'disabled', rememberPasswords: 'disabled', autoUpdate: null })
     expect(calls[1].file).toBe('C:\\Windows\\System32\\reg.exe')
     // Not set: the preference decides.
     expect(await windowsPolicy({}, reg(Object.assign(new Error('not found'), { code: 1 })))).toEqual({
       agentAccess: null,
-      rememberPasswords: null
+      rememberPasswords: null,
+      autoUpdate: null
     })
     expect(await windowsPolicy({}, reg(Object.assign(new Error('spawn'), { code: 'ENOENT' })))).toEqual({
       agentAccess: null,
-      rememberPasswords: null
+      rememberPasswords: null,
+      autoUpdate: null
     })
     // Set to something it cannot read, or the query failed otherwise: invalid, which turns the
     // setting off without wiping saved passwords.
     expect(await windowsPolicy({}, reg(null, out('RememberPasswords    REG_SZ    yes')))).toEqual({
       agentAccess: null,
-      rememberPasswords: 'invalid'
+      rememberPasswords: 'invalid',
+      autoUpdate: null
     })
     expect(await windowsPolicy({}, reg(Object.assign(new Error('timed out'), { code: null })))).toEqual({
       agentAccess: 'invalid',
-      rememberPasswords: 'invalid'
+      rememberPasswords: 'invalid',
+      autoUpdate: 'invalid'
     })
     expect(parseRegQuery('    agentaccess    REG_DWORD    0x00000001', 'agentAccess')).toBe('enabled')
     expect(parseRegQuery('    RememberPasswords    REG_DWORD    0x2', 'rememberPasswords')).toBe('invalid')
     expect(parseRegQuery('    RememberPasswordsX    REG_DWORD    0x1', 'rememberPasswords')).toBeNull()
     expect(parseRegQuery('', 'agentAccess')).toBeNull()
+  })
+
+  it('reads the update policy (autoUpdate) like the other sections', async () => {
+    const off = policy('updates-off.json', '{"autoUpdate":{"enabled":false}}')
+    const on = policy('updates-on.json', '{"autoUpdate":{"enabled":true}}')
+    expect(readPolicy(off, 'autoUpdate')).toBe('disabled')
+    expect(readPolicy(on, 'autoUpdate')).toBe('enabled')
+    // The other settings are not affected.
+    expect(readPolicy(off)).toBeNull()
+    expect(readPolicy(off, 'rememberPasswords')).toBeNull()
+    expect(readPolicy(policy('agent.json', '{"agentAccess":{"enabled":false}}'), 'autoUpdate')).toBeNull()
+    // Mistakes turn checking off (no checks at all, manual ones included).
+    expect(readPolicy(policy('bad.json', '{"autoUpdate":true}'), 'autoUpdate')).toBe('disabled')
+    expect((await readMachinePolicy({ file: policy('bad2.json', '{"autoUpdate":{"enabled":1}}'), env: {} })).autoUpdate).toBe('invalid')
+    // FARTCROBAT_POLICY_FILE only fills in what the machine leaves unset.
+    expect((await readMachinePolicy({ file: join(dir, 'missing.json'), env: { FARTCROBAT_POLICY_FILE: off } })).autoUpdate).toBe('disabled')
+    expect((await readMachinePolicy({ file: on, env: { FARTCROBAT_POLICY_FILE: off } })).autoUpdate).toBe('enabled')
+    // Windows: the REG_DWORD AutoUpdate under HKLM\SOFTWARE\Policies\Fartcrobat.
+    expect(WINDOWS_POLICY_VALUES.autoUpdate).toBe('AutoUpdate')
+    expect(parseRegQuery('    AutoUpdate    REG_DWORD    0x0', 'autoUpdate')).toBe('disabled')
+    expect(parseRegQuery('    AutoUpdate    REG_DWORD    0x1', 'autoUpdate')).toBe('enabled')
+    expect(parseRegQuery('    AutoUpdate    REG_SZ    1', 'autoUpdate')).toBe('invalid')
+    const reg: RunFile = (_file, _args, done) => done(null, '\r\n    AgentAccess    REG_DWORD    0x1\r\n    AutoUpdate    REG_DWORD    0x0\r\n')
+    expect(await windowsPolicy({}, reg)).toEqual({ agentAccess: 'enabled', rememberPasswords: null, autoUpdate: 'disabled' })
   })
 })
 

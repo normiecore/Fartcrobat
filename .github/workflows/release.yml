@@ -59,6 +59,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ matrix.os }}
+          # latest*.yml and the .blockmap files are what in-app updates read (electron-updater):
+          # latest.yml (Windows), latest-mac.yml, latest-linux.yml. builder-debug.yml and
+          # builder-effective-config.yaml stay behind.
           path: |
             release/*.exe
             release/*.dmg
@@ -66,6 +69,8 @@ jobs:
             release/*.AppImage
             release/*.deb
             release/*.tar.gz
+            release/latest*.yml
+            release/*.blockmap
           if-no-files-found: error
 
   publish:
@@ -90,6 +95,18 @@ jobs:
           expected="v$(node -p "require('./package.json').version")"
           if [ "$TAG" != "$expected" ]; then
             echo "::error::$TAG does not match the version in package.json ($expected)"
+            exit 1
+          fi
+          # Installed copies update from these files: a release without them strands everyone on
+          # the version before it (docs/features/updates.md, U5).
+          for meta in latest.yml latest-mac.yml latest-linux.yml; do
+            if [ ! -f "dist/$meta" ]; then
+              echo "::error::dist/$meta is missing: in-app updates need it. Check the build job for that platform."
+              exit 1
+            fi
+          done
+          if ! ls dist/*.blockmap >/dev/null 2>&1; then
+            echo "::error::No .blockmap files were built: in-app updates need them for differential downloads."
             exit 1
           fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

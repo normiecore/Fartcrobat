@@ -94,6 +94,10 @@ outputs are committed; tests never generate them at run time.
   workflow on `main` with that version. The publish job checks the version matches, creates the
   tag on the built commit and attaches the installers. Pushing a `v*` tag also works, but the
   Claude session git proxy refuses tag pushes, so use the manual run.
+- In-app updates (`docs/features/updates.md`) download from the latest GitHub release, so every
+  release must carry `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and the `.blockmap` files
+  (electron-builder writes them; the publish job fails without them). v0.1.0 has no updater: people
+  on it install the next version by hand once.
 - Windows installers are unsigned and macOS builds are only ad-hoc signed. Signing uses the
   `CSC_LINK` and `CSC_KEY_PASSWORD` repository secrets when they exist.
 
