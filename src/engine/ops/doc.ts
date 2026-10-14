@@ -1,6 +1,7 @@
-import type { DocInfo, DocMetadata, OpenResult, PageInfo, Permission, SaveOptions } from '@shared/types'
+import type { DocInfo, DocMetadata, LockInfo, OpenResult, PageInfo, PasswordAccess, Permission, SaveOptions } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer, type Transfer } from '../define'
 import type { PDFDocument, Session } from '../session'
+import { accessOf, readLockInfo } from '../util/lockInfo'
 import {
   catalog,
   countSignatures,
@@ -321,14 +322,24 @@ function openInto(s: Session, data: Uint8Array, fileName: string, opts: OpenOpti
     throw new EngineError(`This file could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
   }
   let password: string | undefined
+  let access: PasswordAccess | undefined
   if (src.needsPassword()) {
     const candidates = [opts.password, opts.reload ? s.password : null].filter((p): p is string => !!p)
-    password = candidates.find((p) => src.authenticatePassword(p))
+    for (const p of candidates) {
+      const a = accessOf(src.authenticatePassword(p))
+      if (a) {
+        password = p
+        access = a
+        break
+      }
+    }
     if (password === undefined) {
+      // Read before authenticating, so the person's saved passwords can be looked up.
+      const lock = lockOf(src)
       if (opts.reload) {
         // The open document stays as it is; the caller can ask for the password and retry.
         src.destroy()
-        return { ok: false, needsPassword: true, wrongPassword: !!opts.password }
+        return { ok: false, needsPassword: true, wrongPassword: !!opts.password, lock }
       }
       if (s.pending && s.pending !== src) {
         try {
@@ -339,10 +350,19 @@ function openInto(s: Session, data: Uint8Array, fileName: string, opts: OpenOpti
       s.pendingBytes = data
       s.pendingDirty = !!opts.dirty
       s.fileName = fileName
-      return { ok: false, needsPassword: true, wrongPassword: !!opts.password }
+      return { ok: false, needsPassword: true, wrongPassword: !!opts.password, lock }
     }
   }
-  return finishOpen(s, src, fileName, data, { password, dirty: opts.dirty, keepSettings: opts.reload })
+  return finishOpen(s, src, fileName, data, { password, access, dirty: opts.dirty, keepSettings: opts.reload })
+}
+
+function lockOf(src: InstanceType<Session['mupdf']['Document']>): LockInfo | null {
+  try {
+    const pdf = src.asPDF()
+    return pdf ? readLockInfo(pdf) : null
+  } catch {
+    return null
+  }
 }
 
 function finishOpen(
@@ -350,7 +370,7 @@ function finishOpen(
   src: InstanceType<Session['mupdf']['Document']>,
   fileName: string,
   bytes: Uint8Array | null,
-  opts: { password?: string; dirty?: boolean; keepSettings?: boolean } = {}
+  opts: { password?: string; access?: PasswordAccess; dirty?: boolean; keepSettings?: boolean } = {}
 ): OpenResult {
   s.pending = null
   s.pendingBytes = null
@@ -373,7 +393,8 @@ function finishOpen(
     s.sourceBytes = null
     s.password = null
   }
-  return { ok: true, info: buildDocInfo(s) }
+  const info = buildDocInfo(s)
+  return opts.access ? { ok: true, info, access: opts.access } : { ok: true, info }
 }
 
 /** ISO date (as returned in DocMetadata) or PDF date -> PDF date string. */
@@ -404,11 +425,44 @@ export default defineOps('doc', {
     return { ok: true, info: buildDocInfo(s) }
   },
 
+  /** Tries a password on the document waiting for one; `access` says what it opened it with. */
   authenticate(s, password: string, opts: { dirty?: boolean } = {}): OpenResult {
     const src = s.pending
     if (!src) throw new EngineError('No document is waiting for a password', 'NO_PENDING')
-    if (!src.authenticatePassword(password)) return { ok: false, needsPassword: true, wrongPassword: true }
-    return finishOpen(s, src, s.fileName, s.pendingBytes, { password, dirty: opts.dirty || s.pendingDirty })
+    const access = accessOf(src.authenticatePassword(password))
+    if (!access) return { ok: false, needsPassword: true, wrongPassword: true, lock: lockOf(src) }
+    return finishOpen(s, src, s.fileName, s.pendingBytes, { password, access, dirty: opts.dirty || s.pendingDirty })
+  },
+
+  /**
+   * Whether a file needs a password, without opening it as the document (files read as inputs,
+   * e.g. by Create). With `password`, also what that password gives (null: it is wrong).
+   */
+  checkFile(
+    s,
+    data: Uint8Array,
+    fileName: string,
+    password?: string
+  ): { needsPassword: false } | { needsPassword: true; lock: LockInfo | null; access: PasswordAccess | null } {
+    const ext = extensionOf(fileName) || 'pdf'
+    let src: InstanceType<Session['mupdf']['Document']>
+    try {
+      src = s.mupdf.Document.openDocument(data, OPENABLE_FORMATS[ext] ? fileName : 'application/pdf')
+    } catch (err) {
+      throw new EngineError(`This file could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
+    }
+    try {
+      if (!src.needsPassword()) return { needsPassword: false }
+      const lock = lockOf(src)
+      return { needsPassword: true, lock, access: password ? accessOf(src.authenticatePassword(password)) : null }
+    } finally {
+      src.destroy()
+    }
+  },
+
+  /** The lock of the open document (null when it is not encrypted), to find its saved password. */
+  lockInfo(s): LockInfo | null {
+    return readLockInfo(s.pdf)
   },
 
   /**

@@ -67,7 +67,8 @@ export function AgentSettings() {
       <p className={`${P}-settings-about`}>
         AI apps on this computer, such as Claude Desktop, can read the documents open in Fartcrobat and any file you can open,
         make changes you can undo, and ask you here before anything that cannot be undone. Text they read is sent to that AI
-        app&apos;s service. Passwords always stay with you.
+        app&apos;s service. Passwords never reach the AI app, but a file whose password is saved on this device opens for it without
+        asking.
       </p>
       {status?.error && (
         <div className={`${P}-error`} role="alert">

@@ -1,14 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { SavedPasswordInfo, SavedPasswordsStatus } from '@shared/passwords'
 import type { DefaultAppStatus, PageLayoutMode, Preferences, ThemePreference, ZoomMode } from '@shared/types'
 import { registry } from '../app/registry'
 import { useApp } from '../app/store'
 import { setPrefs } from '../app/actions'
 import { displayShortcut, commandLabel } from '../app/commands'
-import { openDialog } from '../app/ui-services'
+import { NO_KEYRING_NOTE } from '../app/savedPasswords'
+import { openDialog, showError } from '../app/ui-services'
 import { invoke } from '../platform'
 import { Button } from '../ui/Button'
 import { Dialog } from '../ui/Dialog'
-import { Checkbox, Field, NumberInput, Select, TextInput } from '../ui/Field'
+import { confirm } from '../ui/dialogs'
+import { Checkbox, Field, NumberInput, Select, Switch, TextInput } from '../ui/Field'
 
 function GeneralSettings() {
   const prefs = useApp((s) => s.prefs)
@@ -108,6 +111,107 @@ function GeneralSettings() {
           Make default
         </Button>
       </div>
+    </div>
+  )
+}
+
+function savedPasswordsNote(status: SavedPasswordsStatus | null, on: boolean): string {
+  if (!status) return ''
+  if (status.policy) return 'Your organization turned this off for this computer, so it cannot be changed here.'
+  if (!on) return 'Passwords saved before are kept, but they are not used while this is off.'
+  if (status.available) return `They are protected by ${status.backend} and only work for your account on this computer.`
+  if (status.reason === 'no-keyring') return NO_KEYRING_NOTE
+  return 'Passwords cannot be saved right now: the system could not protect them.'
+}
+
+function lastUsed(t: number): string {
+  return new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+/** Preferences > Passwords: remembering on or off, and the passwords saved on this device. */
+export function PasswordSettings() {
+  const prefs = useApp((s) => s.prefs)
+  const [status, setStatus] = useState<SavedPasswordsStatus | null>(null)
+  const [list, setList] = useState<SavedPasswordInfo[] | null>(null)
+  const refresh = useCallback(() => {
+    invoke('passwords:status').then(setStatus, () => setStatus(null))
+    invoke('passwords:list').then(setList, () => setList([]))
+  }, [])
+  useEffect(refresh, [refresh, prefs.rememberPasswords])
+  const policy = !!status?.policy
+  const on = !policy && prefs.rememberPasswords
+  const remove = async (refs: string[] | 'all') => {
+    try {
+      await invoke('passwords:forget', refs)
+    } catch (err) {
+      showError(err, 'Could not remove the saved password')
+    }
+    refresh()
+  }
+  const removeAll = async () => {
+    const ok = await confirm({
+      title: 'Remove all saved passwords?',
+      message: 'Fartcrobat will ask for these passwords again the next time the documents and Digital IDs are used.',
+      confirmLabel: 'Remove All',
+      danger: true
+    })
+    if (ok) await remove('all')
+  }
+  return (
+    <div className="prefs-passwords">
+      <Switch checked={on} disabled={policy} onChange={(v) => void setPrefs({ rememberPasswords: v })} label="Remember passwords on this device" />
+      <p className="shell-muted">
+        When you open a protected document or sign with a Digital ID, Fartcrobat can remember the password so you only type it once.
+        Remembered documents then open without asking, also when an AI app opens them for you.
+      </p>
+      {status && <p className="prefs-passwords-note">{savedPasswordsNote(status, on)}</p>}
+      {list && list.length > 0 ? (
+        <>
+          <table className="prefs-passwords-table">
+            <thead>
+              <tr>
+                <th scope="col">Name</th>
+                <th scope="col">Type</th>
+                <th scope="col">Last used</th>
+                <th scope="col">
+                  <span className="ui-visually-hidden">Remove</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.map((r) => (
+                <tr key={r.ref}>
+                  <td>
+                    {r.label || 'Untitled'}
+                    {r.unreadable && <span className="shell-muted"> (can’t be read)</span>}
+                  </td>
+                  <td>
+                    {r.kind === 'digital-id' ? 'Digital ID' : 'Document'}
+                    {r.level === 'owner' && <span className="prefs-passwords-tag">Full access</span>}
+                  </td>
+                  <td>{lastUsed(r.used)}</td>
+                  <td>
+                    <Button size="sm" variant="quiet" onClick={() => void remove([r.ref])}>
+                      Remove
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {list.some((r) => r.unreadable) && (
+            <p className="prefs-passwords-note">
+              Passwords marked “can’t be read” were saved under a key this account no longer has (the keyring was reset, or the settings
+              were copied from another account). Typing the password again replaces them.
+            </p>
+          )}
+          <div>
+            <Button onClick={() => void removeAll()}>Remove All</Button>
+          </div>
+        </>
+      ) : (
+        list && <p className="shell-muted">No passwords are saved on this device.</p>
+      )}
     </div>
   )
 }

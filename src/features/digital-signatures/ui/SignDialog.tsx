@@ -1,6 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FileKey2, FolderInput, Plus, ShieldCheck, TriangleAlert } from 'lucide-react'
-import { Button, Checkbox, Dialog, Field, Segmented, Select, TextInput, useDocState, type DocumentModel } from '@renderer/sdk'
+import {
+  Button,
+  Checkbox,
+  Dialog,
+  Field,
+  Segmented,
+  Select,
+  TextInput,
+  digitalIdTarget,
+  invoke,
+  rememberOffer,
+  setPrefs as setAppPrefs,
+  useDocState,
+  type DocumentModel,
+  type RememberOffer
+} from '@renderer/sdk'
 import { WrongPasswordError } from '../lib/pkcs12'
 import { parseCertificate } from '../lib/x509'
 import type { AppearanceContent, AppearanceOptions, DigitalIdRecord, MdpPermission, SignRequest, SignTarget } from '../types'
@@ -121,6 +136,11 @@ export function SignDialog({
   const [now] = useState(() => Date.now())
   const passwordRef = useRef<HTMLInputElement>(null)
   const prefilled = useRef({ reason: initialReason, location: initialLocation })
+  const [offer, setOffer] = useState<RememberOffer>({ offer: false })
+  /** The person's choice in "Remember password on this device"; null: the default. */
+  const [remember, setRemember] = useState<boolean | null>(null)
+  /** The password saved on this device for the selected ID, filled in for the person. */
+  const [saved, setSaved] = useState<{ id: string; ref: string; password: string } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -149,6 +169,34 @@ export function SignDialog({
     focusedOnce.current = true
     passwordRef.current?.focus()
   }, [prefs, rec])
+
+  useEffect(() => {
+    let alive = true
+    void rememberOffer().then((o) => alive && setOffer(o))
+    return () => {
+      alive = false
+    }
+  }, [])
+  // A password saved for the ID fills the field; signing still needs the click.
+  const recId = rec?.id ?? null
+  useEffect(() => {
+    if (!recId) return
+    let alive = true
+    invoke('passwords:find', digitalIdTarget(recId))
+      .then(([c]) => {
+        if (!alive || !c) return
+        setSaved({ id: recId, ref: c.ref, password: c.password })
+        setPassword((cur) => cur || c.password)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [recId])
+  const savedForRec = saved && rec && saved.id === rec.id ? saved : null
+  const usingSaved = !!savedForRec && password === savedForRec.password
+  // Ticked for an ID whose password is saved; otherwise the person's last choice.
+  const keep = offer.offer && (remember ?? (!!savedForRec || offer.checked))
   const dn = useMemo(() => {
     if (!rec) return ''
     try {
@@ -172,7 +220,18 @@ export function SignDialog({
     if (!r) return
     setSelectedId(r.record.id)
     setPassword(r.password)
+    setRemember(null)
     setError(null)
+  }
+
+  /** Keeps, refreshes or forgets the ID's saved password after it unlocked the ID. */
+  const settleSaved = async (r: NonNullable<typeof rec>) => {
+    if (!offer.offer) return
+    const target = digitalIdTarget(r.id)
+    if (keep) {
+      if (usingSaved) await invoke('passwords:used', savedForRec.ref, target)
+      else await invoke('passwords:remember', { target, label: r.name, password })
+    } else if (savedForRec) await invoke('passwords:forget', [savedForRec.ref])
   }
 
   const submit = async () => {
@@ -194,6 +253,7 @@ export function SignDialog({
     setError(null)
     try {
       const id = await unlockDigitalId(rec, password)
+      await settleSaved(rec).catch(() => {})
       const p: SignPrefs = { ...(prefs ?? DEFAULT_PREFS), lastIdId: rec.id, reason, location, contactInfo, appearance, subFilter }
       void saveSignPrefs(p)
       const finalAppearance = size ? await withRasterText(doc, { ...content, name: rec.name }) : { ...content, name: rec.name }
@@ -214,7 +274,14 @@ export function SignDialog({
       })
     } catch (err) {
       setBusy(false)
-      if (err instanceof WrongPasswordError) {
+      if (err instanceof WrongPasswordError && usingSaved) {
+        // The ID's password was changed since it was saved: forget the saved one.
+        void invoke('passwords:failed', savedForRec.ref, digitalIdTarget(rec.id)).catch(() => {})
+        setSaved(null)
+        setPassword('')
+        setError(`The password saved for “${rec.name}” no longer works, so it was removed. Enter its password.`)
+        passwordRef.current?.focus()
+      } else if (err instanceof WrongPasswordError) {
         setError('The password is incorrect. Try again.')
         passwordRef.current?.select()
       } else setError(err instanceof Error ? err.message : String(err))
@@ -228,7 +295,9 @@ export function SignDialog({
     <Dialog
       title={title}
       onClose={() => onDone()}
-      onSubmit={() => void submit()}
+      // A password filled in from this device's store signs only on a click, so a stray Enter (for
+      // example while an agent's sign_document opens this dialog) does nothing.
+      onSubmit={usingSaved ? undefined : () => void submit()}
       width={880}
       className="fc-digital-signatures-dialog fc-digital-signatures-signdialog"
       footer={
@@ -272,6 +341,7 @@ export function SignDialog({
                     onSelect={() => {
                       setSelectedId(r.id)
                       setPassword('')
+                      setRemember(null)
                       setError(null)
                     }}
                   />
@@ -287,7 +357,10 @@ export function SignDialog({
               </div>
             </>
           )}
-          <Field label={rec ? `Password for “${rec.name}”` : 'Password'}>
+          <Field
+            label={rec ? `Password for “${rec.name}”` : 'Password'}
+            hint={usingSaved ? `Filled in with the password saved on this device. Click ${mode === 'certify' ? 'Certify' : 'Sign'} to continue.` : undefined}
+          >
             <input
               ref={passwordRef}
               className="ui-input"
@@ -300,6 +373,20 @@ export function SignDialog({
               autoComplete="off"
             />
           </Field>
+          {offer.offer ? (
+            <div className="fc-digital-signatures-remember">
+              <Checkbox
+                checked={keep}
+                onChange={(v) => {
+                  setRemember(v)
+                  void setAppPrefs({ rememberPasswordChecked: v })
+                }}
+                label="Remember password on this device"
+              />
+            </div>
+          ) : (
+            offer.reason && <p className="shell-muted fc-digital-signatures-small fc-digital-signatures-remember">{offer.reason}</p>
+          )}
           <Field label="Reason">
             <TextInput list="fc-digital-signatures-reasons" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Optional" aria-label="Reason" />
             <datalist id="fc-digital-signatures-reasons">

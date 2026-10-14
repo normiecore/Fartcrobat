@@ -85,7 +85,7 @@ describe('organize-pages: combine', () => {
     const e = await createLocalEngine()
     const o = e.ops<typeof organizeOps>('organize-pages')
     const locked = await o.openScratch('a', fixture('encrypted.pdf'), 'encrypted.pdf')
-    expect(locked).toEqual({ ok: false, needsPassword: true, wrongPassword: false })
+    expect(locked).toEqual({ ok: false, needsPassword: true, wrongPassword: false, lock: expect.objectContaining({ handler: 'Standard' }) })
     expect(await o.openScratch('a', fixture('encrypted.pdf'), 'encrypted.pdf', 'nope')).toMatchObject({
       wrongPassword: true
     })

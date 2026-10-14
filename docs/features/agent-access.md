@@ -12,7 +12,8 @@ From the owner:
   a machine policy file can force it on or off).
 - The agent can reach **whatever the person can**: any file their account can read or write
   (network shares included), every open document, including password-protected ones they already
-  unlocked. No per-document sharing.
+  unlocked, and protected files whose password is saved on this device (they open without a
+  prompt; see passwordless.md). No per-document sharing.
 - **Irreversible actions ask first** in Fartcrobat with one click (Decline is the default):
   overwriting a file on disk (save over the original, export or extract over an existing file),
   discarding unsaved changes, applying redactions, removing security, and undoing or redoing a
@@ -73,13 +74,14 @@ Contracts (do not change without updating every side):
 ### Main process (`src/features/agent-access/main.ts`, `main/**`)
 
 - Starts when agent access is enabled (preference `agentAccess`, default true, overridden by a
-  machine policy). Windows: the REG_DWORD `AgentAccess` under `HKLM\SOFTWARE\Policies\Fartcrobat`
-  (1 is on, any other value off; read with `reg.exe`), which Group Policy or Intune can set and
-  only administrators can write. macOS `/Library/Application Support/Fartcrobat/policy.json`,
-  Linux `/etc/fartcrobat/policy.json`, `{ "agentAccess": { "enabled": true | false } }`. A policy
-  that exists but cannot be read turns access off. Tests may point `FARTCROBAT_POLICY_FILE` at a
-  file on any system. Stops and removes the endpoint file when turned off; restarts when turned
-  on. `app.json` records whether access is on so the shim does not start the app to be refused.
+  machine policy, read by `src/main/policy.ts`, which remembered passwords share). Windows: the
+  REG_DWORD `AgentAccess` under `HKLM\SOFTWARE\Policies\Fartcrobat` (1 is on, 0 off; read with
+  `reg.exe`), which Group Policy or Intune can set and only administrators can write. macOS
+  `/Library/Application Support/Fartcrobat/policy.json`, Linux `/etc/fartcrobat/policy.json`,
+  `{ "agentAccess": { "enabled": true | false } }`. A policy that exists but cannot be read or
+  understood turns access off. Tests may point `FARTCROBAT_POLICY_FILE` at a file on any system.
+  Stops and removes the endpoint file when turned off; restarts when turned on. `app.json` records
+  whether access is on so the shim does not start the app to be refused.
 - Listens on a random address: `\\.\pipe\fartcrobat-agent-<32 hex>` on Windows; on other systems
   `<private 0700 temp dir>/agent.sock`. Writes `<userData>/agent-access/endpoint.json`
   (`AgentEndpoint`, file mode 0600, written atomically) and `app.json` (`AgentAppInfo`: the

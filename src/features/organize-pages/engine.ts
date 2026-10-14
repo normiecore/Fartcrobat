@@ -1,7 +1,8 @@
 import type { Rect } from '@shared/geometry'
+import type { LockInfo, PasswordAccess } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer } from '@engine/define'
 import type { PDFDocument, PDFObject, Session } from '@engine/session'
-import { openSource } from '@engine/ops/pages'
+import { openSourceWithAccess, type PasswordNeededError } from '@engine/ops/pages'
 import { isNull, readName, readNumber, readString } from '@engine/util/pdf'
 import {
   isEncrypted,
@@ -37,8 +38,16 @@ export interface CombineProtection {
 }
 
 export type ProbeResult =
-  | { ok: true; pageCount: number; title: string; pages: { width: number; height: number }[] }
-  | { ok: false; needsPassword: true; wrongPassword: boolean }
+  | {
+      ok: true
+      pageCount: number
+      title: string
+      pages: { width: number; height: number }[]
+      /** Set when a password opened the file. */
+      access?: PasswordAccess
+    }
+  /** `lock` finds a password saved on this device for the file. */
+  | { ok: false; needsPassword: true; wrongPassword: boolean; lock?: LockInfo | null }
 
 const SCRATCH_PREFIX = 'organize-pages:'
 const MAX_PROBE_SIZES = 2000
@@ -64,10 +73,10 @@ function selectPages(doc: PDFDocument, pages: number[] | undefined): number[] {
 /** The bytes and password each opened encrypted file came from, to give outputs its protection. */
 const origins = new WeakMap<PDFDocument, { data: Uint8Array; password: string | null }>()
 
-function openFile(s: Session, data: Uint8Array, fileName: string, password?: string): PDFDocument {
-  const doc = openSource(s, data, fileName, password)
-  if (isEncrypted(doc)) origins.set(doc, { data, password: password ?? null })
-  return doc
+function openFile(s: Session, data: Uint8Array, fileName: string, password?: string) {
+  const opened = openSourceWithAccess(s, data, fileName, password)
+  if (isEncrypted(opened.doc)) origins.set(opened.doc, { data, password: password ?? null })
+  return opened
 }
 
 function openRef(s: Session, ref: SourceRef): { doc: PDFDocument; owned: boolean } {
@@ -77,7 +86,7 @@ function openRef(s: Session, ref: SourceRef): { doc: PDFDocument; owned: boolean
     return { doc, owned: false }
   }
   if (!ref.data) throw new EngineError(`No data for ${ref.fileName}`, 'NO_SOURCE')
-  return { doc: openFile(s, ref.data, ref.fileName, ref.password), owned: true }
+  return { doc: openFile(s, ref.data, ref.fileName, ref.password).doc, owned: true }
 }
 
 /** The protection of a file opened by openRef, or null when it is not encrypted. */
@@ -100,7 +109,7 @@ function pageSizes(doc: PDFDocument, max = MAX_PROBE_SIZES) {
   return out
 }
 
-function probeDoc(doc: PDFDocument, fileName: string): ProbeResult {
+function probeDoc(doc: PDFDocument, fileName: string): Extract<ProbeResult, { ok: true }> {
   let title = ''
   try {
     title = doc.getMetaData('info:Title') ?? ''
@@ -118,14 +127,19 @@ function tryOpen(
   data: Uint8Array,
   fileName: string,
   password?: string
-): PDFDocument | ProbeResult {
+): { doc: PDFDocument; access: PasswordAccess | null } | ProbeResult {
   try {
     return openFile(s, data, fileName, password)
   } catch (err) {
     if ((err as EngineError).code === 'NEEDS_PASSWORD')
-      return { ok: false, needsPassword: true, wrongPassword: !!password }
+      return { ok: false, needsPassword: true, wrongPassword: !!password, lock: (err as PasswordNeededError).lock ?? null }
     throw new EngineError(`${fileName} could not be opened: ${(err as Error).message}`, 'OPEN_FAILED')
   }
+}
+
+function probed(opened: { doc: PDFDocument; access: PasswordAccess | null }, fileName: string): ProbeResult {
+  const result = probeDoc(opened.doc, fileName)
+  return opened.access ? { ...result, access: opened.access } : result
 }
 
 /** A new document holding `indices` of the session document, with comments, links, fields and bookmarks. */
@@ -307,26 +321,26 @@ export default defineOps('organize-pages', {
   /** Page count and sizes of a file, or whether it needs a password. Does not change anything. */
   probe(s, data: Uint8Array, fileName: string, password?: string): ProbeResult {
     const opened = tryOpen(s, data, fileName, password)
-    if (!('countPages' in opened)) return opened
+    if (!('doc' in opened)) return opened
     try {
-      return probeDoc(opened, fileName)
+      return probed(opened, fileName)
     } finally {
-      opened.destroy()
+      opened.doc.destroy()
     }
   },
 
   /** Opens a file and keeps it for later calls (thumbnails, combine, insert) under `key`. */
   openScratch(s, key: string, data: Uint8Array, fileName: string, password?: string): ProbeResult {
     const opened = tryOpen(s, data, fileName, password)
-    if (!('countPages' in opened)) return opened
+    if (!('doc' in opened)) return opened
     const old = s.scratch.get(SCRATCH_PREFIX + key)
     if (old) {
       try {
         old.destroy()
       } catch {}
     }
-    s.scratch.set(SCRATCH_PREFIX + key, opened)
-    return probeDoc(opened, fileName)
+    s.scratch.set(SCRATCH_PREFIX + key, opened.doc)
+    return probed(opened, fileName)
   },
 
   closeScratch(s, key: string) {

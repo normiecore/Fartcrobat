@@ -58,5 +58,9 @@ Delete/Backspace: each owner registers its own command with shortcut ['Delete','
   selection/state, so the first enabled one wins.
 Annotation data written by features goes in AnnotSpec.extra, e.g. extra: { fartcrobat: 'fillsign' } or { fartcrobat: 'measure', scale: '1 in = 1 ft' }.
 Persisted feature data (signatures, custom stamps, digital IDs, tool defaults) uses invoke('store:get' | 'store:set', '<feature-id>:<key>', value).
+Password-protected inputs (files to insert, combine, create from or compare) unlock through unlockFile({ name, filePath, lock, attempt })
+  from @renderer/sdk: a password saved on this device first, then the prompt with "Remember password on this device". Never prompt() for
+  a document password yourself. Files written from a protected document (Save As, extract, split) call linkDocumentFiles(doc, paths).
+  New tabs made from one pass openNewDocument(bytes, name, { password, derivedFrom: source.state.unlock }).
 New fixtures go in tests/fixtures/<feature-id>/ (generate them in a script or in the test itself; python3 with reportlab and Pillow is available).
 Engine namespace = your feature id (e.g. defineOps('edit-text', ...)).

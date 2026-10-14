@@ -6,6 +6,7 @@ import {
   dirname,
   invoke,
   joinPath,
+  linkDocumentFiles,
   openDialog,
   showError,
   stripExtension,
@@ -69,6 +70,8 @@ export async function extractPages(
         }
         report(1)
       })
+      // The files keep the document's protection, so its saved password opens them too.
+      if (protection) await linkDocumentFiles(doc, written.map((n) => joinPath(dir, n)))
       if (opts.deleteAfter) await deletePages(doc, pages)
       const note = protection
         ? '. ' + protectionNote(protection, doc.state.title, written.length > 1 ? 'They keep' : 'It keeps')

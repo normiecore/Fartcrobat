@@ -1,4 +1,4 @@
-import { invoke, openNewDocument, showError, toast, useApp, withProgress, type DocumentModel } from '@renderer/sdk'
+import { invoke, openNewDocument, showError, toast, useApp, withProgress, type DocUnlock, type DocumentModel } from '@renderer/sdk'
 import type pageOps from '@engine/ops/pages'
 import { loadFile, orgOps, withPassword, type LoadedFile } from './files'
 import type { OrganizeClipboard } from './ipc'
@@ -40,17 +40,18 @@ const pendingUnsaved = new Set<string>()
 /**
  * Opens tool output (combined or extracted pages) as a new, unsaved tab: closing it asks to save
  * and the tab shows the unsaved-changes marker. Protected output opens with `password` (the one
- * its source was opened with), so the person is not asked again and later saves keep it.
+ * its source was opened with), so the person is not asked again and later saves keep it;
+ * `derivedFrom` is how that source was unlocked.
  */
 export async function openAsNewDocument(
   bytes: Uint8Array,
   name: string,
-  opts: { password?: string } = {}
+  opts: { password?: string; derivedFrom?: DocUnlock | null } = {}
 ): Promise<DocumentModel | null> {
   const title = name.toLowerCase().endsWith('.pdf') ? name : name + '.pdf'
   pendingUnsaved.add(title)
   try {
-    const doc = await openNewDocument(bytes, title, { password: opts.password })
+    const doc = await openNewDocument(bytes, title, opts)
     // Already done by the onDocumentOpen hook; repeating it is harmless and waits for it.
     if (doc) await orgOps(doc).markUnsaved()
     return doc
@@ -69,7 +70,7 @@ export async function openExtractedPages(
   name: string
 ): Promise<DocumentModel | null> {
   const password = (await orgOps(source).openPassword()) ?? undefined
-  return openAsNewDocument(bytes, name, { password })
+  return openAsNewDocument(bytes, name, { password, derivedFrom: source.state.unlock })
 }
 
 /**
@@ -284,7 +285,7 @@ export async function insertPaths(doc: DocumentModel, gap: number, paths: string
       continue
     }
     try {
-      const probe = await withPassword(file.name, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
+      const probe = await withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
       if (!probe) continue
       sources.push({ file: { ...file, password: probe.password } })
     } catch (err) {

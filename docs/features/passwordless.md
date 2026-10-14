@@ -7,7 +7,10 @@ This feature lets people and AI agents open encrypted PDFs without typing anythi
 
 An AI agent that opens a file through agent access gets the same silent access as the person. Every such open is written to the agent audit log, without secrets.
 
-**Status of this note.** This is the design and plan. It is based on four spikes: three finished, and one that was stopped early and is replaced by a smaller check described in the appendix. Nothing is in the app yet.
+**Status of this note.** This is the design and plan. It is based on four spikes: three finished, and one that was stopped early and is replaced by a smaller check described in the appendix.
+
+- **Phases 0 and 1 (remembered passwords) are implemented** (14 October 2026). See "Remembered passwords as built" below for where the code is and where it differs from this plan.
+- Phases 2 to 6 (certificate encryption) are not in the app yet.
 
 - **Verified** means a command was run and its output was read. **Inferred** means it was not.
 - No spike had access to the Windows certificate store, a smart card or Acrobat. Everything about them is inferred until the manual checklist at the end has been run on real Windows machines.
@@ -247,7 +250,7 @@ Save --------------------------------------------------------------------- -> sa
     - defines the `RecipientKeySource` interface `{ probe(blobs), decrypt(blobs, opts) }`;
     - WindowsStoreSource implements it on Windows only, controlled by the preference `useWindowsCertificateStore` (default true);
     - DigitalIdSource implements it everywhere.
-- **`src/main/policy.ts`** (shared with agent access): `readMachinePolicy()` returns `{ agentAccess?, rememberPasswords?: { enabled? } }`.
+- **`src/main/policy.ts`** (shared with agent access): `readMachinePolicy()` resolves to `{ agentAccess, rememberPasswords }`, each `'enabled'`, `'disabled'`, `'invalid'` or null.
 
 ### IPC channels
 
@@ -270,6 +273,7 @@ These are core channels:
 | `passwords:failed(ref, target)` | drops this file's keys from a record whose password failed |
 | `passwords:list()` | the records, without secrets |
 | `passwords:forget(refs \| 'all')`, `passwords:forgetFor(target)` | removes records |
+| `passwords:savedFor(target)` | the record `find` would try first, without its secret and without using the keyring (Protect panel, Digital IDs list) |
 
 `target` is either `{ kind: 'pdf', lock, path }` or `{ kind: 'digital-id', certificateSha256 }`.
 
@@ -391,11 +395,44 @@ Only public certificates are needed. After writing, the app reloads from the new
 
 **What agents cannot do.** Agents cannot create certificate encryption or change saved passwords. `protect_document` still opens Fartcrobat's own dialog.
 
-**Policy file.** The setting goes in `policy.json`, in the same place as for agent access. `{"rememberPasswords":{"enabled":false}}`:
+**Machine policy.** The setting goes in the same place as agent access's. On Windows that is the REG_DWORD `RememberPasswords` under `HKLM\SOFTWARE\Policies\Fartcrobat` (Group Policy or Intune), 0 for off. On macOS and Linux it is `policy.json`, `{"rememberPasswords":{"enabled":false}}`. Off:
 
 - hides the checkbox;
 - makes `find` return nothing;
 - wipes the store at start-up.
+
+A policy that exists but cannot be read or understood (a JSON typo, a file only root can read, `"enabled"` that is not `true` or `false`, a registry value that is not a REG_DWORD 0 or 1) turns remembering off for the session, like the explicit setting, but does not wipe the store: only an explicit off (`"enabled": false`, or 0) does. `readMachinePolicy()` reports such a policy as `'invalid'` and `rememberPolicy` (`src/main/passwords/handlers.ts`) decides what each reading does; `readPolicy` and agent access's `machinePolicy` still fail closed with `'disabled'`.
+
+## Remembered passwords as built (phases 0 and 1)
+
+**Where the code is**
+
+- Main process: `src/main/policy.ts` (the machine policy, shared with agent access, which keeps its own `agentAccessState`; on Windows read from the registry with `reg.exe`, so the `passwords:*` handlers wait for it, and for any wipe, before answering); `src/main/passwords/`: `keys.ts`, `store.ts`, `electronCipher.ts`, `testCipher.ts`, `fileStore.ts` (atomic writes, mode 0600), `handlers.ts` (the IPC handlers without Electron) and `index.ts` (`registerPasswordHandlers()`, called from `registerCoreHandlers`).
+- Shared: `src/shared/passwords.ts` (the IPC types), `LockInfo` and `PasswordAccess` in `src/shared/types.ts`, the preferences `rememberPasswords` and `rememberPasswordChecked`.
+- Engine: `src/engine/util/lockInfo.ts`; in `ops/doc.ts`, `lock` on every `needsPassword` result (open, authenticate, reload), `access` on results opened with a password, and the ops `lockInfo()` and `checkFile(data, name, password?)`. `openSourceWithAccess` in `ops/pages.ts` carries the lock on its NEEDS_PASSWORD error, so the organize-pages `probe` and `openScratch` report `lock` and `access`.
+- Renderer: `src/renderer/src/app/unlock.ts` is the pure logic (no DOM, no IPC, unit-tested); `src/renderer/src/app/savedPasswords.ts` wires it to the IPC and to `promptPassword` (`src/renderer/src/ui/dialogs.tsx`), and has the helpers features use from `@renderer/sdk` (`unlockFile`, `rememberOffer`, `linkDocumentFiles`, `savedPasswordFor`, `forgetSavedPassword`, `rememberDocumentPassword`, `digitalIdTarget`). Preferences > Passwords is `PasswordSettings` in `src/renderer/src/core/dialogs.tsx`, registered by the core feature.
+- `DocState.unlock` (`DocUnlock`: `method` is `'typed'`, `'saved-password'` or `'source'`, plus `access`, `savedRef` and the `lock` that password opened) replaces the planned `DocumentModel.unlock`.
+
+**Differences from the plan**
+
+- `find` uses the keyring only when a record matches, so opening a protected file with nothing saved never shows a keyring prompt. The prompt asks `passwords:status` (which does use the keyring) only when it is about to show the checkbox.
+- The Preferences switch off keeps saved passwords but neither uses nor offers to save them (Preferences still lists them, with Remove). Only the machine policy wipes the store, at start-up.
+- Outputs made from a document whose password is saved (Save As, Extract and Split to files, the agent's `extract_pages` and `combine_files` with a path) link their path to that saved password, but only when their lock is the one it opened. New tabs from such a document (Extract, Combine, the Compare report) carry `derivedFrom`, so a later Save As links too.
+- Protect offers "Remember password on this device" for the open password only. The tab keeps full access through the permissions password as before; the next open uses the saved open password and gets the restrictions others get.
+- The Sign dialog fills in a Digital ID's saved password and shows "Filled in with the password saved on this device. Click Sign to continue."; only the click signs with it (Enter does nothing while the saved password is in the field, so a stray Enter after an agent's `sign_document` brings the dialog forward signs nothing). Unticking Remember and signing forgets it, and a saved password that no longer works is forgotten with a message. Removing a Digital ID forgets its password. Preferences > Digital IDs marks IDs whose password is saved.
+- Agent audit summaries for `open_document`: "unlocked with a password saved on this device", "the person typed the password", "opened" (no password needed or given by a tool) and "already open". `organize_pages` with `insert_file` and `combine_files` add how each protected source was unlocked in brackets. The tool description and the server instructions say a saved password opens files without a prompt.
+- The Protect panel's "Password saved on this device" row and its Forget look the document up by its exact lock only. /ID[0] and the path stay keys for opening, but Protect keeps /ID[0], so they could show (and Forget would delete) the password of the file it was protected from.
+- When a saved password fails, only this file's keys are unlinked from it, so the prompt says it "no longer opens it and won't be tried for it again": the record still opens older copies.
+- After a wrong typed password, the next prompt keeps the Remember choice the person made in the last one.
+- A store file that exists but cannot be read (EACCES, EBUSY) is not treated as empty: the call fails and the next one reads it again. Only content that is not a valid store starts empty.
+- The test cipher (`FARTCROBAT_TEST_SECRET_CIPHER=1`, unpackaged builds only) is reversible and marked "Test cipher (not protected)" in Preferences.
+- Sender check: `URL.origin` is "null" for `app://` URLs, so the handlers compare scheme and host.
+- Not wired to saved passwords: Compress still asks for the open password of a protected document, as before, even when a saved password opened it. The engine session already has that password, so a later change can drop the prompt.
+
+**Tests**
+
+- Unit: `tests/engine/core-saved-passwords-{keys,store,unlock,flow,main}.test.ts` (the 32 prototype tests, adapted, plus the engine's `lock` and `access`, `checkFile`, path folding, `electronCipher` with a mocked safeStorage, the test cipher's gate, the handlers: other senders refused, plain errors, nothing logged, and which policy readings turn remembering off or wipe the store).
+- End to end: `tests/e2e/saved-passwords.spec.ts` (skipped with `FARTCROBAT_EXECUTABLE`; the only spec that launches with remembering on, see `launch` in `tests/e2e/helpers.ts`), with the fixture `tests/fixtures/saved-passwords/encrypted-changed.pdf` (`make_saved_passwords.py`, pypdf). It covers the prompt, Remove and Remove All, a changed password, unticking (also before a wrong password), Protect and Forget, a Digital ID (Enter does not sign with its saved password), the machine policy, a policy file that cannot be understood, Linux without a keyring (real safeStorage, skipped when a D-Bus session exists) and an agent opening a remembered file, extracting pages, inserting it and combining it through the built MCP shim.
 
 ## Implementation plan
 
@@ -645,7 +682,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 2. Copy and rename the file, then reopen: no prompt. Protect it again with a new password: exactly one prompt.
 3. Sign in as a second Windows user and copy `%APPDATA%\Fartcrobat\saved-passwords.json` over. Nothing opens silently, and nothing crashes.
 4. Delete `%APPDATA%\Fartcrobat\Local State`. The records show as unreadable, and typing the password again replaces them.
-5. Use a policy file with `rememberPasswords.enabled=false`. The checkbox is gone, and the store is wiped at start-up.
+5. Set the REG_DWORD `HKLM\SOFTWARE\Policies\Fartcrobat\RememberPasswords` to 0. The checkbox is gone, and the store is wiped at start-up. Set it to 2: the checkbox is gone, and saved passwords are kept.
 
 **Certificate store**
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Download, FileKey2, FolderInput, Plus, ScrollText, ShieldCheck, Trash2 } from 'lucide-react'
-import { Button, confirm, IconButton, showError, toast } from '@renderer/sdk'
+import { Button, confirm, digitalIdTarget, IconButton, invoke, showError, toast } from '@renderer/sdk'
 import { parseCertificate } from '../lib/x509'
 import { describeCertificate } from '../lib/x509'
 import { exportCertificate, idStatus, recordCertificate, removeDigitalId, untrustCertificate } from './ids'
@@ -19,6 +19,17 @@ export function DigitalIdsSettings() {
     void loadTrusted()
   }, [])
   const rec = ids.find((r) => r.id === selected) ?? null
+  // IDs whose password is saved on this device.
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  useEffect(() => {
+    let alive = true
+    void Promise.all(ids.map((r) => invoke('passwords:savedFor', digitalIdTarget(r.id)).catch(() => null))).then((found) => {
+      if (alive) setSavedIds(new Set(ids.filter((_r, i) => found[i]).map((r) => r.id)))
+    })
+    return () => {
+      alive = false
+    }
+  }, [ids])
 
   const add = async (how: 'create' | 'import') => {
     try {
@@ -78,7 +89,7 @@ export function DigitalIdsSettings() {
     <div className="fc-digital-signatures-settings">
       <p className="shell-muted">
         Digital IDs let you sign and certify documents with a certificate. The private key stays in the ID file on this computer and is
-        protected by its password, which Fartcrobat never stores.
+        protected by its password. Fartcrobat only keeps that password when you choose to remember it on this device while signing.
       </p>
       <div className="fc-digital-signatures-row">
         <Button icon={Plus} variant="accent" onClick={() => void add('create')}>
@@ -125,6 +136,7 @@ export function DigitalIdsSettings() {
                     <td>
                       <b>{r.name}</b>
                       {r.email && <div className="shell-muted">{r.email}</div>}
+                      {savedIds.has(r.id) && <div className="shell-muted">Password saved</div>}
                     </td>
                     <td>{r.selfSigned ? 'Self-signed' : r.issuer}</td>
                     <td>{r.keyType}</td>

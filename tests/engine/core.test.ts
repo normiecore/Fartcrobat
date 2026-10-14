@@ -108,7 +108,7 @@ describe('document core', () => {
     const engine = await createLocalEngine()
     const doc = engine.ops<typeof docOps>('doc')
     const first = await doc.open(fixture('encrypted.pdf'), { fileName: 'encrypted.pdf' })
-    expect(first).toEqual({ ok: false, needsPassword: true, wrongPassword: false })
+    expect(first).toEqual({ ok: false, needsPassword: true, wrongPassword: false, lock: expect.objectContaining({ handler: 'Standard' }) })
     const wrong = await doc.authenticate('nope')
     expect(wrong.ok).toBe(false)
     const ok = await doc.authenticate('secret')

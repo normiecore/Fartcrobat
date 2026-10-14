@@ -47,7 +47,7 @@ import { copySelection } from '../viewer/layers/TextSelectionLayer'
 import { getLoadedText, loadText } from '../viewer/layers/textSync'
 import { confirm, prompt } from '../ui/dialogs'
 import { coreTools } from './tools'
-import { openAbout, openPreferences, openShortcuts } from './dialogs'
+import { openAbout, openPreferences, openShortcuts, PasswordSettings } from './dialogs'
 
 const doc = (ctx: CommandContext) => ctx.doc!
 
@@ -423,5 +423,6 @@ export const coreFeature = defineFeature({
   commands,
   menus,
   tools: coreTools,
-  quickTools: [{ id: 'select', order: 0 }]
+  quickTools: [{ id: 'select', order: 0 }],
+  settings: [{ id: 'passwords', label: 'Passwords', order: 85, component: PasswordSettings }]
 })

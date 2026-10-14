@@ -13,8 +13,10 @@
     "src/features/**/*",
     "src/preload/api.d.ts",
     "src/main/util/**/*",
+    "src/main/policy.ts",
+    "src/main/passwords/**/*",
     "src/agent-shim/**/*",
     "tests/engine/**/*"
   ],
-  "exclude": ["src/features/*/main.ts", "src/features/*/main/**/*"]
+  "exclude": ["src/features/*/main.ts", "src/features/*/main/**/*", "src/main/passwords/index.ts"]
 }

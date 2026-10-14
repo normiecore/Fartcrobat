@@ -5,7 +5,7 @@ import type { AnnotInfo } from '@engine/ops/annots'
 import type annotOps from '@engine/ops/annots'
 import type pageOps from '@engine/ops/pages'
 import { EngineCallError } from '@renderer/engine/EngineClient'
-import { basename, platform, rangeQuads, useApp, type DocumentModel } from '@renderer/sdk'
+import { basename, platform, rangeQuads, unlockAuditSummary, useApp, type DocumentModel } from '@renderer/sdk'
 import { formController } from '@features/forms-fill/controller'
 import { formsSettings, loadFormsSettings } from '@features/forms-fill/settings'
 import type markupOps from '@features/markup-tools/engine'
@@ -335,7 +335,7 @@ const organizePages: ToolHandler = async (args, ctx) => {
       const file = await loadFile(plan.path).catch((err) => {
         throw new ToolError(openErrorCode(String(err?.message ?? err)) === 'unsupported' ? 'unsupported' : 'file_error', `Could not read ${plan.path}: ${err?.message ?? err}`)
       })
-      const probe = await handoff(ctx, () => withPassword(file.name, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))).catch((err) => {
+      const probe = await handoff(ctx, () => withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))).catch((err) => {
         if (err instanceof ToolError) throw err
         const message = String(err?.message ?? err)
         throw new ToolError(openErrorCode(message), `Could not open ${plan.path}: ${message}`)
@@ -346,7 +346,9 @@ const organizePages: ToolHandler = async (args, ctx) => {
           orgOps(doc).insertFiles(plan.gap, [{ data: file.bytes, fileName: file.engineName, password: probe.password }])
         )
       )
-      summary = `inserted ${plural(changed.length, 'page')} from ${plan.path}`
+      // Like open_document, the audit line says how a protected source was unlocked.
+      const how = unlockAuditSummary(probe.unlock)
+      summary = `inserted ${plural(changed.length, 'page')} from ${plan.path}${how ? ` (${how})` : ''}`
       break
     }
   }

@@ -7,6 +7,7 @@ import type renderOps from '@engine/ops/render'
 import type textOps from '@engine/ops/text'
 import type { ChangeSet, DocInfo, JournalState, PageLayoutMode, SaveOptions, ZoomMode } from '@shared/types'
 import { EngineClient, type CallOptions } from '../engine/EngineClient'
+import type { DocUnlock } from '../app/unlock'
 import type { PageText, SearchHit, SearchOptions, TextRange } from './textModel'
 import { rangeRects, searchPage } from './textModel'
 
@@ -50,6 +51,8 @@ export interface DocState {
   busy: string | null
   /** View > Show/Hide > Comments. Annotations are left out of rendering when false. */
   showAnnotations: boolean
+  /** How its open password was supplied; null when it opened without one. */
+  unlock: DocUnlock | null
 }
 
 /** Imperative view control, provided by the mounted Viewer. */
@@ -119,6 +122,7 @@ export class DocumentModel {
       zoomMode?: ZoomMode
       layout?: PageLayoutMode
       dirty?: boolean
+      unlock?: DocUnlock | null
     }
   ) {
     this.sourcePath = opts.sourcePath ?? null
@@ -140,7 +144,8 @@ export class DocumentModel {
       selection: { kind: 'none' },
       search: emptySearch(),
       busy: null,
-      showAnnotations: true
+      showAnnotations: true,
+      unlock: opts.unlock ?? null
     }))
     this.engine.onChanges((cs) => void this.applyChanges(cs))
   }

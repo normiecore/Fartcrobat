@@ -44,6 +44,8 @@ export interface ProtectSettings {
   allowCopy: boolean
   allowScreenReaders: boolean
   method: EncryptionMethod
+  /** Save the open password on this device for the protected file ("Remember password on this device"). */
+  rememberPassword?: boolean
 }
 
 export const DEFAULT_PROTECT_SETTINGS: ProtectSettings = {
