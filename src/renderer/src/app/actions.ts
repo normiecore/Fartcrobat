@@ -363,7 +363,9 @@ export async function saveDocument(
   opts: { saveAs?: boolean; saveOptions?: SaveOptions } = {}
 ): Promise<boolean> {
   if (hasActiveEditors()) await commitActiveEditors()
-  if (!(await confirmSignatureLoss(doc))) return false
+  // Only awaited when there is something to ask: an await here would let edits made during the
+  // save reach the engine before it (they must stay unsaved, see saveWithVersion).
+  if (signaturesLostOnSave(doc) && !(await confirmSignatureLoss(doc))) return false
   let path = doc.state.filePath
   if (!path || opts.saveAs) {
     const suggested = path ?? doc.state.title
