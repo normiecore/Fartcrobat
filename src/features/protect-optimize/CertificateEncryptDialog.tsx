@@ -312,7 +312,7 @@ function PermissionsEditor({ settings: s, onChange }: { settings: GroupSettings;
           <Checkbox checked={all || s.edit} disabled={all} onChange={(v) => set({ edit: v })} label="Changing the document" />
           <Checkbox checked={all || s.assemble} disabled={all} onChange={(v) => set({ assemble: v })} label="Inserting, deleting and rotating pages" />
           <Checkbox checked={all || s.annotate} disabled={all} onChange={(v) => set({ annotate: v })} label="Commenting" />
-          {/* Commenting also allows filling in forms (the same permission bit), as screen readers follow copying. */}
+          {/* One permission bit covers commenting and filling in forms: this follows Commenting, as screen readers follow copying. */}
           <Checkbox
             checked={all || s.annotate || s.form}
             disabled={all || s.annotate}
