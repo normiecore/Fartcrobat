@@ -65,7 +65,8 @@ const BITS: [Permission, number][] = [
 /**
  * What an envelope's permission bytes allow (ISO 32000-2, table 24). Bit 2 (change security), or
  * no permission bytes at all, means full access; otherwise bits 3 to 6 and 9 to 12 are the same
- * permissions as the Standard handler's /P.
+ * permissions as the Standard handler's /P. Bit 6 (comments) also allows filling in form fields,
+ * so a file with bit 6 set and bit 9 clear (Acrobat writes such files) allows both.
  */
 export function certificatePermissions(bits: number | null): CertificatePermissions {
   const full = bits === null || (bits & PUBSEC_PERMISSION.changeSecurity) !== 0
@@ -73,6 +74,7 @@ export function certificatePermissions(bits: number | null): CertificatePermissi
   let standardP = 0xfffff0c0 | 0 // reserved bits set, bits 1 and 2 clear
   for (const [p, bit] of BITS) {
     permissions[p] = full || ((bits as number) & bit) !== 0
+    if (p === 'form' && permissions.annotate) permissions.form = true
     if (permissions[p]) standardP |= bit
   }
   return { access: full ? 'owner' : 'user', permissions, standardP: full ? -4 : standardP | 0 }

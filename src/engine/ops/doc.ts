@@ -517,11 +517,15 @@ function dropPending(s: Session, keep?: InstanceType<Session['mupdf']['Document'
   s.pendingCertificate = null
 }
 
-/** The public-key security of bytes MuPDF refused, or null when that is not why. */
-function pubsecOf(data: Uint8Array): PubSecInfo | null {
+/**
+ * The public-key security of bytes MuPDF refused, or null when that is not why. A file with too
+ * many recipients throws CERTIFICATE_UNSUPPORTED, so the person learns why it does not open.
+ */
+export function pubsecOf(data: Uint8Array): PubSecInfo | null {
   try {
     return readPubSec(data)
-  } catch {
+  } catch (err) {
+    if (err instanceof EngineError && err.code === 'CERTIFICATE_UNSUPPORTED') throw err
     return null
   }
 }

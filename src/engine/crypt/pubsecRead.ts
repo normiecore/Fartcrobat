@@ -1,7 +1,8 @@
 // Reading the public-key security handler (/Filter /Adobe.PubSec) of a file MuPDF refuses to
 // open: what it encrypts with, the /Recipients envelopes, and the trailer facts needed to append an
 // update section (pubsecBridge.ts). ISO 32000-2, 7.6.5 and tables 20, 23 and 25.
-import type { CertificateLock } from '@shared/certkeys'
+import { PUBSEC_RECIPIENT_LIMITS, type CertificateLock } from '@shared/certkeys'
+import { EngineError } from '../define'
 import {
   asDict,
   asName,
@@ -59,13 +60,31 @@ function lengthBytes(v: PdfValue): number | null {
   return n <= 32 ? Math.round(n) : Math.round(n / 8)
 }
 
+/** A file whose /Recipients are over PUBSEC_RECIPIENT_LIMITS (the main process would refuse them). */
+export function tooManyRecipients(): EngineError {
+  return new EngineError(
+    'This certificate-encrypted document has more recipients than Fartcrobat can read ' +
+      `(at most ${PUBSEC_RECIPIENT_LIMITS.envelopes} envelopes and ${PUBSEC_RECIPIENT_LIMITS.totalBytes / 1024 / 1024} MB).`,
+    'CERTIFICATE_UNSUPPORTED'
+  )
+}
+
 function stringsOf(b: Uint8Array, xref: Xref, v: PdfValue): Uint8Array[] {
   const value = resolve(b, xref, v)
   const items = Array.isArray(value) ? value : [value]
   const out: Uint8Array[] = []
+  let total = 0
   for (const item of items) {
     const s = resolve(b, xref, item)
-    if (s instanceof PdfString) out.push(s.bytes)
+    if (!(s instanceof PdfString)) continue
+    total += s.bytes.length
+    if (
+      out.length >= PUBSEC_RECIPIENT_LIMITS.envelopes ||
+      s.bytes.length > PUBSEC_RECIPIENT_LIMITS.envelopeBytes ||
+      total > PUBSEC_RECIPIENT_LIMITS.totalBytes
+    )
+      throw tooManyRecipients()
+    out.push(s.bytes)
   }
   return out
 }
@@ -73,6 +92,8 @@ function stringsOf(b: Uint8Array, xref: Xref, v: PdfValue): Uint8Array[] {
 /**
  * The public-key security of a file, or null when the newest trailer has no /Encrypt, the handler
  * is not Adobe.PubSec, or its encryption cannot be understood (MuPDF then reports the file itself).
+ * Throws CERTIFICATE_UNSUPPORTED (tooManyRecipients) when its /Recipients are over
+ * PUBSEC_RECIPIENT_LIMITS.
  */
 export function readPubSec(bytes: Uint8Array): PubSecInfo | null {
   if (!isPdfBytes(bytes)) return null

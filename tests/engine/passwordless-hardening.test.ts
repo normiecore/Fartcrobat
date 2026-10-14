@@ -38,6 +38,7 @@ function readerBundle(): string {
       loader: 'ts'
     },
     bundle: true,
+    alias: { '@shared': resolve(ROOT, 'src/shared') },
     write: false,
     format: 'cjs',
     platform: 'node',
@@ -337,6 +338,56 @@ describe('scanning damaged files takes linear time', () => {
     // Objects 1 to 4 ("x12 0 obj" is not a header: one starts after a delimiter or white space).
     expect((await inWorker('scanXref', bytes)).result).toEqual({ entries: 4, trailers: 2 })
   })
+})
+
+// ---- /Recipients -------------------------------------------------------------------------------
+
+describe('/Recipients over the limits', () => {
+  /** A one-page certificate-encrypted file with a classic xref table and `recipients` (PDF strings). */
+  function withRecipients(recipients: string): Uint8Array {
+    const b = new Builder()
+      .add('%PDF-1.7\n')
+      .obj(1, '<< /Type /Catalog /Pages 2 0 R >>')
+      .obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>')
+      .obj(3, '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>')
+      .obj(4, PUBSEC_ENCRYPT.replace('[<3082010a0201>]', `[${recipients}]`))
+    const at = b.pos
+    let xref = 'xref\n0 5\n0000000000 65535 f \n'
+    for (const n of [1, 2, 3, 4]) xref += `${String(b.offsets.get(n)).padStart(10, '0')} 00000 n \n`
+    return b.add(`${xref}trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R >>\nstartxref\n${at}\n%%EOF\n`).bytes()
+  }
+
+  async function opened(bytes: Uint8Array) {
+    const engine = await createLocalEngine()
+    const doc = engine.ops<typeof docOps>('doc')
+    return { doc, open: doc.open(bytes, { fileName: 'many.pdf' }), check: doc.checkFile(bytes, 'many.pdf') }
+  }
+
+  it('a hundred envelopes still open (they ask for a certificate)', async () => {
+    const bytes = withRecipients('<3082010a0201> '.repeat(100))
+    expect((await inWorker('readPubSec', bytes)).result).toEqual({ recipients: 100, damaged: false, version: 5 })
+    const { open, check } = await opened(bytes)
+    expect(await open).toMatchObject({ ok: false, needsCertificate: true })
+    expect(await check).toMatchObject({ needsCertificate: true })
+  })
+
+  // The main process refuses such certkeys:* requests, so the engine says why instead of asking.
+  for (const [what, recipients] of [
+    ['101 envelopes', '<3082010a0201> '.repeat(101)],
+    ['an envelope over 1 MB', `<${'30'.repeat(1024 * 1024 + 1)}>`],
+    ['over 4 MB in all', `<${'30'.repeat(1024 * 1024)}> `.repeat(5)]
+  ]) {
+    it(`${what}: the file does not open, and the message says why`, async () => {
+      const { doc, open, check } = await opened(withRecipients(recipients))
+      const refused = { code: 'CERTIFICATE_UNSUPPORTED', message: expect.stringMatching(/more recipients than Fartcrobat can read/) }
+      await expect(open).rejects.toMatchObject(refused)
+      await expect(check).rejects.toMatchObject(refused)
+      // Nothing is left waiting for a certificate.
+      await expect(doc.unlockCertificate(keyFor('v5-classic.pdf', 'alice', pubsecFixture('v5-classic.pdf')))).rejects.toMatchObject({
+        code: 'NO_PENDING'
+      })
+    })
+  }
 })
 
 // ---- the RC4 key check --------------------------------------------------------------------------

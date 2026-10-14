@@ -51,6 +51,18 @@ export const PUBSEC_PERMISSION = {
 
 export type PubSecPermission = keyof typeof PUBSEC_PERMISSION
 
+/**
+ * The most /Recipients a certificate-encrypted file may have for Fartcrobat to open it. The engine
+ * refuses larger ones (CERTIFICATE_UNSUPPORTED) and the main process refuses larger certkeys:*
+ * requests. Real files have a few envelopes of a few kilobytes.
+ */
+export const PUBSEC_RECIPIENT_LIMITS = {
+  envelopes: 100,
+  /** Bytes per envelope, and in all. */
+  envelopeBytes: 1024 * 1024,
+  totalBytes: 4 * 1024 * 1024
+} as const
+
 /** One RecipientInfo of a /Recipients entry, as people are shown it (no secrets). */
 export interface PubSecRecipient {
   /** Index of the /Recipients entry (envelope) and of the RecipientInfo inside it. */

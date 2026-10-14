@@ -2,14 +2,14 @@ import type { Rect } from '@shared/geometry'
 import { normalizeRect, transformRect } from '@shared/geometry'
 import type { CertificateLock } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
-import { assertCertificateOutput, certificateLockOf, openWithKeys, readPubSec, type PubSecInfo, type PubSecState } from '../crypt'
+import { assertCertificateOutput, certificateLockOf, openWithKeys, type PubSecState } from '../crypt'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, PDFObject, Session } from '../session'
 import { copyPages, removePageFields } from '../util/graft'
 import { accessOf, readLockInfo } from '../util/lockInfo'
 import { catalog, isNull, pageRotation, readNumber } from '../util/pdf'
 import { protectBytes, sessionProtection } from '../util/protection'
-import { convertToPdf, OPENABLE_FORMATS } from './doc'
+import { convertToPdf, OPENABLE_FORMATS, pubsecOf } from './doc'
 
 function uniqueSorted(indices: number[], count: number): number[] {
   const set = new Set(indices.filter((i) => Number.isInteger(i) && i >= 0 && i < count))
@@ -68,10 +68,7 @@ export function openSourceWithAccess(s: Session, data: Uint8Array, fileName = 'f
   try {
     src = s.mupdf.Document.openDocument(data, OPENABLE_FORMATS[ext] ? fileName : 'application/pdf')
   } catch (err) {
-    let info: PubSecInfo | null = null
-    try {
-      info = readPubSec(data)
-    } catch {}
+    const info = pubsecOf(data)
     if (!info) throw err
     const opened = openWithKeys(s.mupdf, data, info, s.certificateKeys.find(info.recipients))
     if (!opened) throw new CertificateNeededError(fileName, certificateLockOf(info))

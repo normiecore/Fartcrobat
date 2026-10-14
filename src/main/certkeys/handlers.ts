@@ -14,12 +14,13 @@
  * Digital ID stops at its next step and keeps nothing it would have saved.
  */
 import type { IpcMainInvokeEvent } from 'electron'
-import type {
-  CertKeyActor,
-  CertKeyCandidate,
-  CertKeysDecryptResult,
-  CertKeyVia,
-  WindowsStoreState
+import {
+  PUBSEC_RECIPIENT_LIMITS,
+  type CertKeyActor,
+  type CertKeyCandidate,
+  type CertKeysDecryptResult,
+  type CertKeyVia,
+  type WindowsStoreState
 } from '@shared/certkeys'
 import type { IpcArgs, IpcChannel, IpcResult } from '@shared/ipc'
 import { describeRecipients } from '@features/digital-signatures/lib/envelope'
@@ -47,11 +48,11 @@ export interface CertKeyHandlerDeps {
  * the file, so they are bounded before anything is parsed (and envelopes.ts bounds the parsing).
  */
 export const CERTKEY_LIMITS = {
-  /** Envelopes (/Recipients entries) per request. */
-  blobs: 100,
+  /** Envelopes (/Recipients entries) per request: what the engine opens (PUBSEC_RECIPIENT_LIMITS). */
+  blobs: PUBSEC_RECIPIENT_LIMITS.envelopes,
   /** Bytes per envelope, and in all. */
-  blobBytes: 1024 * 1024,
-  totalBytes: 4 * 1024 * 1024,
+  blobBytes: PUBSEC_RECIPIENT_LIMITS.envelopeBytes,
+  totalBytes: PUBSEC_RECIPIENT_LIMITS.totalBytes,
   /** Recipients described in a probe result (the renderer names a few). */
   recipients: 1000,
   password: 4096

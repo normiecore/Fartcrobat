@@ -128,6 +128,11 @@ describe('permissions and access', () => {
     const noSecurity = certificatePermissions(0xfffffffd)
     expect(noSecurity.access).toBe('user')
     expect(Object.values(noSecurity.permissions).every(Boolean)).toBe(true)
+    // Bit 6 (comments) with bit 9 clear still allows filling in forms, and the bridge's /P says so.
+    const comments = certificatePermissions(0xfffff8c5 | 0x20)
+    expect(comments.permissions).toMatchObject({ annotate: true, form: true, edit: false })
+    expect(comments.standardP & 0x100).not.toBe(0)
+    expect(certificatePermissions(0xfffff8c5 | 0x100).permissions).toMatchObject({ annotate: false, form: true })
   })
 
   it('permission bits for new envelopes are the inverse (and match pyHanko’s print-only value)', () => {
