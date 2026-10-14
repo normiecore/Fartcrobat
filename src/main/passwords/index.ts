@@ -15,7 +15,8 @@ import { testCipher, testCipherEnabled } from './testCipher'
 
 export const STORE_FILE = 'saved-passwords.json'
 
-function trustedSender(e: IpcMainInvokeEvent): boolean {
+/** Whether an IPC event comes from the app's own page (the 'certkeys:*' channels use it too). */
+export function trustedSender(e: IpcMainInvokeEvent): boolean {
   const frame = e.senderFrame
   const origins = [APP_ORIGIN]
   const devUrl = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : undefined
@@ -30,33 +31,48 @@ function trustedSender(e: IpcMainInvokeEvent): boolean {
   )
 }
 
+// Read once by registerPasswordHandlers (rememberPolicy says what turns remembering off and what
+// also wipes the store). Remembering stays off until the policy has been read.
+let policyOff = true
+let policyRead: Promise<void> | null = null
+let instance: SavedPasswordStore | null = null
+const disabled = () => (policyOff ? 'policy' : settings().prefs.rememberPasswords === false ? 'off' : null)
+
+/** The saved-password store, built on first use (after the app is ready). */
+export function savedPasswordStore(): SavedPasswordStore {
+  return (instance ??= new SavedPasswordStore({
+    file: join(app.getPath('userData'), STORE_FILE),
+    cipher: testCipherEnabled(app.isPackaged, process.env)
+      ? testCipher({ disabled })
+      : electronCipher(safeStorage, { platform: process.platform, disabled, ready: () => app.isReady() }),
+    fs: nodeStoreFs
+  }))
+}
+
+/**
+ * The machine policy for remembering passwords: `off` when it turned remembering off (and until it
+ * has been read), and `ready`, which settles once it was read and any wipe it asked for is done.
+ */
+export function rememberPasswordsPolicy(): { off: boolean; ready: Promise<void> } {
+  return { off: policyOff, ready: policyRead ?? Promise.resolve() }
+}
+
 /** Registers the 'passwords:*' channels. Call once the app is ready. */
 export function registerPasswordHandlers() {
-  // Read once (rememberPolicy says what turns remembering off and what also wipes the store). On
-  // Windows that takes a moment (reg.exe), so every handler waits for it, and any wipe, first.
-  let policyOff = true
-  const disabled = () => (policyOff ? 'policy' : settings().prefs.rememberPasswords === false ? 'off' : null)
-  let instance: SavedPasswordStore | null = null
-  const store = () =>
-    (instance ??= new SavedPasswordStore({
-      file: join(app.getPath('userData'), STORE_FILE),
-      cipher: testCipherEnabled(app.isPackaged, process.env)
-        ? testCipher({ disabled })
-        : electronCipher(safeStorage, { platform: process.platform, disabled, ready: () => app.isReady() }),
-      fs: nodeStoreFs
-    }))
-  const policyRead = readMachinePolicy()
+  // On Windows reading the policy takes a moment (reg.exe), so every handler waits for it, and any
+  // wipe, first.
+  const read = (policyRead ??= readMachinePolicy()
     .catch(() => ({ rememberPasswords: 'invalid' as const }))
     .then(async (machine) => {
       const policy = rememberPolicy(machine.rememberPasswords)
       policyOff = policy.off
-      if (policy.wipe) await store().forget('all').catch(() => {})
-    })
-  const handlers = passwordHandlers({ store, allowed: trustedSender, platform: process.platform, policyOff: () => policyOff })
+      if (policy.wipe) await savedPasswordStore().forget('all').catch(() => {})
+    }))
+  const handlers = passwordHandlers({ store: savedPasswordStore, allowed: trustedSender, platform: process.platform, policyOff: () => policyOff })
   for (const channel of Object.keys(handlers) as PasswordChannel[]) {
     const run = handlers[channel] as (...args: unknown[]) => Promise<unknown>
     handle(channel, (async (...args: unknown[]) => {
-      await policyRead
+      await read
       return run(...args)
     }) as never)
   }

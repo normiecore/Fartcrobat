@@ -6,6 +6,7 @@ import { basename, extname } from 'node:path'
 import type { SaveDialogOptions } from '@shared/types'
 import type { MainContext, MainFeatureModule } from './context'
 import { appVersion } from './appVersion'
+import { registerCertKeyHandlers } from './certkeys'
 import { defaultAppStatus, setDefaultApp } from './defaultApp'
 import { handle, send } from './ipc'
 import { applyDefaultMenu, applyMenu } from './menu'
@@ -311,6 +312,7 @@ function registerCoreHandlers() {
   )
 
   registerPasswordHandlers()
+  registerCertKeyHandlers()
 }
 
 function registerFeatureHandlers() {
