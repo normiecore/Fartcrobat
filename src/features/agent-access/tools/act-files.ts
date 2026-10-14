@@ -132,10 +132,30 @@ export function imageExportPaths(path: string, pages: number[], imageFormat: Exc
 
 /**
  * Why a file could not be opened, for the agent: "unsupported" for protection Fartcrobat cannot
- * open (certificate encryption, Microsoft Purview / RMS), else "file_error".
+ * open (Microsoft Purview / RMS, kinds of certificate encryption it does not read), else
+ * "file_error".
  */
 export function openErrorCode(message: string): 'unsupported' | 'file_error' {
   return /unknown encryption handler|unsupported encryption|Adobe\.PubSec|MicrosoftIRMServices|certificate/i.test(message) ? 'unsupported' : 'file_error'
+}
+
+/**
+ * When none of the person's keys opens a certificate-encrypted file (CertificateUnavailableError;
+ * the person was told why in Fartcrobat): what the agent is told, or null for other errors.
+ * "unsupported" when only keys Fartcrobat cannot use yet (elliptic-curve) match.
+ */
+export function noCertificateFailure(name: string, err: unknown): { code: 'unsupported' | 'failed'; message: string } | null {
+  const e = err as { code?: unknown; unsupportedKey?: unknown } | null
+  if (!e || typeof e !== 'object' || e.code !== 'NO_CERTIFICATE') return null
+  if (e.unsupportedKey)
+    return {
+      code: 'unsupported',
+      message: `${name} is encrypted for an elliptic-curve certificate, which Fartcrobat cannot open yet. Ask the sender for a copy encrypted for an RSA certificate or protected with a password.`
+    }
+  return {
+    code: 'failed',
+    message: `${name} is encrypted with certificates, and none of the person's certificates or Digital IDs opens it. Fartcrobat showed them who it is encrypted for; they can add the Digital ID it needs in Fartcrobat (Preferences > Digital IDs) and try again. Never ask for keys or passwords in chat.`
+  }
 }
 
 /** Message for a file whose protection Fartcrobat cannot open. */

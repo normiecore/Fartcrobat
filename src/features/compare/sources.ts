@@ -15,6 +15,7 @@ import {
   registry,
   showError,
   stripExtension,
+  unlockCertificateFile,
   unlockFile,
   useApp,
   type DocUnlock
@@ -57,7 +58,10 @@ function extensionOf(name: string) {
   return (/\.([^.]+)$/.exec(name)?.[1] ?? '').toLowerCase()
 }
 
-/** Opens a file without a tab. Asks for a password when needed; null if the user cancelled. */
+/**
+ * Opens a file without a tab. Asks for a password when needed (or unlocks a certificate-encrypted
+ * file with the person's keys); null if the user cancelled.
+ */
 async function openPrivate(path: string): Promise<DocumentModel | null> {
   const name = basename(path)
   let bytes: Uint8Array | null = null
@@ -75,9 +79,24 @@ async function openPrivate(path: string): Promise<DocumentModel | null> {
     const res = await docOps.open(bytes, { fileName: title })
     let info: DocInfo | null = res.ok ? res.info : null
     let unlock: DocUnlock | null = null
-    if (!res.ok) {
-      // CONTRACT STUB (renderer builder replaces): certificate-encrypted files unlock with the person's keys.
-      if (res.needsCertificate) throw new Error('Certificate-encrypted PDFs cannot be compared yet')
+    if (!res.ok && res.needsCertificate) {
+      const unlocked = await unlockCertificateFile({
+        name,
+        filePath: path,
+        certificate: res.certificate,
+        purpose: `to compare “${name}”`,
+        attempt: async (key) => {
+          const r = await docOps.unlockCertificate(key)
+          if (r.ok) info = r.info
+          return r.ok
+        }
+      })
+      if (!unlocked || !info) {
+        engine.terminate()
+        return null
+      }
+      unlock = { method: 'certificate', access: unlocked.access, via: unlocked.via, certificateKey: unlocked.key }
+    } else if (!res.ok) {
       const unlocked = await unlockFile({
         name,
         filePath: path,

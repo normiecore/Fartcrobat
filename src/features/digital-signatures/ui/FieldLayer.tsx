@@ -1,6 +1,7 @@
 import { FileSignature } from 'lucide-react'
 import { registry, showContextMenu, type PageLayerProps } from '@renderer/sdk'
 import { signatureStatus } from '../status'
+import { isCertificateEncrypted } from './encrypted'
 import { startSigning } from './flow'
 import { openSignatureProperties } from './Properties'
 import { signatureMenuItems } from './SignaturesPanel'
@@ -63,7 +64,7 @@ export function SignatureFieldLayer({ doc, pageIndex, geometry }: PageLayerProps
                   id: 'sign',
                   label: 'Sign Document…',
                   icon: FileSignature,
-                  disabled: report.locked,
+                  disabled: report.locked || isCertificateEncrypted(doc),
                   run: () => void startSigning(doc, { mode: 'sign', target: { kind: 'field', name: f.name } })
                 }
               ])

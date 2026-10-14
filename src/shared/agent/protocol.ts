@@ -165,7 +165,7 @@ export type AgentErrorCode =
   | 'locked'
   /** The file could not be read or written (missing, permission denied, not a supported file). */
   | 'file_error'
-  /** The format is protected in a way Fartcrobat cannot open (certificate encryption, Purview...). */
+  /** The format is protected in a way Fartcrobat cannot open (Purview, elliptic-curve certificates...). */
   | 'unsupported'
   /** The agent cancelled the call. */
   | 'aborted'
@@ -252,4 +252,4 @@ export const SERVER_INSTRUCTIONS = `Fartcrobat is a PDF reader and editor runnin
 - Files on another computer on the network (\\\\server\\share\\...) need the person's OK in Fartcrobat the first time you use each computer. Device paths (\\\\?\\..., \\\\.\\...) are refused.
 - Irreversible actions (overwriting a file, applying redactions, signing, removing security, discarding unsaved changes) ask the person to confirm in Fartcrobat. If they decline, the result says so; do not retry unless they ask.
 - A call that waits for the person or takes long answers after about 45 seconds with {"status": "still_running", "ticket": ...}. Call wait_for_result with that ticket until it returns the result.
-- Passwords and Digital ID PINs are typed by the person in Fartcrobat, or saved on this device; you never see them. Never ask for them in chat.`
+- Passwords, Digital ID passwords and smart card PINs are typed by the person in Fartcrobat, or saved on this device; files encrypted to the person's certificates open with their keys. You never see passwords, PINs or keys. Never ask for them in chat.`

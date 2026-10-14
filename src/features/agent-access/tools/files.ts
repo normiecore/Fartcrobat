@@ -2,6 +2,7 @@
 import type { AgentToolName } from '@shared/agent/tools'
 import {
   EngineClient,
+  acceptSignatureLoss,
   basename,
   closeDocument,
   invoke,
@@ -9,6 +10,8 @@ import {
   linkSavedPassword,
   openPaths,
   platform,
+  signatureLossMessage,
+  signaturesLostOnSave,
   stripExtension,
   toast,
   unlockAuditSummary,
@@ -25,7 +28,7 @@ import { openAsNewDocument, openExtractedPages } from '@features/organize-pages/
 import { binderName } from '@features/organize-pages/CombineDialog'
 import type organizeOps from '@features/organize-pages/engine'
 import type { SourceRef } from '@features/organize-pages/engine'
-import { loadFile, orgOps, withPassword } from '@features/organize-pages/files'
+import { loadFile, orgOps, withUnlock } from '@features/organize-pages/files'
 import { initialViewSettled } from '@features/navigation/initialView'
 import {
   ToolError,
@@ -46,6 +49,7 @@ import {
   imageFormatFor,
   networkHost,
   newNetworkHosts,
+  noCertificateFailure,
   openErrorCode,
   pathArg,
   pdfPath,
@@ -71,6 +75,8 @@ function messageOf(err: unknown): string {
 
 /** A file that could not be read or opened, as the agent sees it. */
 function openFailure(path: string, err: unknown): ToolError {
+  const noKey = noCertificateFailure(basename(path), err)
+  if (noKey) return new ToolError(noKey.code, noKey.message)
   const message = messageOf(err)
   if (openErrorCode(message) === 'unsupported') return new ToolError('unsupported', unsupportedMessage(basename(path), message))
   return new ToolError('file_error', `Could not open ${path}: ${message.replace(/^This file could not be opened: /, '')}`)
@@ -208,9 +214,11 @@ const openDocument: ToolHandler = async (args, ctx) => {
     await confirmNetworkPaths(ctx, null, [path], `Opening “${basename(path)}”`)
     if (!(await exists(path))) throw new ToolError('file_error', `There is no file at ${path}`)
     let failure: unknown = null
-    const [opened] = await handoff(ctx, () => openPaths([path], { onError: (_p, err) => (failure = err) }))
+    // A certificate-encrypted file opens with the person's keys like a password-protected one with a
+    // saved password: silently, except a smart card's PIN, which the person types in Windows' dialog.
+    const [opened] = await handoff(ctx, () => openPaths([path], { onError: (_p, err) => (failure = err), actor: 'agent' }))
     if (failure !== null) throw openFailure(path, failure)
-    if (!opened) throw cancelled(ctx, null, `did not open ${path}`, `${basename(path)} was not opened: the person cancelled its password prompt.`)
+    if (!opened) throw cancelled(ctx, null, `did not open ${path}`, `${basename(path)} was not opened: the person cancelled unlocking it in Fartcrobat.`)
     doc = opened
     await initialViewApplied(doc)
   }
@@ -251,6 +259,9 @@ const saveDocumentTool: ToolHandler = async (args, ctx) => {
   if (target) await confirmNetworkPaths(ctx, doc, [target], `Saving “${doc.state.title}”`)
   await commitTyping()
   let path: string
+  // A signed certificate-encrypted document: saving rewrites it and its signatures stop validating.
+  const lost = signaturesLostOnSave(doc)
+  const lossNote = lost ? [signatureLossMessage(doc, lost)] : []
   if (!target || samePath(target, current, platform)) {
     if (!current) throw new ToolError('invalid_args', `“${doc.state.title}” has never been saved: give path (an absolute path ending in .pdf).`)
     path = current
@@ -259,7 +270,7 @@ const saveDocumentTool: ToolHandler = async (args, ctx) => {
       doc,
       {
         title: 'Save over the file?',
-        message: paragraphs(`Save the changes to “${doc.state.title}” over its file? The file as it is now will be replaced.`),
+        message: paragraphs(`Save the changes to “${doc.state.title}” over its file? The file as it is now will be replaced.`, ...lossNote),
         confirmLabel: 'Save',
         details: [current]
       },
@@ -267,8 +278,16 @@ const saveDocumentTool: ToolHandler = async (args, ctx) => {
     )
   } else {
     path = target
+    if (lost)
+      await requireConfirmation(
+        ctx,
+        doc,
+        { title: 'Invalidate signatures?', message: paragraphs(...lossNote), confirmLabel: 'Save' },
+        `save ${lost === 1 ? 'and invalidate a signature' : `and invalidate ${lost} signatures`}`
+      )
     await confirmReplace(ctx, doc, [target], `Saving “${doc.state.title}”`)
   }
+  if (lost) acceptSignatureLoss(doc)
   const size = await writeDocument(doc, path)
   const info = doc.state.info
   ctx.audit({ document: path, summary: `saved to ${path}` })
@@ -400,8 +419,10 @@ const extractPages: ToolHandler = async (args, ctx) => {
     ctx.audit({ document: auditName(doc), summary: `extracted ${what} to ${target}` })
     return { data: { path: target, pageCount: pages.length } }
   }
-  // A protected source gives protected pages: the new tab opens with the source's password.
-  const opened = await withAttention(() => openExtractedPages(doc, bytes, `Pages from ${stripExtension(doc.state.title)}.pdf`))
+  // A protected source gives protected pages: the new tab opens with the source's password or key.
+  const opened = await withAttention(() =>
+    openExtractedPages(doc, bytes, `Pages from ${stripExtension(doc.state.title)}.pdf`, { actor: 'agent' })
+  )
   if (!opened) throw new ToolError('failed', 'The extracted pages could not be opened in a new tab (the password prompt was cancelled, or Fartcrobat showed the person why).')
   ctx.audit({ document: auditName(doc), summary: `extracted ${what} to a new tab` })
   return { data: { ...describeDoc(ctx, opened), source: describeDoc(ctx, doc).handle } }
@@ -433,12 +454,14 @@ const combineFiles: ToolHandler = async (args, ctx) => {
       })
       let probe
       try {
-        probe = await handoff(ctx, () => withPassword(file, (pw) => ops.probe(file.bytes, file.engineName, pw)))
+        probe = await handoff(ctx, () =>
+          withUnlock(file, engine, (pw) => ops.probe(file.bytes, file.engineName, pw), { actor: 'agent', failWithoutKey: true })
+        )
       } catch (err) {
         if (err instanceof ToolError) throw err
         throw openFailure(path, err)
       }
-      if (!probe) throw cancelled(ctx, null, `password prompt for ${path} cancelled`, `Nothing was combined: the person cancelled the password prompt for ${file.name}.`)
+      if (!probe) throw cancelled(ctx, null, `unlocking ${path} cancelled`, `Nothing was combined: the person cancelled unlocking ${file.name} in Fartcrobat.`)
       sources.push({ data: file.bytes, fileName: file.engineName, password: probe.password, title: stripExtension(file.name) })
       unlocks.push(probe.unlock)
     }
@@ -465,7 +488,8 @@ const combineFiles: ToolHandler = async (args, ctx) => {
     const name = binderName(useApp.getState().docs.map((d) => d.state.title))
     // When a file was protected, the result has its protection and opens with its password.
     const password = protection ? sources[protection.index]?.password : undefined
-    const opened = await withAttention(() => openAsNewDocument(bytes, name, { password, derivedFrom }))
+    // A certificate-encrypted source's key opens the result, which keeps its certificate security.
+    const opened = await withAttention(() => openAsNewDocument(bytes, name, { password, derivedFrom, actor: 'agent' }))
     if (!opened) throw new ToolError('failed', 'The combined file could not be opened in a new tab (Fartcrobat showed the person why).')
     ctx.audit({ document: auditName(opened), summary: `combined ${paths.length} files into a new tab${how}` })
     return { data: { ...describeDoc(ctx, opened), files: paths.length, protectedLike: protection?.fileName ?? null } }
