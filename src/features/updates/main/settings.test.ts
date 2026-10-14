@@ -2,24 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { UPDATE_FIRST_CHECK_DELAY_MS } from '@shared/updates'
 import { RELEASES_BASE } from './release'
-import { MAC_INSTALLS_UPDATES, unpackagedVersion, updateCapability, updateSettings } from './settings'
-
-describe('unpackaged version', () => {
-  it("reads Fartcrobat's package.json from the app folder or a level or two up", () => {
-    const files: Record<string, string> = {
-      '/repo/package.json': JSON.stringify({ name: 'fartcrobat', version: '0.1.0' }),
-      '/repo/out/package.json': JSON.stringify({ name: 'something-else', version: '9.9.9' })
-    }
-    const read = (path: string) => {
-      if (!(path in files)) throw new Error('ENOENT')
-      return files[path]
-    }
-    expect(unpackagedVersion('/repo/out/main', read)).toBe('0.1.0')
-    expect(unpackagedVersion('/repo', read)).toBe('0.1.0')
-    expect(unpackagedVersion('/elsewhere/out/main', read)).toBeNull()
-    expect(unpackagedVersion('/x/y', () => '{not json')).toBeNull()
-  })
-})
+import { MAC_INSTALLS_UPDATES, updateCapability, updateSettings } from './settings'
 
 describe('update capability', () => {
   const packaged = (platform: NodeJS.Platform, env: NodeJS.ProcessEnv = {}, hasUpdateConfig = true) =>
@@ -58,7 +41,7 @@ describe('update settings', () => {
     FARTCROBAT_FAKE_UPDATER: '/tmp/fake.json'
   }
 
-  it('packaged builds always use github.com and the real schedule', () => {
+  it('packaged builds always use github.com and the real schedule; tests can only turn checks off', () => {
     expect(updateSettings(true, test)).toEqual({
       base: RELEASES_BASE,
       testBase: null,
@@ -66,7 +49,16 @@ describe('update settings', () => {
       firstCheckDelayMs: UPDATE_FIRST_CHECK_DELAY_MS,
       fakeUpdaterFile: null
     })
-    expect(updateSettings(true, { FARTCROBAT_UPDATE_CHECKS: '0' }).autoChecks).toBe(true)
+    // FARTCROBAT_UPDATE_CHECKS=0 only turns automatic checks off (e2e runs against a packaged
+    // build must not ask github.com); it can never turn them on or point them elsewhere.
+    expect(updateSettings(true, { FARTCROBAT_UPDATE_CHECKS: '0' })).toEqual({
+      base: RELEASES_BASE,
+      testBase: null,
+      autoChecks: false,
+      firstCheckDelayMs: UPDATE_FIRST_CHECK_DELAY_MS,
+      fakeUpdaterFile: null
+    })
+    expect(updateSettings(true, { FARTCROBAT_UPDATE_CHECKS: '' }).autoChecks).toBe(true)
   })
 
   it('unpackaged builds check automatically only when a test asks', () => {

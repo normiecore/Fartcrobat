@@ -1,7 +1,8 @@
 // What this installation can do with an update (docs/features/updates.md, U2), and the switches
-// tests use. Every FARTCROBAT_UPDATE_* / FARTCROBAT_FAKE_UPDATER variable is ignored by packaged
-// builds, so nobody can point an installed copy at another server or another installer.
-import { join } from 'node:path'
+// tests use. Packaged builds ignore every FARTCROBAT_UPDATE_* / FARTCROBAT_FAKE_UPDATER variable,
+// so nobody can point an installed copy at another server or another installer, except
+// FARTCROBAT_UPDATE_CHECKS=0, which only turns automatic checks off (e2e runs against a packaged
+// build must not ask github.com).
 import { UPDATE_FIRST_CHECK_DELAY_MS, type UpdateCapability } from '@shared/updates'
 import { RELEASES_BASE, trimBase } from './release'
 
@@ -54,15 +55,16 @@ export interface UpdateSettings {
 }
 
 /**
- * Packaged builds: github.com, automatic checks allowed, the real delay. Unpackaged builds (npm run
- * dev, tests): automatic checks only with FARTCROBAT_UPDATE_CHECKS=1, and the test variables apply.
+ * Packaged builds: github.com, automatic checks allowed (unless FARTCROBAT_UPDATE_CHECKS=0), the
+ * real delay. Unpackaged builds (npm run dev, tests): automatic checks only with
+ * FARTCROBAT_UPDATE_CHECKS=1, and the test variables apply.
  */
 export function updateSettings(isPackaged: boolean, env: NodeJS.ProcessEnv): UpdateSettings {
   if (isPackaged)
     return {
       base: RELEASES_BASE,
       testBase: null,
-      autoChecks: true,
+      autoChecks: env.FARTCROBAT_UPDATE_CHECKS !== '0',
       firstCheckDelayMs: UPDATE_FIRST_CHECK_DELAY_MS,
       fakeUpdaterFile: null
     }
@@ -78,21 +80,6 @@ export function updateSettings(isPackaged: boolean, env: NodeJS.ProcessEnv): Upd
         : UPDATE_FIRST_CHECK_DELAY_MS,
     fakeUpdaterFile: env.FARTCROBAT_FAKE_UPDATER || null
   }
-}
-
-/**
- * The version of an unpackaged build. app.getVersion() reads package.json in the app's folder,
- * and test runs start out/main/index.js, which has none (Electron then says "0.0"): look for
- * Fartcrobat's package.json a level or two up instead. Null when there is none.
- */
-export function unpackagedVersion(appPath: string, readFile: (path: string) => string): string | null {
-  for (const dir of [appPath, join(appPath, '..'), join(appPath, '..', '..')]) {
-    try {
-      const pkg = JSON.parse(readFile(join(dir, 'package.json'))) as { name?: unknown; version?: unknown }
-      if (pkg.name === 'fartcrobat' && typeof pkg.version === 'string') return pkg.version
-    } catch {}
-  }
-  return null
 }
 
 function httpUrl(value: string | undefined): string | null {

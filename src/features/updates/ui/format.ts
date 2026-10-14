@@ -82,7 +82,8 @@ export function lastCheckedLabel(lastChecked: number | null, now = Date.now()): 
 export type CheckOutcome =
   | { kind: 'policy' }
   | { kind: 'upToDate'; version: string }
-  | { kind: 'error' }
+  /** The check failed: `message` says why (main's plain-language message). */
+  | { kind: 'error'; message: string }
   /** The card shows it (available, downloading, ready, or a download that failed). */
   | { kind: 'update' }
   /** Nothing to say (another check is still running). */
@@ -94,7 +95,9 @@ export function checkOutcome(status: UpdateStatus): CheckOutcome {
     case 'upToDate':
       return { kind: 'upToDate', version: status.currentVersion }
     case 'error':
-      return status.errorDuring === 'download' ? { kind: 'update' } : { kind: 'error' }
+      return status.errorDuring === 'download'
+        ? { kind: 'update' }
+        : { kind: 'error', message: status.error ?? CHECK_FAILED_MESSAGE }
     case 'available':
     case 'downloading':
     case 'ready':
@@ -123,7 +126,7 @@ export function statusLine(status: UpdateStatus): string | null {
       return `Fartcrobat ${v} is ready to install. Restart Fartcrobat to finish.`
     case 'error':
       if (status.errorDuring === 'download') return `Couldn't download Fartcrobat ${v}.`
-      return status.manual ? CHECK_FAILED_MESSAGE : null
+      return status.manual ? (status.error ?? CHECK_FAILED_MESSAGE) : null
     default:
       return null
   }

@@ -346,13 +346,17 @@ describe('UpdateService: downloading', () => {
   it('downloads with progress, then is ready (and shows again if it was dismissed)', async () => {
     const { service, updater, broadcasts } = await available()
     service.dismiss()
+    // Download from Preferences or About after closing the card: the card shows the progress.
     const done = service.download()
     await flush()
     expect(service.status()).toMatchObject({
       phase: 'downloading',
       progress: { percent: 0 },
-      dismissedVersion: '0.2.0'
+      dismissedVersion: null
     })
+    // Closed while downloading: the download goes on, and the card comes back when it is ready.
+    service.dismiss()
+    expect(service.status().dismissedVersion).toBe('0.2.0')
     updater.downloads[0].onProgress({ percent: 52.5, transferred: 525, total: 1000, bytesPerSecond: 100 })
     expect(service.status().progress).toEqual({
       percent: 52.5,
@@ -400,6 +404,9 @@ describe('UpdateService: downloading', () => {
       progress: null,
       dismissedVersion: null
     })
+    // Its card can be closed too.
+    service.dismiss()
+    expect(service.status().dismissedVersion).toBe('0.2.0')
     const again = service.download()
     await flush()
     expect(service.status()).toMatchObject({ phase: 'downloading', error: null, errorDuring: null })

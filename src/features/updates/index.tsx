@@ -6,7 +6,7 @@
 import { useEffect } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { defineFeature, dismissToast, onMainEvent, toast } from '@renderer/sdk'
-import { CHECK_FAILED_MESSAGE, MANAGED_MESSAGE, upToDateMessage } from './ui/format'
+import { MANAGED_MESSAGE, upToDateMessage } from './ui/format'
 import { UpdateSettings } from './ui/Settings'
 import { checkNow, receiveUpdateStatus, refreshUpdateStatus } from './ui/store'
 import { UpdateCard } from './ui/UpdateCard'
@@ -35,7 +35,7 @@ async function checkForUpdates() {
   if (waiting) dismissToast(waiting)
   if (outcome.kind === 'policy') toast(MANAGED_MESSAGE)
   else if (outcome.kind === 'upToDate') toast(upToDateMessage(outcome.version), { kind: 'success' })
-  else if (outcome.kind === 'error') toast(CHECK_FAILED_MESSAGE, { kind: 'error' })
+  else if (outcome.kind === 'error') toast(outcome.message, { kind: 'error' })
 }
 
 export default defineFeature({

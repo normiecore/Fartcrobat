@@ -6,7 +6,7 @@
 import { create } from 'zustand'
 import type { UpdateStatus } from '@shared/updates'
 import { invoke, showError } from '@renderer/sdk'
-import { checkOutcome, type CheckOutcome } from './format'
+import { CHECK_FAILED_MESSAGE, checkOutcome, type CheckOutcome } from './format'
 
 export const useUpdates = create<{ status: UpdateStatus | null }>(() => ({ status: null }))
 
@@ -43,7 +43,7 @@ let checking: Promise<CheckOutcome> | null = null
  */
 export function checkNow(): Promise<CheckOutcome> {
   checking ??= request('feature:updates:check')
-    .then(checkOutcome, (): CheckOutcome => ({ kind: 'error' }))
+    .then(checkOutcome, (): CheckOutcome => ({ kind: 'error', message: CHECK_FAILED_MESSAGE }))
     .finally(() => (checking = null))
   return checking
 }

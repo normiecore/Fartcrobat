@@ -5,6 +5,7 @@ import { userInfo } from 'node:os'
 import { basename, extname } from 'node:path'
 import type { SaveDialogOptions } from '@shared/types'
 import type { MainContext, MainFeatureModule } from './context'
+import { appVersion } from './appVersion'
 import { defaultAppStatus, setDefaultApp } from './defaultApp'
 import { handle, send } from './ipc'
 import { applyDefaultMenu, applyMenu } from './menu'
@@ -209,7 +210,7 @@ function registerCoreHandlers() {
   handle('app:launchFiles', (e) => takeLaunchFiles(BrowserWindow.fromWebContents(e.sender)))
   handle('app:systemInfo', () => ({
     platform: process.platform,
-    appVersion: app.getVersion(),
+    appVersion: appVersion(),
     electron: process.versions.electron,
     chrome: process.versions.chrome,
     node: process.versions.node,

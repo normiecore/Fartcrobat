@@ -214,11 +214,13 @@ export class UpdateService {
     const controller = new AbortController()
     this.downloading = controller
     const current = () => this.downloading === controller && !controller.signal.aborted
+    // The person asked for it (the card, Preferences or About): the card shows the progress.
     this.set({
       phase: 'downloading',
       progress: { percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 },
       error: null,
-      errorDuring: null
+      errorDuring: null,
+      dismissedVersion: null
     })
     try {
       // The metadata the installer comes from must describe the release the person was shown.
@@ -253,11 +255,18 @@ export class UpdateService {
     this.set({ phase: 'available', progress: null })
   }
 
-  /** The person closed the notification: hidden for this version until the next start. */
+  /**
+   * The person closed the notification (or chose Later): hidden for this version until the next
+   * start. That includes the card about a failed download.
+   */
   dismiss() {
-    const { phase, update } = this.s
-    if (update && (phase === 'available' || phase === 'downloading' || phase === 'ready'))
-      this.set({ dismissedVersion: update.version })
+    const { phase, update, errorDuring } = this.s
+    const shown =
+      phase === 'available' ||
+      phase === 'downloading' ||
+      phase === 'ready' ||
+      (phase === 'error' && errorDuring === 'download')
+    if (update && shown) this.set({ dismissedVersion: update.version })
   }
 
   /**

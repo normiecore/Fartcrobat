@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import type { UpdateStatus } from '@shared/updates'
 import { Button, setPrefs, Switch, useApp, usePrefs } from '@renderer/sdk'
-import { CHECK_FAILED_MESSAGE, CHECKS_ABOUT, lastCheckedLabel, NOTIFY_ONLY_NOTE, statusLine } from './format'
+import { CHECKS_ABOUT, lastCheckedLabel, NOTIFY_ONLY_NOTE, statusLine } from './format'
 import { checkNow, refreshUpdateStatus, updateAction, useUpdates } from './store'
 
 const P = 'fc-updates'
@@ -23,9 +23,9 @@ export function UpdateSettings() {
   const appVersion = useApp((s) => s.systemInfo?.appVersion)
   const now = useMinuteClock()
   const [checking, setChecking] = useState(false)
-  // The status there was when Check Now last failed. The failure is shown until a newer status
-  // arrives (main may not have been reachable at all, and then the status cannot say so).
-  const [failedAt, setFailedAt] = useState<{ status: UpdateStatus | null } | null>(null)
+  // The status there was when Check Now last failed, and why. The failure is shown until a newer
+  // status arrives (main may not have been reachable at all, and then the status cannot say so).
+  const [failedAt, setFailedAt] = useState<{ status: UpdateStatus | null; message: string } | null>(null)
   const failed = failedAt !== null && failedAt.status === status
   useEffect(() => {
     void refreshUpdateStatus()
@@ -37,14 +37,14 @@ export function UpdateSettings() {
     setFailedAt(null)
     const outcome = await checkNow()
     setChecking(false)
-    if (outcome.kind === 'error') setFailedAt({ status: useUpdates.getState().status })
+    if (outcome.kind === 'error') setFailedAt({ status: useUpdates.getState().status, message: outcome.message })
   }
   const line = policy
     ? null
     : checking
       ? 'Checking for updates…'
       : failed
-        ? CHECK_FAILED_MESSAGE
+        ? failedAt.message
         : status && statusLine(status)
 
   return (

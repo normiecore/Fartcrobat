@@ -148,3 +148,7 @@
   flex-wrap: wrap;
   gap: 10px;
 }
+/* Nothing to say: no extra gap (the live region stays in place for the next message). */
+.fc-updates-settings-status:empty {
+  margin-top: -10px;
+}

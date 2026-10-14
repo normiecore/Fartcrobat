@@ -88,7 +88,8 @@ On 'notify', Download opens the release page in the browser.
   `FARTCROBAT_UPDATE_URL` (a local server standing in for github.com) and `FARTCROBAT_FAKE_UPDATER`
   (a stand-in for electron-updater that reports progress and records the install call). Both work
   only in unpackaged builds. Every other spec runs with checks off (`launch` sets
-  `FARTCROBAT_UPDATE_CHECKS=0`).
+  `FARTCROBAT_UPDATE_CHECKS=0`, the one test variable packaged builds honour, and only to turn
+  automatic checks off, so runs against a packaged build ask github.com nothing either).
 - Manual, before relying on it: publish 0.2.0 with this feature, then 0.2.1, and update a Windows
   per-user install, a Windows per-machine install and an AppImage from 0.2.0 to 0.2.1; check that a
   restart with unsaved changes asks first, and that the policy value hides everything.

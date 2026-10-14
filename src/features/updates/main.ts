@@ -1,7 +1,8 @@
 // Updates, main process: Electron glue around ./main/service (see docs/features/updates.md).
 import { app, shell } from 'electron'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { appVersion } from '@main/appVersion'
 import type { MainContext } from '@main/context'
 import { readMachinePolicy } from '@main/policy'
 import { allWindows, quitForUpdate } from '@main/windows'
@@ -10,7 +11,7 @@ import { electronUpdater } from './main/electronUpdater'
 import { fakeUpdater, readFakeConfig } from './main/fakeUpdater'
 import { electronProbe } from './main/net'
 import { UpdateService } from './main/service'
-import { unpackagedVersion, updateCapability, updateSettings, type UpdateSettings } from './main/settings'
+import { updateCapability, updateSettings, type UpdateSettings } from './main/settings'
 import type { Updater } from './main/updater'
 
 function makeUpdater(capability: UpdateCapability, settings: UpdateSettings): Updater | null {
@@ -32,11 +33,8 @@ export function register(ctx: MainContext) {
     env: process.env,
     hasUpdateConfig: app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml'))
   })
-  const currentVersion =
-    (!app.isPackaged && unpackagedVersion(app.getAppPath(), (path) => readFileSync(path, 'utf8'))) ||
-    app.getVersion()
   const service = new UpdateService({
-    currentVersion,
+    currentVersion: appVersion(),
     capability,
     base: settings.base,
     testBase: settings.testBase,

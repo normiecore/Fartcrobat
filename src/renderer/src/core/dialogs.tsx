@@ -304,7 +304,7 @@ function aboutUpdateLine(s: UpdateStatus): { text: string | null; action?: About
       if (s.errorDuring === 'download')
         return { text: `Couldn't download Fartcrobat ${v}.`, action: { label: 'Try again', channel: 'feature:updates:download', failed: DOWNLOAD_FAILED } }
       // Automatic checks that fail stay silent.
-      return { text: s.manual ? CHECK_FAILED : null }
+      return { text: s.manual ? (s.error ?? CHECK_FAILED) : null }
     default:
       return { text: null }
   }

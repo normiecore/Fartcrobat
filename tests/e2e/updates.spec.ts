@@ -1,5 +1,5 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -22,17 +22,30 @@ const ASK_ON_CLOSE = { FARTCROBAT_FORCE_CLOSE: '' }
 const shot = (page: Page, name: string) =>
   page.screenshot({ path: `test-results/updates-${name}.png`, animations: 'disabled' })
 
+const workDirs: string[] = []
 function workDir() {
-  return mkdtempSync(join(tmpdir(), 'fartcrobat-updates-'))
+  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-updates-'))
+  workDirs.push(dir)
+  return dir
 }
+test.afterAll(() => {
+  for (const dir of workDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
 
 interface FakeGitHub {
   /** FARTCROBAT_UPDATE_URL: stands in for https://github.com/normiecore/Fartcrobat. */
   base: string
   /** The release page /releases/latest leads to. */
   releaseUrl: (version: string) => string
-  /** How /releases/latest answers: a redirect to that version's tag, a server error, or a page without a tag. */
-  answer: { kind: 'latest'; version: string; absolute?: boolean } | { kind: 'error' } | { kind: 'page' }
+  /**
+   * How /releases/latest answers: a redirect to that version's tag, a server error, a page without
+   * a tag, or no answer at all (the connection drops, as when offline).
+   */
+  answer:
+    | { kind: 'latest'; version: string; absolute?: boolean }
+    | { kind: 'error' }
+    | { kind: 'page' }
+    | { kind: 'drop' }
   /** Requests for /releases/latest so far. */
   checks: () => number
   close: () => Promise<void>
@@ -57,6 +70,8 @@ async function fakeGitHub(
       } else if (a.kind === 'error') {
         res.writeHead(500, { 'Content-Type': 'text/plain' })
         res.end('Something went wrong')
+      } else if (a.kind === 'drop') {
+        req.socket.destroy()
       } else {
         res.writeHead(200, { 'Content-Type': 'text/html' })
         res.end('<h1>Releases</h1>')
@@ -84,26 +99,39 @@ async function fakeGitHub(
   return gh
 }
 
+interface FakeUpdaterOptions {
+  steps?: number
+  stepMs?: number
+  failDownload?: boolean
+}
+
 interface FakeUpdater {
   file: string
+  /** Changes how the next download behaves (the fake reads its settings at each download). */
+  configure: (opts: FakeUpdaterOptions) => void
   /** The installs the app ran, one object per line of the install log. */
   installs: () => { version: string; silent: boolean; runAfter: boolean }[]
 }
 
-function fakeUpdater(opts: { steps?: number; stepMs?: number; failDownload?: boolean } = {}): FakeUpdater {
+function fakeUpdater(opts: FakeUpdaterOptions = {}): FakeUpdater {
   const dir = workDir()
   const installLog = join(dir, 'install.log')
   const file = join(dir, 'fake-updater.json')
-  const config = {
-    steps: opts.steps ?? 5,
-    stepMs: opts.stepMs ?? 150,
-    total: 1_000_000,
-    failDownload: !!opts.failDownload,
-    installLog
-  }
-  writeFileSync(file, JSON.stringify(config))
+  const configure = (o: FakeUpdaterOptions) =>
+    writeFileSync(
+      file,
+      JSON.stringify({
+        steps: o.steps ?? 5,
+        stepMs: o.stepMs ?? 150,
+        total: 1_000_000,
+        failDownload: !!o.failDownload,
+        installLog
+      })
+    )
+  configure(opts)
   return {
     file,
+    configure,
     installs: () =>
       existsSync(installLog)
         ? readFileSync(installLog, 'utf8')
@@ -245,7 +273,7 @@ test('an automatic check finds a new version; Download shows progress; Restart n
 
 test('closing the card hides it until Help > Check for Updates... finds the version again; a download continues while it is closed', async () => {
   const gh = await fakeGitHub()
-  const updater = fakeUpdater({ steps: 10, stepMs: 400 })
+  const updater = fakeUpdater({ steps: 10, stepMs: 600 })
   const { app, page } = await launch([], updateEnv(gh, updater))
   try {
     const card = updateCard(page)
@@ -254,8 +282,11 @@ test('closing the card hides it until Help > Check for Updates... finds the vers
     await expect(card).toBeHidden()
     expect((await updateStatus(page)).dismissedVersion).toBe(NEW)
 
+    const firstChecked = (await updateStatus(page)).lastChecked ?? 0
     await checkFromHelpMenu(page)
     await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    // The card comes back as soon as the check starts; wait for the check itself.
+    await expect.poll(async () => (await updateStatus(page)).lastChecked ?? 0).toBeGreaterThan(firstChecked)
     expect(gh.checks()).toBe(2)
     // The card says it; no toast as well.
     await expect(page.locator('.toast')).toHaveCount(0)
@@ -340,7 +371,8 @@ test('a download that fails says so, with Try again and Download from GitHub', a
     await card.getByRole('button', { name: 'Download from GitHub' }).click()
     await expect.poll(opened).toEqual([gh.releaseUrl(NEW)])
 
-    // Try again downloads again (and fails again here).
+    // Try again downloads again (and fails again here, slowly enough to see the progress bar).
+    updater.configure({ steps: 6, stepMs: 400, failDownload: true })
     await card.getByRole('button', { name: 'Try again' }).click()
     await expect(card.getByRole('progressbar')).toBeVisible()
     await expect(card).toContainText(`Couldn't download Fartcrobat ${NEW}.`)
@@ -425,7 +457,7 @@ test('up to date: an automatic check says nothing; Help > Check for Updates... a
 })
 
 test('a failed check: silent when automatic, an error toast when asked for', async () => {
-  const gh = await fakeGitHub({ kind: 'error' })
+  const gh = await fakeGitHub({ kind: 'drop' })
   const { app, page } = await launch([], updateEnv(gh))
   try {
     await expect.poll(async () => (await updateStatus(page)).phase).toBe('error')
@@ -433,21 +465,46 @@ test('a failed check: silent when automatic, an error toast when asked for', asy
     await expect(page.locator('.toast')).toHaveCount(0)
     await expect(updateCard(page)).toHaveCount(0)
 
-    const failed = page.locator('.toast-error', {
+    // No connection.
+    const offline = page.locator('.toast-error', {
       hasText: "Couldn't check for updates. Check your internet connection and try again."
     })
     await runCommand(page, 'help.checkForUpdates')
-    await expect(failed).toBeVisible()
+    await expect(offline).toBeVisible()
     expect(gh.checks()).toBe(2)
     await expect(updateCard(page)).toHaveCount(0)
     await shot(page, 'check-failed')
-    await failed.getByRole('button', { name: 'Dismiss' }).click()
+    await offline.getByRole('button', { name: 'Dismiss' }).click()
 
-    // A page without a release tag is no answer either.
-    gh.answer = { kind: 'page' }
-    await runCommand(page, 'help.checkForUpdates')
-    await expect(failed).toBeVisible()
-    await failed.getByRole('button', { name: 'Dismiss' }).click()
+    // GitHub answers, but not with a release: a server error, or a page without a release tag.
+    const unexpected = page.locator('.toast-error', {
+      hasText: "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
+    })
+    for (const answer of [{ kind: 'error' }, { kind: 'page' }] as const) {
+      gh.answer = answer
+      await runCommand(page, 'help.checkForUpdates')
+      await expect(unexpected).toBeVisible()
+      await unexpected.getByRole('button', { name: 'Dismiss' }).click()
+      await expect(unexpected).toHaveCount(0)
+    }
+    expect(gh.checks()).toBe(4)
+
+    // Preferences and About say the same.
+    const prefs = await openPreferencesAt(page, 'Updates')
+    await prefs.getByRole('button', { name: 'Check Now' }).click()
+    await expect(prefs.getByRole('status')).toHaveText(
+      "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
+    )
+    await prefs.getByRole('button', { name: 'Done' }).click()
+    await runCommand(page, 'help.about')
+    const about = page.getByRole('dialog', { name: 'About Fartcrobat' })
+    await about.getByRole('button', { name: 'Check for Updates' }).click()
+    await expect(about.getByRole('status')).toHaveText(
+      "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
+    )
+    await about.getByRole('button', { name: 'Close', exact: true }).first().click()
+    await expect(about).toBeHidden()
+    const failed = page.locator('.toast-error')
 
     // GitHub answers again: the card.
     gh.answer = { kind: 'latest', version: NEW }

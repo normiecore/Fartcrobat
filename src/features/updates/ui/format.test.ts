@@ -103,8 +103,13 @@ describe('what a manual check found', () => {
     expect(checkOutcome(status({ checksOff: 'policy' }))).toEqual({ kind: 'policy' })
     expect(checkOutcome(status({ phase: 'upToDate' }))).toEqual({ kind: 'upToDate', version: '0.1.0' })
     expect(checkOutcome(status({ phase: 'error', errorDuring: 'check', manual: true }))).toEqual({
-      kind: 'error'
+      kind: 'error',
+      message: "Couldn't check for updates. Check your internet connection and try again."
     })
+    // Main's message says why, when it knows.
+    expect(
+      checkOutcome(status({ phase: 'error', errorDuring: 'check', manual: true, error: 'GitHub said no.' }))
+    ).toEqual({ kind: 'error', message: 'GitHub said no.' })
     expect(checkOutcome(status({ phase: 'available', update }))).toEqual({ kind: 'update' })
     expect(checkOutcome(status({ phase: 'ready', update }))).toEqual({ kind: 'update' })
     expect(checkOutcome(status({ phase: 'error', errorDuring: 'download', update }))).toEqual({
@@ -118,6 +123,9 @@ describe('what a manual check found', () => {
     expect(statusLine(status({ phase: 'error', errorDuring: 'check', manual: true }))).toMatch(
       /^Couldn't check/
     )
+    expect(
+      statusLine(status({ phase: 'error', errorDuring: 'check', manual: true, error: 'GitHub said no.' }))
+    ).toBe('GitHub said no.')
     expect(statusLine(status({ phase: 'upToDate' }))).toBe('Fartcrobat 0.1.0 is up to date.')
     expect(statusLine(status({ phase: 'available', update }))).toBe('Fartcrobat 0.2.0 is available.')
     expect(statusLine(status({ phase: 'idle' }))).toBeNull()
