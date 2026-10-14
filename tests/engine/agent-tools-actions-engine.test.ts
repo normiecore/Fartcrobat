@@ -85,7 +85,7 @@ describe('agent tools through the engine', () => {
     const ids = e.info.pages.map((p) => p.id)
     e.actor = AGENT
 
-    const move = planOrganize({ operation: 'move', before: 5 }, [0, 1], ids.length)
+    const move = planOrganize({ operation: 'move', before: 5 }, [0, 1], ids.length, 'linux')
     if (move.op !== 'move') throw new Error('expected a move')
     await pages.move(move.pages, move.gap)
     expect(e.lastChanges?.journal.undoLabel).toBe('Agent: Move Pages')
@@ -93,7 +93,7 @@ describe('agent tools through the engine', () => {
     expect(move.after.map((i) => order[i])).toEqual([ids[0], ids[1]])
     expect(order).toEqual([ids[2], ids[3], ids[0], ids[1], ids[4]])
 
-    const blank = planOrganize({ operation: 'insert_blank', before: 2, count: 2 }, null, order.length)
+    const blank = planOrganize({ operation: 'insert_blank', before: 2, count: 2 }, null, order.length, 'linux')
     if (blank.op !== 'insert_blank') throw new Error('expected insert_blank')
     await pages.insertBlank(blank.gap, { count: blank.count })
     expect(e.lastChanges?.journal.undoLabel).toBe('Agent: Insert Pages')
@@ -101,13 +101,13 @@ describe('agent tools through the engine', () => {
     expect(order).toHaveLength(7)
     expect(insertedIndices(blank.gap, blank.count).every((i) => !ids.includes(order[i]))).toBe(true)
 
-    const dup = planOrganize({ operation: 'duplicate' }, [0, 2], order.length)
+    const dup = planOrganize({ operation: 'duplicate' }, [0, 2], order.length, 'linux')
     if (dup.op !== 'duplicate') throw new Error('expected duplicate')
     const created = await e.ops<typeof organizeOps>('organize-pages').duplicate(dup.pages)
     expect(created).toEqual(duplicatedIndices(dup.pages))
     expect(e.lastChanges?.journal.undoLabel).toBe('Agent: Duplicate Pages')
 
-    const rot = planOrganize({ operation: 'rotate', angle: -90 }, [0], 9)
+    const rot = planOrganize({ operation: 'rotate', angle: -90 }, [0], 9, 'linux')
     if (rot.op !== 'rotate') throw new Error('expected rotate')
     await pages.rotate(rot.pages, rot.degrees)
     expect(e.lastChanges?.journal.undoLabel).toBe('Agent: Rotate Page')
@@ -140,14 +140,21 @@ describe('agent tools through the engine', () => {
   it('marks and applies redactions as the agent', async () => {
     const e = await openFixture('text.pdf')
     const redact = e.ops<typeof redactOps>('redact')
+    await e.ops<typeof annotOps>('annots').setAuthor('Pat')
     e.actor = AGENT
     const specs = markSpecsFromItems([{ page: 1, rect: [72, 72, 300, 120] }, { page: 2 }], e.info.pageCount, (p) => e.info.pages[p])
-    const marks = await redact.mark(specs, markProps(DEFAULT_PROPS, 'REDACTED'))
+    const marks = await redact.mark(specs, markProps(DEFAULT_PROPS, 'REDACTED'), agentAuthor('Claude'))
     expect(e.lastChanges?.journal.undoLabel).toBe('Agent: Mark for Redaction')
-    expect(marks.map((m) => [m.page, m.kind])).toEqual([
-      [0, 'area'],
-      [1, 'page']
+    expect(marks.map((m) => [m.page, m.kind, m.author])).toEqual([
+      [0, 'area', 'Agent (Claude)'],
+      [1, 'page', 'Agent (Claude)']
     ])
+    // The person's own marks keep their name.
+    e.actor = null
+    const [own] = await redact.mark(markSpecsFromItems([{ page: 3 }], e.info.pageCount, (p) => e.info.pages[p]), DEFAULT_PROPS)
+    expect(own.author).toBe('Pat')
+    await e.doc.undo()
+    e.actor = AGENT
     expect(marks[0].props).toMatchObject({ overlay: 'custom', customText: 'REDACTED' })
     const report = await redact.apply([marks[0].id])
     expect(e.lastChanges?.journal.undoLabel).toBe('Agent: Apply Redactions')

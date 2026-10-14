@@ -356,8 +356,9 @@ export interface FieldOut {
   /** Missing for password fields, whose content stays private. */
   value?: string
   checked?: boolean
-  /** The value a checkbox has when ticked. */
+  /** The value a checkbox has when ticked (its first box's, when several boxes share the name). */
   onValue?: string
+  /** Choices; for check boxes that share a name, the value of each box (set_form_values takes one). */
   options?: { value: string; label?: string }[]
   page: number
   rect: number[]
@@ -368,6 +369,8 @@ export interface FieldOut {
   required?: true
   multiline?: true
   maxLength?: number
+  /** The text is spread over maxLength boxes, one character each. */
+  comb?: true
   multiSelect?: true
   editable?: true
   password?: true
@@ -390,19 +393,20 @@ export function fieldsOut(fields: FieldInfo[], pages: Set<number> | null = null)
     const o: FieldOut = { name, type: f.type, page: f.page + 1, rect: rect2(f.rect) }
     if (f.password) o.password = true
     else if (f.type !== 'button' && f.type !== 'signature') o.value = f.value
+    const onValues = [...new Set(widgets.map((w) => w.onState).filter((v): v is string => !!v && v !== 'Off'))]
     if (f.type === 'checkbox') {
       o.checked = widgets.some((w) => w.checked)
       if (f.onState) o.onValue = f.onState
+      if (onValues.length > 1) o.options = onValues.map((value) => ({ value }))
     } else if (f.type === 'radio') {
-      const values = [...new Set(widgets.map((w) => w.onState).filter((v): v is string => !!v && v !== 'Off'))]
-      o.options = values.map((value) => ({ value }))
+      o.options = onValues.map((value) => ({ value }))
     } else if (f.type === 'combo' || f.type === 'list') {
       o.options = f.options.map((opt) => (opt.label && opt.label !== opt.value ? { value: opt.value, label: opt.label } : { value: opt.value }))
     }
     if (widgets.length > 1) {
       o.widgets = widgets.map((w) => {
         const wo: { page: number; rect: number[]; onValue?: string } = { page: w.page + 1, rect: rect2(w.rect) }
-        if (f.type === 'radio' && w.onState) wo.onValue = w.onState
+        if ((f.type === 'radio' || f.type === 'checkbox') && w.onState) wo.onValue = w.onState
         return wo
       })
     }
@@ -412,6 +416,7 @@ export function fieldsOut(fields: FieldInfo[], pages: Set<number> | null = null)
     if (f.type === 'text') {
       if (f.multiline) o.multiline = true
       if (f.maxLen > 0) o.maxLength = f.maxLen
+      if (f.comb && f.maxLen > 0) o.comb = true
     }
     if ((f.type === 'combo' || f.type === 'list') && f.multiSelect) o.multiSelect = true
     if (f.type === 'combo' && f.editable) o.editable = true

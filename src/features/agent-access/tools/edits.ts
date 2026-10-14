@@ -5,7 +5,7 @@ import type { AnnotInfo } from '@engine/ops/annots'
 import type annotOps from '@engine/ops/annots'
 import type pageOps from '@engine/ops/pages'
 import { EngineCallError } from '@renderer/engine/EngineClient'
-import { rangeQuads, useApp, type DocumentModel } from '@renderer/sdk'
+import { basename, platform, rangeQuads, useApp, type DocumentModel } from '@renderer/sdk'
 import { formController } from '@features/forms-fill/controller'
 import { formsSettings, loadFormsSettings } from '@features/forms-fill/settings'
 import type markupOps from '@features/markup-tools/engine'
@@ -24,8 +24,10 @@ import { findOnPage, type FindQuery, type PatternId } from '@features/redact/pat
 import type { MarkSpec } from '@features/redact/shared'
 import { currentProps, loadProps, redactOps } from '@features/redact/store'
 import {
+  AGENT_ACTOR,
   ToolError,
   auditName,
+  clientLabel,
   parsePages,
   resolveDoc,
   runAsAgent,
@@ -39,7 +41,8 @@ import { openErrorCode } from './act-files'
 import { formFields, planFill, resolveValues } from './act-forms'
 import { duplicatedIndices, insertedIndices, planOrganize } from './act-pages'
 import { markProps, markSpecsFromItems } from './act-redact'
-import { agentName, cancelled, checked, engineTask, handoff, toolErrorFrom, undoLabel } from './act-runtime'
+import { agentName, cancelled, checked, engineTask, handoff, paragraphs, requireConfirmation, toolErrorFrom, undoLabel } from './act-runtime'
+import { confirmNetworkPaths } from './files'
 
 function annots(doc: DocumentModel) {
   return doc.ops<typeof annotOps>('annots')
@@ -274,7 +277,9 @@ const markRedactions: ToolHandler = async (args, ctx) => {
   }
   await loadProps()
   const props = markProps(currentProps(), overlay)
-  const marks = await engineTask('Could not mark for redaction', () => runAsAgent(doc, () => redactOps(doc).mark(specs, props)))
+  // Signed like the agent's comments, so the Comments panel shows who marked what.
+  const author = agentName(ctx)
+  const marks = await engineTask('Could not mark for redaction', () => runAsAgent(doc, () => redactOps(doc).mark(specs, props, author)))
   const pages = [...new Set(marks.map((m) => m.page))]
   ctx.audit({ document: auditName(doc), summary: `${plural(marks.length, 'redaction mark')} on ${pagesPhrase(pages)}` })
   return {
@@ -296,7 +301,7 @@ const organizePages: ToolHandler = async (args, ctx) => {
   const count = doc.pageCount
   const given = args.pages !== undefined && args.pages !== null && args.pages !== ''
   const pages = given ? parsePages(args.pages, count) : null
-  const plan = checked(() => planOrganize(args, pages, count))
+  const plan = checked(() => planOrganize(args, pages, count, platform))
   const pagesApi = doc.ops<typeof pageOps>('pages')
   let changed: number[] = []
   let summary: string
@@ -326,6 +331,7 @@ const organizePages: ToolHandler = async (args, ctx) => {
       summary = `duplicated ${pagesPhrase(plan.pages)}`
       break
     case 'insert_file': {
+      await confirmNetworkPaths(ctx, doc, [plan.path], `Inserting pages from “${basename(plan.path)}”`)
       const file = await loadFile(plan.path).catch((err) => {
         throw new ToolError(openErrorCode(String(err?.message ?? err)) === 'unsupported' ? 'unsupported' : 'file_error', `Could not read ${plan.path}: ${err?.message ?? err}`)
       })
@@ -440,12 +446,52 @@ const setMetadata: ToolHandler = async (args, ctx) => {
 
 // ---- undo and redo ---------------------------------------------------------------------------
 
+/**
+ * What the person is asked before the agent undoes or redoes a step, or null when it may go
+ * ahead: the agent's own steps need no click, except applying redactions, which the person
+ * approved and whose undo brings the removed content back.
+ */
+export function stepQuestion(
+  dir: 'undo' | 'redo',
+  label: string | null,
+  agent: string
+): { title: string; lines: string[]; declined: string } | null {
+  const step = label ?? 'a change'
+  const own = !!label?.startsWith(`${AGENT_ACTOR}: `)
+  const redaction = !!label?.endsWith('Apply Redactions')
+  if (own && !redaction) return null
+  const Dir = dir === 'undo' ? 'Undo' : 'Redo'
+  const lines = [`${agent} wants to ${dir} “${step}”${own ? '' : ', a change you made'}.`]
+  if (redaction)
+    lines.push(
+      dir === 'undo'
+        ? 'The content the redactions removed comes back, and saving the document would keep it.'
+        : 'The content under the redaction marks is removed again.'
+    )
+  if (!own && dir === 'undo') lines.push(`If ${agent} then makes another change, yours can't be redone.`)
+  return { title: redaction ? `${Dir} the redactions?` : `${Dir} your change?`, lines, declined: `${dir} ${step}` }
+}
+
 async function step(ctx: ToolContext, args: Record<string, unknown>, dir: 'undo' | 'redo') {
   const doc = resolveDoc(ctx, args.handle)
-  const before = await engineTask('Could not read the undo history', () => doc.core.doc.journal())
+  const journal = () => engineTask('Could not read the undo history', () => doc.core.doc.journal())
+  const before = await journal()
   const can = dir === 'undo' ? before.canUndo : before.canRedo
   if (!can) throw new ToolError('invalid_args', dir === 'undo' ? 'There is nothing to undo.' : 'There is nothing to redo.')
   const label = dir === 'undo' ? before.undoLabel : before.redoLabel
+  const question = stepQuestion(dir, label, clientLabel(ctx))
+  if (question) {
+    await requireConfirmation(
+      ctx,
+      doc,
+      { title: question.title, message: paragraphs(...question.lines), confirmLabel: dir === 'undo' ? 'Undo' : 'Redo' },
+      question.declined
+    )
+    // The history may have moved while the person decided: never undo a step they did not see.
+    const now = await journal()
+    if (now.position !== before.position || (dir === 'undo' ? now.undoLabel : now.redoLabel) !== label)
+      throw new ToolError('failed', `The document changed while the person was deciding, so nothing was ${dir === 'undo' ? 'undone' : 'redone'}. Call ${dir} again if it is still wanted.`)
+  }
   await engineTask(`Could not ${dir}`, () => (dir === 'undo' ? doc.undo() : doc.redo()))
   const after = await doc.core.doc.journal()
   ctx.audit({ document: auditName(doc), summary: `${dir === 'undo' ? 'undid' : 'redid'} ${label ?? 'a change'}` })

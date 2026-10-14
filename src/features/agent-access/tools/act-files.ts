@@ -8,14 +8,51 @@ export function isAbsolutePath(path: string): boolean {
   return path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path) || /^\\\\[^\\/]+[\\/]/.test(path)
 }
 
-/** A path argument: a non-empty absolute path, normalized ("." and ".." removed). */
-export function pathArg(value: unknown, name = 'path'): string {
+/** Names Windows keeps for devices, with or without an extension ("NUL", "com1.pdf", "CONIN$"). */
+const DEVICE_NAME = /^(con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])$/i
+
+/**
+ * A path argument: a non-empty absolute path, normalized ("." and ".." removed). `platform` is
+ * the app's (process.platform). Windows device and namespace paths (\\?\..., \\.\...) are refused:
+ * no file needs them. On Windows any two leading separators make a network path, as they do for
+ * the file system; elsewhere a network path is refused, since it would be read as a relative one.
+ */
+export function pathArg(value: unknown, platform: string, name = 'path'): string {
   if (typeof value !== 'string' || !value.trim()) throw new InvalidArgs(`${name} must be the absolute path of a file`)
-  const path = value.trim()
+  let path = value.trim()
+  if (/^[\\/]{2}[?.](?:[\\/]|$)/.test(path)) throw new InvalidArgs(`${name} must be the path of a file, not a device or a \\\\?\\ or \\\\.\\ path`)
+  const windows = platform === 'win32'
+  if (windows && /^[\\/]{2}[^\\/]/.test(path)) path = '\\\\' + path.slice(2)
   if (!isAbsolutePath(path)) throw new InvalidArgs(`${name} must be an absolute path (got "${path}")`)
+  if (!windows && path.startsWith('\\\\')) throw new InvalidArgs(`${name}: network paths such as \\\\server\\share only work on Windows (got "${path}")`)
   const normalized = normalizePath(path)
   if (normalized === '/' || /^[a-zA-Z]:\\?$/.test(normalized)) throw new InvalidArgs(`${name} must name a file, not a folder`)
+  // A computer may be called "aux.example.com": only the names after it are file names.
+  const names = normalized.split('\\').slice(normalized.startsWith('\\\\') ? 3 : 0)
+  if (windows && names.some((part) => DEVICE_NAME.test(part.split('.')[0].trimEnd())))
+    throw new InvalidArgs(`${name} uses a name Windows keeps for devices (got "${normalized}")`)
   return normalized
+}
+
+/**
+ * The computer a network path (\\server\share\...) is on, lower case and without a WebDAV
+ * "@SSL" or "@port" suffix, so one server is asked about once. Null for paths on this computer.
+ */
+export function networkHost(path: string): string | null {
+  const m = /^\\\\([^\\/]+)/.exec(path)
+  if (!m) return null
+  const host = m[1].toLowerCase()
+  return host.replace(/@.*$/, '').replace(/\.$/, '') || host
+}
+
+/** Network servers `paths` use that are not in `known`, in first-use order. */
+export function newNetworkHosts(paths: string[], known: ReadonlySet<string>): string[] {
+  const hosts: string[] = []
+  for (const p of paths) {
+    const host = networkHost(p)
+    if (host && !known.has(host) && !hosts.includes(host)) hosts.push(host)
+  }
+  return hosts
 }
 
 export function baseName(path: string): string {

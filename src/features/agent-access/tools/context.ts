@@ -64,6 +64,20 @@ function docFor(ctx: ToolContext, handle: unknown): DocumentModel {
   return doc
 }
 
+/** The file a converted tab (Word, an image...) was made from, until it is saved as a PDF. */
+export function convertedFrom(doc: DocumentModel): { convertedFrom?: string } {
+  return doc.sourcePath && !doc.state.filePath ? { convertedFrom: doc.sourcePath } : {}
+}
+
+/**
+ * Set on results that hold document text when the document's security settings don't allow
+ * copying. The agent may read it, as the person can on screen, but should not copy it elsewhere;
+ * export_document refuses such documents, like Fartcrobat's own Export.
+ */
+export function copyRestriction(doc: DocumentModel): { copyRestricted?: true } {
+  return doc.state.info.permissions.copy === false ? { copyRestricted: true } : {}
+}
+
 /** Reports progress every few pages of a long loop. */
 function pageProgress(ctx: ToolContext, done: number, total: number, message: string) {
   if (total >= 20 && (done % 10 === 0 || done === total)) ctx.progress(done, total, message)
@@ -73,7 +87,7 @@ function pageProgress(ctx: ToolContext, done: number, total: number, message: st
 
 async function listDocuments(_args: Record<string, unknown>, ctx: ToolContext) {
   const docs = useApp.getState().docs.filter((d) => !d.isClosed)
-  return { data: { documents: docs.map((d) => describeDoc(ctx, d)) } }
+  return { data: { documents: docs.map((d) => ({ ...describeDoc(ctx, d), ...convertedFrom(d) })) } }
 }
 
 const MAX_SELECTED_CHARS = 20000
@@ -136,6 +150,7 @@ async function getContext(args: Record<string, unknown>, ctx: ToolContext) {
   return {
     data: {
       document: describeDoc(ctx, doc),
+      ...copyRestriction(doc),
       lookingAtThisDocument: isActive,
       currentPage: s.currentPage + 1,
       visiblePages: [...new Set(visible)].sort((a, b) => a - b).map((p) => p + 1),
@@ -166,6 +181,8 @@ async function getDocumentInfo(args: Record<string, unknown>, ctx: ToolContext) 
   const m = info.metadata
   const data: Record<string, unknown> = {
     ...describeDoc(ctx, doc),
+    ...convertedFrom(doc),
+    ...copyRestriction(doc),
     // "PDF 1.7", or the format a converted file had ("DOCX", "PNG")
     format: info.format,
     ...(info.converted ? { converted: true } : {}),
@@ -233,6 +250,7 @@ async function getPageText(args: Record<string, unknown>, ctx: ToolContext) {
   const rest = budget.nextPage === null ? [] : pages.filter((p) => p + 1 >= budget.nextPage!)
   return {
     data: {
+      ...copyRestriction(doc),
       pages: budget.pages,
       ...(budget.full
         ? {
@@ -280,6 +298,7 @@ async function renderPage(args: Record<string, unknown>, ctx: ToolContext) {
   return {
     images: [{ data: toBase64(png), mimeType: 'image/png' as const }],
     data: {
+      ...copyRestriction(doc),
       page: page + 1,
       width,
       height,
@@ -323,6 +342,7 @@ async function findText(args: Record<string, unknown>, ctx: ToolContext) {
   }
   return {
     data: {
+      ...copyRestriction(doc),
       count: hits.length,
       hits,
       ...(stoppedAt !== null
@@ -354,7 +374,7 @@ async function listAnnotations(args: Record<string, unknown>, ctx: ToolContext) 
     pageProgress(ctx, k + 1, pages.length, 'Reading comments')
   }
   const items = annotationsOut(list, { types, marked })
-  return { data: { count: items.length, annotations: items } }
+  return { data: { ...copyRestriction(doc), count: items.length, annotations: items } }
 }
 
 // ---- list_form_fields, list_signatures ------------------------------------------------------------
@@ -365,7 +385,7 @@ async function listFormFields(args: Record<string, unknown>, ctx: ToolContext) {
   const info = doc.state.info
   if (!info.hasForm) return { data: { count: 0, fields: [], note: 'This document has no form fields.' } }
   const fields = fieldsOut(await forms(doc).listAll(), pages)
-  return { data: { count: fields.length, fields, ...(info.hasXfa ? { note: 'This form also has an XFA (dynamic) version, which Fartcrobat does not show.' } : {}) } }
+  return { data: { ...copyRestriction(doc), count: fields.length, fields, ...(info.hasXfa ? { note: 'This form also has an XFA (dynamic) version, which Fartcrobat does not show.' } : {}) } }
 }
 
 async function listSignatures(args: Record<string, unknown>, ctx: ToolContext) {
