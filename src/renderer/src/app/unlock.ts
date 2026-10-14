@@ -3,6 +3,7 @@
  * No DOM and no IPC here: everything goes through `UnlockPorts`, so the same logic serves opening a
  * tab, Revert, Insert, Combine, Create and Compare (see savedPasswords.ts), and runs in unit tests.
  */
+import { certificateAuditSummary, type CertificateKey, type CertKeyVia } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
 
 export type Access = PasswordAccess
@@ -113,13 +114,24 @@ export async function unlock(ports: UnlockPorts, opts: UnlockOptions): Promise<U
 
 /** How an open tab's password was supplied (DocState.unlock). */
 export interface DocUnlock {
-  /** 'source': given by the tool that made the file (the password of the file it came from). */
-  method: 'typed' | 'saved-password' | 'source'
+  /**
+   * 'source': given by the tool that made the file (the password, or certificate key, of the file it
+   * came from). 'certificate': one of the person's keys opened a certificate-encrypted file.
+   */
+  method: 'typed' | 'saved-password' | 'source' | 'certificate'
+  /** 'owner' for full access (a permissions password, or a certificate allowed to change security). */
   access: Access
   /** The saved password that opens it: found, remembered when typed, or its source's. */
   savedRef?: string
   /** The lock that password opened (files with another lock are never linked to it). */
   lock?: LockInfo | null
+  /** 'certificate': which key opened it (no secrets), for the audit log and the Protect panel. */
+  via?: CertKeyVia
+  /**
+   * Certificate encryption: the key that opens this document, so files and tabs made from it open
+   * without asking again. Secret: only ever passed to this window's engines, never logged or shown.
+   */
+  certificateKey?: CertificateKey
 }
 
 /** The line the agent audit log gets for an open (never the password). */
@@ -127,6 +139,7 @@ export function unlockAuditSummary(o: UnlockOutcome | DocUnlock | null | undefin
   if (!o) return undefined
   if (o.method === 'saved-password') return 'unlocked with a password saved on this device'
   if (o.method === 'typed') return 'the person typed the password'
+  if (o.method === 'certificate' && 'via' in o && o.via) return certificateAuditSummary(o.via)
   return undefined
 }
 

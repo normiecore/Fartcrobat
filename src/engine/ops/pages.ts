@@ -1,5 +1,6 @@
 import type { Rect } from '@shared/geometry'
 import { normalizeRect, transformRect } from '@shared/geometry'
+import type { CertificateLock } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, PDFObject, Session } from '../session'
@@ -25,6 +26,20 @@ export class PasswordNeededError extends EngineError {
     readonly lock: LockInfo | null
   ) {
     super(`${fileName} is password protected`, 'NEEDS_PASSWORD')
+  }
+}
+
+/**
+ * NEEDS_CERTIFICATE from openSource: the file is certificate-encrypted and no key this engine holds
+ * opens it. The renderer unlocks it with the person's keys, gives the key to the engine with
+ * doc.addCertificateKey, and tries again.
+ */
+export class CertificateNeededError extends EngineError {
+  constructor(
+    fileName: string,
+    readonly certificate: CertificateLock
+  ) {
+    super(`${fileName} is encrypted with certificates`, 'NEEDS_CERTIFICATE')
   }
 }
 

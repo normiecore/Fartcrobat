@@ -1,3 +1,4 @@
+import type { CertificateKey, CertificateLock } from '@shared/certkeys'
 import type { DocInfo, DocMetadata, LockInfo, OpenResult, PageInfo, PasswordAccess, Permission, SaveOptions } from '@shared/types'
 import { defineOps, EngineError, mutation, withTransfer, type Transfer } from '../define'
 import type { PDFDocument, Session } from '../session'
@@ -121,6 +122,8 @@ export function documentFacts(s: Session): Omit<DocInfo, 'pages'> {
     format: s.converted ? s.sourceFormat : `PDF ${version}`,
     converted: s.converted,
     encryption,
+    // CONTRACT STUB (engine builder replaces): 'certificate' for documents opened with a certificate.
+    security: encryption ? 'password' : null,
     permissions,
     hasForm: safe(() => hasForm(doc), false),
     hasXfa: safe(() => hasXfa(doc), false),
@@ -443,7 +446,11 @@ export default defineOps('doc', {
     data: Uint8Array,
     fileName: string,
     password?: string
-  ): { needsPassword: false } | { needsPassword: true; lock: LockInfo | null; access: PasswordAccess | null } {
+  ):
+    | { needsPassword: false; needsCertificate?: false }
+    | { needsPassword: true; lock: LockInfo | null; access: PasswordAccess | null }
+    /** Certificate-encrypted and no key this engine holds (addCertificateKey) opens it. */
+    | { needsPassword: false; needsCertificate: true; certificate: CertificateLock } {
     const ext = extensionOf(fileName) || 'pdf'
     let src: InstanceType<Session['mupdf']['Document']>
     try {
@@ -458,6 +465,32 @@ export default defineOps('doc', {
     } finally {
       src.destroy()
     }
+  },
+
+  /**
+   * Opens the certificate-encrypted document waiting after `open` returned needsCertificate, with a
+   * key the person's certificate unwrapped (certkeys:decrypt). The engine keeps the key (see
+   * addCertificateKey). Returns needsCertificate again when the key does not belong to the file.
+   */
+  unlockCertificate(s, key: CertificateKey, opts: { dirty?: boolean } = {}): OpenResult {
+    void [s, key, opts]
+    throw new EngineError('Certificate encryption is not implemented yet', 'NOT_IMPLEMENTED') // CONTRACT STUB
+  },
+
+  /**
+   * Keeps a key in this engine for the life of the worker: files whose /Recipients hold its
+   * envelope then open without asking (reload, revert, files to insert, combine, compare or create
+   * from, and new tabs made from a certificate-encrypted document).
+   */
+  addCertificateKey(s, key: CertificateKey): void {
+    void [s, key]
+    throw new EngineError('Certificate encryption is not implemented yet', 'NOT_IMPLEMENTED') // CONTRACT STUB
+  },
+
+  /** The open document's certificate security (public data), or null when it is not certificate-encrypted. */
+  certificateLock(s): CertificateLock | null {
+    void s
+    return null // CONTRACT STUB
   },
 
   /** The lock of the open document (null when it is not encrypted), to find its saved password. */

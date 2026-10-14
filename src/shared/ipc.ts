@@ -1,6 +1,14 @@
 import type { AgentCallRequest, AgentStatus } from './agent/bridge'
 import type { UpdateStatus } from './updates'
 import type {
+  CertKeysDecryptRequest,
+  CertKeysDecryptResult,
+  CertKeysProbeRequest,
+  CertKeysProbeResult,
+  CertKeysStatus,
+  EncryptionCertificate
+} from './certkeys'
+import type {
   RememberPasswordRequest,
   SavedPasswordCandidate,
   SavedPasswordInfo,
@@ -96,6 +104,19 @@ export interface IpcApi {
   'passwords:forget': (refs: string[] | 'all') => number
   /** Forgets whatever the target's keys lead to ("Forget" in Protect, removing a Digital ID). */
   'passwords:forgetFor': (target: SavedPasswordTarget) => number
+  /** Certificate encryption: which key sources work here (src/main/certkeys/). */
+  'certkeys:status': () => CertKeysStatus
+  /** The person's keys that match a file's recipients. Uses no key and never prompts. */
+  'certkeys:probe': (request: CertKeysProbeRequest) => CertKeysProbeResult
+  /**
+   * Unwraps the seed with one candidate's key. May wait for the person (Windows shows its own smart
+   * card PIN dialog). Failures come back as { ok: false, code }, not as errors.
+   */
+  'certkeys:decrypt': (request: CertKeysDecryptRequest) => CertKeysDecryptResult
+  /** Windows store certificates files can be encrypted for: the person's own, and Other People if asked. */
+  'certkeys:listEncryptionCertificates': (opts: { includeOthers: boolean }) => EncryptionCertificate[]
+  /** Stops the Windows helper, so a smart card needs its PIN again ("Lock smart card"). */
+  'certkeys:lockSmartCard': () => void
 }
 
 /** Events pushed from the main process to the renderer. */

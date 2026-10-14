@@ -105,6 +105,8 @@ export async function withPassword(
 ): Promise<{ result: Extract<ProbeResult, { ok: true }>; password?: string; unlock?: DocUnlock } | null> {
   const first = await probe()
   if (first.ok) return { result: first }
+  // CONTRACT STUB (renderer builder replaces): certificate-encrypted files unlock with the person's keys.
+  if (first.needsCertificate) throw new Error(`${file.name} is encrypted with certificates, which cannot be opened yet`)
   let result: Extract<ProbeResult, { ok: true }> | null = null
   const unlocked = await unlockFile({
     name: file.name,

@@ -15,8 +15,9 @@
     "src/main/util/**/*",
     "src/main/policy.ts",
     "src/main/passwords/**/*",
+    "src/main/certkeys/**/*",
     "src/agent-shim/**/*",
     "tests/engine/**/*"
   ],
-  "exclude": ["src/features/*/main.ts", "src/features/*/main/**/*", "src/main/passwords/index.ts"]
+  "exclude": ["src/features/*/main.ts", "src/features/*/main/**/*", "src/main/passwords/index.ts", "src/main/certkeys/index.ts"]
 }
