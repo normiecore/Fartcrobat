@@ -618,7 +618,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'remove_security',
     title: 'Remove security',
     description:
-      'Remove the password and restrictions from a document and save it without them: over its file, or where the person chooses if it has none. The person confirms in Fartcrobat first (and types the permissions password if one is needed). Returns the saved path.',
+      'Remove the password and restrictions (or the certificate security) from a document and save it without them: over its file, or where the person chooses if it has none. The person confirms in Fartcrobat first (and types the permissions password if one is needed). A certificate-encrypted document has no permissions password: only a certificate allowed to change its security can remove it. Returns the saved path.',
     inputSchema: obj({ handle }),
     annotations: DESTRUCTIVE,
     gate: 'confirm',

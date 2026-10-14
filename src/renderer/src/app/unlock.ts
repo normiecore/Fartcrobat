@@ -17,7 +17,8 @@ import {
   type CertKeysErrorCode,
   type CertKeysProbeResult,
   type CertKeyVia,
-  type PubSecRecipient
+  type PubSecRecipient,
+  type WindowsStoreState
 } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
 
@@ -204,9 +205,11 @@ export interface CertUnlockPorts {
   problem(problem: CertProblem): Promise<'retry' | 'cancel'>
   /**
    * None of the person's keys opens the file. `canAdd` offers "Add Digital ID..."; `unsupportedKey`:
-   * only keys Fartcrobat cannot use yet (elliptic-curve) match.
+   * only keys Fartcrobat cannot use yet (elliptic-curve) match; `windowsStore`: the probe's
+   * WindowsStoreState when the Windows certificate store could not be searched ('constrained',
+   * 'unavailable'), which the message says.
    */
-  noKey(state: { message: string; canAdd: boolean; unsupportedKey: boolean }): Promise<'add' | 'cancel'>
+  noKey(state: { message: string; canAdd: boolean; unsupportedKey: boolean; windowsStore?: BlockedWindowsStore }): Promise<'add' | 'cancel'>
   /** "Add Digital ID...": imports one. The file is probed again afterwards, whatever happened. */
   addDigitalId(): Promise<void>
 }
@@ -258,6 +261,19 @@ function problemMessage(code: CertKeysErrorCode, message: string): string {
   return message || DEFAULT_PROBLEMS[code] || 'The key could not be used.'
 }
 
+/** A Windows certificate store that could not be searched for the person's keys. */
+export type BlockedWindowsStore = Extract<WindowsStoreState, 'constrained' | 'unavailable'>
+
+/** `state` when it says the Windows certificate store could not be searched. */
+export function blockedWindowsStore(state: WindowsStoreState | undefined): BlockedWindowsStore | undefined {
+  return state === 'constrained' || state === 'unavailable' ? state : undefined
+}
+
+/** Why the Windows certificate store could not be searched ("... You can still use a Digital ID."). */
+export function windowsStoreNote(state: BlockedWindowsStore): string {
+  return DEFAULT_PROBLEMS[state === 'constrained' ? 'CONSTRAINED_LANGUAGE' : 'POWERSHELL_UNAVAILABLE']!
+}
+
 /** "Contoso CA" from "CN=Contoso CA, O=Contoso" (the organisation, or the whole name, without a CN). */
 export function commonName(dn: string | undefined): string {
   if (!dn) return ''
@@ -283,10 +299,13 @@ function recipientPhrase(r: PubSecRecipient, short: boolean): string {
  * Why none of the person's keys opens a file: "This document is encrypted for the certificate with
  * serial number 1A2B (issued by Contoso CA). None of your certificates or Digital IDs can open it."
  * A file only names its recipients by issuer and serial number (or key identifier). Up to three
- * are listed, then "and N others".
+ * are listed, then "and N others". When the Windows certificate store could not be searched, only
+ * the Digital IDs were, and the message says why the store was not.
  */
-export function noCertificateMessage(recipients: PubSecRecipient[]): string {
-  const end = 'None of your certificates or Digital IDs can open it.'
+export function noCertificateMessage(recipients: PubSecRecipient[], windowsStore?: BlockedWindowsStore): string {
+  const end = windowsStore
+    ? `None of your Digital IDs can open it. ${windowsStoreNote(windowsStore)}`
+    : 'None of your certificates or Digital IDs can open it.'
   const seen = new Set<string>()
   const unique = recipients.filter((r) => {
     const id = `${r.idType}|${r.issuer ?? ''}|${r.serial ?? ''}|${r.ski ?? ''}`
@@ -304,8 +323,11 @@ export function noCertificateMessage(recipients: PubSecRecipient[]): string {
   return `This document is encrypted for ${unique.length} certificates: ${list}. ${end}`
 }
 
-/** Only keys Fartcrobat cannot use yet match: "This document is encrypted for “EC Test”. It uses an elliptic-curve certificate, ..." */
-export function unsupportedKeyMessage(candidates: CertKeyCandidate[]): string {
+/**
+ * Only keys Fartcrobat cannot use yet match: "This document is encrypted for “EC Test”. It uses an
+ * elliptic-curve certificate, ...", and why the Windows certificate store was not searched.
+ */
+export function unsupportedKeyMessage(candidates: CertKeyCandidate[], windowsStore?: BlockedWindowsStore): string {
   const labels = [...new Set(candidates.map((c) => `“${c.label}”`))]
   const names = labels.length === 1 ? labels[0] : `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`
   const ec = candidates.every((c) => c.keyType === 'ec')
@@ -317,7 +339,8 @@ export function unsupportedKeyMessage(candidates: CertKeyCandidate[]): string {
     : one
       ? 'It uses a kind of certificate'
       : 'They use kinds of certificates'
-  return `This document is encrypted for ${names}. ${kind}, which Fartcrobat cannot open yet.`
+  const message = `This document is encrypted for ${names}. ${kind}, which Fartcrobat cannot open yet.`
+  return windowsStore ? `${message} ${windowsStoreNote(windowsStore)}` : message
 }
 
 /**
@@ -365,11 +388,26 @@ export function orderCandidates(candidates: CertKeyCandidate[]): {
 }
 
 /**
+ * How unlockCertificateOutcome ended: the key that opened the file, or why none did. `problem`:
+ * keys failed and the person could only acknowledge it (a dialog with OK: a blocked PIN, a Digital
+ * ID file that is gone, a key the engine refused...), the last one shown. Null when the person
+ * cancelled (Windows' dialog or the wait for it, a password prompt, Cancel where Try Again was
+ * offered, the no-key message) or no key matched.
+ */
+export type CertUnlockOutcome = { ok: true; unlocked: CertUnlocked } | { ok: false; problem: CertProblem | null }
+
+/**
  * Opens a certificate-encrypted file with one of the person's keys, in the order above. Resolves
  * with what the key unwrapped, which key it was and the access it gives; null when the person
  * cancelled or no key opens it (they were told why).
  */
 export async function unlockCertificate(ports: CertUnlockPorts, opts: CertUnlockOptions): Promise<CertUnlocked | null> {
+  const outcome = await unlockCertificateOutcome(ports, opts)
+  return outcome.ok ? outcome.unlocked : null
+}
+
+/** unlockCertificate, saying why it gave up (see CertUnlockOutcome). */
+export async function unlockCertificateOutcome(ports: CertUnlockPorts, opts: CertUnlockOptions): Promise<CertUnlockOutcome> {
   let offer: RememberOffer | null = null
   const rememberOffer = async (): Promise<RememberOffer> => {
     if (!offer) {
@@ -381,19 +419,32 @@ export async function unlockCertificate(ports: CertUnlockPorts, opts: CertUnlock
     }
     return offer
   }
+  const cancelled: CertUnlockOutcome = { ok: false, problem: null }
 
   for (;;) {
-    const { candidates, recipients } = await ports.probe()
+    const { candidates, recipients, windowsStore } = await ports.probe()
     const order = orderCandidates(candidates)
     /** Something was shown to the person this round (a prompt or a problem). */
     let told = false
-    let cancelled = false
+    /** The person chose Cancel where Try Again was offered this round. */
+    let declined = false
+    /** The last problem this round the person could only acknowledge. */
+    let failed: CertProblem | null = null
+
+    /** Tells the person why a key failed; 'retry' only when offered and chosen. */
+    const problem = async (p: CertProblem): Promise<'retry' | 'cancel'> => {
+      told = true
+      const answer = await ports.problem(p)
+      if (answer === 'retry' && p.canRetry) return 'retry'
+      if (p.canRetry) declined = true
+      else failed = p
+      return 'cancel'
+    }
 
     /** Gives a decrypted key to the engine; true when the file opened. */
     const open = async (c: CertKeyCandidate, res: CertDecrypted): Promise<boolean> => {
       if (await ports.attempt(res)) return true
-      told = true
-      await ports.problem({
+      await problem({
         candidate: c,
         code: 'ERROR',
         message: `The key of “${c.label}” did not open “${opts.name}”. The file may be damaged.`,
@@ -401,35 +452,34 @@ export async function unlockCertificate(ports: CertUnlockPorts, opts: CertUnlock
       })
       return false
     }
-    const unlocked = (res: CertDecrypted): CertUnlocked => ({ result: res, via: res.via, access: certificateAccess(res.permissions) })
+    const unlocked = (res: CertDecrypted): CertUnlockOutcome => ({
+      ok: true,
+      unlocked: { result: res, via: res.via, access: certificateAccess(res.permissions) }
+    })
 
     /**
      * Tries a key without typing anything here (Windows may ask for a smart card PIN in its own
-     * dialog). 'prompt' or 'stale': a Digital ID needs its password typed after all.
+     * dialog). 'prompt' or 'stale': a Digital ID needs its password typed after all. 'cancelled':
+     * the person cancelled Windows' dialog, or the wait for it.
      */
-    const tryKey = async (c: CertKeyCandidate): Promise<CertUnlocked | 'prompt' | 'stale' | null> => {
+    const tryKey = async (c: CertKeyCandidate): Promise<CertUnlockOutcome | 'prompt' | 'stale' | 'cancelled' | null> => {
       for (;;) {
         const res = await ports.decrypt({ candidate: c.id, actor: opts.actor })
         if (res.ok) return (await open(c, res)) ? unlocked(res) : null
-        if (res.code === 'CANCELLED') {
-          cancelled = true
-          return null
-        }
+        if (res.code === 'CANCELLED') return 'cancelled'
         if (c.source === 'digital-id' && (res.code === 'PASSWORD_NEEDED' || res.code === 'WRONG_PASSWORD'))
           return res.savedStale ? 'stale' : 'prompt'
         // The key is gone since the probe: nothing to tell.
         if (res.code === 'NO_MATCHING_CERT') return null
         const canRetry = RETRYABLE.has(res.code)
-        told = true
-        const answer = await ports.problem({ candidate: c, code: res.code, message: problemMessage(res.code, res.message), canRetry })
-        if (answer !== 'retry' || !canRetry) return null
+        if ((await problem({ candidate: c, code: res.code, message: problemMessage(res.code, res.message), canRetry })) !== 'retry') return null
       }
     }
 
     const prompts = order.prompt.map((candidate) => ({ candidate, stale: false }))
     for (const c of [...order.silent, ...order.hardware]) {
       const r = await tryKey(c)
-      if (cancelled) return null
+      if (r === 'cancelled') return cancelled
       if (r === 'prompt' || r === 'stale') prompts.push({ candidate: c, stale: r === 'stale' })
       else if (r) return r
     }
@@ -439,7 +489,7 @@ export async function unlockCertificate(ports: CertUnlockPorts, opts: CertUnlock
       for (;;) {
         told = true
         const answer = await ports.askPassword({ candidate: c, wrong, savedStale: stale && !wrong, remember: await rememberOffer() })
-        if (!answer) return null
+        if (!answer) return cancelled
         // The next prompt keeps what the person chose in this one (unticked stays unticked).
         if (offer?.offer) offer = { offer: true, checked: answer.remember }
         const remember = !!offer?.offer && answer.remember
@@ -448,30 +498,33 @@ export async function unlockCertificate(ports: CertUnlockPorts, opts: CertUnlock
           if (await open(c, res)) return unlocked(res)
           break
         }
-        if (res.code === 'CANCELLED') return null
+        if (res.code === 'CANCELLED') return cancelled
         if (res.code === 'WRONG_PASSWORD' || res.code === 'PASSWORD_NEEDED') {
           wrong = true
           continue
         }
         if (res.code !== 'NO_MATCHING_CERT')
-          await ports.problem({ candidate: c, code: res.code, message: problemMessage(res.code, res.message), canRetry: false })
+          await problem({ candidate: c, code: res.code, message: problemMessage(res.code, res.message), canRetry: false })
         break
       }
     }
 
     // Nothing opened it. When the person saw nothing yet (no key matches, or only keys that cannot
     // be used), say why, and offer to add the Digital ID it was encrypted for.
-    if (told) return null
+    if (told) return declined ? cancelled : { ok: false, problem: failed }
     const usable = order.silent.length + order.hardware.length + order.prompt.length
     const unusable = candidates.filter((c) => c.keyType !== 'rsa')
     const unsupportedKey = !usable && unusable.length > 0
     const canAdd = opts.canAddDigitalId && !unsupportedKey
+    // The Windows certificate store could not be searched: the person may have a key there.
+    const store = blockedWindowsStore(windowsStore)
     const answer = await ports.noKey({
-      message: unsupportedKey ? unsupportedKeyMessage(unusable) : noCertificateMessage(recipients),
+      message: unsupportedKey ? unsupportedKeyMessage(unusable, store) : noCertificateMessage(recipients, store),
       canAdd,
-      unsupportedKey
+      unsupportedKey,
+      ...(store ? { windowsStore: store } : {})
     })
-    if (answer !== 'add' || !canAdd) return null
+    if (answer !== 'add' || !canAdd) return cancelled
     await ports.addDigitalId()
   }
 }

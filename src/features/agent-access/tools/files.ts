@@ -21,6 +21,7 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import type docOps from '@engine/ops/doc'
+import { isCertificateEncrypted } from '@features/digital-signatures/ui/encrypted'
 import type exportOps from '@features/export-create/engine'
 import { ExportCancelled, runExport, type ExportEngine } from '@features/export-create/exporter'
 import { DEFAULT_EXPORT_OPTIONS, FORMAT_INFO, type ExportFormat, type ExportOptions } from '@features/export-create/shared'
@@ -49,7 +50,7 @@ import {
   imageFormatFor,
   networkHost,
   newNetworkHosts,
-  noCertificateFailure,
+  certificateFailure,
   openErrorCode,
   pathArg,
   pdfPath,
@@ -75,8 +76,8 @@ function messageOf(err: unknown): string {
 
 /** A file that could not be read or opened, as the agent sees it. */
 function openFailure(path: string, err: unknown): ToolError {
-  const noKey = noCertificateFailure(basename(path), err)
-  if (noKey) return new ToolError(noKey.code, noKey.message)
+  const certificate = certificateFailure(basename(path), err)
+  if (certificate) return new ToolError(certificate.code, certificate.message)
   const message = messageOf(err)
   if (openErrorCode(message) === 'unsupported') return new ToolError('unsupported', unsupportedMessage(basename(path), message))
   return new ToolError('file_error', `Could not open ${path}: ${message.replace(/^This file could not be opened: /, '')}`)
@@ -319,7 +320,11 @@ const exportDocument: ToolHandler = async (args, ctx) => {
   if (!doc.state.info.permissions.copy)
     throw new ToolError(
       'failed',
-      `The security settings of “${doc.state.title}” don't allow copying or exporting its content, so Fartcrobat does not export it. You can still read it with get_page_text. If the person wants it exported and knows its permissions password, remove_security can lift the restriction.`
+      `The security settings of “${doc.state.title}” don't allow copying or exporting its content, so Fartcrobat does not export it. You can still read it with get_page_text. ${
+        isCertificateEncrypted(doc)
+          ? 'The restriction comes from the certificate the person opened it with: only someone whose certificate may change its security can lift it.'
+          : 'If the person wants it exported and knows its permissions password, remove_security can lift the restriction.'
+      }`
     )
   const options: ExportOptions = {
     ...DEFAULT_EXPORT_OPTIONS,
