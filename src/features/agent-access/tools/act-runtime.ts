@@ -132,6 +132,8 @@ function waitTurn(turn: Promise<void>, ctx: ToolContext): Promise<void> {
  *
  * keepDone: a truthy result means the person finished the step (signed, protected, saved), so it
  * is returned even if the agent cancelled meanwhile. Not for steps the agent's own work follows.
+ * A step that fails after the agent cancelled is reported as cancelled: its dialogs were dismissed
+ * for the person, so its error ("could not be used", "none of your keys") says nothing they saw.
  */
 export async function handoff<T>(ctx: ToolContext, fn: () => Promise<T>, opts: { keepDone?: boolean } = {}): Promise<T> {
   throwIfAborted(ctx)
@@ -150,7 +152,13 @@ export async function handoff<T>(ctx: ToolContext, fn: () => Promise<T>, opts: {
     }
     ctx.signal.addEventListener('abort', onAbort)
     try {
-      const result = await withAttention(fn)
+      let result: T
+      try {
+        result = await withAttention(fn)
+      } catch (err) {
+        throwIfAborted(ctx)
+        throw err
+      }
       if (!(opts.keepDone && result)) throwIfAborted(ctx)
       return result
     } finally {

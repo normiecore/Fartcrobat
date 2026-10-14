@@ -191,6 +191,25 @@ describe('hand-offs', () => {
     })
     expect(await codeOf(plain)).toBe('aborted')
   })
+
+  it('report a step that failed after the agent cancelled as cancelled, not as its error', async () => {
+    // An OK-only problem ("Could not use “Alice”") dismissed by the cancel reads as acknowledged,
+    // and the step then throws: the person saw nothing, so the agent is told it was cancelled.
+    const a = ctxFor()
+    const failing = runtime.handoff(a.ctx, async () => {
+      await ui.openDialog<string>(() => null)
+      throw Object.assign(new Error('The Digital ID file could not be read.'), { code: 'CERTIFICATE_FAILED' })
+    })
+    await vi.waitFor(() => expect(dialogs()).toHaveLength(1))
+    a.controller.abort()
+    expect(await codeOf(failing)).toBe('aborted')
+    // Without a cancel the error is the step's own.
+    const b = ctxFor()
+    const plain = runtime.handoff(b.ctx, async () => {
+      throw Object.assign(new Error('nope'), { code: 'CERTIFICATE_FAILED' })
+    })
+    await expect(plain).rejects.toMatchObject({ code: 'CERTIFICATE_FAILED' })
+  })
 })
 
 /** A DocumentModel driven by the in-process engine. */
