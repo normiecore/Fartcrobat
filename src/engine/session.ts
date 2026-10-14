@@ -2,6 +2,9 @@ import type * as MuPDF from 'mupdf'
 import type { ChangeSet, JournalState } from '@shared/types'
 import type { Matrix, Rect } from '@shared/geometry'
 import { invertMatrix } from '@shared/geometry'
+import { CertificateKeyRegistry } from './crypt/keys'
+import type { PubSecState } from './crypt/pubsecBridge'
+import type { PubSecInfo } from './crypt/pubsecRead'
 import { EngineError } from './define'
 import { countSignatures } from './util/pdf'
 
@@ -29,6 +32,19 @@ export class Session {
   pendingBytes: Uint8Array | null = null
   /** The pending document should open as unsaved (see doc.open's `dirty`). */
   pendingDirty = false
+  /**
+   * A certificate-encrypted file waiting for a key (doc.open returned needsCertificate), opened by
+   * doc.unlockCertificate. The bytes as given; `dirty` as `pendingDirty`.
+   */
+  pendingCertificate: { bytes: Uint8Array; info: PubSecInfo; dirty: boolean } | null = null
+  /**
+   * Certificate security of the open document (public-key, /Adobe.PubSec), null when it has none.
+   * Holds the seed and the write key: never log it or send it to the UI thread. Such documents are
+   * never saved incrementally (and so never rebased): saveDocument writes them with pubsecWrite.
+   */
+  pubsec: PubSecState | null = null
+  /** Every certificate key this engine was given (doc.addCertificateKey). Lives as long as the worker. */
+  readonly certificateKeys = new CertificateKeyRegistry()
   fileName = ''
   /**
    * The exact bytes the document was opened (or last reloaded, or last saved incrementally) from.
@@ -120,6 +136,9 @@ export class Session {
    */
   rebase(bytes: Uint8Array) {
     if (this.opDepth > 0) throw new EngineError('The document cannot be reopened during an operation', 'BAD_STATE')
+    // MuPDF holds a certificate-encrypted document through a temporary security dictionary that
+    // must never be written out, so it is never saved incrementally and never reopened from output.
+    if (this.pubsec) throw new EngineError('Certificate-encrypted documents are always saved in full', 'CERTIFICATE_FULL_SAVE')
     const old = this.pdf
     const fresh = new this.mupdf.PDFDocument(bytes)
     try {
@@ -168,6 +187,7 @@ export class Session {
       } catch {}
     }
     this.doc = null
+    this.pubsec = null
   }
 
   pageCount(): number {
