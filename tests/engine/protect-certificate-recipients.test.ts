@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest'
 import type { CertKeyCandidate, CertKeyVia, EncryptionCertificate, PubSecRecipient } from '@shared/certkeys'
 import type { DocInfo, Permission } from '@shared/types'
 import type { DigitalIdRecord } from '@features/digital-signatures/types'
+import { certificatePermissionBits, certificatePermissions } from '@engine/crypt/keys'
+import { certificateAccess, type DocUnlock } from '@renderer/app/unlock'
 import { certificateInfo } from '@features/protect-optimize/certificateFiles'
 import {
   EC_REASON,
@@ -34,6 +36,7 @@ import {
   type Recipient,
   type RecipientGroup
 } from '@features/protect-optimize/certificates'
+import { permissionRows } from '@features/protect-optimize/shared'
 
 const PKI = join(__dirname, '../fixtures/passwordless/pki')
 const pki = (name: string) => new Uint8Array(readFileSync(join(PKI, name)))
@@ -229,11 +232,36 @@ describe('protect-optimize: certificate-encrypted documents', () => {
     permissions: { ...ALL, ...permissions }
   })
 
-  it('gives full access to a certificate that may change the security or allows everything', () => {
-    expect(hasFullAccess(info({}), null)).toBe(true)
-    expect(hasFullAccess(info({ edit: false }), { method: 'certificate', access: 'owner' })).toBe(true)
-    expect(hasFullAccess(info({ edit: false }), { method: 'certificate', access: 'user' })).toBe(false)
-    expect(hasFullAccess(info({ 'print-hq': false }), undefined)).toBe(false)
+  it('gives full access only to a certificate that may change the security', () => {
+    expect(hasFullAccess({ method: 'certificate', access: 'owner' })).toBe(true)
+    expect(hasFullAccess({ method: 'source', access: 'owner' })).toBe(true)
+    expect(hasFullAccess({ method: 'certificate', access: 'user' })).toBe(false)
+    // Without knowing which envelope opened it, nothing is offered that the engine may refuse.
+    expect(hasFullAccess(null)).toBe(false)
+    expect(hasFullAccess(undefined)).toBe(false)
+  })
+
+  it('does not count an envelope that allows everything except changing the security as full access', () => {
+    // "Add a Group with Other Permissions" starts with exactly this group.
+    const [group2] = toCertificateGroups([group(2, [fileRecipient('bob.cer')], { ...FULL_ACCESS, changeSecurity: false })])
+    const bits = certificatePermissionBits(group2.permissions, group2.changeSecurity)
+    expect(bits).toBe(0xfffffffd)
+    // What Bob gets when he opens the file: every permission, but not the security settings.
+    const opened = certificatePermissions(bits)
+    expect(opened.permissions).toEqual(ALL)
+    const unlock: DocUnlock = { method: 'certificate', access: certificateAccess(bits) }
+    expect(unlock.access).toBe('user')
+    expect(hasFullAccess(unlock)).toBe(false)
+    const st = certificateSecurity(info(opened.permissions), unlock)
+    expect(st.ownerAccess).toBe(false)
+    expect(st.permissions).toEqual(ALL)
+    // The panel's table says why Protect and Remove security are disabled.
+    const rows = permissionRows(st.filePermissions, { changeSecurity: st.ownerAccess })
+    expect(rows.at(-1)).toEqual(['Changing the security', 'Not allowed', 'denied'])
+    expect(rows.slice(0, -1).every(([, , level]) => level === 'allowed')).toBe(true)
+    expect(permissionRows(ALL, { changeSecurity: true }).at(-1)).toEqual(['Changing the security', 'Allowed', 'allowed'])
+    // Password security has no such row (its permissions password changes the security).
+    expect(permissionRows(ALL).map(([label]) => label)).not.toContain('Changing the security')
   })
 
   it('describes the security without a password', () => {
@@ -247,6 +275,7 @@ describe('protect-optimize: certificate-encrypted documents', () => {
       filePermissions: { ...ALL, edit: false, copy: false }
     })
     expect(certificateSecurity(info({}), { method: 'source', access: 'owner' })).toMatchObject({ method: '256-bit AES', ownerAccess: true })
+    expect(certificateSecurity(info({}), { method: 'certificate', access: 'user' })).toMatchObject({ ownerAccess: false })
     expect(certificateSecurity(info({}, 'Adobe.PubSec V4 128-bit RC4'), null).method).toBe('128-bit RC4')
   })
 

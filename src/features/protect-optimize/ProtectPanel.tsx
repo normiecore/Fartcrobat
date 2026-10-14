@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { FileKey2, KeyRound, Lock, LockOpen, PenOff } from 'lucide-react'
 import { describeCertKey } from '@shared/certkeys'
 import type { SavedPasswordInfo } from '@shared/passwords'
-import type { Permission } from '@shared/types'
 import {
   Button,
   EmptyState,
@@ -18,29 +17,10 @@ import {
 } from '@renderer/sdk'
 import { certificateRecipientNames } from './certificates'
 import { enterPermissionsPassword, forgetDocumentPassword, openCertificateEncryptDialog, openProtectDialog, removeSecurity } from './flows'
-import { isRestricted } from './shared'
+import { isRestricted, permissionRows, restrictionList } from './shared'
 import { useSecurity } from './useSecurity'
 
 const P = 'fc-protect-optimize'
-
-const allowed = (v: boolean) => (v ? 'Allowed' : 'Not allowed')
-
-type Level = 'allowed' | 'partial' | 'denied'
-const level = (v: boolean): Level => (v ? 'allowed' : 'denied')
-
-function permissionRows(p: Record<Permission, boolean>): [string, string, Level][] {
-  const printing: [string, Level] = !p.print ? ['Not allowed', 'denied'] : p['print-hq'] ? ['Allowed', 'allowed'] : ['Low resolution only', 'partial']
-  return [
-    ['Printing', printing[0], printing[1]],
-    ['Changing the document', allowed(p.edit), level(p.edit)],
-    ['Document assembly', allowed(p.assemble), level(p.assemble)],
-    ['Content copying', allowed(p.copy), level(p.copy)],
-    ['Content copying for accessibility', allowed(p.accessibility), level(p.accessibility)],
-    ['Commenting', allowed(p.annotate), level(p.annotate)],
-    ['Filling of form fields', allowed(p.form), level(p.form)],
-    ['Signing', allowed(p.form), level(p.form)]
-  ]
-}
 
 /** The password saved on this device for the document, refreshed when its file or security changes. */
 function useSavedPassword(doc: DocumentModel, encrypted: boolean): [SavedPasswordInfo | null, () => void] {
@@ -101,6 +81,8 @@ function ProtectPanelBody({ doc }: { doc: DocumentModel }) {
   const fileRestricted = st.encrypted && isRestricted(st.filePermissions)
   // A certificate that may not change the security cannot replace or remove it either.
   const locked = certificate && !st.ownerAccess
+  // Every permission, but not the security settings (the default of a group added in Encrypt with Certificate).
+  const allButSecurity = locked && restrictionList(st.filePermissions).length === 0
   const lockedNote = 'Your certificate does not allow changing the security'
   const redact = registry.toolGroups.find((g) => g.id === 'redact')
   return (
@@ -135,7 +117,7 @@ function ProtectPanelBody({ doc }: { doc: DocumentModel }) {
             </>
           )}
           <dt>Your access</dt>
-          <dd>{st.ownerAccess ? 'Full access' : 'Restricted'}</dd>
+          <dd>{st.ownerAccess ? 'Full access' : allButSecurity ? 'Everything except changing the security' : 'Restricted'}</dd>
         </dl>
       )}
       {certificate && recipients && recipients.length > 0 && (
@@ -152,7 +134,12 @@ function ProtectPanelBody({ doc }: { doc: DocumentModel }) {
         <p className={`${P}-hint`}>You have full access for now (permissions password entered). Others still get the restrictions below.</p>
       )}
       {locked && (
-        <p className={`${P}-hint`}>Your certificate gives you restricted access. Others it is encrypted for may have different permissions.</p>
+        <p className={`${P}-hint`}>
+          {allButSecurity
+            ? 'Your certificate does not allow changing the security, so you cannot protect it again or remove its security.'
+            : 'Your certificate gives you restricted access.'}{' '}
+          Others it is encrypted for may have different permissions.
+        </p>
       )}
       {saved && (
         <div className={`${P}-saved`} data-testid="saved-password">
@@ -211,7 +198,7 @@ function ProtectPanelBody({ doc }: { doc: DocumentModel }) {
         {st.encrypted ? (
           <table className={`${P}-perms`} data-testid="security-permissions">
             <tbody>
-              {permissionRows(st.filePermissions).map(([label, value, lvl]) => (
+              {permissionRows(st.filePermissions, certificate ? { changeSecurity: st.ownerAccess } : {}).map(([label, value, lvl]) => (
                 <tr key={label}>
                   <th scope="row">{label}</th>
                   <td className={`is-${lvl}`}>{value}</td>

@@ -152,7 +152,10 @@ export interface SecurityStatus {
   method: string | null
   /** The file asks for a password before it opens. */
   needsOpenPassword: boolean
-  /** All permissions are granted in this session (owner password used, or nothing restricted). */
+  /**
+   * All permissions are granted in this session (owner password used, or nothing restricted). For
+   * certificate security: the envelope that opened it may change the security.
+   */
   ownerAccess: boolean
   permissions: Record<Permission, boolean>
 }
@@ -171,6 +174,31 @@ export function restrictionList(p: Record<Permission, boolean>): string[] {
   if (!p.copy) out.push('copying text and images')
   if (!p.accessibility) out.push('screen reader access')
   return out
+}
+
+export type PermissionLevel = 'allowed' | 'partial' | 'denied'
+
+/**
+ * The rows of the Protect panel's permissions table: label, value, level. `changeSecurity` adds the
+ * row certificate security has (whether the envelope that opened it may change the security).
+ */
+export function permissionRows(p: Record<Permission, boolean>, opts: { changeSecurity?: boolean } = {}): [string, string, PermissionLevel][] {
+  const allowed = (v: boolean) => (v ? 'Allowed' : 'Not allowed')
+  const level = (v: boolean): PermissionLevel => (v ? 'allowed' : 'denied')
+  const printing: [string, PermissionLevel] = !p.print ? ['Not allowed', 'denied'] : p['print-hq'] ? ['Allowed', 'allowed'] : ['Low resolution only', 'partial']
+  return [
+    ['Printing', printing[0], printing[1]],
+    ['Changing the document', allowed(p.edit), level(p.edit)],
+    ['Document assembly', allowed(p.assemble), level(p.assemble)],
+    ['Content copying', allowed(p.copy), level(p.copy)],
+    ['Content copying for accessibility', allowed(p.accessibility), level(p.accessibility)],
+    ['Commenting', allowed(p.annotate), level(p.annotate)],
+    ['Filling of form fields', allowed(p.form), level(p.form)],
+    ['Signing', allowed(p.form), level(p.form)],
+    ...(opts.changeSecurity !== undefined
+      ? [['Changing the security', allowed(opts.changeSecurity), level(opts.changeSecurity)] as [string, string, PermissionLevel]]
+      : [])
+  ]
 }
 
 export function isRestricted(p: Record<Permission, boolean>): boolean {

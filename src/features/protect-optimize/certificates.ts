@@ -268,9 +268,14 @@ export function ownVia(groups: RecipientGroup[], preferred: Recipient | null): C
 
 // ---- certificate-encrypted documents in the Protect panel ---------------------------------------
 
-/** The certificate that opened it may change the security, or it allows everything. */
-export function hasFullAccess(info: Pick<DocInfo, 'permissions'>, unlock: DocUnlock | null | undefined): boolean {
-  return unlock?.access === 'owner' || PERMISSIONS.every((p) => info.permissions[p] !== false)
+/**
+ * The envelope the person's certificate opened may change the security (DocUnlock.access 'owner').
+ * Only that counts: an envelope that allows every permission but not changing the security (what
+ * "Add a Group with Other Permissions" starts with) cannot replace or remove it, and the engine
+ * refuses. Without an unlock it is not known which envelope opened it, so nothing is offered.
+ */
+export function hasFullAccess(unlock: DocUnlock | null | undefined): boolean {
+  return unlock?.access === 'owner'
 }
 
 /**
@@ -288,7 +293,7 @@ export function certificateSecurity(
     encrypted: true,
     method: encryptionLabel(info.encryption),
     needsOpenPassword: false,
-    ownerAccess: hasFullAccess(info, unlock),
+    ownerAccess: hasFullAccess(unlock),
     permissions,
     filePermissions: { ...permissions }
   }

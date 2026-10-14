@@ -13,7 +13,7 @@ const doc = (ctx: CommandContext) => ctx.doc!
 const certificate = (ctx: CommandContext) => ctx.doc?.state.info.security === 'certificate'
 const encrypted = (ctx: CommandContext) => !!ctx.doc?.state.info.encryption || certificate(ctx)
 /** A certificate-encrypted document whose certificate may not change the security. */
-const certificateLocked = (ctx: CommandContext) => certificate(ctx) && !hasFullAccess(ctx.doc!.state.info, ctx.doc!.state.unlock)
+const certificateLocked = (ctx: CommandContext) => certificate(ctx) && !hasFullAccess(ctx.doc!.state.unlock)
 
 export default defineFeature({
   id: FEATURE_ID,
