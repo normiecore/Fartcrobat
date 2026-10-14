@@ -39,7 +39,7 @@ export interface ServerHooks {
 export interface ServerOptions {
   token: string
   appVersion: string
-  /** A connection that has not authenticated by then is closed. */
+  /** A connection that has not authenticated by then is closed (a local handshake takes milliseconds). */
   authTimeoutMs?: number
   /** Longest line accepted after authentication (shorter limits make tests quick). */
   maxLine?: number
@@ -47,12 +47,22 @@ export interface ServerOptions {
   maxConnections?: number
   /** Ids for new connections; the service keeps them unique across restarts. */
   nextConnectionId?: () => number
+  /** True for an AI app the person disconnected: it is refused until they allow it again. */
+  isBlocked?: (client: AgentClientInfo) => boolean
 }
 
 /** Bytes a peer may send before it has authenticated (the auth message is a few hundred). */
 const MAX_HANDSHAKE_BYTES = 64 * 1024
 /** Open sockets at once, authenticated or not. */
 const MAX_SOCKETS = 64
+/**
+ * Sockets still in their handshake. When more arrive, the oldest is dropped rather than the new
+ * one, so idle sockets cannot keep a real AI app out (on Windows other accounts can open the pipe).
+ */
+const MAX_HANDSHAKES = 16
+
+export const BLOCKED_MESSAGE =
+  'The person disconnected this AI app in Fartcrobat. Do not use Fartcrobat again unless they ask; they can allow it again in Fartcrobat (Preferences > AI apps).'
 
 let connectionCounter = 0
 
@@ -68,6 +78,10 @@ function text(value: unknown, max = 100): string {
 export class AgentServer {
   private server: Server | null = null
   private readonly sockets = new Set<Socket>()
+  /** Sockets in their handshake, oldest first, with what drops them. */
+  private readonly handshakes = new Map<Socket, () => void>()
+  /** Connections being closed: what they still send is ignored. */
+  private readonly ending = new WeakSet<Socket>()
   private readonly connections = new Map<number, { conn: AgentConnection; socket: Socket }>()
   private readonly authTimeoutMs: number
   private readonly maxLine: number
@@ -78,7 +92,7 @@ export class AgentServer {
     private readonly opts: ServerOptions,
     private readonly hooks: ServerHooks
   ) {
-    this.authTimeoutMs = opts.authTimeoutMs ?? 10_000
+    this.authTimeoutMs = opts.authTimeoutMs ?? 5_000
     this.maxLine = opts.maxLine ?? MAX_LINE_BYTES
     this.maxConnections = opts.maxConnections ?? 16
     this.nextId = opts.nextConnectionId ?? (() => ++connectionCounter)
@@ -109,10 +123,15 @@ export class AgentServer {
     return true
   }
 
-  /** Closes one connection, or all of them. */
+  /** Tells one connection, or all of them, that the person disconnected it, and closes it. */
   disconnect(connectionId?: number) {
     for (const [id, c] of this.connections)
-      if (connectionId === undefined || id === connectionId) c.socket.destroy()
+      if (connectionId === undefined || id === connectionId) {
+        this.ending.add(c.socket)
+        if (c.socket.writable) c.socket.write(encodeMessage({ t: 'notice', event: 'disconnected' }))
+        c.socket.end()
+        setTimeout(() => c.socket.destroy(), 200).unref?.()
+      }
   }
 
   /**
@@ -123,6 +142,7 @@ export class AgentServer {
     const server = this.server
     this.server = null
     for (const { socket } of this.connections.values()) {
+      this.ending.add(socket)
       if (notice && socket.writable) socket.write(encodeMessage({ t: 'notice', event: notice }))
       socket.end()
     }
@@ -141,10 +161,20 @@ export class AgentServer {
   }
 
   private accept(socket: Socket) {
-    if (!this.server || this.sockets.size >= MAX_SOCKETS) {
+    if (!this.server) {
       socket.destroy()
       return
     }
+    if (this.sockets.size >= MAX_SOCKETS) {
+      // Say why, so the shim reports busy instead of treating Fartcrobat as not running.
+      socket.on('error', () => {})
+      socket.end(
+        encodeMessage({ t: 'reject', code: 'busy', message: 'Fartcrobat is busy. Try again in a moment.' })
+      )
+      setTimeout(() => socket.destroy(), 1000).unref?.()
+      return
+    }
+    if (this.handshakes.size >= MAX_HANDSHAKES) this.handshakes.values().next().value?.()
     this.sockets.add(socket)
     socket.setEncoding('utf8')
     const nonce = randomHex()
@@ -159,12 +189,14 @@ export class AgentServer {
       if (closed) return
       closed = true
       clearTimeout(timer)
+      this.handshakes.delete(socket)
       socket.destroy()
     }
     const reject = (code: RejectMessage['code'], message: string) => {
       if (closed) return
       closed = true
       clearTimeout(timer)
+      this.handshakes.delete(socket)
       write({ t: 'reject', code, message })
       socket.end()
       setTimeout(() => socket.destroy(), 1000).unref?.()
@@ -172,12 +204,13 @@ export class AgentServer {
     const timer = setTimeout(() => reject('protocol', 'Authentication timed out.'), this.authTimeoutMs)
 
     const onMessage = (msg: ShimToApp) => {
-      if (closed) return
+      if (closed || this.ending.has(socket)) return
       if (!conn) {
         if (msg.t !== 'auth') return reject('protocol', 'Expected auth.')
         conn = this.authenticate(msg, nonce, reject)
         if (!conn) return
         clearTimeout(timer)
+        this.handshakes.delete(socket)
         this.connections.set(conn.id, { conn, socket })
         write({ t: 'ready', mac: computeMac(this.opts.token, 'server', msg.nonce), connectionId: conn.id })
         this.hooks.connected(conn)
@@ -229,11 +262,13 @@ export class AgentServer {
       closed = true
       clearTimeout(timer)
       this.sockets.delete(socket)
+      this.handshakes.delete(socket)
       if (conn && this.connections.get(conn.id)?.socket === socket) {
         this.connections.delete(conn.id)
         this.hooks.disconnected(conn)
       }
     })
+    this.handshakes.set(socket, drop)
     write({ t: 'hello', protocol: AGENT_PROTOCOL_VERSION, appVersion: this.opts.appVersion, nonce })
   }
 
@@ -261,15 +296,20 @@ export class AgentServer {
       )
       return null
     }
+    const reported =
+      msg.client && typeof msg.client === 'object' ? msg.client : ({} as Partial<AgentClientInfo>)
+    const client = { name: text(reported.name), version: text(reported.version) }
+    if (this.opts.isBlocked?.(client)) {
+      reject('blocked', BLOCKED_MESSAGE)
+      return null
+    }
     if (this.connections.size >= this.maxConnections) {
       reject('busy', 'Too many AI apps are connected to Fartcrobat.')
       return null
     }
-    const client =
-      msg.client && typeof msg.client === 'object' ? msg.client : ({} as Partial<AgentClientInfo>)
     return {
       id: this.nextId(),
-      client: { name: text(client.name), version: text(client.version) },
+      client,
       shimVersion: text(msg.shimVersion),
       since: Date.now()
     }

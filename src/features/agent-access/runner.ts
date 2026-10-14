@@ -2,7 +2,8 @@
  * Runs the tool calls the main process routes to this window ('agent:request'): finds the handler
  * (tools/index.ts), gives it a ToolContext, turns failures into tool errors and replies exactly once
  * per call ('feature:agent-access:reply'). Calls run concurrently; nothing here waits on another
- * call or blocks the UI.
+ * call or blocks the UI. A call still running after about 45 s (usually waiting for the person)
+ * answers still_running with a ticket and keeps going; wait_for_result (tools/wait.ts) collects it.
  */
 import type { AgentAuditDetail, AgentCallReply, AgentCallRequest, AgentProgress } from '@shared/agent/bridge'
 import type { AgentToolResult } from '@shared/agent/protocol'
@@ -12,6 +13,7 @@ import { commitActiveEditors, hasActiveEditors } from '@renderer/app/commands'
 import { isDocumentClosedError } from '@renderer/engine/EngineClient'
 import { TOOL_HANDLERS } from './tools'
 import { auditName, parseHandle, ToolError, type ToolContext, type ToolHandler } from './tools/common'
+import { openTicket, setStillRunningMs, stillRunning, stillRunningAfterMs, type OpenTicket } from './tools/wait'
 import { appLabel, callFinished, callStarted } from './ui/store'
 import './ipc'
 
@@ -22,6 +24,10 @@ export interface RunnerDeps {
   commitEditors: () => Promise<void>
   reply: (reply: AgentCallReply) => Promise<unknown>
   progress: (progress: AgentProgress) => void
+  /** How long a call runs before it answers still_running. */
+  stillRunningMs?: () => number
+  /** How long a call stopped through its ticket may take before it is ended as cancelled. */
+  graceMs?: number
 }
 
 /** How long a cancelled call may take to stop before it is answered as cancelled anyway. */
@@ -51,16 +57,20 @@ function documentOfHandle(request: AgentCallRequest): string | undefined {
   const handle = request.args?.handle
   if (typeof handle !== 'string') return undefined
   const parsed = parseHandle(handle)
-  if (!parsed || parsed.windowId !== request.windowId) return undefined
+  if (!parsed || parsed.windowId !== request.windowId || !parsed.current) return undefined
   const doc = useApp.getState().docs.find((d) => d.id === parsed.docId && !d.isClosed)
   return doc ? auditName(doc) : undefined
 }
 
-/** Runs one call to completion. Never throws: failures come back as result.error. */
+/**
+ * Runs one call to completion. Never throws: failures come back as result.error. `audit` collects
+ * what the handler reports as it goes.
+ */
 export async function executeCall(
   request: AgentCallRequest,
   signal: AbortSignal,
-  deps: RunnerDeps
+  deps: RunnerDeps,
+  audit: Partial<AgentAuditDetail> = {}
 ): Promise<{ result: AgentToolResult; audit: AgentAuditDetail }> {
   const def = deps.tool(request.tool)
   const handler = def ? deps.handlers[def.name] : undefined
@@ -70,7 +80,6 @@ export async function executeCall(
       : `Fartcrobat has no tool named "${request.tool}".`
     return { result: { error: { code: 'unknown_tool', message } }, audit: { outcome: 'error' } }
   }
-  const audit: Partial<AgentAuditDetail> = {}
   const ctx: ToolContext = {
     request,
     signal,
@@ -105,10 +114,12 @@ export async function executeCall(
 
 interface Running {
   controller: AbortController
-  finish: (result: AgentToolResult, audit: AgentAuditDetail) => void
+  /** Ends the call, once: replies, or keeps the result for its ticket. */
+  settle: (result: AgentToolResult, audit: AgentAuditDetail) => void
   graceTimer: ReturnType<typeof setTimeout> | null
 }
 
+/** Calls whose request is not answered yet, by request id. */
 const running = new Map<string, Running>()
 
 /** Progress updates are sent at most this often per call (the last one always). */
@@ -130,8 +141,24 @@ export const defaultDeps: RunnerDeps = {
     if (hasActiveEditors()) await commitActiveEditors()
   },
   reply: (reply) => invoke('feature:agent-access:reply', reply),
-  progress: sendProgress
+  progress: sendProgress,
+  stillRunningMs: stillRunningAfterMs
 }
+
+const ABORTED: AgentToolResult = { error: { code: 'aborted', message: 'The call was cancelled.' } }
+
+/** Aborts a call's handler; one that does not notice is ended as cancelled after graceMs anyway. */
+function stopCall(entry: Running, graceMs: number) {
+  if (entry.controller.signal.aborted) return
+  entry.controller.abort()
+  entry.graceTimer = setTimeout(() => entry.settle(ABORTED, { outcome: 'cancelled' }), graceMs)
+}
+
+/**
+ * Tools that never answer still_running: wait_for_result waits by itself, and list_documents is
+ * merged from every window by the main process.
+ */
+const ANSWER_AT_ONCE = new Set(['wait_for_result', 'list_documents'])
 
 /** Runs a call from the main process and replies once, also when the agent cancelled it. */
 export async function handleRequest(request: AgentCallRequest, deps: RunnerDeps = defaultDeps): Promise<void> {
@@ -139,49 +166,81 @@ export async function handleRequest(request: AgentCallRequest, deps: RunnerDeps 
   const controller = new AbortController()
   const started = Date.now()
   const def = deps.tool(request.tool)
-  let replied = false
+  // wait_for_result is bookkeeping for another call, which keeps its own row in the activity panel.
+  const listed = request.tool !== 'wait_for_result'
+  const audit: Partial<AgentAuditDetail> = {}
+  let ticket: OpenTicket | null = null
+  let ended = false
+  let waitTimer: ReturnType<typeof setTimeout> | null = null
+  const send = (result: AgentToolResult, detail: AgentAuditDetail) =>
+    void Promise.resolve()
+      .then(() => deps.reply({ id: request.id, result, audit: detail }))
+      .catch((err) => console.warn('Could not send the result of an agent call', err))
   const entry: Running = {
     controller,
     graceTimer: null,
-    finish: (result, audit) => {
-      if (replied) return
-      replied = true
+    settle: (result, detail) => {
+      if (ended) return
+      ended = true
       if (entry.graceTimer) clearTimeout(entry.graceTimer)
-      running.delete(request.id)
+      if (waitTimer) clearTimeout(waitTimer)
+      if (running.get(request.id) === entry) running.delete(request.id)
       lastProgress.delete(request.id)
-      callFinished(request.id, {
-        outcome: audit.outcome,
-        ms: Date.now() - started,
-        ...(audit.document ? { document: audit.document } : {}),
-        ...(result.error ? { error: result.error.message } : {})
-      })
-      void Promise.resolve()
-        .then(() => deps.reply({ id: request.id, result, audit }))
-        .catch((err) => console.warn('Could not send the result of an agent call', err))
+      if (listed)
+        callFinished(request.id, {
+          outcome: detail.outcome,
+          ms: Date.now() - started,
+          ...(detail.document ? { document: detail.document } : {}),
+          ...(result.error ? { error: result.error.message } : {})
+        })
+      if (ticket) ticket.finish({ result, audit: detail })
+      else send(result, detail)
     }
   }
   running.set(request.id, entry)
-  callStarted({
-    id: request.id,
-    tool: request.tool,
-    title: def?.title ?? request.tool,
-    client: appLabel(request.client?.name),
-    document: documentOfHandle(request),
-    started
-  })
-  const { result, audit } = await executeCall(request, controller.signal, deps)
-  entry.finish(result, audit)
+  if (listed)
+    callStarted({
+      id: request.id,
+      tool: request.tool,
+      title: def?.title ?? request.tool,
+      client: appLabel(request.client?.name),
+      document: documentOfHandle(request),
+      started
+    })
+  if (!ANSWER_AT_ONCE.has(request.tool)) {
+    // Answer before the AI app gives up on the call (and cancels it, closing the person's dialog).
+    waitTimer = setTimeout(() => {
+      waitTimer = null
+      if (ended || controller.signal.aborted) return
+      // From here on the call belongs to its ticket: a cancel of the request no longer reaches it.
+      running.delete(request.id)
+      const document = audit.document ?? documentOfHandle(request)
+      const opened = openTicket({
+        windowId: request.windowId,
+        connectionId: request.connectionId,
+        tool: request.tool,
+        ...(document ? { document } : {}),
+        stop: () => stopCall(entry, deps.graceMs ?? CANCEL_GRACE_MS)
+      })
+      ticket = opened
+      send(
+        { data: stillRunning(opened.id) },
+        { ...(document ? { document } : {}), outcome: 'pending', summary: `still running, ticket ${opened.id}` }
+      )
+    }, deps.stillRunningMs?.() ?? stillRunningAfterMs())
+  }
+  // Progress of a call that answered still_running has nobody to go to.
+  const progress = (p: AgentProgress) => {
+    if (!ticket) deps.progress(p)
+  }
+  const out = await executeCall(request, controller.signal, { ...deps, progress }, audit)
+  entry.settle(out.result, out.audit)
 }
 
 /** The agent cancelled a call: the handler sees its signal aborted and stops at its next check. */
 export function cancelRequest(id: string, graceMs = CANCEL_GRACE_MS) {
   const entry = running.get(id)
-  if (!entry || entry.controller.signal.aborted) return
-  entry.controller.abort()
-  // A handler that does not notice still gets its call answered, so nothing waits forever.
-  entry.graceTimer = setTimeout(() => {
-    entry.finish({ error: { code: 'aborted', message: 'The call was cancelled.' } }, { outcome: 'cancelled' })
-  }, graceMs)
+  if (entry) stopCall(entry, graceMs)
 }
 
 /** Calls running in this window (for tests and the activity panel). */
@@ -199,6 +258,11 @@ export function startAgentRunner(): () => void {
   if (stop) return stop
   const offRequest = onMainEvent('agent:request', (request) => void handleRequest(request))
   const offCancel = onMainEvent('agent:cancel', (id) => cancelRequest(id))
+  // Tells the main process this window takes calls now, and learns how long a call may run
+  // before it answers still_running (tests shorten it).
+  void invoke('feature:agent-access:ready')
+    .then((config) => setStillRunningMs(config?.waitMs))
+    .catch(() => {})
   stop = () => {
     offRequest()
     offCancel()

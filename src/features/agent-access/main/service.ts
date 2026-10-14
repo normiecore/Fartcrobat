@@ -15,27 +15,28 @@ import {
   writeEndpointFile,
   type ListenAddress
 } from './endpoint'
-import { agentAccessState, currentPolicy, machinePolicyFile, type AgentAccessState } from './policy'
+import { agentAccessState, currentPolicy, machinePolicy, type AgentAccessState } from './policy'
 import { AgentRouter, type WindowHost } from './router'
 import { AgentServer } from './server'
 
 export interface AgentAccessOptions {
   userData: string
   appVersion: string
-  /** How the shim starts the app (written to app.json on every start). */
-  launch: AgentAppInfo
+  /** How the shim starts the app (written to app.json, with whether agent access is on). */
+  launch: Omit<AgentAppInfo, 'enabled'>
   host: WindowHost
   /** Sends the status to every window. */
   broadcast(status: AgentStatus): void
   platform?: NodeJS.Platform
   env?: NodeJS.ProcessEnv
-  /** The machine policy file (tests point it at a temporary file). */
+  /** The machine policy file, instead of the system's policy (tests point it at a temporary file). */
   policyFile?: string
   /** Where the socket's private folder is made. */
   tmpDir?: string
   authTimeoutMs?: number
   maxLine?: number
   readyTimeoutMs?: number
+  cancelWaitMs?: number
   auditMaxBytes?: number
 }
 
@@ -54,6 +55,8 @@ export class AgentAccess {
   private lifecycle: Promise<void> = Promise.resolve()
   private statusQueued = false
   private connectionIds = 0
+  /** AI apps (by reported name) the person disconnected; refused until allowed again. */
+  private readonly blocked = new Set<string>()
   readonly router: AgentRouter
   readonly audit: AuditLog
   private readonly platform: NodeJS.Platform
@@ -73,7 +76,7 @@ export class AgentAccess {
         audit: (entry) => void this.audit.append(entry),
         changed: () => this.statusChanged()
       },
-      { readyTimeoutMs: opts.readyTimeoutMs }
+      { readyTimeoutMs: opts.readyTimeoutMs, cancelWaitMs: opts.cancelWaitMs }
     )
   }
 
@@ -95,7 +98,7 @@ export class AgentAccess {
       enabled: this.state.enabled,
       policy: this.state.policy,
       listening: !!server,
-      blocked: [],
+      blocked: [...this.blocked],
       connections: (server?.list() ?? []).map((c) => ({
         id: c.id,
         client: c.client,
@@ -107,9 +110,24 @@ export class AgentAccess {
     }
   }
 
-  /** Closes one connection (by id), or all of them. */
+  /**
+   * The person disconnected one AI app (by connection id), or all of them: they are told so, their
+   * calls are cancelled, and they cannot connect again until the person allows it.
+   */
   disconnect(connectionId?: number) {
-    this.running?.server.disconnect(connectionId)
+    const server = this.running?.server
+    if (!server) return
+    for (const c of server.list())
+      if (connectionId === undefined || c.id === connectionId) this.blocked.add(c.client.name)
+    server.disconnect(connectionId)
+    this.statusChanged()
+  }
+
+  /** Lets a disconnected AI app (by reported name) connect again, or all of them. */
+  allow(clientName?: string) {
+    if (clientName === undefined) this.blocked.clear()
+    else this.blocked.delete(clientName)
+    this.statusChanged()
   }
 
   reply(windowId: string, reply: AgentCallReply) {
@@ -145,10 +163,16 @@ export class AgentAccess {
 
   private async reconcile() {
     if (this.quitting) return
-    this.state = agentAccessState(
-      this.preference,
-      currentPolicy(this.opts.policyFile ?? machinePolicyFile(this.platform, this.env), this.env)
-    )
+    const machine = await machinePolicy(this.platform, this.env, this.opts.policyFile)
+    if (this.quitting) return
+    this.state = agentAccessState(this.preference, currentPolicy(machine, this.env))
+    try {
+      // The shim reads this before starting the app: with access off it answers at once.
+      await writeAppFile(this.opts.userData, { ...this.opts.launch, enabled: this.state.enabled })
+    } catch (err) {
+      // The shim can still connect while the app runs; it just cannot start the app by itself.
+      console.error('Agent access: could not write app.json', err)
+    }
     if (this.state.enabled && !this.running) await this.start()
     else if (!this.state.enabled && this.running) await this.stop('disabled')
     if (!this.state.enabled) {
@@ -168,7 +192,8 @@ export class AgentAccess {
         appVersion: this.opts.appVersion,
         authTimeoutMs: this.opts.authTimeoutMs,
         maxLine: this.opts.maxLine,
-        nextConnectionId: () => ++this.connectionIds
+        nextConnectionId: () => ++this.connectionIds,
+        isBlocked: (client) => this.blocked.has(client.name)
       },
       {
         connected: () => this.statusChanged(),
@@ -191,12 +216,6 @@ export class AgentAccess {
       address = await newAddress(this.platform, this.opts.tmpDir)
       await server.listen(address.address)
       if (this.platform !== 'win32') await chmod(address.address, 0o600)
-      try {
-        await writeAppFile(this.opts.userData, this.opts.launch)
-      } catch (err) {
-        // The shim can still connect while the app runs; it just cannot start the app by itself.
-        console.error('Agent access: could not write app.json', err)
-      }
       // Published last, so the shim never finds an address that does not answer yet.
       await writeEndpointFile(this.opts.userData, {
         protocol: AGENT_PROTOCOL_VERSION,

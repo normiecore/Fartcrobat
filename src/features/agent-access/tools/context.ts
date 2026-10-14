@@ -136,7 +136,7 @@ async function getContext(args: Record<string, unknown>, ctx: ToolContext) {
   return {
     data: {
       document: describeDoc(ctx, doc),
-      lookingAtThisDocument: isActive,
+      lookingAtThisDocument: isActive && ctx.request.currentWindow !== false,
       currentPage: s.currentPage + 1,
       visiblePages: [...new Set(visible)].sort((a, b) => a - b).map((p) => p + 1),
       zoomPercent: Math.round(s.zoom * 100),

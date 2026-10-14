@@ -126,7 +126,7 @@ export interface AuditLine {
   tool: string
   args: Record<string, unknown>
   document?: string
-  outcome: 'done' | 'declined' | 'cancelled' | 'error'
+  outcome: 'done' | 'declined' | 'cancelled' | 'error' | 'pending'
   summary?: string
   error?: string
   ms: number

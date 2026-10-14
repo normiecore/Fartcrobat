@@ -4,7 +4,7 @@ import { createElement, Fragment, type ReactNode } from 'react'
 import { invoke, useApp, type DocumentModel } from '@renderer/sdk'
 import { EngineCallError } from '@renderer/engine/EngineClient'
 import { commitActiveEditors, hasActiveEditors } from '@renderer/app/commands'
-import { ToolError, auditName, clientLabel, confirmAgentAction, throwIfAborted, type ToolContext } from './common'
+import { ToolError, auditName, clientLabel, confirmAgentAction, isAgentConfirmation, throwIfAborted, type ToolContext } from './common'
 import { InvalidArgs } from './act-common'
 import { agentAuthor } from './act-annots'
 
@@ -109,23 +109,54 @@ export async function withAttention<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Hand-offs run one at a time per window: a cancelled one closes only dialogs it opened. */
+let handoffTurn: Promise<void> = Promise.resolve()
+
+/** Resolves when `turn` does; rejects as aborted if the call is cancelled first. */
+function waitTurn(turn: Promise<void>, ctx: ToolContext): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(new ToolError('aborted', 'The call was cancelled.'))
+    ctx.signal.addEventListener('abort', onAbort, { once: true })
+    void turn.then(() => {
+      ctx.signal.removeEventListener('abort', onAbort)
+      resolve()
+    })
+  })
+}
+
 /**
  * Hands a step to the person (a password prompt, the Sign or Protect dialog): brings the window to
  * the front when the dialog opens, and if the agent cancels meanwhile, dismisses the dialogs
- * opened since, so the flow ends as if the person had cancelled.
+ * opened since, so the flow ends as if the person had cancelled. Agent confirmations of other
+ * calls stay open, and another hand-off waits for its turn.
+ *
+ * keepDone: a truthy result means the person finished the step (signed, protected, saved), so it
+ * is returned even if the agent cancelled meanwhile. Not for steps the agent's own work follows.
  */
-export async function handoff<T>(ctx: ToolContext, fn: () => Promise<T>): Promise<T> {
+export async function handoff<T>(ctx: ToolContext, fn: () => Promise<T>, opts: { keepDone?: boolean } = {}): Promise<T> {
   throwIfAborted(ctx)
-  const before = new Set(useApp.getState().dialogs.map((d) => d.id))
-  const onAbort = () => {
-    for (const d of [...useApp.getState().dialogs].reverse()) if (!before.has(d.id)) d.resolve(undefined)
-  }
-  ctx.signal.addEventListener('abort', onAbort)
+  const previous = handoffTurn
+  let done!: () => void
+  const mine = new Promise<void>((resolve) => (done = resolve))
+  // The next hand-off waits for every earlier one, also when this one is cancelled while waiting.
+  handoffTurn = previous.then(() => mine)
   try {
-    const result = await withAttention(fn)
+    await waitTurn(previous, ctx)
     throwIfAborted(ctx)
-    return result
+    const before = new Set(useApp.getState().dialogs.map((d) => d.id))
+    const onAbort = () => {
+      for (const d of [...useApp.getState().dialogs].reverse())
+        if (!before.has(d.id) && !isAgentConfirmation(d)) d.resolve(undefined)
+    }
+    ctx.signal.addEventListener('abort', onAbort)
+    try {
+      const result = await withAttention(fn)
+      if (!(opts.keepDone && result)) throwIfAborted(ctx)
+      return result
+    } finally {
+      ctx.signal.removeEventListener('abort', onAbort)
+    }
   } finally {
-    ctx.signal.removeEventListener('abort', onAbort)
+    done()
   }
 }
