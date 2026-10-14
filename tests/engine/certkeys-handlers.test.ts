@@ -307,7 +307,7 @@ describe('certkeys:* handlers', () => {
       actor: 'person'
     })
     expect(ec).toMatchObject({ ok: false, code: 'UNSUPPORTED' })
-    // The stub Windows store throws a plain error: a generic ERROR comes back.
+    // The real Windows store on 'linux' (no PowerShell) finds no keys, so the re-probe has no such candidate.
     const ws = await handlers['certkeys:decrypt'](ok, {
       blobs,
       candidate: `windows-store:${sha1(5)}`,
@@ -403,7 +403,7 @@ describe('certkeys:* handlers', () => {
       ok: false,
       code: 'ERROR'
     })
-    // 20 bytes: a seed without permission bytes.
+    // 22 bytes, shorter than a seed and 4 permission bytes: the first 20 are the seed, no permissions.
     const bare = await run(async () => ({ envelope: 0, content: new Uint8Array(22).fill(2), via }))
     expect(bare).toMatchObject({ ok: true, permissions: null, seed: new Uint8Array(20).fill(2) })
     // A probe that fails while decrypting.
