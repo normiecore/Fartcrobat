@@ -118,6 +118,28 @@ export function encryptOptions(s: ProtectSettings): NonNullable<SaveOptions['enc
   return { method: s.method, userPassword, ownerPassword, permissions: permissionsFor(s) }
 }
 
+/**
+ * The lines of "Your PDF is protected". `remembered`: the open password was saved on this device;
+ * `certificate`: the document had certificate security, which the password replaced.
+ */
+export function protectedSummary(s: ProtectSettings, opts: { remembered?: boolean; certificate?: boolean } = {}): string[] {
+  const out: string[] = []
+  if (s.requireOpenPassword) {
+    out.push(`Opening it needs the password you set${opts.remembered ? '. It is saved on this device, so the file opens here without asking' : ''}.`)
+  } else {
+    out.push(
+      opts.certificate
+        ? 'It is no longer encrypted for its recipients: anyone with the file can open it without a password.'
+        : 'Anyone with the file can open it without a password.'
+    )
+  }
+  if (s.restrictEditing) {
+    const restricted = restrictionList(permissionsFor(s))
+    out.push(restricted.length ? `Without the permissions password, these are not allowed: ${sentenceList(restricted)}.` : 'Changing its security needs the permissions password.')
+  }
+  return out
+}
+
 export type PasswordStrength = { score: 0 | 1 | 2 | 3 | 4; label: string }
 
 /** Rough password strength in Acrobat's words (Weak / Medium / Strong / Best). */

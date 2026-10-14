@@ -17,6 +17,20 @@ export const EC_REASON = 'Elliptic-curve certificates cannot be used for certifi
 export const OTHER_KEY_REASON = 'Only certificates with RSA keys can be used for certificate encryption.'
 export const OWN_REMOVED_WARNING = 'You will not be able to open this file yourself unless you have another certificate in the recipient list.'
 export const REPLACE_CERTIFICATE_SECURITY = 'This replaces the certificate security with a password.'
+/** Shown in the Protect dialog while a certificate-encrypted document would get no open password. */
+export const OPENS_FOR_ANYONE =
+  'Without a password to open it, the file will no longer be encrypted for its recipients: anyone with the file will be able to open it. The permissions password only limits what they can do with it.'
+
+/**
+ * The question before Protect using password or Restrict editing replaces certificate security.
+ * Restrict editing starts without an open password, so it says that anyone will be able to open it.
+ */
+export function replaceCertificateSecurityMessage(mode: 'password' | 'restrict'): string {
+  if (mode === 'restrict') {
+    return `${REPLACE_CERTIFICATE_SECURITY} The file will no longer be encrypted for its recipients: unless you also require a password to open it, anyone with the file will be able to open it.`
+  }
+  return `${REPLACE_CERTIFICATE_SECURITY} The people it is encrypted for will no longer open it with their certificates.`
+}
 
 // ---- recipients ---------------------------------------------------------------------------------
 

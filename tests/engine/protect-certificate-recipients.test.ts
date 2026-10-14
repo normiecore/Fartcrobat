@@ -13,6 +13,7 @@ import { certificateInfo } from '@features/protect-optimize/certificateFiles'
 import {
   EC_REASON,
   FULL_ACCESS,
+  OPENS_FOR_ANYONE,
   addRecipients,
   certificateRecipientNames,
   certificateSecurity,
@@ -31,12 +32,13 @@ import {
   recipientsFromFile,
   removeGroup,
   removeRecipient,
+  replaceCertificateSecurityMessage,
   toCertificateGroups,
   type GroupSettings,
   type Recipient,
   type RecipientGroup
 } from '@features/protect-optimize/certificates'
-import { permissionRows } from '@features/protect-optimize/shared'
+import { DEFAULT_PROTECT_SETTINGS, permissionRows, protectedSummary, type ProtectSettings } from '@features/protect-optimize/shared'
 
 const PKI = join(__dirname, '../fixtures/passwordless/pki')
 const pki = (name: string) => new Uint8Array(readFileSync(join(PKI, name)))
@@ -262,6 +264,33 @@ describe('protect-optimize: certificate-encrypted documents', () => {
     expect(permissionRows(ALL, { changeSecurity: true }).at(-1)).toEqual(['Changing the security', 'Allowed', 'allowed'])
     // Password security has no such row (its permissions password changes the security).
     expect(permissionRows(ALL).map(([label]) => label)).not.toContain('Changing the security')
+  })
+
+  it('says that replacing certificate security without an open password lets anyone open the file', () => {
+    // Protect using password: the recipients will need the password instead.
+    expect(replaceCertificateSecurityMessage('password')).toBe(
+      'This replaces the certificate security with a password. The people it is encrypted for will no longer open it with their certificates.'
+    )
+    // Restrict editing starts without an open password: say plainly what that means.
+    const restrict = replaceCertificateSecurityMessage('restrict')
+    expect(restrict).toContain('no longer be encrypted for its recipients')
+    expect(restrict).toContain('anyone with the file will be able to open it')
+    expect(OPENS_FOR_ANYONE).toContain('anyone with the file will be able to open it')
+
+    // The summary after saving says it too, whatever the document was.
+    const restrictOnly: ProtectSettings = { ...DEFAULT_PROTECT_SETTINGS, requireOpenPassword: false, restrictEditing: true, permissionsPassword: 'p', changes: 'comments', allowCopy: false }
+    expect(protectedSummary(restrictOnly, { certificate: true })).toEqual([
+      'It is no longer encrypted for its recipients: anyone with the file can open it without a password.',
+      'Without the permissions password, these are not allowed: changing the document, inserting, deleting and rotating pages and copying text and images.'
+    ])
+    expect(protectedSummary(restrictOnly)[0]).toBe('Anyone with the file can open it without a password.')
+    // With an open password nothing changes.
+    const both: ProtectSettings = { ...restrictOnly, requireOpenPassword: true, openPassword: 'o', changes: 'any', allowCopy: true }
+    expect(protectedSummary(both, { certificate: true, remembered: true })).toEqual([
+      'Opening it needs the password you set. It is saved on this device, so the file opens here without asking.',
+      'Changing its security needs the permissions password.'
+    ])
+    expect(protectedSummary({ ...DEFAULT_PROTECT_SETTINGS, openPassword: 'o' })).toEqual(['Opening it needs the password you set.'])
   })
 
   it('describes the security without a password', () => {
