@@ -1,8 +1,9 @@
 // Where the app listens, and the files that tell the shim how to reach it and how to start it.
-import { readFileSync, rmSync } from 'node:fs'
+import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { chmod, mkdir, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { appImageFile } from '@main/util/appImage'
 import { atomicWrite } from '@main/util/atomicWrite'
 import {
   AGENT_DIR,
@@ -66,17 +67,10 @@ export function writeAppFile(userData: string, info: AgentAppInfo): Promise<void
 }
 
 /**
- * The .AppImage file this process runs from, if it does. An AppImage runs from a temporary mount
- * (APPDIR) that is gone once it quits, so it is started again from the file. APPIMAGE and APPDIR
- * inherited from another AppImage (an AI app that started this one) do not contain execPath.
+ * How the shim starts this app: a packaged build starts by itself, a development build needs its
+ * app path. An AppImage runs from a temporary mount (APPDIR) that is gone once it quits, so it is
+ * started again from the .AppImage file.
  */
-function appImageFile(execPath: string, env: NodeJS.ProcessEnv): string | null {
-  const { APPIMAGE, APPDIR } = env
-  if (!APPIMAGE || !APPDIR) return null
-  return execPath.startsWith(APPDIR.replace(/\/+$/, '') + '/') ? APPIMAGE : null
-}
-
-/** How the shim starts this app: a packaged build starts by itself, a development build needs its app path. */
 export function launchInfo(
   execPath: string,
   isPackaged: boolean,
@@ -86,6 +80,25 @@ export function launchInfo(
 ): Omit<AgentAppInfo, 'enabled'> {
   const executable = (isPackaged && appImageFile(execPath, env)) || execPath
   return { executable, args: isPackaged ? [] : [appPath], appVersion }
+}
+
+/**
+ * An update installed the AppImage the shim starts under a new file name (electron-updater keeps
+ * the version in the name): app.json names the new file. Synchronous, because it runs while the
+ * app quits; the next start writes app.json again anyway.
+ */
+export function retargetAppFile(userData: string, from: string, to: string) {
+  const file = appFile(userData)
+  try {
+    const info = JSON.parse(readFileSync(file, 'utf8')) as Partial<AgentAppInfo> | null
+    if (!info || info.executable !== from) return
+    const temp = `${file}.${process.pid}.tmp`
+    writeFileSync(temp, JSON.stringify({ ...info, executable: to }, null, 2) + '\n')
+    renameSync(temp, file)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT')
+      console.error('Agent access: could not update app.json', err)
+  }
 }
 
 /**

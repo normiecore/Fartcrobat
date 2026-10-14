@@ -23,7 +23,14 @@ extraResources:
 asar: true
 asarUnpack:
   - resources/**
-publish: null
+# Where in-app updates come from (docs/features/updates.md): builds write resources/app-update.yml
+# and release/latest*.yml (with .blockmap files) for electron-updater. Builds never upload anything
+# themselves (the release workflow runs them with --publish never and attaches the files).
+publish:
+  provider: github
+  owner: normiecore
+  repo: Fartcrobat
+  releaseType: release
 # File associations are per platform: on Windows the name is the registry ProgId, which must be
 # unique to Fartcrobat (src/main/util/systemDefaults.ts WINDOWS_PROG_ID checks it to tell whether
 # Fartcrobat is the default PDF app); on macOS it is the document type's display name.
@@ -97,5 +104,11 @@ linux:
       Keywords: pdf;acrobat;reader;editor;sign;forms;
       StartupWMClass: Fartcrobat
   maintainer: Fartcrobat contributors <noreply@fartcrobat.org>
+# No version in the AppImage's file name: an in-app update then replaces the file in place, so the
+# desktop entry and launchers that start it keep working. (electron-updater gives a file with a
+# version in its name the new version's name and deletes the old one; src/features/updates follows
+# that rename for files people renamed themselves.)
+appImage:
+  artifactName: ${productName}-${arch}.${ext}
 deb:
   priority: optional

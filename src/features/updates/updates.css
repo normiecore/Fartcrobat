@@ -1,0 +1,154 @@
+/* ---- notification card ---- */
+/* In the bottom right corner of the document area (.shell-viewer-wrap), clear of its scroll bars;
+   on Home, of the window. Above the page and its floating bars, below menus (900) and dialogs (1000). */
+.fc-updates-card {
+  position: absolute;
+  right: 22px;
+  bottom: 22px;
+  z-index: 70;
+  width: 340px;
+  max-width: calc(100% - 44px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 12px 12px 14px;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  animation: fc-updates-in 0.18s ease-out;
+}
+.fc-updates-card.is-window {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  max-width: calc(100vw - 32px);
+}
+@keyframes fc-updates-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-updates-card {
+    animation: none;
+  }
+}
+.fc-updates-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.fc-updates-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.fc-updates-icon.is-accent {
+  color: var(--accent-text);
+}
+.fc-updates-icon.is-success {
+  color: var(--success);
+}
+.fc-updates-icon.is-danger {
+  color: var(--danger);
+}
+.fc-updates-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.4;
+}
+.fc-updates-title {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.fc-updates-sub {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.fc-updates-close {
+  min-width: 24px;
+  height: 24px;
+  margin: -3px -4px 0 0;
+  color: var(--text-muted);
+}
+.fc-updates-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-left: 30px;
+}
+.fc-updates-note {
+  margin-top: -4px;
+  padding-left: 30px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+}
+.fc-updates-bar {
+  height: 6px;
+  margin-left: 30px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.fc-updates-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.2s;
+}
+.fc-updates-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: -4px;
+  padding-left: 30px;
+}
+.fc-updates-progress-text {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Preferences > Updates ---- */
+.fc-updates-settings {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.fc-updates-settings p {
+  margin: 0;
+  line-height: 1.5;
+}
+.fc-updates-settings-note {
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+}
+.fc-updates-settings-check {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.fc-updates-settings-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+/* Nothing to say: no extra gap (the live region stays in place for the next message). */
+.fc-updates-settings-status:empty {
+  margin-top: -10px;
+}

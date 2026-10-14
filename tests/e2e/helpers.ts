@@ -21,7 +21,8 @@ export interface App {
  * Launches the built app (run `npm run build` first) with a throwaway profile. Set
  * FARTCROBAT_EXECUTABLE to a packaged app (e.g. release/linux-unpacked/fartcrobat) to test that instead.
  * Remembering passwords is off unless `opts.rememberPasswords` is set: otherwise specs would behave
- * differently on machines with a keyring (and would use it).
+ * differently on machines with a keyring (and would use it). Automatic update checks are off
+ * unless `env` sets FARTCROBAT_UPDATE_CHECKS.
  */
 export async function launch(
   files: string[] = [],
@@ -46,6 +47,8 @@ export async function launch(
       FARTCROBAT_USER_DATA: userData,
       FARTCROBAT_MULTI_INSTANCE: '1',
       FARTCROBAT_FORCE_CLOSE: '1',
+      // No update checks unless a spec turns them on (tests/e2e/updates.spec.ts).
+      FARTCROBAT_UPDATE_CHECKS: '0',
       ...env
     } as Record<string, string>
   })

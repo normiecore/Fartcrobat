@@ -13,13 +13,22 @@ export type PolicyDecision = 'enabled' | 'disabled'
  */
 export type PolicyReading = PolicyDecision | 'invalid'
 
-/** The settings a policy can decide. */
-export type PolicySection = 'agentAccess' | 'rememberPasswords'
+/**
+ * The settings a policy can decide. 'autoUpdate': checking GitHub for new releases (off: no checks
+ * at all, manual ones included; on: automatic checks whatever the preference says).
+ */
+export type PolicySection = 'agentAccess' | 'rememberPasswords' | 'autoUpdate'
+
+export const POLICY_SECTIONS: readonly PolicySection[] = ['agentAccess', 'rememberPasswords', 'autoUpdate']
 
 /** Raw readings: 'invalid' keeps a broken policy apart from an explicit off. */
 export type MachinePolicy = Record<PolicySection, PolicyReading | null>
 
-const allOf = (reading: PolicyReading | null): MachinePolicy => ({ agentAccess: reading, rememberPasswords: reading })
+/** A reading for every section, from `read(section)`. */
+const bySection = (read: (section: PolicySection) => PolicyReading | null): MachinePolicy =>
+  Object.fromEntries(POLICY_SECTIONS.map((section) => [section, read(section)])) as MachinePolicy
+
+const allOf = (reading: PolicyReading | null): MachinePolicy => bySection(() => reading)
 
 /**
  * Where an administrator puts the machine policy file on macOS and Linux, folders only an
@@ -56,7 +65,7 @@ export function readPolicyFile(file: string): MachinePolicy {
     const enabled = value && typeof value === 'object' ? (value as { enabled?: unknown }).enabled : undefined
     return enabled === true ? 'enabled' : enabled === false ? 'disabled' : 'invalid'
   }
-  return { agentAccess: section('agentAccess'), rememberPasswords: section('rememberPasswords') }
+  return bySection(section)
 }
 
 /** An administrator's typo must not switch anything on. */
@@ -78,7 +87,8 @@ export const WINDOWS_POLICY_KEY = 'HKLM\\SOFTWARE\\Policies\\Fartcrobat'
 /** A REG_DWORD per setting: 1 is on, 0 is off. */
 export const WINDOWS_POLICY_VALUES: Record<PolicySection, string> = {
   agentAccess: 'AgentAccess',
-  rememberPasswords: 'RememberPasswords'
+  rememberPasswords: 'RememberPasswords',
+  autoUpdate: 'AutoUpdate'
 }
 
 /** What `reg query <key>` printed about one setting. Null when the value is not there. */
@@ -109,11 +119,7 @@ export function windowsPolicy(env: NodeJS.ProcessEnv = process.env, run: RunFile
   const reg = win32.join(env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe')
   return new Promise((resolve) => {
     run(reg, ['query', WINDOWS_POLICY_KEY], (err, stdout) => {
-      if (!err)
-        return resolve({
-          agentAccess: parseRegQuery(stdout, 'agentAccess'),
-          rememberPasswords: parseRegQuery(stdout, 'rememberPasswords')
-        })
+      if (!err) return resolve(bySection((section) => parseRegQuery(stdout, section)))
       // reg.exe exits with 1 when the key does not exist.
       resolve(allOf(err.code === 1 || err.code === 'ENOENT' ? null : 'invalid'))
     })
@@ -144,10 +150,7 @@ export async function machineReadings(opts: PolicyOptions = {}): Promise<Machine
  */
 export function withTestPolicy(machine: MachinePolicy, env: NodeJS.ProcessEnv = process.env): MachinePolicy {
   const test = env.FARTCROBAT_POLICY_FILE ? readPolicyFile(env.FARTCROBAT_POLICY_FILE) : allOf(null)
-  return {
-    agentAccess: machine.agentAccess ?? test.agentAccess,
-    rememberPasswords: machine.rememberPasswords ?? test.rememberPasswords
-  }
+  return bySection((section) => machine[section] ?? test[section])
 }
 
 /**

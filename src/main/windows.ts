@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, nativeTheme, screen, shell } from 'electron
 import { join } from 'node:path'
 import { send } from './ipc'
 import { APP_ORIGIN } from './protocol'
+import { appImageFile } from './util/appImage'
 
 /** Document windows (print jobs use hidden windows that are not part of this set). */
 const windows = new Set<BrowserWindow>()
@@ -44,6 +45,14 @@ const PROBE_MS = 2500
 type QuitPhase = 'idle' | 'asking' | 'approved'
 let quitPhase: QuitPhase = 'idle'
 let relaunchOnQuit = false
+
+/** An update installer waiting for the quit to be approved (quitForUpdate). */
+interface PendingInstall {
+  install: () => void
+  settle: (approved: boolean) => void
+  promise: Promise<boolean>
+}
+let pendingInstall: PendingInstall | null = null
 
 const forceClose = () => !!process.env.FARTCROBAT_FORCE_CLOSE
 
@@ -246,15 +255,48 @@ async function runQuitSequence() {
     if (!next) break
     const ok = await requestClose(next)
     if (!ok) {
-      quitPhase = 'idle'
-      relaunchOnQuit = false
+      cancelQuit()
       return
     }
     approveAndClose(next)
     next = undefined
   }
-  quitPhase = 'approved'
+  approveQuit()
   app.quit()
+}
+
+/**
+ * Every window agreed to close: the app quits, and a pending update installer starts. When the
+ * installer cannot start, the app starts again instead.
+ */
+function approveQuit() {
+  quitPhase = 'approved'
+  const pending = pendingInstall
+  if (!pending) return
+  pendingInstall = null
+  // The installer starts the new version itself.
+  relaunchOnQuit = false
+  // The new version may start before this process has gone: it must not find the single-instance
+  // lock still held and hand its start-up over to a process that is quitting.
+  app.releaseSingleInstanceLock()
+  try {
+    pending.install()
+  } catch (err) {
+    // The windows are closed already: start this version again rather than leave the person with
+    // neither the app nor the update.
+    console.error('Could not start the update installer', err)
+    relaunchOnQuit = true
+  }
+  pending.settle(true)
+}
+
+/** The person cancelled the quit: everything stays open, and a pending update stays ready. */
+function cancelQuit() {
+  quitPhase = 'idle'
+  relaunchOnQuit = false
+  const pending = pendingInstall
+  pendingInstall = null
+  pending?.settle(false)
 }
 
 /** Quits the app (File > Exit, Cmd+Q, the Dock, logging out), asking about unsaved changes first. */
@@ -266,6 +308,20 @@ export function quitApp() {
 export function relaunchApp() {
   relaunchOnQuit = true
   app.quit()
+}
+
+/**
+ * Restart now for an update: the normal quit flow (each window asks about its unsaved documents,
+ * and Cancel stops it), then `install` runs once every window agreed to close, just before the app
+ * exits. `install` starts the new version itself. Resolves with whether the quit went ahead.
+ */
+export function quitForUpdate(install: () => void): Promise<boolean> {
+  if (pendingInstall) return pendingInstall.promise
+  let settle!: (approved: boolean) => void
+  const promise = new Promise<boolean>((resolve) => (settle = resolve))
+  pendingInstall = { install, settle, promise }
+  app.quit()
+  return promise
 }
 
 /** Kept for compatibility: the quit flow is now driven by before-quit. */
@@ -280,12 +336,12 @@ export function setQuitting(on: boolean) {
 export function installQuitHandling(onQuit: () => void) {
   app.on('before-quit', (e) => {
     if (quitPhase === 'approved' || forceClose()) {
-      quitPhase = 'approved'
+      approveQuit()
       return
     }
     const waiting = allWindows().filter((w) => !closeApproved.has(w) && mayHoldUnsavedWork(w))
     if (!waiting.length) {
-      quitPhase = 'approved'
+      approveQuit()
       return
     }
     e.preventDefault()
@@ -298,7 +354,11 @@ export function installQuitHandling(onQuit: () => void) {
   })
   app.on('will-quit', () => {
     onQuit()
-    if (relaunchOnQuit) app.relaunch()
+    if (relaunchOnQuit) {
+      // An AppImage starts again from its file: the folder this process runs from goes with it.
+      const appImage = appImageFile(process.execPath, process.env)
+      app.relaunch(appImage ? { execPath: appImage, args: process.argv.slice(1) } : undefined)
+    }
   })
 }
 

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { unpackagedVersion } from '@main/util/appVersion'
 import { atomicWrite } from '@main/util/atomicWrite'
 import { filesFromArgv, normalizeLaunchArg, openableFile } from '@main/util/launchPaths'
 import { safeFileName, TempFiles } from '@main/util/tempFiles'
@@ -240,5 +241,22 @@ describe('session temporary files', () => {
     expect(removed.sort()).toEqual([dead, deadFile, deadOld].sort())
     expect(existsSync(alive)).toBe(true)
     expect(existsSync(other)).toBe(true)
+  })
+})
+
+describe('unpackaged version', () => {
+  it("reads Fartcrobat's package.json from the app folder or a level or two up", () => {
+    const files: Record<string, string> = {
+      [join('/repo', 'package.json')]: JSON.stringify({ name: 'fartcrobat', version: '0.1.0' }),
+      [join('/repo', 'out', 'package.json')]: JSON.stringify({ name: 'something-else', version: '9.9.9' })
+    }
+    const read = (path: string) => {
+      if (!(path in files)) throw new Error('ENOENT')
+      return files[path]
+    }
+    expect(unpackagedVersion('/repo/out/main', read)).toBe('0.1.0')
+    expect(unpackagedVersion('/repo', read)).toBe('0.1.0')
+    expect(unpackagedVersion('/elsewhere/out/main', read)).toBeNull()
+    expect(unpackagedVersion('/x/y', () => '{not json')).toBeNull()
   })
 })

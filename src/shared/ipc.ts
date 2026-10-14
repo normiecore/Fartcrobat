@@ -1,4 +1,5 @@
 import type { AgentCallRequest, AgentStatus } from './agent/bridge'
+import type { UpdateStatus } from './updates'
 import type {
   RememberPasswordRequest,
   SavedPasswordCandidate,
@@ -109,6 +110,8 @@ export interface IpcEvents {
   'agent:cancel': (id: string) => void
   /** Agent access: connections or settings changed. */
   'agent:status': (status: AgentStatus) => void
+  /** Updates: the update flow moved on (see src/shared/updates.ts). */
+  'updates:status': (status: UpdateStatus) => void
 }
 
 /** Native text-editing commands (the Edit menu acting on a focused text field). */
@@ -134,5 +137,6 @@ export const ALLOWED_EVENT_CHANNELS: (keyof IpcEvents)[] = [
   'window:fullScreenChanged',
   'agent:request',
   'agent:cancel',
-  'agent:status'
+  'agent:status',
+  'updates:status'
 ]

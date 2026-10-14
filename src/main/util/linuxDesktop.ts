@@ -67,3 +67,15 @@ export function desktopEntry(executable: string, icon: string): string {
     ''
   ].join('\n')
 }
+
+/**
+ * A generated entry that starts `from`, changed to start `to` instead; null when `content` is not
+ * a generated entry or starts something else (another Fartcrobat install the person chose).
+ */
+export function retargetDesktopEntry(content: string, from: string, to: string): string | null {
+  if (!content.includes(GENERATED_MARKER)) return null
+  const lines = content.split('\n')
+  const exec = `Exec=${desktopExecQuote(from)} %F`
+  if (!lines.includes(exec)) return null
+  return lines.map((line) => (line === exec ? `Exec=${desktopExecQuote(to)} %F` : line)).join('\n')
+}
