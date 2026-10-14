@@ -636,8 +636,13 @@ export default defineOps('doc', {
     return certificateLockOf({ recipients: p.recipients, version: p.source.version, cipher: p.source.cipher, keyLength: p.source.keyBits / 8 })
   },
 
-  /** The lock of the open document (null when it is not encrypted), to find its saved password. */
+  /**
+   * The lock of the open document (null when it is not encrypted), to find its saved password.
+   * Null for a certificate-encrypted document: no password opens it, and MuPDF's trailer holds the
+   * temporary bridge, which never leaves the engine (see certificateLock).
+   */
   lockInfo(s): LockInfo | null {
+    if (s.pubsec) return null
     return readLockInfo(s.pdf)
   },
 

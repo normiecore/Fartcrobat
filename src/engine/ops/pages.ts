@@ -2,7 +2,7 @@ import type { Rect } from '@shared/geometry'
 import { normalizeRect, transformRect } from '@shared/geometry'
 import type { CertificateLock } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
-import { certificateLockOf, openWithKeys, readPubSec, type PubSecInfo, type PubSecState } from '../crypt'
+import { assertCertificateOutput, certificateLockOf, openWithKeys, readPubSec, type PubSecInfo, type PubSecState } from '../crypt'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, PDFObject, Session } from '../session'
 import { copyPages, removePageFields } from '../util/graft'
@@ -312,6 +312,8 @@ export default defineOps('pages', {
     const list = uniqueSorted(indices, s.pageCount())
     if (!list.length) throw new EngineError('No pages selected', 'NO_PAGES')
     const bytes = protectBytes(s.mupdf, extractToBytes(s, list), sessionProtection(s))
+    // Pages of a certificate-encrypted document never leave it in clear or with the bridge.
+    if (s.pubsec) assertCertificateOutput(bytes, s.pubsec)
     return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
   },
 

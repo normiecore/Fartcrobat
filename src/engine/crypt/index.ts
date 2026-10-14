@@ -31,6 +31,10 @@
  *   seed, permissions }) for each envelope so reloading the output opens without asking.
  * - assertNoBridge(bytes, state, kind): run it on every output of a certificate-encrypted session
  *   ('pubsec', 'plain' for Remove Security, 'password' for password security).
+ * - assertCertificateOutput(bytes, state): outputs that keep the session's protection (Extract,
+ *   Split, Combine...) must be certificate-encrypted with its envelopes; pages.extract checks this,
+ *   so until protection.ts writes certificate security, Extract refuses instead of writing plain
+ *   pages.
  * - sessionReadPassword(s): the password MuPDF needs to read the session's document.
  */
 export { certificatePermissions, CertificateKeyRegistry, copyCertificateKey, type CertificatePermissions } from './keys'
@@ -51,6 +55,7 @@ export {
 } from './pubsecBridge'
 export { certificateLockOf, readPubSec, type PubSecCipher, type PubSecInfo } from './pubsecRead'
 export {
+  assertCertificateOutput,
   assertNoBridge,
   decryptedSave,
   encryptObjectsInPlace,

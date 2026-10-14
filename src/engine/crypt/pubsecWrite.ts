@@ -11,8 +11,9 @@ import type { Mupdf, PDFDocument, Session } from '../session'
 import { writePdf, type WrittenObject } from '../util/pdfWriter'
 import { collectStrings, hasCryptFilter, isNamed, rawStream } from './objects'
 import { indexOfBytes, lastTrailer } from './pdfLex'
-import { aesCbcEncrypt, concat, randomBytes, toHex, toLatin1 } from './primitives'
+import { aesCbcEncrypt, bytesEqual, concat, randomBytes, toHex, toLatin1 } from './primitives'
 import type { PubSecState, PubSecWriteKey } from './pubsecBridge'
+import { readPubSec } from './pubsecRead'
 
 function takeBuffer(buf: InstanceType<Mupdf['Buffer']>): Uint8Array {
   try {
@@ -205,6 +206,23 @@ export function assertNoBridge(bytes: Uint8Array, state: PubSecState | null, kin
     } catch {}
     if (encrypted) refuse('encryption')
   }
+}
+
+/**
+ * An output of a certificate-encrypted session that must keep its protection (Extract, Split...):
+ * certificate-encrypted with the session's own envelopes, and without the bridge. Throws
+ * PROTECT_FAILED otherwise, so such output never reaches the disk or a tab unprotected.
+ */
+export function assertCertificateOutput(bytes: Uint8Array, state: PubSecState): void {
+  let info: ReturnType<typeof readPubSec> = null
+  try {
+    info = readPubSec(bytes)
+  } catch {}
+  const mine = state.writeKey.recipients
+  if (!info || info.recipients.length !== mine.length || !info.recipients.every((r, i) => bytesEqual(r, mine[i]))) {
+    throw new EngineError('Could not keep the certificate security on the new file', 'PROTECT_FAILED')
+  }
+  assertNoBridge(bytes, state)
 }
 
 /** The password MuPDF needs to read the session's document: the bridge's, or the document's own. */

@@ -249,6 +249,38 @@ describe('reload and revert', () => {
   })
 })
 
+describe('nothing of the bridge or the plaintext leaves the engine', () => {
+  it('lockInfo is null and certificateLock has only public data', async () => {
+    const e = await openFixtureAs('v5-classic.pdf', 'alice')
+    expect(e.session.pubsec?.route).toBe('bridge')
+    expect(await e.doc.lockInfo()).toBeNull()
+    const lock = await e.doc.certificateLock()
+    expect(Object.keys(lock!).sort()).toEqual(['cipher', 'keyBits', 'recipients', 'version'])
+    const info = JSON.stringify(await e.doc.info())
+    const bridge = e.session.pubsec!.bridge!
+    for (const v of [toHex(bridge.U), toHex(bridge.O), bridge.userPassword, bridge.ownerPassword]) expect(info).not.toContain(v)
+    expect(info).not.toContain('Standard')
+  })
+
+  it('Extract gives certificate-encrypted pages or nothing (bridge and decrypted sessions)', async () => {
+    for (const file of ['v5-classic.pdf', 'v4-rc4.pdf']) {
+      const original = pubsecFixture(file)
+      const e = await openWithKey(original, keyFor(file, 'alice', original), file)
+      const pages = e.ops<typeof import('@engine/ops/pages').default>('pages')
+      const out = await pages.extract([0]).then(
+        (b) => b,
+        (err: Error) => err
+      )
+      if (out instanceof Uint8Array) {
+        expectSealed(out, original, `extract ${file}`)
+        assertNoBridge(out, e.session.pubsec)
+      } else {
+        expect(out, file).toBeInstanceOf(Error)
+      }
+    }
+  })
+})
+
 describe('assertNoBridge', () => {
   const fakeState = (U: Uint8Array): PubSecState =>
     ({ bridge: { userPassword: 'user-one-time', ownerPassword: 'owner-one-time', U, O: new Uint8Array(48).fill(7) } }) as PubSecState
