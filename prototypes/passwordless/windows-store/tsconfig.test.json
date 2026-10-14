@@ -1,0 +1,5 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noImplicitAny": false },
+  "files": ["src/winCertStore.ts", "src/winStoreScripts.ts", "test/winstore.test.ts", "test/smoke.ts"]
+}
