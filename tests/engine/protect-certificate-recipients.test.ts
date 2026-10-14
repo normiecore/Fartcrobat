@@ -32,6 +32,7 @@ import {
   recipientsFromFile,
   removeGroup,
   removeRecipient,
+  removedGroupNotice,
   replaceCertificateSecurityMessage,
   toCertificateGroups,
   type GroupSettings,
@@ -235,6 +236,26 @@ describe('protect-optimize: certificate recipients', () => {
     ])
     const one = [group(1, [alice])]
     expect(removeGroup(one, 1)).toBe(one)
+  })
+
+  it('says where the recipients of a removed group went, with that group’s permissions', () => {
+    const alice = fileRecipient('alice.cer')
+    const bob = fileRecipient('bob.cer')
+    const stranger = fileRecipient('stranger.cer')
+    const printOnly: GroupSettings = { ...FULL_ACCESS, changeSecurity: false, edit: false, assemble: false, annotate: false, form: false, copy: false, accessibility: false }
+    // Reviewers in a print-only group 2 would get group 1's full access: say so.
+    const two = [group(1, [alice]), group(2, [bob], printOnly)]
+    expect(removedGroupNotice(two, 2)).toBe('Bob Tëst moved to the remaining group (full access, including the security settings).')
+    const three = [group(1, [alice], printOnly), group(2, [bob, stranger]), group(3, [])]
+    expect(removedGroupNotice(three, 2)).toBe(
+      '2 recipients moved to Group 1 (not allowed: changing the document, inserting, deleting and rotating pages, commenting, filling in forms and signing, copying text and images and screen reader access).'
+    )
+    // Removing group 1 moves them to the group that becomes group 1.
+    expect(removedGroupNotice(three, 1)).toBe('Alice Test moved to Group 1 (full access, including the security settings).')
+    // Nothing moved: nothing to say.
+    expect(removedGroupNotice(three, 3)).toBeNull()
+    expect(removedGroupNotice([group(1, [alice])], 1)).toBeNull()
+    expect(removedGroupNotice(three, 99)).toBeNull()
   })
 
   it('warns when none of the person’s own certificates is a recipient, and says how the reopened file was opened', () => {

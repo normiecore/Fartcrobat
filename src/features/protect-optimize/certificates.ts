@@ -269,6 +269,21 @@ export function removeGroup(groups: RecipientGroup[], groupId: number): Recipien
   return rest.map((g, i) => (i === 0 ? { ...g, recipients: [...g.recipients, ...gone.recipients] } : g))
 }
 
+/**
+ * What the dialog says after removeGroup() moved recipients: where they went and what that group
+ * allows (it may give them more, even the security settings). Null when nothing moved.
+ */
+export function removedGroupNotice(groups: RecipientGroup[], groupId: number): string | null {
+  const gone = groups.find((g) => g.id === groupId)
+  const rest = groups.filter((g) => g.id !== groupId)
+  if (!gone?.recipients.length || !rest.length) return null
+  const who = gone.recipients.length === 1 ? gone.recipients[0].cert.name : `${gone.recipients.length} recipients`
+  // Groups are numbered by position, so the first remaining group is Group 1 (or the only one).
+  const where = rest.length > 1 ? 'Group 1' : 'the remaining group'
+  const allows = permissionSummary(rest[0].settings).replace(/^./, (c) => c.toLowerCase())
+  return `${who} moved to ${where} (${allows}).`
+}
+
 /** One of the person's own certificates is a recipient, so they can open the file later. */
 export function hasOwnRecipient(groups: RecipientGroup[]): boolean {
   return groups.some((g) => g.recipients.some((r) => r.mine))

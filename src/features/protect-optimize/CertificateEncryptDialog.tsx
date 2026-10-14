@@ -35,6 +35,7 @@ import {
   recipientsFromFile,
   removeGroup,
   removeRecipient,
+  removedGroupNotice,
   type GroupSettings,
   type Recipient,
   type RecipientGroup
@@ -493,7 +494,11 @@ export function CertificateEncryptDialog({ doc, onDone }: { doc: DocumentModel; 
                     icon={Trash2}
                     size={16}
                     label={`Remove group ${i + 1}`}
-                    onClick={() => setGroups((prev) => removeGroup(prev, g.id))}
+                    onClick={() => {
+                      // Its recipients stay, in the first remaining group: say so, with what it allows.
+                      setNotice(removedGroupNotice(groups, g.id))
+                      setGroups((prev) => removeGroup(prev, g.id))
+                    }}
                   />
                 )}
               </div>
