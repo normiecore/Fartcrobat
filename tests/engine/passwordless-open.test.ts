@@ -1,7 +1,7 @@
 // Opening certificate-encrypted (/Adobe.PubSec) files in the engine, with the seeds the fixtures'
 // envelopes hold (expected.json), over every fixture in tests/fixtures/passwordless/.
 import { describe, expect, it } from 'vitest'
-import { certificatePermissions, fileKey, readPubSec } from '@engine/crypt'
+import { certificatePermissionBits, certificatePermissions, fileKey, readPubSec } from '@engine/crypt'
 import { createLocalEngine } from '@engine/local'
 import type annotOps from '@engine/ops/annots'
 import type docOps from '@engine/ops/doc'
@@ -128,6 +128,19 @@ describe('permissions and access', () => {
     const noSecurity = certificatePermissions(0xfffffffd)
     expect(noSecurity.access).toBe('user')
     expect(Object.values(noSecurity.permissions).every(Boolean)).toBe(true)
+  })
+
+  it('permission bits for new envelopes are the inverse (and match pyHanko’s print-only value)', () => {
+    expect(certificatePermissionBits({})).toBe(0xffffffff - 2)
+    expect(certificatePermissionBits({}, true)).toBe(0xffffffff)
+    const printOnly = { edit: false, copy: false, annotate: false, form: false, accessibility: false, assemble: false }
+    expect(certificatePermissionBits(printOnly)).toBe(expected('v5-two-envelopes.pdf').permissions.alice)
+    expect(certificatePermissionBits({ print: false })).toBe(0xffffffff - 2 - 4 - 0x800)
+    for (const allow of [printOnly, { copy: false }, { print: false, 'print-hq': true }]) {
+      const back = certificatePermissions(certificatePermissionBits(allow))
+      expect(back.access).toBe('user')
+      for (const [p, v] of Object.entries(allow)) expect(back.permissions[p as keyof typeof back.permissions]).toBe(v)
+    }
   })
 
   it('v5-mac (pyHanko clears the "tolerate missing MAC" bit) still has full access', async () => {

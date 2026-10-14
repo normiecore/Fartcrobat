@@ -77,3 +77,19 @@ export function certificatePermissions(bits: number | null): CertificatePermissi
   }
   return { access: full ? 'owner' : 'user', permissions, standardP: full ? -4 : standardP | 0 }
 }
+
+/**
+ * The permission bytes of a new envelope (CertificateGroup): anything not set to false is
+ * allowed, high-quality printing follows printing unless given. Reserved bits are set, and bit 13
+ * ("tolerate a missing PDF MAC"), as Acrobat and pyHanko write them. The inverse of
+ * certificatePermissions.
+ */
+export function certificatePermissionBits(allow: Partial<Record<Permission, boolean>>, changeSecurity = false): number {
+  let bits = 0xffffe0c1 | 0x1000
+  if (changeSecurity) bits |= PUBSEC_PERMISSION.changeSecurity
+  for (const [p, bit] of BITS) {
+    const on = p === 'print-hq' ? (allow['print-hq'] ?? allow.print) : allow[p]
+    if (on !== false) bits |= bit
+  }
+  return bits >>> 0
+}

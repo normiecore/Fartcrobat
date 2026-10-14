@@ -15,7 +15,8 @@
  * - state.writeKey: the original seed and envelopes; every output of the document is written with
  *   it (always V5, AES-256), so outputs open with the same keys.
  * - state.access / state.permissions: certificatePermissions(state.permissions) maps the envelope's
- *   bits to Record<Permission, boolean> ('owner' = full access).
+ *   bits to Record<Permission, boolean> ('owner' = full access); certificatePermissionBits() is the
+ *   inverse, for the permission bytes of new envelopes (CertificateGroup).
  * - Never call saveToBuffer() on a certificate-encrypted document (or on a source opened with a
  *   key) and write the result anywhere: the bytes hold the temporary bridge, or plaintext.
  *
@@ -37,7 +38,14 @@
  *   pages.
  * - sessionReadPassword(s): the password MuPDF needs to read the session's document.
  */
-export { certificatePermissions, CertificateKeyRegistry, copyCertificateKey, type CertificatePermissions } from './keys'
+export {
+  certificatePermissionBits,
+  certificatePermissions,
+  CertificateKeyRegistry,
+  copyCertificateKey,
+  type CertificatePermissions
+} from './keys'
+export { aesCbcEncrypt, aesCbcDecrypt, bytesEqual, concat, randomBytes, sha256, toHex } from './primitives'
 export {
   appendUpdate,
   bridgeV5,

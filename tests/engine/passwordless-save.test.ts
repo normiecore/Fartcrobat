@@ -171,6 +171,20 @@ describe('saving back', () => {
     }
   })
 
+  it('pages inserted from another certificate-encrypted file are saved with the document’s own security', async () => {
+    const original = pubsecFixture('v4-aes128.pdf')
+    const key = keyFor('v4-aes128.pdf', 'alice', original)
+    const e = await openWithKey(original, key, 'v4-aes128.pdf')
+    const other = pubsecFixture('text-v5.pdf')
+    await e.doc.addCertificateKey(keyFor('text-v5.pdf', 'bob', other))
+    await e.ops<typeof import('@engine/ops/pages').default>('pages').insertFrom(-1, other, { fileName: 'text-v5.pdf' })
+    const out = await e.doc.save({})
+    expectSealed(out, original, 'inserted')
+    const again = await openWithKey(out, key)
+    expect(again.info.pageCount).toBe(7)
+    expect(await pageText(again, 2)).toBe(await pageText(await openWithKey(other, keyFor('text-v5.pdf', 'bob', other)), 0))
+  })
+
   it('new certificate security is not part of the engine core yet', async () => {
     const e = await openFixtureAs('v5-classic.pdf', 'alice')
     await expect(e.doc.save({ encryptCertificate: { groups: [] } })).rejects.toMatchObject({ code: 'NOT_IMPLEMENTED' })
