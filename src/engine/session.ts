@@ -47,8 +47,9 @@ export class Session {
   readonly certificateKeys = new CertificateKeyRegistry()
   fileName = ''
   /**
-   * The exact bytes the document was opened (or last reloaded, or last saved incrementally) from.
-   * Needed to validate signatures.
+   * The exact bytes the document was opened (or last reloaded, or last saved incrementally) from;
+   * for a certificate-encrypted document, the bytes last saved to its file (doc.markSaved). Needed
+   * to validate signatures.
    */
   sourceBytes: Uint8Array | null = null
   sourceFormat = 'PDF'

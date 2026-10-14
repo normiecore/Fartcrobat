@@ -52,9 +52,9 @@ export interface PubSecState {
   permissions: number | null
   access: PasswordAccess
   recipients: Uint8Array[]
-  /** EncryptMetadata of the file as it was opened. */
+  /** EncryptMetadata of the document's file (as opened, or as last saved to it). */
   encryptMetadata: boolean
-  /** The file's own encryption: /V, cipher and key length. */
+  /** The encryption of the document's file: /V, cipher and key length (V5 AES-256 once saved to it). */
   source: { version: number; cipher: PubSecCipher; keyBits: number }
   /** What outputs are written with: the original seed and envelopes, V5, EncryptMetadata true. */
   writeKey: PubSecWriteKey

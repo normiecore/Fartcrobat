@@ -422,7 +422,32 @@ function saveCertificateDocument(s: Session, state: PubSecState, opts: SaveOptio
     assertNoBridge(bytes, state, 'plain')
     return bytes
   }
-  return writeSessionPubSec(s, plainOptions)
+  const bytes = writeSessionPubSec(s, plainOptions)
+  // A copy: the caller usually transfers `bytes` to the UI thread, which detaches them here.
+  s.state.set(CERTIFICATE_SAVE, { bytes: bytes.slice(), version: s.editVersion() })
+  return bytes
+}
+
+/**
+ * Session state key: the last save of a certificate-encrypted document with its own seed and
+ * envelopes, and the edit version it holds, until markSaved says it became the document's file.
+ */
+const CERTIFICATE_SAVE = 'core:certificateSave'
+
+/**
+ * After a certificate-encrypted document was written to its file (markSaved): the session describes
+ * that file from now on, as reopening it would. Every such save is a full rewrite as V5 AES-256, so
+ * signatures are validated against the new bytes (which they no longer cover) and the encryption is
+ * reported as V5. Save a Copy and a failed write (no markSaved for that save) change nothing.
+ */
+function adoptSavedCertificateFile(s: Session, version?: number) {
+  const saved = s.state.get(CERTIFICATE_SAVE) as { bytes: Uint8Array; version: number } | undefined
+  s.state.delete(CERTIFICATE_SAVE)
+  const state = s.pubsec
+  if (!saved || !state || (version !== undefined && version !== saved.version)) return
+  s.sourceBytes = saved.bytes
+  state.source = { version: 5, cipher: 'AESV3', keyBits: 256 }
+  state.encryptMetadata = state.writeKey.encryptMetadata
 }
 
 interface OpenOptions {
@@ -746,6 +771,7 @@ export default defineOps('doc', {
   markSaved(s, fileName?: string, version?: number) {
     if (fileName) s.fileName = fileName
     s.converted = false
+    adoptSavedCertificateFile(s, version)
     s.markSaved(version)
   },
 

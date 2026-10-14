@@ -1,7 +1,9 @@
 // Certificate encryption against hostile or unusual files: the small PDF reader (pdfLex.ts) must
 // finish quickly and in bounded memory on anything a file controls, since it runs on every file
 // MuPDF refuses to open. Hostile inputs run in a worker with a deadline and a heap limit, so a
-// regression fails the test instead of hanging the run.
+// regression fails the test instead of hanging the run. Also: the RC4 key check with binary
+// streams, a direct /Info dictionary (encrypted, never in clear), and what a tab reports after
+// it saves (signatures and the encryption of the file it wrote).
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Worker } from 'node:worker_threads'
@@ -13,10 +15,13 @@ import { appendUpdate, concat, encryptObjectsInPlace, pubsecEncryptDict, readPub
 import { PdfString } from '@engine/crypt/pdfLex'
 import { latin1, md5, randomBytes, rc4, toHex, toLatin1 } from '@engine/crypt/primitives'
 import { createLocalEngine } from '@engine/local'
+import type annotOps from '@engine/ops/annots'
 import type docOps from '@engine/ops/doc'
+import type sigOps from '@features/digital-signatures/engine'
+import type protectOps from '@features/protect-optimize/engine'
 import type { CertificateKey } from '@shared/certkeys'
 import type { OpenResult } from '@shared/types'
-import { expected, hexBytes, includesBytes, keyFor, openWithKey, PKI, pubsecFixture } from './passwordless-helpers'
+import { expected, hexBytes, includesBytes, keyFor, openFixtureAs, openWithKey, PKI, pubsecFixture, type Engine } from './passwordless-helpers'
 
 const ROOT = resolve(__dirname, '../..')
 
@@ -467,5 +472,66 @@ describe('a direct /Info dictionary in the trailer', () => {
     expectNotInClear(saved, 'SavedBackSecret', 'saved back')
     const again = await openWithKey(saved, key)
     expect(again.info.metadata.title).toBe('SavedBackSecret')
+  })
+})
+
+// ---- what a tab reports after it saves -----------------------------------------------------------
+
+describe('after a certificate-encrypted document is saved to its file', () => {
+  const sig = (e: Engine) => e.ops<typeof sigOps>('digital-signatures')
+  const comment = (e: Engine) => e.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [100, 100, 120, 120], contents: 'note' })
+  const facts = async (e: Engine) => {
+    const lock = await e.doc.certificateLock()
+    const security = await e.ops<typeof protectOps>('protect-optimize').security()
+    return { encryption: (await e.doc.facts()).encryption, lock: lock && { version: lock.version, cipher: lock.cipher, keyBits: lock.keyBits }, method: security.method }
+  }
+
+  it('signatures are validated against the file just written, which they no longer cover', async () => {
+    const e = await openFixtureAs('v5-signed.pdf', 'alice')
+    const before = await sig(e).validate()
+    expect(before.signatures.map((r) => [r.integrity, r.signatureValid, r.coversWholeFile])).toEqual([[true, true, true]])
+    await comment(e)
+    // Save a Copy: the tab's file has not changed.
+    await e.doc.save({})
+    expect((await sig(e).validate()).signatures[0].integrity).toBe(true)
+    // Save: the file is rewritten in full.
+    const { bytes, version } = await e.doc.saveWithVersion({})
+    await e.doc.markSaved('v5-signed.pdf', version)
+    const live = await sig(e).validate()
+    // As a fresh engine reports the saved file.
+    const fresh = await sig(await openWithKey(bytes, keyFor('v5-signed.pdf', 'alice'))).validate()
+    expect(fresh.signatures[0].integrity).toBe(false)
+    expect(live.signatures.map((r) => [r.integrity, r.signatureValid, r.problems])).toEqual(fresh.signatures.map((r) => [r.integrity, r.signatureValid, r.problems]))
+  })
+
+  it('a V4 file is described as the V5 AES-256 file it became', async () => {
+    const e = await openFixtureAs('v4-rc4.pdf', 'alice')
+    const v4 = { encryption: 'Adobe.PubSec V4 128-bit RC4', lock: { version: 4, cipher: 'RC4', keyBits: 128 }, method: '128-bit RC4' }
+    expect(await facts(e)).toEqual(v4)
+    // Save a Copy, and a save whose file was not written: nothing changes.
+    await e.doc.save({})
+    await e.doc.saveWithVersion({})
+    expect(await facts(e)).toEqual(v4)
+    // Saved, then changed before markSaved: the file holds the saved version, which is V5.
+    const { bytes, version } = await e.doc.saveWithVersion({})
+    await comment(e)
+    await e.doc.markSaved('v4-rc4.pdf', version)
+    expect(readPubSec(bytes)).toMatchObject({ version: 5, cipher: 'AESV3' })
+    expect(await facts(e)).toEqual({ encryption: 'Adobe.PubSec V5 256-bit AES', lock: { version: 5, cipher: 'AESV3', keyBits: 256 }, method: '256-bit AES' })
+    expect(await e.doc.isDirty()).toBe(true)
+    // It keeps working: the next save still opens with the same key.
+    const next = await e.doc.save({})
+    const again = await openWithKey(next, keyFor('v4-rc4.pdf', 'alice'))
+    expect(again.info.encryption).toBe('Adobe.PubSec V5 256-bit AES')
+  })
+
+  it('a save whose version is not the one marked saved is not adopted', async () => {
+    const e = await openFixtureAs('v4-rc4.pdf', 'alice')
+    const { version } = await e.doc.saveWithVersion({})
+    await comment(e)
+    // Another save at a later version replaced it; marking the earlier version adopts nothing.
+    await e.doc.saveWithVersion({})
+    await e.doc.markSaved('v4-rc4.pdf', version)
+    expect((await e.doc.facts()).encryption).toBe('Adobe.PubSec V4 128-bit RC4')
   })
 })
