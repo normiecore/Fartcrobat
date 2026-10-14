@@ -3,8 +3,18 @@
 // with .NET EnvelopedCms, and only the envelope's content (seed and permission bytes) comes back.
 // Windows shows its own smart card PIN dialog; the PIN stays entered in the helper process until
 // stop() ("Lock smart card", quitting Fartcrobat).
-import type { CertKeyCandidate, CertKeysErrorCode, EncryptionCertificate, WindowsStoreState } from '@shared/certkeys'
-import { CertKeyError, type RecipientKeySource, type SourceDecryptOptions, type SourceDecryptResult } from './source'
+import type {
+  CertKeyCandidate,
+  CertKeysErrorCode,
+  EncryptionCertificate,
+  WindowsStoreState
+} from '@shared/certkeys'
+import {
+  CertKeyError,
+  type RecipientKeySource,
+  type SourceDecryptOptions,
+  type SourceDecryptResult
+} from './source'
 import {
   DECRYPT_TIMEOUT_MS,
   PROBE_TIMEOUT_MS,
@@ -43,7 +53,10 @@ export interface WindowsStore extends RecipientKeySource {
  * FARTCROBAT_TEST_POWERSHELL_HOME sets its HOME, so .NET on Linux reads an isolated certificate store
  * (~/.dotnet/corefx/cryptography/x509stores) instead of the person's own. Packaged builds ignore both.
  */
-export function testPowerShellOptions(env: NodeJS.ProcessEnv, packaged: boolean): Pick<WindowsStoreOptions, 'powershellPath' | 'env'> {
+export function testPowerShellOptions(
+  env: NodeJS.ProcessEnv,
+  packaged: boolean
+): Pick<WindowsStoreOptions, 'powershellPath' | 'env'> {
   const powershellPath = env.FARTCROBAT_TEST_POWERSHELL
   if (packaged || !powershellPath) return {}
   const home = env.FARTCROBAT_TEST_POWERSHELL_HOME
@@ -63,7 +76,8 @@ const ERRORS: Record<WinStoreCode, { code: CertKeysErrorCode; message: string; h
   NOT_WINDOWS: { code: 'ERROR', message: 'The Windows certificate store is only available on Windows.' },
   POWERSHELL_UNAVAILABLE: {
     code: 'POWERSHELL_UNAVAILABLE',
-    message: 'Windows PowerShell could not be started, so Fartcrobat cannot use the Windows certificate store. Use a Digital ID instead.'
+    message:
+      'Windows PowerShell could not be started, so Fartcrobat cannot use the Windows certificate store. Use a Digital ID instead.'
   },
   CONSTRAINED_LANGUAGE: {
     code: 'CONSTRAINED_LANGUAGE',
@@ -73,23 +87,48 @@ const ERRORS: Record<WinStoreCode, { code: CertKeysErrorCode; message: string; h
   HELPER_FAILED: { code: 'ERROR', message: 'The Windows certificate store could not be used. Try again.' },
   TIMEOUT: { code: 'TIMEOUT', message: 'Windows did not answer in time. Try again.' },
   ABORTED: { code: 'CANCELLED', message: 'Cancelled.' },
-  BAD_INPUT: { code: 'ERROR', message: 'The list of people this document is encrypted for could not be read.' },
-  NO_MATCHING_CERT: { code: 'NO_MATCHING_CERT', message: 'None of your certificates can open this document.' },
+  BAD_INPUT: {
+    code: 'ERROR',
+    message: 'The list of people this document is encrypted for could not be read.'
+  },
+  NO_MATCHING_CERT: {
+    code: 'NO_MATCHING_CERT',
+    message: 'None of your certificates can open this document.'
+  },
   CANCELLED: { code: 'CANCELLED', message: 'Cancelled.' },
   WRONG_PIN: { code: 'WRONG_PIN', message: 'The smart card PIN was wrong.' },
-  PIN_BLOCKED: { code: 'PIN_BLOCKED', message: 'The smart card is blocked because a wrong PIN was entered too many times.' },
-  CARD_NOT_PRESENT: { code: 'CARD_NOT_PRESENT', message: 'Insert the smart card that holds your certificate, then try again.' },
-  KEY_UNAVAILABLE: { code: 'KEY_UNAVAILABLE', message: 'The private key for your certificate is not available.', hresult: true },
-  KEY_ACCESS_DENIED: { code: 'KEY_UNAVAILABLE', message: 'Windows denied access to the private key for your certificate.', hresult: true },
+  PIN_BLOCKED: {
+    code: 'PIN_BLOCKED',
+    message: 'The smart card is blocked because a wrong PIN was entered too many times.'
+  },
+  CARD_NOT_PRESENT: {
+    code: 'CARD_NOT_PRESENT',
+    message: 'Insert the smart card that holds your certificate, then try again.'
+  },
+  KEY_UNAVAILABLE: {
+    code: 'KEY_UNAVAILABLE',
+    message: 'The private key for your certificate is not available.',
+    hresult: true
+  },
+  KEY_ACCESS_DENIED: {
+    code: 'KEY_UNAVAILABLE',
+    message: 'Windows denied access to the private key for your certificate.',
+    hresult: true
+  },
   UI_REQUIRED: {
     code: 'KEY_UNAVAILABLE',
     message: 'Windows needs to ask you before this key can be used, but could not show its dialog.',
     hresult: true
   },
-  DECRYPT_FAILED: { code: 'ERROR', message: 'Windows could not decrypt this document with your certificate.', hresult: true },
+  DECRYPT_FAILED: {
+    code: 'ERROR',
+    message: 'Windows could not decrypt this document with your certificate.',
+    hresult: true
+  },
   UNSUPPORTED: {
     code: 'UNSUPPORTED',
-    message: 'This document is encrypted for a kind of certificate Fartcrobat cannot use yet. Only RSA certificates are supported.'
+    message:
+      'This document is encrypted for a kind of certificate Fartcrobat cannot use yet. Only RSA certificates are supported.'
   },
   ERROR: { code: 'ERROR', message: 'The Windows certificate store could not be used.', hresult: true }
 }
@@ -110,7 +149,11 @@ export function toCertKeyError(err: unknown): CertKeyError {
 }
 
 export function createWindowsStore(opts: WindowsStoreOptions): WindowsStore {
-  const helper = new PowerShellHelper({ powershellPath: opts.powershellPath, env: opts.env, platform: opts.platform })
+  const helper = new PowerShellHelper({
+    powershellPath: opts.powershellPath,
+    env: opts.env,
+    platform: opts.platform
+  })
   const probeMs = opts.timeouts?.probeMs ?? PROBE_TIMEOUT_MS
   const decryptMs = opts.timeouts?.decryptMs ?? DECRYPT_TIMEOUT_MS
   // Hardware is only known after a key was used. Remembered for the app session, so the next probe
@@ -187,7 +230,11 @@ export function createWindowsStore(opts: WindowsStoreOptions): WindowsStore {
       }
       let r
       try {
-        r = await decryptRecipients(helper, blobs, { thumbprint: m[1], timeoutMs: decryptMs, signal: decryptOpts.signal })
+        r = await decryptRecipients(helper, blobs, {
+          thumbprint: m[1],
+          timeoutMs: decryptMs,
+          signal: decryptOpts.signal
+        })
       } catch (err) {
         throw toCertKeyError(err)
       }
@@ -200,7 +247,13 @@ export function createWindowsStore(opts: WindowsStoreOptions): WindowsStore {
       return {
         envelope: r.blob,
         content: r.content,
-        via: { source: 'windows-store', label: r.name || r.subject, subject: r.subject, fingerprint: thumbprint, hardware: r.hardware === true }
+        via: {
+          source: 'windows-store',
+          label: r.name || r.subject,
+          subject: r.subject,
+          fingerprint: thumbprint,
+          hardware: r.hardware === true
+        }
       }
     },
 

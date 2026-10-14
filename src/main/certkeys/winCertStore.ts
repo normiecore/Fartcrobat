@@ -218,7 +218,11 @@ export class PowerShellHelper {
 
   private start(): HelperProcess {
     const exe = this.opts.powershellPath ?? defaultPowerShellPath(this.opts.env ?? process.env)
-    const env: NodeJS.ProcessEnv = { ...(this.opts.env ?? process.env), TERM: 'dumb', POWERSHELL_TELEMETRY_OPTOUT: '1' }
+    const env: NodeJS.ProcessEnv = {
+      ...(this.opts.env ?? process.env),
+      TERM: 'dumb',
+      POWERSHELL_TELEMETRY_OPTOUT: '1'
+    }
     // Started from a PowerShell 7 session, PSModulePath lists PowerShell 7's modules first, and Windows
     // PowerShell 5.1 then fails to load its own built-in cmdlets. Without it, 5.1 uses its defaults.
     if (!this.opts.powershellPath) delete env.PSModulePath
@@ -246,7 +250,8 @@ export class PowerShellHelper {
     }
     if (proc.buffer.length > MAX_LINE) {
       const p = this.pending
-      if (p && p.proc === proc) this.finish(p, new WinStoreError('HELPER_FAILED', 'Unreadable answer from the certificate helper'))
+      if (p && p.proc === proc)
+        this.finish(p, new WinStoreError('HELPER_FAILED', 'Unreadable answer from the certificate helper'))
       this.kill(proc)
     }
   }
@@ -474,5 +479,7 @@ export async function listEncryptionCertificates(
     { timeoutMs: opts.timeoutMs ?? PROBE_TIMEOUT_MS, signal: opts.signal }
   )
   if (r.ok !== true) fail(r)
-  return (r.certificates as Array<Record<string, unknown>>).map((c) => ({ ...c, der: unb64(c.der) }) as StoreCertificate)
+  return (r.certificates as Array<Record<string, unknown>>).map(
+    (c) => ({ ...c, der: unb64(c.der) }) as StoreCertificate
+  )
 }

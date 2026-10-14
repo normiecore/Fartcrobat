@@ -357,13 +357,22 @@ export type ScriptVars = Record<string, string | boolean | string[]>
 export function buildScript(body: string, vars: ScriptVars, id: number): string {
   if (!Number.isSafeInteger(id) || id < 0) throw new Error('bad request id')
   const assign = Object.entries(vars).map(([name, value]) => {
-    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name) || /^fc/i.test(name)) throw new Error(`bad variable name ${name}`)
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(name) || /^fc/i.test(name))
+      throw new Error(`bad variable name ${name}`)
     if (typeof value === 'boolean') return `$${name} = $${value ? 'true' : 'false'}`
     // one literal per line: no single huge line for the 5.1 console reader
     if (Array.isArray(value)) return [`$${name} = @(`, ...value.map(literal), ')'].join('\n')
     return `$${name} = ${literal(value)}`
   })
-  const guarded = ['try {', body, '} catch {', '$fe = Get-FcError $_', '$fe.ok = $false', 'Write-FcResult $fe', '}']
+  const guarded = [
+    'try {',
+    body,
+    '} catch {',
+    '$fe = Get-FcError $_',
+    '$fe.ok = $false',
+    'Write-FcResult $fe',
+    '}'
+  ]
   const lines = [`$FcId = ${id}`, PRELUDE, assign.join('\n'), ...guarded]
     .join('\n')
     .split(/\r?\n/)
@@ -373,9 +382,15 @@ export function buildScript(body: string, vars: ScriptVars, id: number): string 
 
 /**
  * Sent after every request: a one-line statement that says the request's block has finished, so a
- * block that printed no answer fails at once instead of waiting for the timeout. Write-Output works
- * in Constrained Language Mode too (calling [Console] does not).
+ * block that printed no answer fails at once instead of waiting for the timeout. It runs even when
+ * the block did not parse. It writes the way the answer was written, so the two stay in order:
+ * [Console]::Out like Write-FcResult, and in Constrained Language Mode (where calling [Console] is
+ * refused) Write-Output like the prelude's refusal.
  */
 export function endMarker(id: number): string {
-  return `Write-Output 'FCEND:${id}'\n\n`
+  if (!Number.isSafeInteger(id) || id < 0) throw new Error('bad request id')
+  return (
+    `if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') { [Console]::Out.WriteLine('FCEND:${id}') } ` +
+    `else { Write-Output 'FCEND:${id}' }\n\n`
+  )
 }
