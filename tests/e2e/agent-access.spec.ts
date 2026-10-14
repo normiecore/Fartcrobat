@@ -531,8 +531,7 @@ test('turning agent access off in Preferences refuses calls and removes the endp
     await shot(page, 'preferences-on-again')
 
     // The refused call never reached the app, so it has no audit line. (With no endpoint, the shim
-    // started a copy of the app, as it would for Claude Desktop; the copy handed over to this one,
-    // which holds the profile, and the shim then reported agent access as off.)
+    // read app.json, saw agent access marked off, and answered without starting the app.)
     const lines = await expectAudit(userData, ['list_documents', 'list_documents'])
     expect(lines.map((l) => [l.client, l.outcome])).toEqual([
       ['claude-ai', 'done'],

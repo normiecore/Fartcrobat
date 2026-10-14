@@ -72,11 +72,14 @@ Contracts (do not change without updating every side):
 
 ### Main process (`src/features/agent-access/main.ts`, `main/**`)
 
-- Starts when agent access is enabled (preference `agentAccess`, default true, overridden by the
-  machine policy file: Windows `%ProgramData%\Fartcrobat\policy.json`, macOS
-  `/Library/Application Support/Fartcrobat/policy.json`, Linux `/etc/fartcrobat/policy.json`,
-  `{ "agentAccess": { "enabled": true | false } }`; tests may point `FARTCROBAT_POLICY_FILE` at
-  another file). Stops and removes the endpoint file when turned off; restarts when turned on.
+- Starts when agent access is enabled (preference `agentAccess`, default true, overridden by a
+  machine policy). Windows: the REG_DWORD `AgentAccess` under `HKLM\SOFTWARE\Policies\Fartcrobat`
+  (1 is on, any other value off; read with `reg.exe`), which Group Policy or Intune can set and
+  only administrators can write. macOS `/Library/Application Support/Fartcrobat/policy.json`,
+  Linux `/etc/fartcrobat/policy.json`, `{ "agentAccess": { "enabled": true | false } }`. A policy
+  that exists but cannot be read turns access off. Tests may point `FARTCROBAT_POLICY_FILE` at a
+  file on any system. Stops and removes the endpoint file when turned off; restarts when turned
+  on. `app.json` records whether access is on so the shim does not start the app to be refused.
 - Listens on a random address: `\\.\pipe\fartcrobat-agent-<32 hex>` on Windows; on other systems
   `<private 0700 temp dir>/agent.sock`. Writes `<userData>/agent-access/endpoint.json`
   (`AgentEndpoint`, file mode 0600, written atomically) and `app.json` (`AgentAppInfo`: the
@@ -121,6 +124,12 @@ Contracts (do not change without updating every side):
   runs. In a document, clicking it opens the Agent activity right panel (recent calls with tool,
   document, outcome and time; Disconnect; a link to Preferences); on Home it opens the same list
   as a popover. It is hidden in Read Mode.
+- Disconnect closes that AI app's connections and blocks the app (by its reported name) from
+  reconnecting until the person clicks "Allow again" (in the panel or Preferences) or restarts
+  Fartcrobat. Its shim is told `disconnected` and refused with `blocked` meanwhile, so it does
+  not silently reconnect on the next call.
+- One question at a time: while a confirmation, network-location question or password prompt
+  from an agent is on screen, another agent call that needs the person answers `busy`.
 - Preferences section "AI apps": the switch (read-only with a note when policy decides),
   connection list, "Add to Claude Desktop" button, "Show audit log", one paragraph explaining what
   agents can do and that document text they read goes to the AI app's service.
@@ -142,6 +151,15 @@ Contracts (do not change without updating every side):
   `%LOCALAPPDATA%\Programs\Fartcrobat`, `Program Files\Fartcrobat`; macOS: `/Applications` or
   `~/Applications`; Linux: `/opt/Fartcrobat`). Waits up to 30 s for the endpoint. Reconnects after
   the app restarts. Verifies the app's MAC before sending anything.
+- Connects on the first call and reconnects on the next call after the connection drops, never
+  on its own. Does not start the app when `app.json` says agent access is off. After the person
+  disconnects the AI app, each call is refused with `blocked` (and nothing is started) until they
+  allow it again.
+- On Windows, starts the app through WMI (`Win32_Process.Create` from PowerShell) rather than as
+  a child process. Claude Desktop is an MSIX package, and Windows redirects its descendants'
+  AppData writes into a private copy, which would split the app's settings, endpoint file and
+  audit log from the real ones. On macOS it uses `open -a`. Otherwise, or if that fails, a
+  detached child.
 - If the app cannot be reached the result is an error saying Fartcrobat is not running or agent
   access is off. A call that waits for the person answers `still_running` before the AI app's
   request timeout (see Decisions).
