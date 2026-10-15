@@ -62,5 +62,11 @@ Password-protected inputs (files to insert, combine, create from or compare) unl
   from @renderer/sdk: a password saved on this device first, then the prompt with "Remember password on this device". Never prompt() for
   a document password yourself. Files written from a protected document (Save As, extract, split) call linkDocumentFiles(doc, paths).
   New tabs made from one pass openNewDocument(bytes, name, { password, derivedFrom: source.state.unlock }).
+Certificate-encrypted inputs (/Adobe.PubSec): engine ops that open a file report { ok:false, needsCertificate:true, certificate }
+  (or throw CertificateNeededError, code NEEDS_CERTIFICATE; CERTIFICATE_UNSUPPORTED when its /Recipients are over
+  PUBSEC_RECIPIENT_LIMITS, with a message to show). Unlock with unlockCertificateFile({ name, filePath, certificate, attempt })
+  from @renderer/sdk, register the key on the SAME engine with doc.addCertificateKey(key) and try again (organize-pages' withUnlock does
+  this). derivedFrom carries the source's certificateKey, so new tabs open silently. Outputs written through saveDocument or the
+  engine's protection helpers keep the source's certificate security; never write s.pdf.saveToBuffer() output of such a document.
 New fixtures go in tests/fixtures/<feature-id>/ (generate them in a script or in the test itself; python3 with reportlab and Pillow is available).
 Engine namespace = your feature id (e.g. defineOps('edit-text', ...)).

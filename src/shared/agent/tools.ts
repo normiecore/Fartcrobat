@@ -303,7 +303,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'open_document',
     title: 'Open a file',
     description:
-      'Open a file in Fartcrobat (PDF, images, Office documents, XPS, EPUB and others it can convert) and return its handle. If the file is already open in the window the person used last (also as a converted tab not yet saved as a PDF), returns that tab; list_documents shows the tabs of every window. A password-protected file opens without a prompt when its password is saved on this device; otherwise it waits for the person to type it in Fartcrobat. You never see passwords.',
+      'Open a file in Fartcrobat (PDF, images, Office documents, XPS, EPUB and others it can convert) and return its handle. If the file is already open in the window the person used last (also as a converted tab not yet saved as a PDF), returns that tab; list_documents shows the tabs of every window. A protected file opens without a prompt when its password is saved on this device or it is encrypted to one of the person\'s certificates; otherwise it waits for the person in Fartcrobat. You never see passwords or keys.',
     inputSchema: obj(
       { path, page: { ...page, description: 'Page to show. Default: the page the document opens at (a tab that is already open stays on its page).' } },
       ['path']
@@ -316,7 +316,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'save_document',
     title: 'Save',
     description:
-      'Save a document to disk. Without path, saves over its current file: the person confirms first. With path, saves a copy there and the tab then shows that file (the person confirms if the file exists). Encryption and passwords are kept. Signed documents are saved incrementally so signatures stay valid.',
+      'Save a document to disk. Without path, saves over its current file: the person confirms first. With path, saves a copy there and the tab then shows that file (the person confirms if the file exists). Encryption and passwords are kept. Signed documents are saved incrementally so signatures stay valid, except certificate-encrypted ones: saving rewrites them and their signatures stop validating, so the person confirms first.',
     inputSchema: obj({ handle, path: { ...path, description: 'Save as this new file (absolute path ending in .pdf).' } }),
     annotations: DESTRUCTIVE,
     gate: 'conditional',
@@ -356,7 +356,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'extract_pages',
     title: 'Extract pages',
     description:
-      'Copy pages into a new document (comments, form fields and links come along). Opens it as a new unsaved tab, or writes it to path. A password-protected source gives a protected result with the same passwords.',
+      'Copy pages into a new document (comments, form fields and links come along). Opens it as a new unsaved tab, or writes it to path. A protected source gives a protected result that opens with the same passwords or certificates.',
     inputSchema: obj({ handle, pages: { ...pagesArg('all'), description: 'Pages to extract, e.g. "3-5".' }, path: { ...path, description: 'Write here instead of opening a new tab.' } }, ['pages']),
     annotations: EDIT,
     gate: 'conditional',
@@ -618,7 +618,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'remove_security',
     title: 'Remove security',
     description:
-      'Remove the password and restrictions from a document and save it without them: over its file, or where the person chooses if it has none. The person confirms in Fartcrobat first (and types the permissions password if one is needed). Returns the saved path.',
+      'Remove the password and restrictions (or the certificate security) from a document and save it without them: over its file, or where the person chooses if it has none. The person confirms in Fartcrobat first (and types the permissions password if one is needed). A certificate-encrypted document has no permissions password: only a certificate allowed to change its security can remove it. Returns the saved path.',
     inputSchema: obj({ handle }),
     annotations: DESTRUCTIVE,
     gate: 'confirm',

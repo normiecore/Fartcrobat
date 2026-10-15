@@ -142,7 +142,7 @@ What the permission values mean (PubSec permissions, ISO 32000-2 Table 24):
 **MuPDF**
 
 - MuPDF refuses every file here ("unknown encryption handler").
-- Through the spike's bridge (`prototypes/passwordless/certificate-open`, given only `seedHex`),
+- Through the spike's bridge (`prototypes/passwordless/certificate-open`, since removed, given only `seedHex`),
   every file opens with the right text, note, title and page count, and `wasRepaired()` is false.
   Two exceptions:
   - `v5-nometa.pdf` page text opens through the R6 bridge, but MuPDF fails on the clear XMP.

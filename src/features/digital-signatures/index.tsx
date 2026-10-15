@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BadgeCheck, FileSignature, KeyRound, PenTool, ShieldCheck, Stamp } from 'lucide-react'
 import {
+  ADD_DIGITAL_ID_COMMAND,
   defineFeature,
   openPreferences,
   openRightPanel,
@@ -12,8 +13,10 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import { validateAll } from './ui/actions'
+import { isCertificateEncrypted } from './ui/encrypted'
 import { beginBox, BOX_TOOL, CertificateBoxLayer, CertificateBoxToolbar, CertificatePanel } from './ui/CertificateTool'
 import { DigitalIdsSettings } from './ui/DigitalIdsSettings'
+import { importDigitalIdFlow } from './ui/IdDialogs'
 import { SignatureFieldLayer } from './ui/FieldLayer'
 import { startSigning } from './ui/flow'
 import { ActiveDocValidator, SignatureMessageBar } from './ui/MessageBar'
@@ -78,7 +81,7 @@ function contextItems(doc: DocumentModel, pageIndex: number, point: [number, num
         id: 'dsig-sign-field',
         label: 'Sign Document…',
         icon: FileSignature,
-        disabled: report.locked,
+        disabled: report.locked || isCertificateEncrypted(doc),
         run: () => void startSigning(doc, { mode: 'sign', target: { kind: 'field', name: unsigned.name } })
       }
     ]
@@ -137,6 +140,17 @@ export default defineFeature({
       requiresDocument: false,
       keywords: ['digital id', 'certificate', 'pfx', 'p12', 'trusted certificates'],
       run: () => openPreferences('digital-ids')
+    },
+    {
+      // "Add Digital ID..." when no key opens a certificate-encrypted file (src/renderer/src/app/certificates.ts).
+      id: ADD_DIGITAL_ID_COMMAND,
+      label: 'Add Digital ID…',
+      icon: KeyRound,
+      requiresDocument: false,
+      keywords: ['import', 'digital id', 'certificate', 'pfx', 'p12'],
+      run: async () => {
+        await importDigitalIdFlow()
+      }
     }
   ],
   menus: [

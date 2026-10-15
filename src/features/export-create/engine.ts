@@ -218,6 +218,10 @@ export default defineOps('export-create', {
           try {
             src = openSource(s, part.data, part.name, part.password)
           } catch (err) {
+            // Certificate-encrypted and no key this engine holds opens it: CertificateNeededError
+            // ("<name> is encrypted with certificates"). The renderer unlocks it, gives the key to
+            // doc.addCertificateKey and builds again.
+            if ((err as EngineError).code === 'NEEDS_CERTIFICATE') throw err
             if ((err as EngineError).code === 'NEEDS_PASSWORD') {
               throw new EngineError(part.password ? `The password for ${part.name} is incorrect` : `${part.name} is password protected`, part.password ? 'WRONG_PASSWORD' : 'NEEDS_PASSWORD')
             }

@@ -3,3 +3,5 @@
 # The fixture generators (tests/fixtures/**/make_*.py) need more, such as reportlab, but their
 # outputs are committed and no test runs them.
 pypdf==6.17.0
+# Reads certificate-encrypted (/Adobe.PubSec) files: tests/engine/pyhanko.ts. Needs Python 3.10 or later.
+pyHanko==0.37.0

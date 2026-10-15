@@ -28,6 +28,20 @@ import {
   uniqueSignatureName
 } from './fields'
 
+/**
+ * Why certificate-encrypted documents cannot be signed (engine code CERTIFICATE_ENCRYPTED; the UI
+ * shows the same words, src/features/digital-signatures/ui/encrypted.ts). A correct signature needs
+ * an incremental save that keeps the certificate security, and MuPDF holds these documents through
+ * a temporary security dictionary that must never be written (docs/features/passwordless.md, D8).
+ */
+export const CERTIFICATE_ENCRYPTED_MESSAGE =
+  'Signing certificate-encrypted documents is not supported yet. Remove the certificate security (Protect > Remove security) to sign, then encrypt again.'
+
+/** Refuses certificate-encrypted documents before anything else happens. */
+function refuseCertificateEncrypted(s: Session) {
+  if (s.pubsec) throw new EngineError(CERTIFICATE_ENCRYPTED_MESSAGE, 'CERTIFICATE_ENCRYPTED')
+}
+
 /** Room reserved for the CMS signature: at least 16 KB, more for long certificate chains. */
 export function contentsSize(chain: Uint8Array[]): number {
   const certs = chain.reduce((n, c) => n + c.length, 0)
@@ -46,7 +60,8 @@ export function signCapability(s: Session): SignCapability {
   })
   const canForm = safe(() => pdf.hasPermission('form') || pdf.hasPermission('annotate'), true)
   let reason: string | null = null
-  if (!canForm) reason = "The document's security settings do not allow signing."
+  if (s.pubsec) reason = CERTIFICATE_ENCRYPTED_MESSAGE
+  else if (!canForm) reason = "The document's security settings do not allow signing."
   else if (cert?.permission === 1) reason = 'This document is certified and the certifier does not allow any changes, including signing.'
   else if (lockedBy) reason = `This document was locked when “${lockedBy.name}” was signed, so it cannot be signed again.`
   else if (signed.length && !safe(() => pdf.canBeSavedIncrementally(), false))
@@ -227,6 +242,7 @@ function checkRequest(s: Session, req: SignRequest) {
 
 /** Produces the signed file. */
 export async function signDocument(s: Session, req: SignRequest): Promise<SignResult> {
+  refuseCertificateEncrypted(s)
   checkRequest(s, req)
   const m = s.mupdf
   const time = req.time ?? Date.now()

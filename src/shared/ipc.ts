@@ -117,6 +117,8 @@ export interface IpcApi {
   'certkeys:listEncryptionCertificates': (opts: { includeOthers: boolean }) => EncryptionCertificate[]
   /** Stops the Windows helper, so a smart card needs its PIN again ("Lock smart card"). */
   'certkeys:lockSmartCard': () => void
+  /** Stops a certkeys:decrypt still running (CertKeysDecryptRequest.requestId); it answers CANCELLED. */
+  'certkeys:cancel': (requestId: string) => void
 }
 
 /** Events pushed from the main process to the renderer. */

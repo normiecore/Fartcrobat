@@ -148,6 +148,8 @@ export function SignaturesPanel({ doc }: { doc: DocumentModel }) {
   const { report, running, error } = useDocSignatures(doc)
   const trusted = useTrustedSet()
   const dirty = useDocState(doc, (s) => s.dirty)
+  // Signing certificate-encrypted documents is not supported yet (see encrypted.ts).
+  const encrypted = useDocState(doc, (s) => s.info.security === 'certificate')
   const overall = overallStatus(report, trusted)
   const hasAny = !!report && (report.signatures.length > 0 || report.unsigned.length > 0)
   return (
@@ -192,7 +194,7 @@ export function SignaturesPanel({ doc }: { doc: DocumentModel }) {
             <SignatureEntry key={r.fieldName} doc={doc} r={r} locked={report.locked} />
           ))}
           {report.unsigned.map((f) => (
-            <UnsignedEntry key={f.name} doc={doc} f={f} canSign={!report.locked && report.certified !== 1} />
+            <UnsignedEntry key={f.name} doc={doc} f={f} canSign={!report.locked && report.certified !== 1 && !encrypted} />
           ))}
         </ul>
       )}

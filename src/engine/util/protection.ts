@@ -3,7 +3,29 @@
  * report). The new file gets the source's encryption dictionary and file ID, so it has the same
  * method, permission flags, open password and permissions password, and nobody needs to know
  * either password: the session only has to be able to open the source, which it already did.
+ *
+ * Certificate security (/Adobe.PubSec) works the same way with the source's seed and envelopes:
+ * outputs are written by the PubSec writer (src/engine/crypt/pubsecWrite.ts), always V5 AES-256,
+ * so the same people open them with the same keys. MuPDF holds a certificate-encrypted source
+ * through a temporary security dictionary (the bridge), which never reaches an output
+ * (assertNoBridge checks every one).
  */
+import type { Permission } from '@shared/types'
+import {
+  assertNoBridge,
+  bytesEqual,
+  certificatePermissions,
+  fileKey,
+  openPubSec,
+  readPubSec,
+  verifyFileKey,
+  writeKeyFor,
+  writePubSecDocument,
+  type CertificateKeyRegistry,
+  type PubSecInfo,
+  type PubSecState,
+  type PubSecWriteKey
+} from '../crypt'
 import { EngineError } from '../define'
 import type { Mupdf, PDFDocument, Session } from '../session'
 import { isNull } from './pdf'
@@ -26,12 +48,21 @@ export interface ProtectionSummary {
 /**
  * The security of a protected document, ready to put on new files: a small PDF with no pages that
  * has the same encryption dictionary and file ID, and the password it was opened with (null when
- * none is needed).
+ * none is needed). For certificate security: the key outputs are written with instead (no template,
+ * no password).
  */
 export interface Protection {
+  /** Password security only (empty for certificate security). */
   template: Uint8Array
   password: string | null
   summary: ProtectionSummary
+  /**
+   * Certificate security: outputs are written with `writeKey` (the source's seed and envelopes), so
+   * they open with the same keys. `state` is the source's security when it is open in this engine
+   * (the session's document, or an input opened with a key); outputs are checked against its
+   * bridge. Holds secrets: never send it to the UI thread (ops return `summary` only).
+   */
+  certificate?: { writeKey: PubSecWriteKey; state: PubSecState | null }
 }
 
 /** Options of saved outputs (as Extract and Combine always used). */
@@ -79,12 +110,70 @@ function restrictsAnything(doc: PDFDocument): boolean {
   }
 }
 
+/** Restrictions of password files that `summary.restricted` reports (as restrictsAnything). */
+const RESTRICTED: Permission[] = ['print', 'edit', 'copy', 'annotate', 'form', 'assemble']
+
+/**
+ * Certificate security for outputs: written with `writeKey`, described with the permissions of the
+ * key that opened the source (outputs carry the same envelopes, so each recipient keeps theirs).
+ */
+function certificateProtection(writeKey: PubSecWriteKey, permissions: number | null, state: PubSecState | null): Protection {
+  const allowed = certificatePermissions(permissions).permissions
+  return {
+    template: new Uint8Array(0),
+    password: null,
+    // Outputs are always V5 AES-256, whatever the source used.
+    summary: { method: '256-bit AES', needsPassword: false, restricted: RESTRICTED.some((p) => !allowed[p]), certificate: true },
+    certificate: { writeKey, state }
+  }
+}
+
+/** The certificate security of a document open in this engine (the session's, or an input's). */
+export function certificateProtectionOf(state: PubSecState): Protection {
+  return certificateProtection(state.writeKey, state.permissions, state)
+}
+
+/**
+ * The certificate security of a file MuPDF cannot open, found with a key the engine holds (checked
+ * without opening the file), or null when the file is not certificate-encrypted.
+ */
+function certificateProtectionOfFile(bytes: Uint8Array, keys: CertificateKeyRegistry | undefined): Protection | null {
+  let info: PubSecInfo | null = null
+  try {
+    info = readPubSec(bytes)
+  } catch {}
+  if (!info) return null
+  for (const key of keys?.find(info.recipients) ?? []) {
+    if (!verifyFileKey(bytes, info, fileKey(info, key.seed))) continue
+    return certificateProtection(writeKeyFor(key.seed, info.recipients), key.permissions, null)
+  }
+  throw new EngineError(
+    'The protected file could not be opened again: it is encrypted with certificates and no key for it was given',
+    'NEEDS_CERTIFICATE'
+  )
+}
+
 /**
  * The protection of a PDF file opened from `bytes` with `password`, or null when it is not
- * encrypted. Throws when the password does not open it.
+ * encrypted. Throws when the password does not open it. A certificate-encrypted file is read with
+ * the keys in `keys` (the engine's registry, Session.certificateKeys); NEEDS_CERTIFICATE when none
+ * opens it.
  */
-export function protectionOfFile(m: Mupdf, bytes: Uint8Array, password: string | null): Protection | null {
-  const doc = new m.PDFDocument(bytes)
+export function protectionOfFile(
+  m: Mupdf,
+  bytes: Uint8Array,
+  password: string | null,
+  keys?: CertificateKeyRegistry
+): Protection | null {
+  let doc: PDFDocument
+  try {
+    doc = new m.PDFDocument(bytes)
+  } catch (err) {
+    // MuPDF only knows the Standard security handler and throws on /Adobe.PubSec files.
+    const certificate = certificateProtectionOfFile(bytes, keys)
+    if (certificate) return certificate
+    throw err
+  }
   try {
     if (!isEncrypted(doc)) return null
     const needsPassword = doc.needsPassword()
@@ -121,6 +210,8 @@ export function protectionOfFile(m: Mupdf, bytes: Uint8Array, password: string |
 
 /** The protection of the session's document, or null when it is not encrypted. */
 export function sessionProtection(s: Session): Protection | null {
+  // Never the bridge or s.password: MuPDF's view of a certificate-encrypted document is temporary.
+  if (s.pubsec) return certificateProtectionOf(s.pubsec)
   if (!isEncrypted(s.pdf)) return null
   // Security only changes by reopening the document, which clears s.state.
   const cached = s.state.get(SESSION_KEY) as
@@ -128,7 +219,7 @@ export function sessionProtection(s: Session): Protection | null {
   if (cached && cached.source === s.sourceBytes && cached.password === s.password) return cached.value
   // A plain save keeps the current encryption; only needed when there are no source bytes.
   const source = s.sourceBytes ?? takeBuffer(s.pdf.saveToBuffer('garbage=yes'))
-  const value = protectionOfFile(s.mupdf, source, s.password)
+  const value = protectionOfFile(s.mupdf, source, s.password, s.certificateKeys)
   if (!value) return null
   s.state.set(SESSION_KEY, { source: s.sourceBytes, password: s.password, value })
   return value
@@ -175,6 +266,7 @@ export function saveWithProtection(
   options = OUTPUT_SAVE_OPTIONS
 ): Uint8Array {
   if (!protection) return takeBuffer(doc.saveToBuffer(options))
+  if (protection.certificate) return saveWithCertificate(m, doc, protection.certificate, options)
   const out = openTemplate(m, protection)
   let bytes: Uint8Array
   try {
@@ -208,6 +300,12 @@ export function outputSizer(
   let out: PDFDocument | null = null
   return {
     size(doc) {
+      if (protection?.certificate) {
+        // Written as it would be saved (and never kept): the size includes the encryption.
+        const bytes = writePubSecDocument(m, doc, protection.certificate.writeKey, { saveOptions: OUTPUT_SAVE_OPTIONS })
+        assertNoBridge(bytes, protection.certificate.state)
+        return bytes.length
+      }
       let buf: InstanceType<Mupdf['Buffer']>
       if (!protection) buf = doc.saveToBuffer(OUTPUT_SAVE_OPTIONS)
       else {
@@ -244,6 +342,42 @@ function verify(m: Mupdf, bytes: Uint8Array, protection: Protection, pageCount: 
       `Could not keep the password protection on the new file (${(err as Error).message})`,
       'PROTECT_FAILED'
     )
+  } finally {
+    doc?.destroy()
+  }
+}
+
+/**
+ * Writes `doc` (not modified; it must open without a password) as a certificate-encrypted file
+ * with the source's seed and envelopes, refuses output that carries a bridge, and checks that it
+ * opens with the source's key and has all its pages.
+ */
+function saveWithCertificate(
+  m: Mupdf,
+  doc: PDFDocument,
+  certificate: NonNullable<Protection['certificate']>,
+  options: string
+): Uint8Array {
+  const bytes = writePubSecDocument(m, doc, certificate.writeKey, { saveOptions: options })
+  assertNoBridge(bytes, certificate.state)
+  verifyCertificate(m, bytes, certificate.writeKey, doc.countPages())
+  return bytes
+}
+
+/** A certificate-encrypted output that does not open like its source must never reach the disk or a tab. */
+function verifyCertificate(m: Mupdf, bytes: Uint8Array, key: PubSecWriteKey, pageCount: number) {
+  let doc: PDFDocument | null = null
+  try {
+    const info = readPubSec(bytes)
+    if (!info) throw new Error('not certificate-encrypted')
+    if (info.recipients.length !== key.recipients.length || !info.recipients.every((r, i) => bytesEqual(r, key.recipients[i]))) {
+      throw new Error('other recipients')
+    }
+    // Opened as the source's recipients will open it (any envelope gives the same seed).
+    doc = openPubSec(m, bytes, info, { envelope: key.recipients[0], seed: key.seed, permissions: null }).doc
+    if (doc.countPages() !== pageCount) throw new Error('pages missing')
+  } catch (err) {
+    throw new EngineError(`Could not keep the certificate security on the new file (${(err as Error).message})`, 'PROTECT_FAILED')
   } finally {
     doc?.destroy()
   }

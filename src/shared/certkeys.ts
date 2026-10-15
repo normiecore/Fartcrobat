@@ -51,6 +51,18 @@ export const PUBSEC_PERMISSION = {
 
 export type PubSecPermission = keyof typeof PUBSEC_PERMISSION
 
+/**
+ * The most /Recipients a certificate-encrypted file may have for Fartcrobat to open it. The engine
+ * refuses larger ones (CERTIFICATE_UNSUPPORTED) and the main process refuses larger certkeys:*
+ * requests. Real files have a few envelopes of a few kilobytes.
+ */
+export const PUBSEC_RECIPIENT_LIMITS = {
+  envelopes: 100,
+  /** Bytes per envelope, and in all. */
+  envelopeBytes: 1024 * 1024,
+  totalBytes: 4 * 1024 * 1024
+} as const
+
 /** One RecipientInfo of a /Recipients entry, as people are shown it (no secrets). */
 export interface PubSecRecipient {
   /** Index of the /Recipients entry (envelope) and of the RecipientInfo inside it. */
@@ -118,6 +130,11 @@ export interface CertKeysProbeResult {
   candidates: CertKeyCandidate[]
   /** Everyone the file is encrypted for, to tell the person when none of their keys match. */
   recipients: PubSecRecipient[]
+  /**
+   * Whether the Windows certificate store could be searched ('constrained' or 'unavailable' explain
+   * why it found nothing). Absent from older main processes.
+   */
+  windowsStore?: WindowsStoreState
 }
 
 export interface CertKeysDecryptRequest {
@@ -129,6 +146,11 @@ export interface CertKeysDecryptRequest {
   /** Save the typed password on this device after it worked (Digital IDs). */
   remember?: boolean
   actor: CertKeyActor
+  /**
+   * Names this request for certkeys:cancel (letters, digits, '-' and '_', at most 64). Cancelling a
+   * Windows store request stops the helper, so a smart card PIN entered in it is asked again.
+   */
+  requestId?: string
 }
 
 /**
@@ -203,6 +225,11 @@ export type WindowsStoreState =
   | 'constrained'
   /** PowerShell could not be started (blocked, missing) or the helper keeps failing. */
   | 'unavailable'
+  /**
+   * Only in a certkeys:probe result: the helper did not answer in time, usually because it was
+   * busy with another request (a smart card waiting for its PIN), so the store was not searched.
+   */
+  | 'busy'
 
 export interface CertKeysStatus {
   windowsStore: WindowsStoreState

@@ -18,7 +18,10 @@ export {
   openToolGroup,
   openRightPanel,
   toggleRightPanel,
-  setPrefs
+  setPrefs,
+  signaturesLostOnSave,
+  acceptSignatureLoss,
+  signatureLossMessage
 } from './app/actions'
 export { runCommand, displayShortcut, registerActiveEditor, type ActiveEditor } from './app/commands'
 export {
@@ -33,7 +36,15 @@ export {
   NO_KEYRING_NOTE,
   type Unlocked
 } from './app/savedPasswords'
-export { unlockAuditSummary, type DocUnlock, type RememberOffer } from './app/unlock'
+export {
+  unlockCertificateFile,
+  CertificateUnavailableError,
+  CertificateKeyFailedError,
+  ADD_DIGITAL_ID_COMMAND,
+  type UnlockCertificateRequest,
+  type CertificateUnlocked
+} from './app/certificates'
+export { unlockAuditSummary, certificateAccess, type DocUnlock, type RememberOffer } from './app/unlock'
 export { DocumentModel, useDocState, usePageVersion, type Selection, type DocState } from './document/DocumentModel'
 export * from './document/textModel'
 export { PageGeometry, type CssRect } from './viewer/geometry'

@@ -13,17 +13,18 @@ Office conversion when installed, with a built-in fallback.
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`). It has no updater.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
-  access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords).
-  Open: #12 (in-app updates). #11 is a stray PR from `main` into the session branch; close
-  it.
+  access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
+  #12 (in-app updates), #13 (certificate encryption contracts and fixtures). #11 merged `main`
+  into the old session branch. Open: #14 (certificate encryption, the rest of it).
+- `package.json` is still 0.1.0: the updater from #12 has not shipped in a release yet.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
-  (Settings > General). Everything on that branch is already in `main` once #12 merges.
-- About 1110 unit tests (vitest) and 155 end-to-end tests (Playwright on Electron).
+  (Settings > General). Everything on that branch is already in `main`.
+- About 1540 unit tests (vitest) and 163 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
-- **In-app updates** (`docs/features/updates.md`, #12): checks
+- **In-app updates** (`docs/features/updates.md`, merged in #12): checks
   `github.com/normiecore/Fartcrobat/releases/latest` 30 s after start and every 6 hours, shows a
   card in the bottom right (Download with a progress bar, then Restart now or Later), and installs
   silently through electron-updater 6.8.10 after the normal quit flow has asked about unsaved
@@ -34,7 +35,7 @@ Office conversion when installed, with a built-in fallback.
   more, so updates replace it in place. A review (install safety, security, release pipeline, UI)
   found 15 issues, all fixed in the PR, among them an inherited `APPIMAGE` variable that would
   have made a .deb install replace another app's AppImage.
-  - Not yet tried for real: no release has latest*.yml yet. Next step after merging: bump to
+  - Not yet tried for real: no release has latest*.yml yet. Next step: bump to
     0.2.0 (PR), run the Release workflow, install 0.2.0 by hand on Windows (per user and per
     machine) and as an AppImage, then release 0.2.1 and check that each updates itself, that
     Restart now with unsaved changes asks first, and that `AutoUpdate`=0 hides everything.
@@ -42,17 +43,25 @@ Office conversion when installed, with a built-in fallback.
   gaps are listed in #9 and backlog items 15 and 16. Nothing has been tried on Windows or with a
   real Claude Desktop yet.
 - **Passwordless** (`docs/features/passwordless.md`): phases 0 and 1 (remembered passwords with
-  safeStorage, also for Digital IDs, silent unlock for agents) are merged (#10). Next: certificate
-  encryption (phases 2 to 5: open Adobe.PubSec files, save them back, the Windows certificate
-  store and smart cards through PowerShell/.NET with the PIN kept for the session, create
-  certificate-encrypted files), then the `windows-latest` CI job and the owner's manual Windows
-  checklist. Prototypes for all of it are in `prototypes/passwordless/`.
+  safeStorage, also for Digital IDs, silent unlock for agents) are merged (#10). Certificate
+  encryption (phases 2 to 6) is built in #14; "Certificate encryption as built" in the note says
+  where the code is and where it differs from the plan. It opens V2, V4 and V5 /Adobe.PubSec
+  files with a Digital ID (.p12) or the Windows certificate store and smart cards (one
+  PowerShell 5.1 helper per app session, so a PIN is asked once per session), saves them back as
+  V5 AES-256 with the original seed and envelopes, and creates them (Protect > Encrypt with
+  Certificate). Agents open them silently, except that a smart card PIN is typed by the person.
+  Three adversarial review rounds (each finding verified independently) are fixed in the PR.
+  - Nothing has run on Windows, a smart card or Acrobat. Next: the owner's team runs the manual
+    Windows checklist in the note (25 items); the `windows-helper` CI job already runs the helper
+    tests against stock PowerShell 5.1 on `windows-latest`.
+  - The prototypes in `prototypes/passwordless/` are ported and were removed (git history has
+    them).
 - The machine policy for all three features is `src/main/policy.ts`: REG_DWORDs `AgentAccess`,
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Suggested order for the next session: merge #12 and cut 0.2.0 (so people get the
-  updater), then certificate encryption.
+- Suggested order for the next session: merge #14, cut 0.2.0 (so people get the updater and
+  certificate encryption), then the update test with 0.2.1 and the Windows checklist.
 
 ## Where things are
 
@@ -70,6 +79,10 @@ Office conversion when installed, with a built-in fallback.
   messages), the feature in `src/features/agent-access/` (main process pipe server, window runner
   and tool handlers, UI), the MCP shim in `src/agent-shim/` (built to `out/agent/shim.mjs` and the
   Claude Desktop extension `out/agent/fartcrobat.mcpb`, shipped as `<resources>/agent/`).
+- Certificate encryption: contracts in `src/shared/certkeys.ts`, the engine side in
+  `src/engine/crypt/` (reader, bridge, writer; `index.ts` describes it), key sources and the
+  PowerShell helper in `src/main/certkeys/`, the open flow in `src/renderer/src/app/unlock.ts` and
+  `certificates.ts`, Encrypt with Certificate in `src/features/protect-optimize/`.
 - `tests/engine/*.test.ts` (vitest), `tests/e2e/*.spec.ts` (Playwright), `tests/fixtures/`.
 
 Stack: Electron 44, electron-vite 5, React 19, zustand, TypeScript 6, mupdf 1.28 (WASM),
@@ -144,6 +157,13 @@ outputs are committed; tests never generate them at run time.
     `walkStructuredText` (`src/engine/util/stext.ts`).
   - Saves beyond a plain save (compaction, recompression, security changes) run on a copy so the
     live document keeps its undo history. See `saveDocument` in `src/engine/ops/doc.ts`.
+- The main process must never import `@noble/*` (electron-vite's `__dirname` shim lands inside
+  their doc comments and the app does not start), and imports node-forge only with `import()`.
+  `tests/engine/main-bundle.test.ts` checks both.
+- Certificate-encrypted sessions must never write `s.pdf.saveToBuffer()` output (it holds the
+  temporary bridge dictionary); `tests/engine/passwordless-guard.test.ts` allow-lists the calls.
+- Tests that use outside tools (pyHanko, pwsh) skip without them; CI sets
+  `FARTCROBAT_REQUIRE_PYHANKO=1` so the pyHanko cross-checks cannot skip there.
 - Worktree-isolated agents have been based on an old commit before. Check the base with
   `git log` before merging their work.
 - Git: work on the branch the session names, open a draft PR, and let the owner merge.
@@ -178,6 +198,15 @@ Roughly in priority order:
     `MAC_INSTALLS_UPDATES` in `src/features/updates/main/settings.ts` and test Squirrel.Mac.
 18. Updates for .deb installs only notify: electron-updater can install them, but only through a
     root password prompt (`pkexec dpkg -i`).
+19. Password security leaves a direct `/Info` dictionary (in the trailer, not an object) in clear
+    text: MuPDF's writer does not encrypt it. Certificate security already moves it into an
+    object first (`src/engine/crypt/pubsecWrite.ts`); the password save path in
+    `src/engine/ops/doc.ts` needs the same.
+20. Certificate encryption gaps (see "Known limits" in `docs/features/passwordless.md`): saved
+    files drop a PDF MAC (ISO/TS 32004), so pyHanko refuses them; no Active Directory lookup of
+    recipients; no macOS Keychain or Linux PKCS#11 smart cards; no EC (ECDH) recipients; signing
+    certificate-encrypted files needs a PubSec-aware incremental save; Constrained Language Mode
+    machines need an Authenticode-signed helper script (backlog 1).
 
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.

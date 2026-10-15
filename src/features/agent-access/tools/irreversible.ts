@@ -2,6 +2,7 @@
 import type { AgentToolName } from '@shared/agent/tools'
 import { toast } from '@renderer/sdk'
 import type { SignTarget } from '@features/digital-signatures/types'
+import { CERTIFICATE_ENCRYPTED_SIGNING, isCertificateEncrypted } from '@features/digital-signatures/ui/encrypted'
 import { startSigning } from '@features/digital-signatures/ui/flow'
 import { sigOps, trustedSet, validateDocument } from '@features/digital-signatures/ui/store'
 import { overallStatus, signatureStatus } from '@features/digital-signatures/status'
@@ -105,6 +106,7 @@ const signDocument: ToolHandler = async (args, ctx) => {
   const reason = checked(() => optString(args.reason, 'reason'))
   const location = checked(() => optString(args.location, 'location'))
   const certify = checked(() => optBoolean(args.certify, 'certify')) ?? false
+  if (isCertificateEncrypted(doc)) throw new ToolError('failed', CERTIFICATE_ENCRYPTED_SIGNING)
   const cap = await engineTask('Could not check the document', () => sigOps(doc).capability())
   if (certify && !cap.canCertify) throw new ToolError('failed', cap.certifyReason ?? 'This document cannot be certified.')
   if (!cap.canSign) throw new ToolError('failed', cap.reason ?? 'This document cannot be signed.')
@@ -205,6 +207,14 @@ const removeSecurity: ToolHandler = async (args, ctx) => {
   const doc = resolveDoc(ctx, args.handle)
   const st = await engineTask('Could not read the security settings', () => securityOf(doc))
   if (!st.encrypted) throw new ToolError('invalid_args', `“${doc.state.title}” has no password or restrictions to remove.`)
+  // A certificate-encrypted document has no permissions password: only a certificate allowed to
+  // change its security can remove it, so do not ask the person for something that cannot work.
+  const certificate = isCertificateEncrypted(doc)
+  if (certificate && !st.ownerAccess)
+    throw new ToolError(
+      'failed',
+      `The person’s certificate does not allow removing the security of “${doc.state.title}”. Only someone whose certificate may change its security can remove it.`
+    )
   await commitTyping()
   const path = doc.state.filePath
   await requireConfirmation(
@@ -213,7 +223,7 @@ const removeSecurity: ToolHandler = async (args, ctx) => {
     {
       title: 'Remove security?',
       message: paragraphs(
-        `Remove the password and all restrictions from “${doc.state.title}”? Anyone with the file will be able to open, print, copy and change it.`,
+        `${certificate ? `Remove the certificate security from “${doc.state.title}”?` : `Remove the password and all restrictions from “${doc.state.title}”?`} Anyone with the file will be able to open, print, copy and change it.`,
         path
           ? `Fartcrobat saves it without security over its file${doc.state.dirty ? ', together with the unsaved changes' : ''}.`
           : 'You will choose where to save the unprotected PDF.',

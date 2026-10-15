@@ -189,10 +189,14 @@ function protectingSide(session: Session): Session['old'] | null {
   return [session.old, session.new].find((side) => !!side.doc.state.info.encryption) ?? null
 }
 
-/** "It keeps the protection of “a.pdf”: 256-bit AES encryption and the same open password." */
+/**
+ * "It keeps the protection of “a.pdf”: 256-bit AES encryption and the same open password." (or
+ * "...and the same certificate security." for certificate encryption).
+ */
 function protectionNote(p: ProtectionSummary, name: string): string {
   const parts = [`${p.method} encryption`]
-  if (p.needsPassword) parts.push('the same open password')
+  if (p.certificate) parts.push('the same certificate security')
+  else if (p.needsPassword) parts.push('the same open password')
   if (p.restricted) parts.push('the same restrictions')
   const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`
   return `It keeps the protection of “${name}”: ${list}.`

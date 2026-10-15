@@ -2,13 +2,14 @@ import type { Rect } from '@shared/geometry'
 import { normalizeRect, transformRect } from '@shared/geometry'
 import type { CertificateLock } from '@shared/certkeys'
 import type { LockInfo, PasswordAccess } from '@shared/types'
+import { assertCertificateOutput, certificateLockOf, openWithKeys, type PubSecState } from '../crypt'
 import { defineOps, EngineError, mutation, withTransfer } from '../define'
 import type { PDFDocument, PDFObject, Session } from '../session'
 import { copyPages, removePageFields } from '../util/graft'
 import { accessOf, readLockInfo } from '../util/lockInfo'
 import { catalog, isNull, pageRotation, readNumber } from '../util/pdf'
 import { protectBytes, sessionProtection } from '../util/protection'
-import { convertToPdf, OPENABLE_FORMATS } from './doc'
+import { convertToPdf, OPENABLE_FORMATS, pubsecOf } from './doc'
 
 function uniqueSorted(indices: number[], count: number): number[] {
   const set = new Set(indices.filter((i) => Number.isInteger(i) && i >= 0 && i < count))
@@ -43,18 +44,36 @@ export class CertificateNeededError extends EngineError {
   }
 }
 
+/** A file opened for its pages (openSourceWithAccess). */
+export interface OpenedSource {
+  doc: PDFDocument
+  /** What `password` gave, or for a certificate-encrypted file what its key gives (null: nothing needed). */
+  access: PasswordAccess | null
+  /**
+   * Set when the file is certificate-encrypted and a key this engine holds opened it: its security,
+   * so that outputs made from it can keep it (pubsec.writeKey). `doc` then holds the temporary
+   * bridge or plaintext: never save it with saveToBuffer and write the result anywhere.
+   */
+  pubsec?: PubSecState
+}
+
 /**
  * Opens bytes (PDF or any format MuPDF reads) as a PDF document for grafting pages, and says what
- * `password` gave (null when none was needed).
+ * `password` gave (null when none was needed). A certificate-encrypted file opens with a key the
+ * engine holds (doc.addCertificateKey), or throws CertificateNeededError.
  */
-export function openSourceWithAccess(
-  s: Session,
-  data: Uint8Array,
-  fileName = 'file.pdf',
-  password?: string
-): { doc: PDFDocument; access: PasswordAccess | null } {
+export function openSourceWithAccess(s: Session, data: Uint8Array, fileName = 'file.pdf', password?: string): OpenedSource {
   const ext = (/\.([a-z0-9]+)$/i.exec(fileName)?.[1] ?? 'pdf').toLowerCase()
-  const src = s.mupdf.Document.openDocument(data, OPENABLE_FORMATS[ext] ? fileName : 'application/pdf')
+  let src: InstanceType<Session['mupdf']['Document']>
+  try {
+    src = s.mupdf.Document.openDocument(data, OPENABLE_FORMATS[ext] ? fileName : 'application/pdf')
+  } catch (err) {
+    const info = pubsecOf(data)
+    if (!info) throw err
+    const opened = openWithKeys(s.mupdf, data, info, s.certificateKeys.find(info.recipients))
+    if (!opened) throw new CertificateNeededError(fileName, certificateLockOf(info))
+    return { doc: opened.doc, access: opened.state.access, pubsec: opened.state }
+  }
   let access: PasswordAccess | null = null
   if (src.needsPassword()) {
     access = password ? accessOf(src.authenticatePassword(password)) : null
@@ -290,6 +309,8 @@ export default defineOps('pages', {
     const list = uniqueSorted(indices, s.pageCount())
     if (!list.length) throw new EngineError('No pages selected', 'NO_PAGES')
     const bytes = protectBytes(s.mupdf, extractToBytes(s, list), sessionProtection(s))
+    // Pages of a certificate-encrypted document never leave it in clear or with the bridge.
+    if (s.pubsec) assertCertificateOutput(bytes, s.pubsec)
     return withTransfer(bytes, [bytes.buffer as ArrayBuffer])
   },
 

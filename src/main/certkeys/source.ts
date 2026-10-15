@@ -22,6 +22,10 @@ export interface SourceDecryptResult {
 }
 
 /** A failure the person can act on; `code` goes back to the renderer as is. */
+/** A Windows store probe that did not finish in time (its CertKeyError TIMEOUT). */
+export const STORE_BUSY =
+  'The Windows certificate store did not answer in time. It may be waiting for a smart card PIN; try again when that is done.'
+
 export class CertKeyError extends Error {
   constructor(
     readonly code: CertKeysErrorCode,

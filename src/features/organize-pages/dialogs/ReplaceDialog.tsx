@@ -11,7 +11,7 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import { afterChange, undoAction } from '../actions'
-import { chooseFiles, loadFile, orgOps, withPassword, type LoadedFile } from '../files'
+import { chooseFiles, loadFile, orgOps, withUnlock, type LoadedFile } from '../files'
 import { countLabel } from '../ranges'
 import { isOrganizeOpen, selectIndices } from '../store'
 import { Summary } from './common'
@@ -168,7 +168,7 @@ async function pickReplacement(doc: DocumentModel): Promise<Source | null> {
   if (!path) return null
   try {
     const file = await loadFile(path)
-    const probe = await withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
+    const probe = await withUnlock(file, doc, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
     if (!probe) return null
     return { file: { ...file, password: probe.password }, pageCount: probe.result.pageCount }
   } catch (err) {
