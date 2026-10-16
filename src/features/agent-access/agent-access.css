@@ -284,3 +284,13 @@
   overflow: auto;
   overflow-wrap: anywhere;
 }
+
+/* Native text proposals: readable diffs and complete page previews, including narrow windows. */
+.fc-agent-access-text-review section { margin: 16px 0; }
+.fc-agent-access-text-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.fc-agent-access-text-columns pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 8px 0; }
+.fc-agent-access-text-columns figure { margin: 8px 0; }
+.fc-agent-access-text-columns img { display: block; width: 100%; height: auto; border: 1px solid var(--border, #aaa); }
+.fc-agent-access-text-columns h3, .fc-agent-access-text-columns figcaption { margin: 4px 0; font-size: 13px; font-weight: 600; }
+.fc-agent-access-text-diff { padding: 12px; border: 1px solid var(--border, #aaa); border-radius: 6px; }
+@media (max-width: 700px) { .fc-agent-access-text-columns { grid-template-columns: 1fr; } }

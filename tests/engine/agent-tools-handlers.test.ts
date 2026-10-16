@@ -338,3 +338,53 @@ describe('initial view', () => {
     await initialView.initialViewSettled({} as any)
   })
 })
+
+
+describe('native text editing review', () => {
+  async function proposal() {
+    const e = await openFixture('text.pdf')
+    const doc = modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const b = snap.blocks.find((b: any) => b.text.includes('quick brown fox'))
+    return { e, doc, args: { revision: snap.revision, edits: [{ page: 1, block_id: b.block_id, original_text: b.text, text: b.text.replace('quick', 'swift') }] } }
+  }
+  it('preview does not ask or change text; Decline leaves the PDF alone', async () => {
+    const { e, args } = await proposal()
+    const preview = await call('edit_text', { ...args, preview_only: true })
+    expect(preview.data.applied).toBe(false)
+    expect(preview.images).toHaveLength(1)
+    expect(useApp.getState().dialogs).toHaveLength(0)
+    const pending = call('edit_text', args)
+    const dialog = await nextDialog()
+    expect(dialogText(dialog)).toContain('Review text changes')
+    dialog.resolve(false)
+    expect((await errorOf(pending)).code).toBe('declined')
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
+  })
+  it('Apply creates one Agent undo step and stale proposals never overwrite person changes', async () => {
+    const { e, args } = await proposal()
+    const pending = call('edit_text', args)
+    ;(await nextDialog()).resolve(true)
+    expect((await pending).data).toMatchObject({ applied: true, saved: false, undoLabel: 'Agent: Edit Text Batch' })
+    expect(await e.call('edit-text.text', 0)).toContain('swift brown fox')
+    await e.doc.undo()
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const stale = call('edit_text', { ...args, revision: snap.revision })
+    const dialog = await nextDialog()
+    await e.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [10,10,20,20], contents: 'Person note' })
+    dialog.resolve(true)
+    expect((await errorOf(stale)).message).toContain('document changed')
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
+  })
+  it('cancellation during review closes the proposal without changing text', async () => {
+    const { e, args } = await proposal()
+    const abort = new AbortController()
+    const ctx = { ...ctxFor(), signal: abort.signal }
+    const pending = call('edit_text', args, ctx)
+    await nextDialog()
+    abort.abort()
+    expect((await errorOf(pending)).code).toBe('aborted')
+    expect(useApp.getState().dialogs).toHaveLength(0)
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
+  })
+})

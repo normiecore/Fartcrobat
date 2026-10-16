@@ -14,8 +14,8 @@ Office conversion when installed, with a built-in fallback.
   `.tar.gz`). It has no updater.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
   access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
-  #12 (in-app updates), #13 (certificate encryption contracts and fixtures). #11 merged `main`
-  into the old session branch. Open: #14 (certificate encryption, the rest of it).
+  #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
+  encryption). #11 merged main into the old session branch.
 - `package.json` is still 0.1.0: the updater from #12 has not shipped in a release yet.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
@@ -60,8 +60,23 @@ Office conversion when installed, with a built-in fallback.
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Suggested order for the next session: merge #14, cut 0.2.0 (so people get the updater and
+- Suggested order for the next session: review the native MCP editing branch, cut 0.2.0 (so people get the updater and
   certificate encryption), then the update test with 0.2.1 and the Windows checklist.
+
+
+### Native MCP editing (16 Oct 2026)
+
+- Branch codex/live-mcp-text-editing adds get_editable_text, edit_text, get_document_layout,
+  reflow_text and rebuild_document. See docs/features/agent-text-editing.md.
+- Native edits and linked column/page flows happen in the open PDF, with a before/after review,
+  revision guards and one undo step. Flow templates keep artwork and unmanaged content; static
+  page labels and link/comment anchors need review. A clean new design is a separate tool.
+- The MCP client performs semantic/visual interpretation using the exposed structure and renders.
+  The app does not contain a model or guarantee perfect reconstruction of arbitrary PDFs.
+- Update the installed app AND reinstall its bundled Claude Desktop extension before testing.
+- Local Windows UI verification used a cached Electron 40 runtime and a generated-bundle-only
+  shim for the existing ClipboardItem import; no compatibility change is in the source. CI
+  should validate the actual pinned Electron 44 runtime. Local Linux CI simulation is unavailable.
 
 ## Where things are
 

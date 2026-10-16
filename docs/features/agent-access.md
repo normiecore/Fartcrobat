@@ -61,7 +61,7 @@ Claude Desktop --stdio, MCP--> shim (Node, in the .mcpb extension)
 Contracts (do not change without updating every side):
 - `src/shared/agent/protocol.ts`: pipe protocol, endpoint/app files, framing, tool result shape,
   error codes, MCP server instructions.
-- `src/shared/agent/tools.ts`: the 31 tools (name, description, JSON Schema, annotations, gate).
+- `src/shared/agent/tools.ts`: the tool catalogue (name, description, JSON Schema, annotations, gate).
   The shim advertises exactly these; the renderer implements one handler per name
   (`wait_for_result` may be answered by the runner itself).
 - `src/shared/agent/bridge.ts`: main <-> window messages, routing rules, status, audit entries.
@@ -177,3 +177,9 @@ Contracts (do not change without updating every side):
 - End to end (Playwright): launch the built app with its own userData, start the built shim with
   an MCP client over stdio, call tools, and check the app (document state, undo label, confirm
   dialog: Decline and Apply). Skips nothing on Linux CI.
+
+
+## Native editing and design-aware reflow
+
+See [agent-text-editing.md](agent-text-editing.md) for native text editing, document layout inspection,
+linked column/page flows that keep the design, and an explicitly approved new-design option.

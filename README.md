@@ -83,6 +83,22 @@ Windows (0 off, 1 on), or `{"autoUpdate":{"enabled":false}}` in
 (Linux).
 See [docs/features/updates.md](docs/features/updates.md).
 
+
+## AI apps and live editing
+
+Preferences > AI apps > Add to Claude Desktop installs the bundled local MCP extension. With
+agent access enabled, Claude can inspect open PDFs, edit real page text, and show proposed changes
+in Fartcrobat before you apply them. Changes appear in the open document and can be undone.
+
+For larger rewrites, Claude can inspect fonts, headings, tables, artwork and margins, then flow
+text through connected columns and continuation pages while keeping the existing design. A new
+design is a separate, explicitly reviewed option. Complex scans, missing font glyphs and ambiguous
+tables have limits: the preview shows the result, and the app reports unsupported operations.
+
+Save a new local PDF with the agent's save_document tool or the normal Save As command. The AI
+service receives the document text/images its tools read. Reinstall the extension after updating
+the app to pick up new tools. See [the editing guide](docs/features/agent-text-editing.md).
+
 ## Development
 
 ```

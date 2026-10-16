@@ -803,6 +803,49 @@ function writeText(
   }
 }
 
+/** Native font metrics and writing shared with design-preserving agent text flows.
+ * Construct before removing source text, so embedded font glyph mappings remain available.
+ * Call only inside a scratch or live journalled operation.
+ */
+export function createTextComposer(s: Session, sourcePage: number, runs: Run[]) {
+  const a = analyzePage(s, sourcePage)
+  const names = new Set(runs.filter(r => isOrigFont(r.font)).map(r => r.font.slice(5)))
+  const orig = buildOrigFonts(s, sourcePage, names, a.content, observeGlyphs(s, sourcePage))
+  const substituted = [...names].filter(name => !orig.get(name)?.embedded).map(stripSubset)
+  return {
+    layout(edit: TextEdit) {
+      validate(edit)
+      const w = new Writer(s, sourcePage, orig)
+      let offset = 0
+      const layoutRuns = edit.runs.map(r => {
+        const base = offset
+        offset += r.text.length
+        let at = 0
+        const shape = w.shaper(r)
+        return { style: r, text: r.text, shape: (ch: string) => {
+          while (r.text[at] === '\n') at++
+          at += ch.length
+          return { ...shape(ch), textEnd: base + at }
+        } }
+      })
+      const laid = layoutText(layoutRuns, { wrap: true, width: edit.frame.width, align: edit.align, lineSpacing: edit.lineSpacing, ascent: edit.ascent })
+      const lineEnds = laid.lines.map(line => Math.max(0, ...line.glyphs.map(g => (g.g as ShapedGlyph & { textEnd: number }).textEnd)))
+      return { ...laid, lineEnds, fallbackFonts: [...new Set([...substituted, ...w.fallbackFonts])], unsupported: [...w.unsupported] }
+    },
+    draw(page: number, edit: TextEdit): CommitResult {
+      validate(edit)
+      const w = new Writer(s, page, orig)
+      const plan = insertPlan(s, page)
+      const result = writeText(w, edit, edit.runs, plan.toContent)
+      if (result.content) appendContent(s, page, result.content + '\n', plan)
+      w.finish()
+      s.invalidatePages()
+      s.touch(page)
+      return { bbox: result.bbox, fallbackFonts: [...new Set([...substituted, ...w.fallbackFonts])], unsupported: [...w.unsupported], restoredGlyphs: 0 }
+    }
+  }
+}
+
 function validate(edit: TextEdit) {
   const finite = (...v: number[]) => v.every((x) => Number.isFinite(x))
   const f = edit.frame
