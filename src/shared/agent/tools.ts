@@ -16,6 +16,7 @@
 
 export type AgentToolName =
   // context (read only)
+  | 'companion_chat'
   | 'wait_for_result'
   | 'list_documents'
   | 'get_context'
@@ -146,6 +147,17 @@ const styleRuns: JsonSchema = { type: 'array', minItems: 1, maxItems: 1000, desc
 // ---- the catalogue --------------------------------------------------------------------------
 
 export const AGENT_TOOLS: AgentToolDef[] = [
+  {
+    name: 'companion_chat', title: 'Companion chat',
+    description: 'Only when the person asks to chat inside Fartcrobat: call without arguments to join the focused window companion. Then pass the returned session on every call to listen for a user message (up to 30 seconds), or send a reply with message and reply_to (the user message id). Continue listening while the person wants this chat. An idle result means no message yet, not a task. Use message.documentHandle for document tools when supplied, so changing tabs cannot redirect a request. Each session belongs to one connection and window. Only report actual actions and concise progress; never hidden reasoning. This does not modify a PDF.',
+    inputSchema: obj({
+      session: { type: 'string', maxLength: 100 },
+      message: { type: 'string', minLength: 1, maxLength: 8000 },
+      reply_to: { type: 'integer', minimum: 1 },
+      wait_seconds: { type: 'number', minimum: 0, maximum: 30, default: 25 }
+    }),
+    annotations: EDIT, gate: 'none', category: 'view'
+  },
   // ---- context ----
   {
     name: 'wait_for_result',

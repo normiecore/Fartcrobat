@@ -78,6 +78,16 @@ Office conversion when installed, with a built-in fallback.
   shim for the existing ClipboardItem import; no compatibility change is in the source. CI
   should validate the actual pinned Electron 44 runtime. Local Linux CI simulation is unavailable.
 
+### Companion follow-up (16 Oct 2026)
+
+- See docs/features/agent-companion.md. Draggable provider sprites, observed activity bubbles,
+  compact in-app MCP conversation, and installation-specific ChatGPT Desktop setup are added.
+- companion_chat is client-initiated: the user starts it once from the external desktop chat;
+  it cannot wake an idle AI session. No API provider, credentials or automatic model is added.
+- Chat history stays in memory. Position only is persisted. MCP now exposes 37 tools.
+- Local cloud environment blocks Unix sockets and Electron single-instance launch; full MCP
+  desktop tests must run on CI/a supported local desktop, not be claimed passed here.
+
 ## Where things are
 
 - `docs/ARCHITECTURE.md`: how the app is built (engine worker, feature folders, coordinates,

@@ -64,7 +64,7 @@ export function callFinished(id: string, patch: Pick<CallRecord, 'outcome'> & Pa
 export function appLabel(name: string | undefined): string {
   const n = (name ?? '').trim()
   if (!n) return 'AI app'
-  return /claude/i.test(n) ? 'Claude' : n
+  return /claude/i.test(n) ? 'Claude' : /chatgpt|codex|openai/i.test(n) ? 'ChatGPT' : n
 }
 
 /** The indicator text: "Claude connected", or "2 AI apps connected" for different apps. */

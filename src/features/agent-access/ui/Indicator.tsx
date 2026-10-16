@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Bot, X } from 'lucide-react'
 import { FloatingAt, IconButton, PanelFrame, toggleRightPanel, useApp } from '@renderer/sdk'
+import { useCompanion } from './companionStore'
 import { ActivityView } from './ActivityPanel'
 import { appLabel, connectedLabel, useAgentUi } from './store'
 
@@ -14,6 +15,7 @@ const P = 'fc-agent-access'
 const POPOVER_WIDTH = 340
 
 export function AgentIndicator() {
+  const minimized = useCompanion(s => s.minimized)
   const connections = useAgentUi((s) => s.status?.connections)
   const runningHere = useAgentUi((s) => s.running)
   const hasDoc = useApp((s) => s.activeDocId !== null)
@@ -34,11 +36,13 @@ export function AgentIndicator() {
   }, [hasDoc])
 
   const list = connections ?? []
-  if (!list.length || !host || readMode) return null
+  if ((!list.length && !minimized) || !host || readMode) return null
   const busy = runningHere > 0 || list.some((c) => c.running > 0)
-  const label = connectedLabel(list)
+  const label = list.length ? connectedLabel(list) : 'AI companion'
   const names = [...new Set(list.map((c) => appLabel(c.client.name)))].join(', ')
   const open = () => {
+    if (minimized) { useCompanion.setState({ minimized: false, revealed: true }); return }
+
     if (hasDoc) {
       toggleRightPanel('agent-activity')
       return

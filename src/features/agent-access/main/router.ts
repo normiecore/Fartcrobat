@@ -281,6 +281,12 @@ export class AgentRouter {
   }
 
   private route(call: RouterCall): { windowId: string } | AgentToolResult {
+    if (call.tool === 'companion_chat' && call.args.session !== undefined) {
+      const session = call.args.session
+      const match = typeof session === 'string' && /^(w\d+)-chat-[a-z0-9]+-[a-f0-9-]+$/.exec(session)
+      if (!match || !this.host.windows().includes(match[1])) return fail('invalid_args', 'The companion window closed or its session is invalid.')
+      return { windowId: match[1] }
+    }
     if (call.tool === 'wait_for_result') {
       const ticket = call.args.ticket
       if (typeof ticket !== 'string' || !ticket)

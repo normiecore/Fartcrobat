@@ -27,6 +27,7 @@ declare module '@shared/ipc' {
      * it in Claude Desktop. Returns '' on success, else the message to show.
      */
     'feature:agent-access:installExtension': () => string
+    'feature:agent-access:chatgptConfig': () => { command: string; args: string[]; env: Record<string, string>; toml: string }
   }
 }
 

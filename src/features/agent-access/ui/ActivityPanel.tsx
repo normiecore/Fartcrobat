@@ -3,6 +3,7 @@ import { Ban, Bot, Check, CircleAlert, Loader2, Settings, ShieldX, Unplug } from
 import type { AgentConnectionInfo } from '@shared/agent/bridge'
 import { Button, EmptyState, invoke, openPreferences, Section, showError, type DocumentModel } from '@renderer/sdk'
 import { appLabel, documentLabel, durationLabel, timeLabel, useAgentUi, type CallRecord } from './store'
+import { useCompanion } from './companionStore'
 import '../ipc'
 
 const P = 'fc-agent-access'
@@ -108,6 +109,7 @@ export function ActivityView({ onLeave }: { onLeave?: () => void }) {
   const connections = status?.connections ?? []
   return (
     <div className={`${P}-activity`}>
+      <Button size="sm" onClick={() => { useCompanion.setState({ minimized: false, revealed: true }); onLeave?.() }}>Show companion</Button>
       {status && !status.enabled && (
         <p className={`${P}-note`}>Agent access is turned off. AI apps cannot work with your documents.</p>
       )}

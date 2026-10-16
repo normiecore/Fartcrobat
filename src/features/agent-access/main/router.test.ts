@@ -555,3 +555,16 @@ describe('agent router', () => {
     })
   })
 })
+
+it('routes companion sessions to their original window after focus changes', async () => {
+  const host = new FakeHost('w1', 'w2')
+  const { router, sink } = setup(host)
+  router.call(call('companion_chat', { session: 'w1-chat-abc-1234-abcd' }))
+  await vi.waitFor(() => expect(host.requests).toHaveLength(1))
+  expect(host.requests[0].windowId).toBe('w1')
+  router.call(call('companion_chat', { session: 'w9-chat-abc-1234-abcd' }))
+  expect(sink.results.at(-1)?.result.error?.code).toBe('invalid_args')
+  router.call(call('companion_chat', { session: 42 }))
+  expect(sink.results.at(-1)?.result.error?.code).toBe('invalid_args')
+  router.connectionClosed(1)
+})
