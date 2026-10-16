@@ -7,6 +7,9 @@ test('companion chats with its owner, moves, minimizes and ends cleanly', async 
   try {
     const { page, agent } = s
     await waitForRender(page)
+    // MCP initialization advertises tools without connecting to Fartcrobat. The first tool
+    // call authenticates the local pipe and makes the connected-client companion appear.
+    dataOf(await agent.call('get_context'))
     const companion = page.getByRole('region', { name: 'AI companion' })
     await expect(companion).toBeVisible()
     await companion.getByRole('button', { name: 'Chat with companion', exact: true }).click()
