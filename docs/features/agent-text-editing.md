@@ -70,3 +70,19 @@ This does not promise lossless semantic reconstruction of every PDF. The model g
 needed to preserve a design, the engine handles explicit layout operations, and the person reviews
 actual rendered pages before accepting changes. Complex scans, missing fonts, dynamic forms and
 ambiguous tables require an explicit decision rather than a silent redesign.
+
+## 0.2.1: on-document review
+
+Native edits appear as proposed pages in the existing document viewer, with highlighted edit
+regions and a Review edits panel in the standard right rail. There is no blocking before/after
+modal. Show original toggles the source page for comparison. Per-edit accept/reject, Accept all,
+Reject remaining and Discard batch keep the user in control. Rejecting an edit recomputes the
+preview without it. Decisions remain provisional until the batch is complete; only the accepted
+subset is then applied as a single native, undoable edit. Saving during review cannot save
+unaccepted proposal images or annotations. Any source document mutation invalidates the review.
+
+The agent is instructed to submit small meaningful batches so proposals arrive progressively;
+MCP does not stream unfinished tool arguments or model tokens. Linked text flow and full rebuilds
+are one approval group because their page and column layout is interdependent. New continuation
+pages are previewed in the review panel before they exist in the document. Full rebuild previews
+fit the current page view and also appear at their actual aspect ratio in the panel.

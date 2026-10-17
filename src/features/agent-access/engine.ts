@@ -161,7 +161,7 @@ function preview(s: Session, revision: number, changes: TextChange[], images: bo
         page: p.page + 1,
         before: p.block?.text ?? '',
         after: p.edit.runs.map((r) => r.text).join(''),
-        bbox: results[i].bbox,
+        bbox: results[i].bbox ?? p.block?.bbox ?? null,
         fallbackFonts: results[i].fallbackFonts
       })),
       previews: images

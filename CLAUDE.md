@@ -235,3 +235,14 @@ Roughly in priority order:
 
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.
+
+### 0.2.1 release preparation (18 Oct 2026)
+
+- Automatic companion joining, conversation-token isolation, on-document edit review and three
+  gentle working poses. See the updated agent-companion and agent-text-editing feature notes.
+- Text proposals stay private/in memory until the review batch is complete. Individual text edits
+  can be rejected; reflow/rebuild remains one linked approval. External mutations cancel review.
+- Release workflow now also runs on merged package.json version bumps on main. It compares with
+  the previous commit and skips dependency-only changes. All platform builds and Linux packaged
+  smoke tests must pass before publication; manual runs and tags remain supported.
+- v0.2.0 shipped on 17 Oct with updater metadata. Existing v0.1.0 installs still need one manual update.

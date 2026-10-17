@@ -29,6 +29,8 @@ export interface AgentCallRequest {
    * handle go there, and only its active document is reported as `active`.
    */
   currentWindow: boolean
+  /** Fixed at routing time so a list_documents fan-out cannot join multiple windows. */
+  allowCompanionJoin?: boolean
   tool: string
   args: Record<string, unknown>
 }

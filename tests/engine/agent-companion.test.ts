@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   activitySentence,
+  autoJoinCompanion,
   endCompanion,
   exchangeCompanion,
   sendCompanionMessage,
@@ -17,7 +18,7 @@ const base = {
 const join = () => exchangeCompanion({ ...base, joining: true })
 const listen = (patch: Partial<Parameters<typeof exchangeCompanion>[0]> = {}) =>
   exchangeCompanion({ ...base, joining: false, ...patch })
-beforeEach(() => endCompanion())
+beforeEach(() => endCompanion(false))
 afterEach(() => {
   endCompanion()
   vi.useRealTimers()
@@ -25,7 +26,7 @@ afterEach(() => {
 
 describe('companion conversations', () => {
   it('does not accept prompts without an active session', () => {
-    expect(() => sendCompanionMessage('Read this')).toThrow(/Start companion/)
+    expect(() => sendCompanionMessage('Read this')).toThrow(/use a Fartcrobat tool/)
   })
   it('delivers only once and displays the reply associated with the user message', async () => {
     await join()
@@ -45,7 +46,7 @@ describe('companion conversations', () => {
     sendCompanionMessage('Private question')
     await expect(listen({ connectionId: 2 })).rejects.toThrow(/another connection/)
     await expect(exchangeCompanion({ ...base, joining: true, connectionId: 2 })).rejects.toThrow(
-      /Another AI app/
+      /Another conversation/
     )
     await expect(listen({ session: 'old' })).rejects.toThrow(/ended/)
     expect(useCompanion.getState().messages[0].delivered).toBeUndefined()
@@ -81,6 +82,22 @@ describe('companion conversations', () => {
     expect(() => sendCompanionMessage('x'.repeat(8001))).toThrow(/8,000/)
     sendCompanionMessage('First')
     expect(() => sendCompanionMessage('Second')).toThrow(/still waiting/)
+  })
+  it('never leaks an existing token to another chat on the same connection', async () => {
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toMatchObject({ session: 'first' })
+    sendCompanionMessage('Private question')
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toBeUndefined()
+    expect(autoJoinCompanion(2, 'ChatGPT', 'third')).toBeUndefined()
+    await expect(join()).rejects.toThrow(/Another conversation/)
+    expect(useCompanion.getState().messages[0].delivered).toBeUndefined()
+  })
+  it('respects End & clear until the user allows a new conversation', async () => {
+    autoJoinCompanion(1, 'Claude', 'first')
+    endCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toBeUndefined()
+    await expect(join()).rejects.toThrow(/Chat ended/)
+    useCompanion.setState({ autoJoin: true })
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toMatchObject({ session: 'second' })
   })
   it('describes only observable tool activity', () => {
     expect(activitySentence()).toBe('Ready when you are.')

@@ -58,6 +58,7 @@ interface Pending {
   started: number
   /** list_documents: asked of every window, answers merged. */
   fanOut: boolean
+  companionWindow?: string
   targets: Target[]
   cancelled: boolean
   /** Ends a cancelled call whose window does not answer. */
@@ -137,6 +138,7 @@ export class AgentRouter {
     if (call.tool === 'list_documents') {
       p.fanOut = true
       p.targets = this.host.windows().map((windowId) => ({ windowId, state: 'waiting' }))
+      p.companionWindow = this.currentWindow() ?? p.targets[0]?.windowId
       if (!p.targets.length) this.finish(p, { data: { documents: [] } })
       for (const t of p.targets) void this.deliver(p, t)
       return
@@ -346,6 +348,7 @@ export class AgentRouter {
         client,
         windowId: t.windowId,
         currentWindow,
+        allowCompanionJoin: !p.fanOut || p.companionWindow === t.windowId,
         tool,
         args
       })
@@ -378,6 +381,7 @@ export class AgentRouter {
     const documents: unknown[] = []
     let answered = false
     let firstError: AgentToolResult['error']
+    let companion: AgentToolResult['companion']
     for (const t of p.targets) {
       const result = t.reply?.result
       if (!result) continue
@@ -386,10 +390,11 @@ export class AgentRouter {
         continue
       }
       answered = true
+      companion ??= result.companion
       const docs = (result.data as { documents?: unknown } | undefined)?.documents
       if (Array.isArray(docs)) documents.push(...docs)
     }
-    this.finish(p, !answered && firstError ? { error: firstError } : { data: { documents } })
+    this.finish(p, !answered && firstError ? { error: firstError } : { data: { documents }, ...(companion ? { companion } : {}) })
   }
 
   private finish(p: Pending, result: AgentToolResult, detail?: AgentAuditDetail) {

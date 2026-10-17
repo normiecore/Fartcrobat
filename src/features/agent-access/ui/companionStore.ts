@@ -1,4 +1,4 @@
-/** Companion messages stay in memory and are scoped to one explicitly joined MCP connection. */
+/** Companion messages stay in memory and are scoped to one conversation token and its MCP connection. */
 import { create } from 'zustand'
 import type { CallRecord } from './store'
 
@@ -11,6 +11,7 @@ export interface CompanionMessage {
   documentHandle?: string
 }
 interface CompanionState {
+  autoJoin: boolean
   minimized: boolean
   revealed: boolean
   owner: { id: number; name: string; session: string } | null
@@ -18,6 +19,7 @@ interface CompanionState {
   messages: CompanionMessage[]
 }
 export const useCompanion = create<CompanionState>(() => ({
+  autoJoin: true,
   minimized: false,
   revealed: false,
   owner: null,
@@ -27,13 +29,13 @@ export const useCompanion = create<CompanionState>(() => ({
 let nextId = 0
 let wake: (() => void) | null = null
 
-export function endCompanion() {
-  useCompanion.setState({ owner: null, listening: false, messages: [] })
+export function endCompanion(pauseAutoJoin = true) {
+  useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: !pauseAutoJoin })
   wake?.()
 }
 export function sendCompanionMessage(text: string, document?: string, documentHandle?: string) {
   const s = useCompanion.getState()
-  if (!s.owner) throw new Error('Start companion chat in your AI app first.')
+  if (!s.owner) throw new Error('Ask your AI app to use a Fartcrobat tool first.')
   if (!text.trim() || text.length > 8000) throw new Error('Enter a message of up to 8,000 characters.')
   if (s.messages.some((m) => m.role === 'user' && !m.delivered))
     throw new Error('Your previous message is still waiting for the AI app.')
@@ -63,15 +65,16 @@ export async function exchangeCompanion(options: {
   if (signal.aborted) throw new Error('Chat request cancelled.')
   let s = useCompanion.getState()
   if (joining) {
-    if (s.owner && s.owner.id !== connectionId)
-      throw new Error('Another AI app owns this companion chat. Ask the person to end it first.')
+    if (s.owner)
+      throw new Error('Another conversation owns this companion chat. Use the token returned to your conversation, or ask the person to end it first.')
+    if (!s.autoJoin) throw new Error('Chat ended. Ask the person to allow a new conversation in Fartcrobat.')
     if (!s.owner)
       useCompanion.setState({ owner: { id: connectionId, name, session }, revealed: true, messages: [] })
     return {
       session: useCompanion.getState().owner!.session,
       status: 'joined',
       instructions:
-        'Call companion_chat with this session to listen. Reply to each user message with message and reply_to. Continue listening while the person wants this chat.'
+        COMPANION_INSTRUCTIONS
     }
   }
   if (s.owner?.id !== connectionId || s.owner.session !== session)
@@ -155,5 +158,13 @@ export function activitySentence(call?: CallRecord): string {
   return `${action[call.tool] ?? `Working on: ${call.title.toLowerCase()}`}…`
 }
 
-export const COMPANION_START_PROMPT =
-  'Join the Fartcrobat companion chat using companion_chat. Listen for my messages there, carry out my requests using Fartcrobat tools, and reply in the companion with message and reply_to. Keep listening until I end the chat. Describe actual progress, not hidden reasoning. Preserve document design and ask before rebuilding it.'
+/** A token is revealed only to the call that establishes ownership, never to later tokenless calls. */
+export function autoJoinCompanion(connectionId: number, name: string, session: string) {
+  const state = useCompanion.getState()
+  if (!state.autoJoin || state.owner) return undefined
+  useCompanion.setState({ owner: { id: connectionId, name, session }, revealed: true, messages: [] })
+  return { session, status: 'joined' as const, instructions: COMPANION_INSTRUCTIONS }
+}
+
+const COMPANION_INSTRUCTIONS =
+  'This conversation is now connected to the Fartcrobat companion. Keep this session token in this conversation only. Finish the current request, then call companion_chat with this session to listen. Reply to each user message with message and reply_to, and use its documentHandle for PDF operations. Continue listening while the person wants companion chat. Do not invent tasks on idle; stop when the session ends or the person asks. Report actual progress, not hidden reasoning.'

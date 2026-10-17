@@ -174,7 +174,7 @@ describe('handleRequest', () => {
     })
     const req = request('find_text', { query: 'x' })
     await runner.handleRequest(req, d)
-    expect(replies).toEqual([{ id: req.id, result: { data: { count: 0 } }, audit: { document: 'C:\\docs\\a.pdf', outcome: 'done' } }])
+    expect(replies).toEqual([{ id: req.id, result: { data: { count: 0 }, companion: expect.objectContaining({ status: 'joined', session: expect.stringMatching(/^w1-chat-/) }) }, audit: { document: 'C:\\docs\\a.pdf', outcome: 'done' } }])
     expect(progress).toEqual([{ id: req.id, progress: 1, total: 2, message: 'Searching' }])
     const [rec] = ui.useAgentUi.getState().calls
     expect(rec).toMatchObject({ id: req.id, tool: 'find_text', title: 'Find text', client: 'Claude', outcome: 'done', document: 'C:\\docs\\a.pdf' })

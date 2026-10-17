@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { GripHorizontal, MessageCircle, Minus, Send, Settings, X } from 'lucide-react'
-import { invoke, openPreferences, showError, useActiveDoc, useApp } from '@renderer/sdk'
+import { invoke, openPreferences, useActiveDoc, useApp } from '@renderer/sdk'
 import { usePopupEscape } from '@renderer/ui/Menu'
+import { useInlineReview } from './reviewState'
 import { BOOT } from '../tools/common'
 import { appLabel, useAgentUi } from './store'
 import {
   activitySentence,
-  COMPANION_START_PROMPT,
   endCompanion,
   sendCompanionMessage,
   useCompanion
@@ -32,21 +32,35 @@ export function clampPosition(
 /** Small vector sprites stay sharp at every screen scale. Branding identifies the connected app. */
 export function CompanionAvatar({ provider, busy = false }: { provider: string; busy?: boolean }) {
   const claude = provider === 'Claude'
+  const [pose, setPose] = useState(0)
+  useEffect(() => {
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let timer: ReturnType<typeof setInterval> | undefined
+    const update = () => {
+      clearInterval(timer)
+      setPose(0)
+      if (busy && !motion.matches) timer = setInterval(() => setPose(p => (p + 1) % 3), 1100)
+    }
+    update()
+    motion.addEventListener('change', update)
+    return () => { clearInterval(timer); motion.removeEventListener('change', update) }
+  }, [busy])
   return (
     <svg
       className={`${P}-avatar ${busy ? 'is-busy' : ''}`}
+      data-pose={pose}
       viewBox="0 0 80 64"
       aria-label={claude ? 'Claude pixel companion' : 'OpenAI inspired companion'}
       role="img"
     >
       {claude ? (
-        <g fill="#c68162" shapeRendering="crispEdges">
+        <g fill="#c68162" shapeRendering="crispEdges" transform={pose === 1 ? "translate(0 -2) rotate(-3 40 32)" : pose === 2 ? "rotate(3 40 32)" : undefined}>
           <path d="M18 12h44v34H18zM10 23h8v17h-8zM62 23h8v17h-8zM22 46h8v12h-8zM50 46h8v12h-8z" />
           <path fill="#282422" d="M27 25h6v8h-6zM47 25h6v8h-6z" />
         </g>
       ) : (
         <g>
-          <g fill="none" stroke="#5c9f91" strokeWidth="7" strokeLinejoin="round">
+          <g transform={pose === 1 ? "rotate(-5 40 30)" : pose === 2 ? "rotate(5 40 30)" : undefined} fill="none" stroke="#5c9f91" strokeWidth="7" strokeLinejoin="round">
             {Array.from({ length: 6 }, (_, i) => (
               <path
                 key={i}
@@ -69,6 +83,7 @@ export function AgentCompanion() {
   const status = useAgentUi((s) => s.status)
   const calls = useAgentUi((s) => s.calls)
   const companion = useCompanion()
+  const reviewing = useInlineReview(s => !!s.review)
   const readMode = useApp((s) => s.readMode)
   const doc = useActiveDoc()
   const [chat, setChat] = useState(false)
@@ -93,12 +108,12 @@ export function AgentCompanion() {
       c.tool !== 'wait_for_result' &&
       (!owner || c.id.startsWith(`${owner.id}:`))
   )
-  const busy = call?.outcome === 'running' || call?.outcome === 'pending'
+  const busy = !reviewing && (call?.outcome === 'running' || call?.outcome === 'pending')
   const message = !status?.enabled
     ? 'AI access is turned off.'
     : !connections.length
       ? 'Connect your AI app to get started.'
-      : activitySentence(call)
+      : reviewing ? 'Your edits are ready to review on the page.' : activitySentence(call)
 
   usePopupEscape(chat, () => setChat(false))
   useEffect(() => {
@@ -127,7 +142,7 @@ export function AgentCompanion() {
   }, [])
   useEffect(() => {
     if (owner && status && (!status.enabled || !status.connections.some((c) => c.id === owner.id)))
-      endCompanion()
+      endCompanion(false)
   }, [owner, status])
   useEffect(() => {
     if (!loaded) return
@@ -257,8 +272,8 @@ export function AgentCompanion() {
               {owner
                 ? companion.listening
                   ? `${owner.name} is listening`
-                  : `${owner.name} session joined`
-                : 'Start companion chat'}
+                  : `Connected to ${owner.name}`
+                : companion.autoJoin ? 'Waiting for a conversation' : 'Chat ended'}
             </span>
             <button type="button" aria-label="Hide chat" onClick={() => setChat(false)}>
               <X size={14} />
@@ -267,20 +282,14 @@ export function AgentCompanion() {
           {!owner ? (
             <div className={`${P}-setup`}>
               <p>
-                Connect Claude Desktop or ChatGPT Desktop in AI apps. Then paste this invitation into a chat
-                there to let it listen here.
+                Ask Claude or ChatGPT to use Fartcrobat. This chat connects automatically when its first
+                tool finishes—no invitation needed.
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(COMPANION_START_PROMPT)
-                    .then(() => setNotice('Invitation copied. Paste it into your AI app.'))
-                    .catch((e) => showError(e, 'Could not copy invitation'))
-                }}
-              >
-                Copy chat invitation
-              </button>
+              {!companion.autoJoin && (
+                <button type="button" onClick={() => useCompanion.setState({ autoJoin: true })}>
+                  Allow a new conversation
+                </button>
+              )}
               <p className={`${P}-hint`}>
                 Your desktop AI session must stay active. This companion doesn’t run its own model.
               </p>
@@ -353,7 +362,7 @@ export function AgentCompanion() {
                 <button
                   type="button"
                   onClick={() => {
-                    endCompanion()
+                    endCompanion(false)
                     setDraft('')
                     setNotice('Chat ended and cleared.')
                   }}
@@ -362,7 +371,7 @@ export function AgentCompanion() {
                 </button>
               </div>
               {!companion.listening && (
-                <p className={`${P}-hint`}>If replies stop, ask your AI app to resume companion chat.</p>
+                <p className={`${P}-hint`}>Waiting for your AI app to listen. If replies stop, resume the same conversation there.</p>
               )}
             </>
           )}

@@ -115,6 +115,7 @@ describe('agent router', () => {
       client: c.client,
       windowId: 'w1',
       currentWindow: expect.any(Boolean),
+      allowCompanionJoin: true,
       tool: 'get_page_text',
       args: c.args
     })
@@ -170,6 +171,24 @@ describe('agent router', () => {
       outcome: 'error',
       error: 'unknown_tool'
     })
+  })
+
+  it('joins only the originally focused window during a delayed list_documents fan-out', async () => {
+    const host = new FakeHost('w1', 'w2')
+    host.listening.delete('w1')
+    const { router, sink } = setup(host)
+    router.call(call('list_documents'))
+    await waitFor(() => expect(host.requests).toHaveLength(1))
+    host.focused = 'w1'
+    host.setReady('w1')
+    await waitFor(() => expect(host.requests).toHaveLength(2))
+    expect(host.requests.map(r => r.request.allowCompanionJoin)).toEqual([true, false])
+    const companion = { session: 'w2-chat-private', status: 'joined' as const, instructions: 'Listen' }
+    for (const { windowId, request } of host.requests) router.reply(windowId, {
+      id: request.id, result: { data: { documents: [] }, ...(windowId === 'w2' ? { companion } : {}) }
+    })
+    expect(sink.results[0].result.companion).toEqual(companion)
+    expect(JSON.stringify(sink.audits)).not.toContain('w2-chat-private')
   })
 
   it('asks every window for list_documents and merges in window creation order', async () => {

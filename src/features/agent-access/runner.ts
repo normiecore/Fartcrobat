@@ -15,6 +15,8 @@ import { TOOL_HANDLERS } from './tools'
 import { auditName, parseHandle, ToolError, type ToolContext, type ToolHandler } from './tools/common'
 import { openTicket, setStillRunningMs, stillRunning, stillRunningAfterMs, type OpenTicket } from './tools/wait'
 import { appLabel, callFinished, callStarted } from './ui/store'
+import { autoJoinCompanion } from './ui/companionStore'
+import { BOOT } from './tools/common'
 import './ipc'
 
 export interface RunnerDeps {
@@ -193,6 +195,12 @@ export async function handleRequest(request: AgentCallRequest, deps: RunnerDeps 
           ...(detail.document ? { document: detail.document } : {}),
           ...(result.error ? { error: result.error.message } : {})
         })
+      if (!result.error && request.tool !== 'companion_chat' && request.tool !== 'wait_for_result' &&
+          (request.allowCompanionJoin ?? (request.tool !== 'list_documents' || request.currentWindow))) {
+        const companion = autoJoinCompanion(request.connectionId, appLabel(request.client.name),
+          `${request.windowId}-chat-${BOOT}-${crypto.randomUUID()}`)
+        if (companion) result = { ...result, companion }
+      }
       if (ticket) ticket.finish({ result, audit: detail })
       else send(result, detail)
     }
