@@ -210,7 +210,7 @@ export function claimPerson(): () => void {
  */
 export async function confirmAgentAction(
   ctx: ToolContext,
-  opts: { title: string; message: ReactNode; confirmLabel: string; details?: string[] }
+  opts: { title: string; message: ReactNode; confirmLabel: string; details?: string[]; width?: number }
 ): Promise<boolean> {
   throwIfAborted(ctx)
   // Nothing is awaited between the claim and openDialog, so two calls cannot both get through.
@@ -220,7 +220,7 @@ export async function confirmAgentAction(
     <Dialog
       title={opts.title}
       onClose={() => c(false)}
-      width={460}
+      width={opts.width ?? 460}
       className="fc-agent-access-confirm"
       footer={
         <>

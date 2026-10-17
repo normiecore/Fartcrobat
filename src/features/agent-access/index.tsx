@@ -3,6 +3,7 @@ import { Bot } from 'lucide-react'
 import { defineFeature, onMainEvent } from '@renderer/sdk'
 import { ActivityPanel } from './ui/ActivityPanel'
 import { FlashLayer } from './ui/FlashLayer'
+import { AgentCompanion } from './ui/Companion'
 import { AgentIndicator } from './ui/Indicator'
 import { AgentSettings, refreshAgentStatus } from './ui/Settings'
 import { setAgentStatus } from './ui/store'
@@ -22,7 +23,7 @@ function AgentAccessGlobal() {
     void refreshAgentStatus()
     return off
   }, [])
-  return <AgentIndicator />
+  return <><AgentIndicator /><AgentCompanion /></>
 }
 
 export default defineFeature({

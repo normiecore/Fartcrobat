@@ -204,12 +204,12 @@ describe('agent shim over stdio', () => {
   const text = (result: { content?: unknown }) =>
     (result.content as { type: string; text?: string }[]).map((c) => c.text ?? `<${c.type}>`).join('\n')
 
-  it('advertises the 31 tools with their schemas, its name and the instructions', async () => {
+  it('advertises every tool with their schemas, its name and the instructions', async () => {
     const { client } = await startShim()
     expect(client.getServerVersion()).toMatchObject({ name: 'fartcrobat', version: VERSION })
     expect(client.getInstructions()).toBe(SERVER_INSTRUCTIONS)
     const { tools } = await client.listTools()
-    expect(tools).toHaveLength(31)
+    expect(tools).toHaveLength(AGENT_TOOLS.length)
     expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name))
     for (const [i, tool] of tools.entries()) {
       expect(tool.title).toBe(AGENT_TOOLS[i].title)
@@ -547,7 +547,7 @@ describe('agent shim over stdio', () => {
     const app = await startApp()
     const { client } = await startShim('auto')
     expect(client.getNegotiatedProtocolVersion()).toBe('2026-07-28')
-    expect((await client.listTools()).tools).toHaveLength(31)
+    expect((await client.listTools()).tools).toHaveLength(AGENT_TOOLS.length)
     const result = await client.callTool({ name: 'get_context', arguments: {} })
     expect(text(result)).toBe(JSON.stringify({ tool: 'get_context', args: {} }, null, 1))
     expect(app.auths[0].client).toEqual({ name: 'test-client', version: '1.2.3' })

@@ -22,6 +22,7 @@ declare module '@shared/ipc' {
     'feature:agent-access:attention': () => void
     'feature:agent-access:revealAuditLog': () => void
     'feature:agent-access:installExtension': () => string
+    'feature:agent-access:chatgptConfig': () => { command: string; args: string[]; env: Record<string, string>; toml: string }
   }
 }
 
@@ -193,6 +194,16 @@ export function register(ctx: MainContext) {
   ctx.handle('feature:agent-access:revealAuditLog', async () => {
     await agent.audit.ensure()
     shell.showItemInFolder(agent.audit.file)
+  })
+  ctx.handle('feature:agent-access:chatgptConfig', () => {
+    const shim = app.isPackaged ? join(process.resourcesPath, 'agent', 'shim.mjs') : join(__dirname, '..', 'agent', 'shim.mjs')
+    if (!existsSync(shim)) throw new Error('The MCP helper is missing. Build or reinstall Fartcrobat first.')
+    const command = 'node'
+    const args = [shim]
+    const env = { FARTCROBAT_USER_DATA: app.getPath('userData') }
+    // JSON strings are valid TOML basic strings; no shell interpolation or config rewriting.
+    const toml = `[mcp_servers.fartcrobat]\ncommand = "node"\nargs = [${JSON.stringify(shim)}]\n\n[mcp_servers.fartcrobat.env]\nFARTCROBAT_USER_DATA = ${JSON.stringify(env.FARTCROBAT_USER_DATA)}\n`
+    return { command, args, env, toml }
   })
   ctx.handle('feature:agent-access:installExtension', async () => {
     const path = extensionPath()
