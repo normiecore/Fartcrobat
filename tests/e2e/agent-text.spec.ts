@@ -1,6 +1,26 @@
 import { test, expect } from '@playwright/test'
 import { fixturePath, waitForRender, activeDocState } from './helpers'
 import { startSession, dataOf, errorOf, appPageText, expectAudit, undoLabel } from './agent-helpers'
+import type { Locator, Page } from '@playwright/test'
+
+/** A change's card in the Review edits panel. */
+const card = (review: Locator, name: string) => review.getByRole('article', { name, exact: true })
+/** A change's mark on the page; its name is the change and its state ("Change 2, pending"). */
+const mark = (page: Page, name: string) =>
+  page.getByRole('group', { name: 'Proposed PDF changes' }).getByRole('button', { name: new RegExp('^' + name + ', ') })
+
+/** Three edits on page 1 of text.pdf. */
+async function threeEdits(agent: Awaited<ReturnType<typeof startSession>>['agent']) {
+  const snap = dataOf(await agent.call('get_editable_text', { page: 1 }))
+  const edit = (start: string, from: string, to: string) => {
+    const b = snap.blocks.find((x: any) => x.text.startsWith(start))
+    return { page: 1, block_id: b.block_id, original_text: b.text, text: b.text.replace(from, to) }
+  }
+  return {
+    revision: snap.revision,
+    edits: [edit('Hello', 'quick', 'swift'), edit('Lorem', 'Lorem', 'LOREM'), edit('Invoice', 'Invoice', 'INVOICE')]
+  }
+}
 
 test('Claude edits native PDF text after review; Decline and Undo preserve the original', async () => {
   const s = await startSession([fixturePath('text.pdf')])
@@ -29,7 +49,7 @@ test('Claude edits native PDF text after review; Decline and Undo preserve the o
     const dialog = page.getByRole('region', { name: 'Review text changes' })
     await expect(dialog).toBeVisible()
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.getByAltText('Page 1 proposed edits')).toBeVisible()
+    await expect(page.getByRole('img', { name: 'Page 1 proposed edits' })).toBeVisible()
     await dialog.screenshot({ path: 'test-results/agent-text-review.png', animations: 'disabled' })
     await dialog.getByRole('button', { name: 'Discard batch', exact: true }).click()
     expect(errorOf(await declined)).toContain('[declined]')
@@ -158,11 +178,11 @@ test('inline review accepts one edit and rejects another without saving proposal
     const review = page.getByRole('region', { name: 'Review text changes' })
     await expect(review).toBeVisible()
     await expect(page.getByRole('dialog')).toHaveCount(0)
-    await expect(page.getByAltText('Page 1 proposed edits')).toBeVisible()
+    await expect(page.getByRole('img', { name: 'Page 1 proposed edits' })).toBeVisible()
     expect(await appPageText(page, 0)).toContain('quick brown fox')
-    await review.getByRole('button', { name: 'Accept edit', exact: true }).click()
-    await expect(review).toContainText('Change 2')
-    await review.getByRole('button', { name: 'Reject edit', exact: true }).click()
+    await card(review, 'Change 1').getByRole('button', { name: 'Accept edit', exact: true }).click()
+    await expect(card(review, 'Change 2')).toBeVisible()
+    await card(review, 'Change 2').getByRole('button', { name: 'Reject edit', exact: true }).click()
     const result = dataOf(await pending)
     expect(result.acceptedEdits).toEqual([1])
     expect(result.rejectedEdits).toEqual([2])
@@ -172,5 +192,151 @@ test('inline review accepts one edit and rejects another without saving proposal
     expect(dataOf(await agent.call('list_annotations')).count).toBe(0)
     dataOf(await agent.call('undo'))
     expect(await appPageText(page, 0)).toContain('quick brown fox')
+  } finally { await s.close() }
+})
+
+test('changes arrive one by one, then each is accepted or rejected on its own', async () => {
+  const s = await startSession([fixturePath('text.pdf')])
+  try {
+    const { page, agent } = s
+    await waitForRender(page)
+    const args = await threeEdits(agent)
+    // Record how many changes the panel lists as they arrive.
+    await page.evaluate(() => {
+      const seen: number[] = []
+      ;(window as any).__revealCounts = seen
+      new MutationObserver(() => {
+        const n = document.querySelectorAll('.fc-agent-access-review-card').length
+        if (n && seen[seen.length - 1] !== n) seen.push(n)
+      }).observe(document.body, { childList: true, subtree: true })
+    })
+    const pending = agent.start('edit_text', args)
+    const review = page.getByRole('region', { name: 'Review text changes' })
+    await expect(review).toBeVisible()
+    await expect(review.getByRole('article')).toHaveCount(3)
+    expect(await page.evaluate(() => (window as any).__revealCounts)).toEqual([1, 2, 3])
+    await expect(review.getByRole('button', { name: 'Show all' })).toHaveCount(0)
+    const layer = page.getByRole('group', { name: 'Proposed PDF changes' })
+    await expect(layer.getByRole('button')).toHaveCount(3)
+    await page.screenshot({ path: 'test-results/agent-live-review.png' })
+    // The page keeps text selection and links: only the marks take clicks.
+    expect(await layer.evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none')
+    await card(review, 'Change 2').getByRole('button', { name: 'Reject edit', exact: true }).click()
+    await expect(mark(page, 'Change 2')).toHaveAccessibleName('Change 2, rejected')
+    await expect(card(review, 'Change 2')).toContainText('Rejected')
+    await card(review, 'Change 3').getByRole('button', { name: 'Accept edit', exact: true }).click()
+    await expect(mark(page, 'Change 3')).toHaveAccessibleName('Change 3, accepted')
+    // A decision can be changed while others are pending.
+    await card(review, 'Change 3').getByRole('button', { name: 'Reject edit', exact: true }).click()
+    await expect(mark(page, 'Change 3')).toHaveAccessibleName('Change 3, rejected')
+    await card(review, 'Change 3').getByRole('button', { name: 'Accept edit', exact: true }).click()
+    await expect(review.getByRole('status')).toContainText('1 pending · 1 accepted · 1 rejected')
+    await card(review, 'Change 1').getByRole('button', { name: 'Accept edit', exact: true }).click()
+    const result = dataOf(await pending)
+    expect(result.acceptedEdits).toEqual([1, 3])
+    expect(result.rejectedEdits).toEqual([2])
+    const text = await appPageText(page, 0)
+    expect(text).toContain('swift brown fox')
+    expect(text).toContain('Lorem ipsum')
+    expect(text).toContain('INVOICE')
+    await expect(layer).toHaveCount(0)
+  } finally { await s.close() }
+})
+
+test('hovering a change in the panel rings it on the page without moving the page', async () => {
+  const s = await startSession([fixturePath('text.pdf')])
+  try {
+    const { page, agent } = s
+    await waitForRender(page)
+    const pending = agent.start('edit_text', await threeEdits(agent))
+    const review = page.getByRole('region', { name: 'Review text changes' })
+    await expect(review.getByRole('article')).toHaveCount(3)
+    await expect(mark(page, 'Change 2')).toBeVisible()
+    const scroller = page.locator('.viewer-scroll')
+    const before = await scroller.evaluate((el) => el.scrollTop)
+    await card(review, 'Change 2').hover()
+    await expect(mark(page, 'Change 2')).toHaveClass(/is-focus/)
+    await expect(mark(page, 'Change 3')).not.toHaveClass(/is-focus/)
+    await expect(card(review, 'Change 2')).toHaveClass(/is-hovered/)
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBe(before)
+    // And the other way: hovering the mark highlights its card; clicking it selects it.
+    await mark(page, 'Change 3').hover()
+    await expect(card(review, 'Change 3')).toHaveClass(/is-hovered/)
+    await mark(page, 'Change 3').click()
+    await expect(card(review, 'Change 3')).toHaveClass(/is-selected/)
+    // Keys in the list: Up selects Change 2 and R rejects it.
+    await review.getByRole('list', { name: 'Changes' }).focus()
+    await page.keyboard.press('ArrowUp')
+    await expect(card(review, 'Change 2')).toHaveClass(/is-selected/)
+    await page.keyboard.press('r')
+    await expect(card(review, 'Change 2')).toContainText('Rejected')
+    await review.getByRole('button', { name: 'Accept all', exact: true }).click()
+    const result = dataOf(await pending)
+    expect(result.acceptedEdits).toEqual([1, 3])
+    expect(result.rejectedEdits).toEqual([2])
+  } finally { await s.close() }
+})
+
+test('a rejected section is left out of the new design and the result lists it', async () => {
+  const s = await startSession([fixturePath('text.pdf')])
+  try {
+    const { page, agent } = s
+    await waitForRender(page)
+    const snap = dataOf(await agent.call('get_editable_text', { page: 1 }))
+    const pending = agent.start('rebuild_document', {
+      revision: snap.revision, title: 'Darren Wong', subtitle: 'Data Analyst',
+      sections: [
+        { heading: 'Summary', paragraphs: ['Analyst with ten years of reporting experience.'] },
+        { heading: 'Hobbies', bullets: ['Chess', 'Running'] },
+        { heading: 'Skills', bullets: ['SQL', 'Python'] }
+      ]
+    })
+    const review = page.getByRole('region', { name: 'Review new document design' })
+    await expect(review).toBeVisible()
+    await expect(review).toContainText('replaces the original layout')
+    await expect(card(review, 'Page design')).toBeVisible()
+    await expect(card(review, 'Title')).toContainText('Always kept')
+    await expect(card(review, 'Title').getByRole('button', { name: 'Reject edit' })).toHaveCount(0)
+    await card(review, 'Hobbies').getByRole('button', { name: 'Reject edit', exact: true }).click()
+    await expect(card(review, 'Hobbies')).toContainText('Left out of the new design')
+    await expect(review.getByRole('status')).not.toContainText('Updating preview')
+    await review.getByRole('button', { name: 'Accept all', exact: true }).click()
+    const result = dataOf(await pending)
+    expect(result.applied).toBe(true)
+    expect(result.acceptedItems).toEqual([{ item: 1, label: 'Summary' }, { item: 3, label: 'Skills' }])
+    expect(result.rejectedItems).toEqual([{ item: 2, label: 'Hobbies' }])
+    const text = await appPageText(page, 0)
+    expect(text).toContain('Darren Wong')
+    expect(text).toContain('Skills')
+    expect(text).not.toContain('Hobbies')
+    expect(text).not.toContain('Chess')
+  } finally { await s.close() }
+})
+
+test('the proposal is rendered sharp at the zoom of the page, not stretched', async () => {
+  const s = await startSession([fixturePath('text.pdf')])
+  try {
+    const { page, agent } = s
+    await waitForRender(page)
+    const pending = agent.start('edit_text', await threeEdits(agent))
+    const review = page.getByRole('region', { name: 'Review text changes' })
+    await expect(page.getByRole('img', { name: 'Page 1 proposed edits' })).toBeVisible()
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(3))
+    const sizes = () =>
+      page.evaluate(() => {
+        const pageEl = document.querySelector('.viewer-page[data-page-index="0"]')!
+        const live = pageEl.querySelector(':scope > canvas.viewer-page-canvas') as HTMLCanvasElement
+        const proposed = pageEl.querySelector('canvas[aria-label="Page 1 proposed edits"]') as HTMLCanvasElement
+        return { live: [live.width, live.height], proposed: [proposed.width, proposed.height], dpr: devicePixelRatio, css: proposed.getBoundingClientRect().width }
+      })
+    // 612 x 792 pt at 300 %: 2448 x 3168 CSS px, times the device pixel ratio.
+    await expect.poll(async () => (await sizes()).proposed[0], { timeout: 15_000 }).toBeGreaterThan(2000)
+    await expect.poll(async () => (await sizes()).live[0], { timeout: 15_000 }).toBeGreaterThan(2000)
+    const { live, proposed, dpr, css } = await sizes()
+    expect(proposed).toEqual(live)
+    expect(proposed[0]).toBe(Math.round(612 * 3 * (96 / 72) * dpr))
+    expect(Math.round(css)).toBe(Math.round(612 * 3 * (96 / 72)))
+    await review.getByRole('button', { name: 'Discard batch', exact: true }).click()
+    expect(errorOf(await pending)).toContain('[declined]')
   } finally { await s.close() }
 })
