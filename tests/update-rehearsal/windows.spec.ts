@@ -5,7 +5,7 @@
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync, type ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { checkFromHelpMenu, describe, downloadUpdate, env, HERE, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
 
 const WORK = env('REHEARSAL_WORK')
@@ -31,7 +31,7 @@ test.beforeAll(async () => {
     key: join(WORK, 'tls', 'server.key'),
     log: join(OUT, 'requests.jsonl')
   })
-  install()
+  await install()
 })
 test.afterAll(() => {
   gh?.stop()
@@ -39,35 +39,48 @@ test.afterAll(() => {
 })
 
 /** The released installer of OLD, run silently as an administrator deploying it would. */
-function install() {
+async function install() {
   const installer = join(RELEASES, `v${OLD}`, `Fartcrobat-Setup-${OLD}.exe`)
   execFileSync(installer, SCOPE === 'machine' ? ['/S', '/allusers'] : ['/S'], { stdio: 'inherit', timeout: 10 * 60_000 })
+  await expect
+    .poll(() => installed()?.version, { timeout: 60_000, message: `The ${OLD} installer left no entry for this scope:\n${uninstallEntries()}` })
+    .toBe(OLD)
   // The installer may start the app when it finishes; the scenarios start it themselves.
   killApps()
-  const found = installed()
-  if (found?.version !== OLD) throw new Error(`The ${OLD} installer left ${JSON.stringify(found)}`)
 }
 
-/** Fartcrobat's entry under Programs and Features for this scope: where it is and which version. */
-function installed(): { location: string; version: string } | null {
-  const query = (args: string[]) => {
-    try {
-      return execFileSync('reg', ['query', ...args], { encoding: 'utf8' })
-    } catch {
-      return ''
-    }
+function reg(args: string[]): string {
+  try {
+    return execFileSync('reg', ['query', ...args], { encoding: 'utf8' })
+  } catch {
+    return ''
   }
+}
+
+/** The Programs and Features entries that mention Fartcrobat, in both scopes (for error messages). */
+function uninstallEntries(): string {
+  return ['HKCU', 'HKLM']
+    .map((root) => reg([`${root}\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall`, '/s', '/f', 'Fartcrobat']).trim() || `${root}: none`)
+    .join('\n')
+}
+
+/**
+ * Fartcrobat's entry under Programs and Features for this scope: where it is and which version.
+ * electron-builder keeps InstallLocation in its own key (Software\<app GUID>), so the folder comes
+ * from the uninstaller's path, which is in it.
+ */
+function installed(): { location: string; version: string } | null {
   // The keys with "Fartcrobat" in their data, then each key's values.
-  const keys = query([UNINSTALL, '/s', '/f', 'Fartcrobat', '/d'])
+  const keys = reg([UNINSTALL, '/s', '/f', 'Fartcrobat', '/d'])
     .split(/\r?\n/)
     .filter((l) => l.startsWith('HKEY_'))
   for (const key of keys) {
-    const values = query([key])
+    const values = reg([key])
     const value = (name: string) => new RegExp(`^\\s+${name}\\s+REG_\\w+\\s+(.*)$`, 'm').exec(values)?.[1]?.trim()
     if (!/^Fartcrobat\b/.test(value('DisplayName') ?? '')) continue
-    const location = value('InstallLocation')?.replace(/^"|"$/g, '')
+    const uninstaller = /^"([^"]+)"/.exec(value('UninstallString') ?? '')?.[1]
     const ver = value('DisplayVersion')
-    if (location && ver) return { location, version: ver }
+    if (uninstaller && ver) return { location: dirname(uninstaller), version: ver }
   }
   return null
 }
