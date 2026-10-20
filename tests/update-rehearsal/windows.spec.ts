@@ -5,9 +5,10 @@
 // REHEARSAL_INSTALLER picks the installer that was run: x64 (the file people download), or
 // combined, the installer for both processors that 0.2.0 also shipped.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { execFileSync, type ChildProcess } from 'node:child_process'
+import { execFile, execFileSync, type ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { promisify } from 'node:util'
 import { checkFromHelpMenu, describe, downloadSummary, downloadUpdate, env, HERE, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
 
 const WORK = env('REHEARSAL_WORK')
@@ -46,9 +47,10 @@ test.afterAll(() => {
 
 /** The released installer of OLD, run silently as an administrator deploying it would. */
 async function install() {
-  execFileSync(INSTALLER_FILE, SCOPE === 'machine' ? ['/S', '/allusers'] : ['/S'], { stdio: 'inherit', timeout: 10 * 60_000 })
+  // Not execFileSync: a per-machine install takes long enough that blocking would starve the hook's timers.
+  await promisify(execFile)(INSTALLER_FILE, SCOPE === 'machine' ? ['/S', '/allusers'] : ['/S'], { timeout: 10 * 60_000 })
   await expect
-    .poll(() => installed()?.version, { timeout: 60_000 })
+    .poll(() => installed()?.version, { timeout: 120_000, intervals: [1000] })
     .toBe(OLD)
     .catch((err: Error) => {
       throw new Error(`The ${OLD} installer left no entry for this scope:\n${uninstallEntries()}\n\n${err.message}`)

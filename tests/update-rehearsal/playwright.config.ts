@@ -7,6 +7,9 @@ export default defineConfig({
   testMatch: /\.spec\.ts$/,
   workers: 1,
   retries: 0,
+  // Also the limit of each beforeAll hook (installing the old version), which a spec's
+  // test.setTimeout does not extend.
+  timeout: 15 * 60_000,
   reporter: [['list']],
   outputDir: process.env.REHEARSAL_OUT ? `${process.env.REHEARSAL_OUT}/playwright` : 'test-results/rehearsal'
 })
