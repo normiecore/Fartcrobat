@@ -79,7 +79,8 @@ test('ChatGPT has its own avatar and cannot consume another connection’s chat'
   const s = await startSession()
   const gpt = await startShim(s.userData, { name: 'codex', version: '1.0' })
   try {
-    dataOf(await s.agent.call('get_context'))
+    // The first call connects (no document is open here, so one that needs none).
+    dataOf(await s.agent.call('list_documents'))
     const companion = s.page.getByRole('region', { name: 'AI companion' })
     await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
     const { session } = dataOf(await s.agent.call('companion_chat'))
