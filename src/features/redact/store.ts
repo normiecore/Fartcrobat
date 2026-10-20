@@ -1,6 +1,7 @@
 /** UI state of the redact feature: default properties, marks per document, hover, find results. */
 import { useEffect } from 'react'
 import { create } from 'zustand'
+import { scheduleMenuUpdate } from '@renderer/app/commands'
 import { invoke, showError, useDocState, type DocumentModel } from '@renderer/sdk'
 import { DEFAULT_PROPS, OVERLAY_FONTS, type MarkInfo, type RedactionProps } from './shared'
 import type { FindQuery } from './patterns'
@@ -124,7 +125,10 @@ export function refreshMarks(doc: DocumentModel): Promise<MarkInfo[]> {
     .list()
     .then((list) => {
       if (!doc.isClosed) {
+        const before = useRedactUi.getState().marks[doc.id]?.list.length ?? 0
         useRedactUi.setState((s) => ({ marks: { ...s.marks, [doc.id]: { version, list } } }))
+        // Apply Redactions in the menu depends on whether there are marks.
+        if ((before > 0) !== (list.length > 0)) scheduleMenuUpdate()
       }
       return list
     })

@@ -397,6 +397,31 @@ describe('native text editing review', () => {
     expect((await pending).data).toMatchObject({ applied: true })
     expect(await e.call('edit-text.text', 0)).toContain('swift brown fox')
   })
+  it('issues name the edit as the call numbers it, also after the person rejected some', async () => {
+    const e = await openFixture('text.pdf')
+    modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const edit = (start: string, text: (t: string) => string) => {
+      const b = snap.blocks.find((b: any) => b.text.startsWith(start))
+      return { page: 1, block_id: b.block_id, original_text: b.text, text: text(b.text) }
+    }
+    const edits = [
+      edit('Hello', (t) => t.replace('quick', 'swift')),
+      edit('Visit', (t) => t + ' and read the full documentation of the product there')
+    ]
+    const grew = (issues: any[]) => issues.find((i) => i.code === 'text_grew')
+    const preview = (await call('edit_text', { revision: snap.revision, edits, preview_only: true })).data
+    expect(grew(preview.issues)).toMatchObject({ edit: 2 })
+    expect(preview.issues.some((i: any) => 'change' in i)).toBe(false)
+    const pending = call('edit_text', { revision: snap.revision, edits })
+    const review = await nextReview()
+    await review.decide([0], false)
+    await review.decide([1], true)
+    const result = (await pending).data
+    expect(result).toMatchObject({ acceptedEdits: [2], rejectedEdits: [1] })
+    // The engine ran on the accepted edit alone; the AI app still hears about its edit 2.
+    expect(grew(result.issues)).toMatchObject({ edit: 2 })
+  })
   it('a second proposal while a review is open is refused before it switches tabs', async () => {
     const { args } = await proposal()
     const pending = call('edit_text', args)

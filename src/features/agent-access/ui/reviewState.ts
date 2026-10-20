@@ -149,8 +149,11 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
     const reveal = () => {
       const r = get()
       if (!r || r.revealed >= count) return
-      update({ revealed: r.revealed + 1 })
-      options.onReveal?.(order[r.revealed])
+      const card = order[r.revealed]
+      // The person decided the card they were on: the arriving one is next (A, A, A... works).
+      const selected = r.decisions[r.selected] !== 'pending' && r.decisions[card] === 'pending' ? card : r.selected
+      update({ revealed: r.revealed + 1, selected })
+      options.onReveal?.(card)
       if (r.revealed + 1 < count) revealTimer = setTimeout(reveal, step)
     }
     const showAll = () => {
@@ -204,10 +207,10 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
       reviseTimer = setTimeout(() => void runRevise(), REVISE_DELAY_MS)
     }
 
-    /** Pending cards after `from` in reading order, then from the start. */
-    const nextPending = (decisions: Decision[], from: number) => {
+    /** Revealed pending cards after `from` in reading order, then from the start. */
+    const nextPending = (r: InlineReview, decisions: Decision[], from: number) => {
       const after = [...order.slice(rank[from] + 1), ...order.slice(0, rank[from] + 1)]
-      return after.find((c) => decisions[c] === 'pending') ?? from
+      return after.find((c) => decisions[c] === 'pending' && rank[c] < r.revealed) ?? from
     }
 
     const decide = async (cards: number[], accept: boolean) => {
@@ -217,7 +220,7 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
       if (!valid.length) return
       const prev = current.decisions
       const next = prev.map((d, i) => (valid.includes(i) ? (accept ? 'accepted' : 'rejected') : d)) as Decision[]
-      const selected = valid.includes(current.selected) ? nextPending(next, current.selected) : current.selected
+      const selected = valid.includes(current.selected) ? nextPending(current, next, current.selected) : current.selected
       update({ decisions: next, selected, error: '' })
       if (mode !== 'edit') {
         if (rejectedOf(current, next).join() !== rejectedOf(current, prev).join()) scheduleRevise()

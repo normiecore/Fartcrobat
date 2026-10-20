@@ -194,6 +194,19 @@ describe('live reveal', () => {
     await vi.advanceTimersByTimeAsync(2000)
     expect(onReveal).toHaveBeenCalledTimes(2)
   })
+  it('after a decision the selection moves only to a card that is already shown', async () => {
+    vi.useFakeTimers()
+    startReview(options({ report: many, revealStep: undefined }))
+    await vi.advanceTimersByTimeAsync(250)
+    expect(review().revealed).toBe(1)
+    await review().decide([2], true)
+    // Card 1 is next in reading order but not shown yet: A again must not decide it unseen.
+    expect(review().selected).toBe(2)
+    await vi.advanceTimersByTimeAsync(400)
+    await review().decide([1], false)
+    expect(review().selected).toBe(1)
+    expect(review().decisions).toEqual(['pending', 'rejected', 'accepted'])
+  })
   it('caps the whole reveal at about 6 seconds', async () => {
     vi.useFakeTimers()
     const thirty = preview(Array.from({ length: 30 }, (_, i) => change(i, 1, [72, 20 + i * 20, 300, 35 + i * 20])))

@@ -165,8 +165,10 @@ describe('reflow_text and rebuild_document proposals', () => {
     })
     const { id } = report.proposal!
     await expect(ops.reviseProposal(id, [0])).rejects.toThrow(/does not fit/)
-    expect(await codeOf(ops.renderProposal(id, 1, 0, { scale: 1 }))).toBe('STALE_PROPOSAL')
-    expect(await codeOf(ops.renderProposal(id, 2, 0, { scale: 1 }))).toBe('ok')
+    // The version the review shows still renders; nothing newer exists.
+    expect(await codeOf(ops.renderProposal(id, 1, 0, { scale: 1 }))).toBe('ok')
+    expect(await codeOf(ops.renderProposal(id, 2, 0, { scale: 1 }))).toBe('STALE_PROPOSAL')
+    expect((await ops.reviseProposal(id, [])).proposal).toEqual({ id, version: 2 })
   })
 
   it('rebuild: title, one item per section located on the new pages, and a design card', async () => {

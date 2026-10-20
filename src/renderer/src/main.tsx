@@ -84,7 +84,8 @@ async function boot() {
       const doc = getActiveDoc()
       unsubDoc = doc
         ? doc.store.subscribe((ds, dp) => {
-            if (ds.dirty !== dp.dirty || ds.title !== dp.title || ds.journal !== dp.journal || ds.selection !== dp.selection || ds.layout !== dp.layout || ds.zoomMode !== dp.zoomMode)
+            // Menu-visible state only: replies that change nothing no longer notify (applyChanges).
+            if (ds.dirty !== dp.dirty || ds.title !== dp.title || ds.journal !== dp.journal || ds.selection !== dp.selection || ds.layout !== dp.layout || ds.zoomMode !== dp.zoomMode || ds.showAnnotations !== dp.showAnnotations || ds.info !== dp.info)
               refreshChrome()
           })
         : null

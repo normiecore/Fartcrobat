@@ -181,6 +181,7 @@ export function AgentCompanion() {
   const size = useRef(ASSUMED)
   const drag = useRef<Drag | null>(null)
   const suppressClick = useRef(false)
+  const suppressTimer = useRef(0)
   const displayRef = useRef(display)
   displayRef.current = display
   const reviewingRef = useRef(reviewing)
@@ -298,6 +299,9 @@ export function AgentCompanion() {
 
   /** A press on a drag zone becomes a drag once it moves past the threshold; until then it is a click. */
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>) => {
+    // A new press is never eaten as the click of the last drag.
+    suppressClick.current = false
+    clearTimeout(suppressTimer.current)
     const el = root.current
     const target = e.target as Element
     if (!el || e.button !== 0 || !e.isPrimary || !target.closest(DRAG_ZONE) || target.closest(NO_DRAG)) return
@@ -380,7 +384,9 @@ export function AgentCompanion() {
       release()
       if (how === 'up' && d.active) {
         suppressClick.current = true
-        setTimeout(() => (suppressClick.current = false), 0)
+        clearTimeout(suppressTimer.current)
+        // A touch or pen tap's click comes later than a mouse's, from the gesture recogniser.
+        suppressTimer.current = window.setTimeout(() => (suppressClick.current = false), e.pointerType === 'mouse' ? 0 : 400)
       }
     }
     window.addEventListener('pointermove', move)
@@ -406,6 +412,7 @@ export function AgentCompanion() {
       onPointerDown={onPointerDown}
       onClickCapture={(e) => {
         if (!suppressClick.current) return
+        suppressClick.current = false
         e.preventDefault()
         e.stopPropagation()
       }}

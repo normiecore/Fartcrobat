@@ -690,20 +690,13 @@ export default defineOps('agent-text', {
     const h = heldProposal(s, id)
     if (h.kind === 'edit') throw new EngineError('Rejected text edits are only left out when applied.', 'BAD_EDIT')
     const list = [...new Set(rejected)].sort((a, b) => a - b)
+    // Built before the held copy goes: a revision that fails leaves the shown proposal, and the
+    // version the review renders, as they were.
+    const built = build(s, h, list)
     dispose(s)
-    try {
-      const next = hold(s, build(s, h, list), h.kind, h.spec, h)
-      held.get(s)!.rejected = list
-      return next
-    } catch (err) {
-      // Keep the review's last good proposal (with a new version, so no old render is reused).
-      try {
-        hold(s, build(s, h, h.rejected), h.kind, h.spec, h)
-      } catch {
-        /* the review shows the error; renders of the old version are stale */
-      }
-      throw err
-    }
+    const next = hold(s, built, h.kind, h.spec, h)
+    held.get(s)!.rejected = list
+    return next
   },
   closeProposal(s, id: string) {
     if (held.get(s)?.id === id) dispose(s)

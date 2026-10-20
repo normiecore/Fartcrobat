@@ -24,7 +24,6 @@ import type textOps from '../engine'
 import type { ProposalCheck, ReviewChange, TextIssue, TextPreview } from '../engine'
 import { fontNote, marginNote } from '../textEdits'
 import {
-  editRegion,
   isRevealed,
   noteInteraction,
   patchReview,
@@ -40,13 +39,22 @@ const proposalKey = (p: { id: string; version: number }) => 'rv' + p.id + '.' + 
 const INTERACTIONS = ['wheel', 'pointerdown', 'keydown', 'touchmove']
 
 /** Where to show a change on the live document (0-based page), or null when it has no place there. */
-function changeTarget(report: TextPreview, card: number, pageCount: number): { page: number; rect: Rect } | null {
+function changeTarget(report: TextPreview, card: number, doc: DocumentModel): { page: number; rect: Rect } | null {
   const c = report.changes[card]
   if (!c) return null
-  const slot = (page: number) => page <= pageCount && report.pages.find((p) => p.page === page)?.live !== false
-  const f = c.fragments.find((f) => slot(f.page))
-  if (f) return { page: f.page - 1, rect: f.rect }
-  if (c.beforeBox && c.beforePage <= pageCount) return { page: c.beforePage - 1, rect: c.beforeBox }
+  const f = c.fragments.find((f) => f.page <= doc.pageCount)
+  if (f) {
+    const p = report.pages.find((p) => p.page === f.page)
+    const live = doc.state.info.pages[f.page - 1]
+    if (!p || p.live !== false || !live) return { page: f.page - 1, rect: f.rect }
+    // A new design page of another size is drawn fitted into the live page (see ReviewPage).
+    const s = Math.min(live.width / p.width, live.height / p.height)
+    const dx = (live.width - p.width * s) / 2
+    const dy = (live.height - p.height * s) / 2
+    const [x0, y0, x1, y1] = f.rect
+    return { page: f.page - 1, rect: [x0 * s + dx, y0 * s + dy, x1 * s + dx, y1 * s + dy] }
+  }
+  if (c.beforeBox && c.beforePage <= doc.pageCount) return { page: c.beforePage - 1, rect: c.beforeBox }
   return null
 }
 
@@ -68,7 +76,7 @@ export async function reviewInDocument(options: {
     onReveal: (card) => {
       // Follow the changes as they arrive, unless the person is reading something else.
       const r = useInlineReview.getState().review
-      const target = r && !personIsReading() ? changeTarget(r.report, card, doc.pageCount) : null
+      const target = r && !personIsReading() ? changeTarget(r.report, card, doc) : null
       if (target) doc.view?.scrollToRect(target.page, target.rect, { center: true })
     }
   })
@@ -162,8 +170,12 @@ function pageMarks(r: InlineReview, pageIndex: number) {
     let rects = c.fragments.filter((f) => f.page === page).map((f) => f.rect)
     const before = c.beforePage === page
     if (r.mode === 'edit') {
-      const region = editRegion(c)
-      if (before && region && decision !== 'rejected') clip.push({ card: i, rect: region })
+      // The old and the new box each, not their union: a moved block must not uncover the
+      // proposal between them, where a rejected edit may sit.
+      if (decision !== 'rejected') {
+        if (before && c.beforeBox) clip.push({ card: i, rect: inflateRect(c.beforeBox, 2) })
+        clip.push(...rects.map((x) => ({ card: i, rect: inflateRect(x, 2) })))
+      }
       // A rejected edit is outlined where the original shows again.
       if (before && c.beforeBox && (!rects.length || decision === 'rejected')) rects = [c.beforeBox]
     } else {
@@ -242,10 +254,15 @@ const ReviewPage = memo(function ReviewPage({
     shownRef.current = now
     const fresh = prev ? [...now].filter((c) => !prev.has(c)) : []
     if (!fresh.length || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
-    setEntering(fresh)
+    setEntering((e) => [...new Set([...e, ...fresh])])
+  }, [marks])
+  // Cleared from its own effect: a change of marks in between must not cancel it and leave a
+  // region at width 0.
+  useEffect(() => {
+    if (!entering.length) return
     let frame = requestAnimationFrame(() => (frame = requestAnimationFrame(() => setEntering([]))))
     return () => cancelAnimationFrame(frame)
-  }, [marks])
+  }, [entering])
   const path = useMemo(() => {
     if (rebuilt && all) return null
     return rectPath(
@@ -411,7 +428,7 @@ export function InlineReviewPanel({ doc }: { doc: DocumentModel }) {
   useEffect(() => {
     const r = useInlineReview.getState().review
     if (!r || r.docId !== doc.id) return
-    const target = changeTarget(r.report, r.selected, doc.pageCount)
+    const target = changeTarget(r.report, r.selected, doc)
     if (target) doc.view?.scrollToRect(target.page, target.rect, { center: true })
   }, [selected, doc])
   const source = useProposalSource(doc, review?.report.proposal)
@@ -434,7 +451,8 @@ export function InlineReviewPanel({ doc }: { doc: DocumentModel }) {
     const key = e.key.toLowerCase()
     if (e.ctrlKey || e.metaKey || e.altKey) return
     if (key === 'arrowdown' || key === 'arrowup') move(key === 'arrowdown' ? 1 : -1)
-    else if ((key === 'a' || key === 'r') && review.selected >= 0) void review.decide([review.selected], key === 'a')
+    // Only a card the person can see: the selection never sits on one still to be revealed.
+    else if ((key === 'a' || key === 'r') && shown.includes(review.selected)) void review.decide([review.selected], key === 'a')
     else return
     e.preventDefault()
     e.stopPropagation()

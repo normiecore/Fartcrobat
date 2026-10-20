@@ -41,11 +41,22 @@ async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
   try { return await fn() } finally { reviewing = false }
 }
 
+/**
+ * Issues as the AI app numbers its edits: `edit` is 1-based in the call's own list, like
+ * acceptedEdits. `numbering` maps the engine's 0-based change index when it ran on a subset.
+ */
+function issuesForAgent(issues: TextPreview['issues'], numbering?: number[]) {
+  return issues.map(({ change, ...i }) =>
+    change === undefined ? i : { ...i, edit: (numbering ? numbering[change] : change) + 1 }
+  )
+}
+
 /** The report as the AI app sees it: the review's page geometry stays in Fartcrobat. */
 function forAgent(report: TextPreview) {
   const { previews: _previews, proposal: _proposal, pages: _pages, margins: _margins, changes, ...rest } = report
   return {
     ...rest,
+    issues: issuesForAgent(rest.issues),
     changes: changes.map((c) => ({
       page: c.page,
       label: c.label,
@@ -182,6 +193,8 @@ const edit: ToolHandler = async (args, ctx) => {
   return {
     data: {
       ...result,
+      // The engine numbered the accepted subset; the AI app knows its own edits.
+      issues: issuesForAgent(result.issues, accepted),
       acceptedEdits: accepted.map(i => i + 1),
       rejectedEdits: changes.map((_, i) => i).filter(i => !accepted.includes(i)).map(i => i + 1),
       applied: true,
