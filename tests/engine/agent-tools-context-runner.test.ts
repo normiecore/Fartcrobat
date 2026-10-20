@@ -7,6 +7,7 @@ import { agentTool } from '@shared/agent/tools'
 let runner: typeof import('@features/agent-access/runner')
 let common: typeof import('@features/agent-access/tools/common')
 let ui: typeof import('@features/agent-access/ui/store')
+let companion: typeof import('@features/agent-access/ui/companionStore')
 let EngineCallError: typeof import('@renderer/engine/EngineClient').EngineCallError
 let useApp: typeof import('@renderer/app/store').useApp
 
@@ -16,12 +17,14 @@ beforeAll(async () => {
   runner = await import('@features/agent-access/runner')
   common = await import('@features/agent-access/tools/common')
   ui = await import('@features/agent-access/ui/store')
+  companion = await import('@features/agent-access/ui/companionStore')
   ;({ EngineCallError } = await import('@renderer/engine/EngineClient'))
   ;({ useApp } = await import('@renderer/app/store'))
 })
 
 beforeEach(() => {
   ui.useAgentUi.setState({ calls: [], running: 0 })
+  companion.useCompanion.setState({ owner: null, messages: [], listening: false, autoJoin: false, ended: false })
   useApp.setState({ docs: [], activeDocId: null })
 })
 
@@ -174,12 +177,20 @@ describe('handleRequest', () => {
     })
     const req = request('find_text', { query: 'x' })
     await runner.handleRequest(req, d)
-    expect(replies).toEqual([{ id: req.id, result: { data: { count: 0 }, companion: expect.objectContaining({ status: 'joined', session: expect.stringMatching(/^w1-chat-/) }) }, audit: { document: 'C:\\docs\\a.pdf', outcome: 'done' } }])
+    expect(replies).toEqual([{ id: req.id, result: { data: { count: 0 } }, audit: { document: 'C:\\docs\\a.pdf', outcome: 'done' } }])
     expect(progress).toEqual([{ id: req.id, progress: 1, total: 2, message: 'Searching' }])
     const [rec] = ui.useAgentUi.getState().calls
     expect(rec).toMatchObject({ id: req.id, tool: 'find_text', title: 'Find text', client: 'Claude', outcome: 'done', document: 'C:\\docs\\a.pdf' })
     expect(rec.ms).toBeGreaterThanOrEqual(0)
     expect(ui.useAgentUi.getState().running).toBe(0)
+  })
+
+  it('joins the companion chat on a reply only after the person opened it', async () => {
+    const { d, replies } = deps({ find_text: async () => ({ data: { count: 0 } }) })
+    companion.armCompanion()
+    const req = request('find_text', { query: 'x' })
+    await runner.handleRequest(req, d)
+    expect(replies[0].result).toEqual({ data: { count: 0 }, companion: expect.objectContaining({ status: 'joined', session: expect.stringMatching(/^w1-chat-/) }) })
   })
 
   it('runs calls side by side: a quick call is not held up by a slow one', async () => {

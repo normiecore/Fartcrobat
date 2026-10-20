@@ -1,6 +1,6 @@
 /** Uses the existing page viewer, right rail and UI kit; no modal or PDF annotations. */
 import { useEffect, useMemo } from 'react'
-import { Button, PanelFrame, openRightPanel, useApp, type DocumentModel, type PageLayerProps } from '@renderer/sdk'
+import { Button, PanelFrame, invoke, openRightPanel, useApp, type DocumentModel, type PageLayerProps } from '@renderer/sdk'
 import type { TextPreview } from '../engine'
 import { toBase64 } from '../tools/contextShape'
 import { patchReview, startReview, useInlineReview } from './reviewState'
@@ -20,11 +20,16 @@ export async function reviewInDocument(options: {
   const offApp = useApp.subscribe(s => {
     if (doc.isClosed || !s.docs.includes(doc)) owned.cancel(new Error('The document closed during review.'))
   })
+  // A save (markSaved, an incremental-save rebase) flags `document` without changing content; only
+  // a move of the undo journal shows a document-level edit.
+  const position = doc.state.journal.position
   const offChange = doc.onChange(cs => {
-    if (cs.pages.length || cs.all || cs.structure || cs.document)
+    if (cs.pages.length || cs.all || cs.structure || (cs.document && cs.journal.position !== position))
       owned.cancel(new Error('The document changed. Inspect it again and submit a fresh proposal.'))
   })
   openRightPanel('agent-review')
+  // Fartcrobat may be behind the AI app or minimized: bring it forward, or flash it on Windows.
+  void invoke('feature:agent-access:attention').catch(() => {})
   try { return await pending } finally { offApp(); offChange() }
 }
 

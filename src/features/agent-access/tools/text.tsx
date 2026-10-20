@@ -8,6 +8,7 @@ import type { ReflowSpec } from '../reflow'
 import type { TextPreview } from '../engine'
 import { validateTextChanges, type TextChange } from '../textEdits'
 import { reviewInDocument } from '../ui/InlineReview'
+import { useInlineReview } from '../ui/reviewState'
 import { flashRect } from '../ui/store'
 import {
   auditName,
@@ -22,6 +23,12 @@ import { copyRestriction } from './context'
 import { toBase64 } from './contextShape'
 import { engineTask, undoLabel } from './act-runtime'
 import { runAsAgent } from './common'
+
+/** Another review holds the page: refuse before switching the person's tab away from it. */
+function refuseWhileReviewing() {
+  if (useInlineReview.getState().review)
+    throw new ToolError('busy', 'Another edit review is open in Fartcrobat. Wait until the person has finished it.')
+}
 
 async function reviewProposal(ctx: Parameters<ToolHandler>[1], options: Parameters<typeof reviewInDocument>[0]) {
   try { return await reviewInDocument(options) }
@@ -107,6 +114,7 @@ const edit: ToolHandler = async (args, ctx) => {
         note: 'Nothing changed. Resolve the blocking layout issues and preview again.'
       }
     }
+  refuseWhileReviewing()
   activateDocument(doc.id)
   const first = report.changes[0]
   doc.view?.goToPage(first.page - 1)
@@ -125,9 +133,11 @@ const edit: ToolHandler = async (args, ctx) => {
   const result = await engineTask('Could not apply text edits', () =>
     runAsAgent(doc, () => ops.apply(args.revision as number, accepted.map(i => changes[i])))
   )
-  if (first.bbox) {
-    doc.view?.scrollToRect(first.page - 1, first.bbox, { center: true })
-    flashRect(doc.id, first.page - 1, first.bbox)
+  // The first edit that was applied, not a rejected one.
+  const shown = report.changes[accepted[0]] ?? first
+  if (shown.bbox) {
+    doc.view?.scrollToRect(shown.page - 1, shown.bbox, { center: true })
+    flashRect(doc.id, shown.page - 1, shown.bbox)
   }
   ctx.audit({ summary: 'edited ' + result.changed + ' text blocks' })
   return {
@@ -234,6 +244,7 @@ async function reviewAndApply(
       images: previews.map((p) => ({ mimeType: 'image/png' as const, data: toBase64(p.after) }))
     }
   }
+  refuseWhileReviewing()
   activateDocument(doc.id)
   doc.view?.goToPage((previews[0]?.page ?? 1) - 1)
   const accepted = await reviewProposal(ctx, {

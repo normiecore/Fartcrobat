@@ -190,13 +190,18 @@ function previewFlow(s: Session, revision: number, spec: FlowSpec, images = true
         message,
         blocking: false
       })),
-      changes: spec.paragraphs.map((p, i) => ({
-        page: p.page + 1,
-        before: p.original_text ?? '',
-        after: p.text,
-        bbox: result.placements.find((x) => x.paragraph === i)?.rect ?? null,
-        fallbackFonts: []
-      })),
+      changes: spec.paragraphs.map((p, i) => {
+        // Where the text was placed, which can be the next column's page or a continuation page:
+        // its mark is drawn there.
+        const placed = result.placements.find((x) => x.paragraph === i)
+        return {
+          page: placed?.page ?? p.page + 1,
+          before: p.original_text ?? '',
+          after: p.text,
+          bbox: placed?.rect ?? null,
+          fallbackFonts: []
+        }
+      }),
       previews: images
         ? result.pages.map((page) => ({
             page,
