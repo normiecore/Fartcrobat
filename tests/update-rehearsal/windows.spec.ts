@@ -9,7 +9,22 @@ import { execFile, execFileSync, type ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
-import { checkFromHelpMenu, describe, downloadSummary, downloadUpdate, env, HERE, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
+import {
+  checkFromHelpMenu,
+  contactsOnlyGitHub,
+  describe,
+  downloadSummary,
+  downloadUpdate,
+  env,
+  HERE,
+  otherHosts,
+  otherHostsAfter,
+  shot,
+  startFakeGitHub,
+  updateCard,
+  version,
+  type FakeGitHub
+} from './common'
 
 const WORK = env('REHEARSAL_WORK')
 const OLD = env('REHEARSAL_OLD')
@@ -180,17 +195,24 @@ test(`${SCOPE}, ${INSTALLER} installer: Restart now asks about unsaved changes, 
   killApps()
 
   const { reqs, download } = await report()
-  expect(reqs.filter((r) => r.refused && /github/.test(r.host ?? ''))).toEqual([])
+  const others = otherHosts(reqs)
+  console.log(`${OLD} contacted besides GitHub: ${others.join(', ') || 'nothing'}`)
+  expect(others.filter((h) => /github/.test(h))).toEqual([])
+  if (contactsOnlyGitHub(OLD)) expect(others).toEqual([])
   expect(reqs.some((r) => r.path?.endsWith(`/releases/download/v${NEW}/latest.yml`))).toBe(true)
   expect(download.text).toContain(`Fartcrobat-Setup-${NEW}-x64.exe:`)
   if (INSTALLER === 'x64') expect(download.differential, download.text).toBe(true)
 
+  // The new version: NEW, up to date, and asking nobody but GitHub.
+  const fromNew = (await gh.requests()).length
+  const startedAt = Date.now()
   const again = await startApp()
   try {
     expect(await version(again.app)).toBe(NEW)
     await checkFromHelpMenu(again.page)
     await expect(again.page.locator('.toast', { hasText: /up to date/i })).toBeVisible({ timeout: 60_000 })
     await shot(again.page, `${NAME}-new-up-to-date`)
+    expect(await otherHostsAfter(gh, fromNew, startedAt), `${NEW} contacted hosts other than GitHub`).toEqual([])
   } finally {
     await again.app.close().catch(() => {})
     killApps()

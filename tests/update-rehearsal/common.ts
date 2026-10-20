@@ -72,6 +72,32 @@ export async function startFakeGitHub(opts: { releases: string; latest: string; 
   }
 }
 
+/** The hosts other than GitHub that the app tried to reach (the fake refuses them). */
+export function otherHosts(requests: GitHubRequest[]): string[] {
+  return [...new Set(requests.filter((r) => r.refused).map((r) => r.host ?? '(none)'))]
+}
+
+/**
+ * Whether a release keeps to "no network request besides the update check". 0.2.0 still asks
+ * Google for spell-check dictionaries at start on Linux (src/main/util/spellcheck.ts),
+ * so its runs only report other hosts; later releases must not contact any.
+ */
+export function contactsOnlyGitHub(release: string): boolean {
+  const [a, b, c] = release.split('.').map(Number)
+  return a > 0 || b > 2 || (b === 2 && c > 0)
+}
+
+/**
+ * The hosts other than GitHub contacted from `from` on, after letting the app run until `sinceStart`
+ * ms have passed since it started: what Chromium fetches by itself it fetches in its first seconds,
+ * and the absence of a request can only be seen by waiting.
+ */
+export async function otherHostsAfter(gh: FakeGitHub, from: number, startedAt: number, sinceStart = 15_000): Promise<string[]> {
+  const left = startedAt + sinceStart - Date.now()
+  if (left > 0) await new Promise((r) => setTimeout(r, left))
+  return otherHosts((await gh.requests()).slice(from))
+}
+
 /** What the app asked GitHub, in a few words per request (for the report). */
 export function describe(requests: GitHubRequest[]): string[] {
   return requests.map((r) => `${r.status} ${r.method} ${r.host ?? ''}${r.path ?? ''}${r.range ? ` [${r.range}]` : ''}${r.accept?.includes('json') ? ' (json)' : ''}`)

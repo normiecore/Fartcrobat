@@ -37,11 +37,15 @@ version people have installed is what has to work, and it can only be tried with
 | A download that does not match its published checksum is refused | yes | | |
 | The new version is offered, and Download opens its release page | | | yes |
 | The machine policy turns updates off: no request reaches GitHub | `/etc/fartcrobat/policy.json` | `AutoUpdate`=0 | `policy.json` |
+| No host but GitHub is contacted (the new version; the old one from 0.2.1 on) | yes | yes | old version |
 
 Windows installs the x64 installer, the one people download. One more job installs the installer for
 both processors that 0.2.0 also shipped (from 0.2.1 on there is one installer per processor,
 `electron-builder.yml`): its installs update too, but the first time with a full download, because
 the installer an install keeps for the next update is not the x64 one the updater picks.
+
+0.2.0 still asks Google for spell-check dictionaries at start on Linux, so its runs only
+list the other hosts it tried (`contactsOnlyGitHub` in `common.ts`).
 
 Each run writes screenshots, the requests the app made in each scenario (`*-requests.txt`) and how the
 download went (`*-download.txt`: differential or full, how many bytes) to its `out/` folder.

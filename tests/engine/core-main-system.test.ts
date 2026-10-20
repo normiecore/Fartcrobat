@@ -15,6 +15,7 @@ import {
   userApplicationsDir
 } from '@main/util/linuxDesktop'
 import { sheetStyle } from '@main/util/printSheet'
+import { keepSpellCheckOffline, NO_DICTIONARY_DOWNLOADS, spellCheckInWindows } from '@main/util/spellcheck'
 import { isFartcrobatProgId, parseLpstatDefault, parseWindowsDevice, regValue, WINDOWS_PROG_ID } from '@main/util/systemDefaults'
 
 const ROOT = resolve(__dirname, '../..')
@@ -136,5 +137,42 @@ describe('Content Security Policy', () => {
     expect(meta).toBe(RENDERER_CSP)
     expect(RENDERER_CSP).toContain("connect-src 'self' blob: data:")
     expect(RENDERER_CSP).not.toContain("'unsafe-eval'")
+  })
+})
+
+describe('spell checking stays offline', () => {
+  const session = () => {
+    const languages: string[][] = []
+    const urls: string[] = []
+    return {
+      languages,
+      urls,
+      setSpellCheckerLanguages: (l: string[]) => languages.push(l),
+      setSpellCheckerDictionaryDownloadURL: (u: string) => urls.push(u)
+    }
+  }
+
+  it('gives every session on Linux no languages, so Chromium downloads no dictionary', () => {
+    const s = session()
+    keepSpellCheckOffline(s, 'linux')
+    expect(s.languages).toEqual([[]])
+    expect(s.urls).toEqual([])
+    expect(spellCheckInWindows('linux')).toBe(false)
+  })
+
+  it('keeps the system checker on Windows, with dictionary downloads pointed at this computer', () => {
+    const s = session()
+    keepSpellCheckOffline(s, 'win32')
+    expect(s.languages).toEqual([])
+    expect(s.urls).toEqual([NO_DICTIONARY_DOWNLOADS])
+    expect(new URL(NO_DICTIONARY_DOWNLOADS).hostname).toBe('127.0.0.1')
+    expect(spellCheckInWindows('win32')).toBe(true)
+  })
+
+  it('leaves macOS on its own checker, which downloads nothing', () => {
+    const s = session()
+    keepSpellCheckOffline(s, 'darwin')
+    expect([s.languages, s.urls]).toEqual([[], []])
+    expect(spellCheckInWindows('darwin')).toBe(true)
   })
 })
