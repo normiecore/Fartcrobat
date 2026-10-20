@@ -64,10 +64,12 @@ its next successful tool call returns the private token in a separate MCP conten
 joins before the person opens the chat, so a conversation that only asks about a document is not
 told to listen, and who reads what the person types is their choice. One conversation joins per
 opening, and closing or minimizing the chat before one joins takes the opening back
-(`disarmCompanion`). The token belongs to the calling conversation, not to the whole Claude Desktop
-connection. Subsequent tokenless calls never disclose an existing token, even on the same
-connection. `companion_chat` must carry the token to consume or reply to messages. A second
-conversation cannot silently take over. End & clear, or a disconnect of the joined conversation,
+(`disarmCompanion`). Opening the chat also keeps the companion on screen (`revealed`, 0.2.2): in
+0.2.1 the companion hid when every AI app disconnected, and a chat opened before that stayed open
+out of sight, where it could not be closed, until the next conversation joined. The token belongs
+to the calling conversation, not to the whole Claude Desktop connection. Subsequent tokenless
+calls never disclose an existing token, even on the same connection. `companion_chat` must carry
+the token to consume or reply to messages. A second conversation cannot silently take over. End & clear, or a disconnect of the joined conversation,
 ends the chat: nobody joins again until the person selects Allow a new conversation.
 
 Only a reply that goes straight back to a live call joins (`runner.ts`): a call that answered

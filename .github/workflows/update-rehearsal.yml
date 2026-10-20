@@ -112,7 +112,8 @@ jobs:
             build-new/latest.yml
             build-new/*.exe
             build-new/*.blockmap
-          retention-days: 3
+          # "Re-run failed jobs" on a release reuses this build: keep it as long as a run can be re-run.
+          retention-days: 30
 
   windows:
     needs: [versions, windows-build]
