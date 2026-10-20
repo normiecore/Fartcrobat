@@ -55,6 +55,24 @@ export function disarmCompanion() {
   if (!s.owner && s.autoJoin) useCompanion.setState({ autoJoin: false })
 }
 
+/**
+ * Follows the AI apps connected now (none while agent access is off). The chat's conversation going
+ * away ends the chat. Every app going away before a conversation joined takes the companion off
+ * screen with its open chat, unless the person showed it: that takes the opening back as closing the
+ * chat does, so the next app's first call, maybe hours later, does not join a chat nobody can see.
+ */
+export function followConnections(connected: number[]): 'ended' | 'hidden' | undefined {
+  const s = useCompanion.getState()
+  if (s.owner) {
+    if (connected.includes(s.owner.id)) return undefined
+    endCompanion()
+    return 'ended'
+  }
+  if (connected.length || s.revealed) return undefined
+  disarmCompanion()
+  return 'hidden'
+}
+
 /** "Allow a new conversation" after the chat ended. */
 export function allowNewConversation() {
   if (!useCompanion.getState().owner) useCompanion.setState({ autoJoin: true, ended: false })

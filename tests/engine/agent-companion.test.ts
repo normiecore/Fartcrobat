@@ -7,6 +7,7 @@ import {
   disarmCompanion,
   endCompanion,
   exchangeCompanion,
+  followConnections,
   sendCompanionMessage,
   useCompanion
 } from '@features/agent-access/ui/companionStore'
@@ -22,7 +23,8 @@ const join = () => exchangeCompanion({ ...base, joining: true })
 const listen = (patch: Partial<Parameters<typeof exchangeCompanion>[0]> = {}) =>
   exchangeCompanion({ ...base, joining: false, ...patch })
 // As the app starts, then the person opens the chat.
-const fresh = () => useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: false, ended: false })
+const fresh = () =>
+  useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: false, ended: false, revealed: false })
 beforeEach(() => {
   fresh()
   armCompanion()
@@ -46,6 +48,30 @@ describe('companion conversations', () => {
     disarmCompanion()
     armCompanion()
     expect(autoJoinCompanion(1, 'Claude', 'w1-chat-b')).toBeUndefined()
+  })
+  it('takes the opening back when every AI app goes away before a conversation joins', () => {
+    // The chat was opened while an app was connected.
+    expect(followConnections([1])).toBeUndefined()
+    expect(useCompanion.getState().autoJoin).toBe(true)
+    // The last app disconnects: the companion leaves the screen, and the open chat with it.
+    expect(followConnections([])).toBe('hidden')
+    // Later another app connects: its first call does not join a chat nobody can see.
+    expect(followConnections([2])).toBeUndefined()
+    expect(autoJoinCompanion(2, 'ChatGPT', 'w1-chat-later')).toBeUndefined()
+    armCompanion()
+    expect(autoJoinCompanion(2, 'ChatGPT', 'w1-chat-later')?.status).toBe('joined')
+  })
+  it('keeps the opening while the companion is shown, and ends the chat when its conversation goes away', () => {
+    // Shown from Preferences or Agent activity, the companion stays on screen with no app connected.
+    useCompanion.setState({ revealed: true })
+    expect(followConnections([])).toBeUndefined()
+    expect(autoJoinCompanion(1, 'Claude', 'w1-chat-a')?.status).toBe('joined')
+    expect(followConnections([1, 2])).toBeUndefined()
+    expect(useCompanion.getState().owner?.session).toBe('w1-chat-a')
+    expect(followConnections([2])).toBe('ended')
+    expect(useCompanion.getState()).toMatchObject({ owner: null, autoJoin: false, ended: true })
+    expect(followConnections([])).toBeUndefined()
+    expect(autoJoinCompanion(2, 'ChatGPT', 'w1-chat-b')).toBeUndefined()
   })
   it('does not accept prompts without an active session', () => {
     expect(() => sendCompanionMessage('Read this')).toThrow(/use a Fartcrobat tool/)

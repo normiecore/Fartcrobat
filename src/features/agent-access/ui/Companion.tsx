@@ -13,6 +13,7 @@ import {
   armCompanion,
   disarmCompanion,
   endCompanion,
+  followConnections,
   sendCompanionMessage,
   useCompanion
 } from './companionStore'
@@ -153,12 +154,13 @@ export function AgentCompanion() {
     }
   }, [])
   useEffect(() => {
-    // Its conversation went away: nobody else joins until the person allows a new conversation.
-    if (owner && status && (!status.enabled || !status.connections.some((c) => c.id === owner.id))) {
-      endCompanion()
-      // A message half typed for that conversation must not go to the next one.
-      setDraft('')
-    }
+    if (!status) return
+    const change = followConnections(status.enabled ? status.connections.map((c) => c.id) : [])
+    // Its conversation went away: nobody else joins until the person allows a new conversation,
+    // and a message half typed for that conversation must not go to the next one.
+    if (change === 'ended') setDraft('')
+    // Every AI app went away before one joined, and the companion with them: it comes back closed.
+    if (change === 'hidden') setChat(false)
   }, [owner, status])
   const session = owner?.session
   useEffect(() => {

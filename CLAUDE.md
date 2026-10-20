@@ -23,8 +23,9 @@ Office conversion when installed, with a built-in fallback.
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
   per computer, update rehearsal for every download), #19 (no request to Google for spell-check
-  dictionaries). #11 merged main into the old session branch. Open: #17 (0.2.1, companion joining
-  and on-document review); merging it publishes 0.2.1.
+  dictionaries), #17 (0.2.1, companion joining and on-document review). #11 merged main into the
+  old session branch. Open: #20 (rehearsal keeps the Windows build), #22 (0.2.2, see below);
+  merging #22 publishes 0.2.2.
 - 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
   turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
   0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
@@ -285,5 +286,12 @@ capture, scanner input.
   `FARTCROBAT_USER_DATA` names the usual folder, which the helper does not take for a separate
   profile (`separateProfile` in `src/agent-shim/launch.ts`): it starts the app through WMI or
   LaunchServices, as for the Claude extension.
-- Merging #17 publishes 0.2.1 (see "To release"). Merge it with "Create a merge commit": one of its
-  commit messages names the skip marker, which a squash would carry into main's head commit.
+
+### 0.2.2 (#22, 20 Oct 2026)
+
+- Companion: an open chat that loses every AI app before a conversation joins closes, because the
+  companion leaves the screen with it (`followConnections` in `companionStore.ts`). In 0.2.1 the
+  opening stayed, out of reach, and the next app's first call joined without the person reopening
+  the chat. A companion shown from Preferences or Agent activity stays on screen and keeps it.
+- Merging #22 publishes 0.2.2 (see "To release"). Merge it with "Create a merge commit": its
+  intermediate commits carry the skip marker, which a squash would carry into main's head commit.
