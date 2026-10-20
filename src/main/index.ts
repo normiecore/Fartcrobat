@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, ClipboardItem, dialog, session, shell, type SaveDialogOptions as ElectronSaveDialogOptions } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, dialog, shell, type SaveDialogOptions as ElectronSaveDialogOptions } from 'electron'
 import { existsSync, writeFileSync, type Stats } from 'node:fs'
 import { access, readFile, stat } from 'node:fs/promises'
 import { userInfo } from 'node:os'
@@ -17,6 +17,7 @@ import { store } from './store'
 import { sessionTemp } from './temp'
 import { atomicWrite } from './util/atomicWrite'
 import { filesFromArgv, openableFile } from './util/launchPaths'
+import { keepSpellCheckOffline } from './util/spellcheck'
 import { TempFiles } from './util/tempFiles'
 import { unsafeToOpenReason } from './util/unsafeFiles'
 import {
@@ -36,6 +37,9 @@ app.setName('Fartcrobat')
 if (process.env.FARTCROBAT_USER_DATA) app.setPath('userData', process.env.FARTCROBAT_USER_DATA)
 // Match the installer's shortcuts so the taskbar groups the window with the pinned icon.
 if (process.platform === 'win32') app.setAppUserModelId('org.fartcrobat.app')
+// Before any session exists: Chromium would otherwise download spell-check dictionaries from
+// Google as each one starts (util/spellcheck.ts).
+app.on('session-created', (s) => keepSpellCheckOffline(s))
 
 /**
  * argv entries to skip: the executable. When running unpackaged the app path follows it; it is
@@ -73,8 +77,6 @@ function start() {
 
   app.whenReady().then(() => {
     TempFiles.sweepStale(app.getPath('temp'))
-    // No dictionary downloads on Linux (see createWindow).
-    if (process.platform === 'linux') session.defaultSession.setSpellCheckerEnabled(false)
     serveRenderer()
     registerCoreHandlers()
     registerFeatureHandlers()

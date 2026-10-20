@@ -15,6 +15,7 @@ import {
   userApplicationsDir
 } from '@main/util/linuxDesktop'
 import { sheetStyle } from '@main/util/printSheet'
+import { keepSpellCheckOffline, spellCheckInWindows } from '@main/util/spellcheck'
 import { isFartcrobatProgId, parseLpstatDefault, parseWindowsDevice, regValue, WINDOWS_PROG_ID } from '@main/util/systemDefaults'
 
 const ROOT = resolve(__dirname, '../..')
@@ -136,5 +137,28 @@ describe('Content Security Policy', () => {
     expect(meta).toBe(RENDERER_CSP)
     expect(RENDERER_CSP).toContain("connect-src 'self' blob: data:")
     expect(RENDERER_CSP).not.toContain("'unsafe-eval'")
+  })
+})
+
+describe('spell checking stays offline', () => {
+  const session = () => {
+    const calls: string[][] = []
+    return { calls, setSpellCheckerLanguages: (languages: string[]) => calls.push(languages) }
+  }
+
+  it('gives every session on Windows and Linux no languages, so Chromium downloads no dictionary', () => {
+    for (const platform of ['win32', 'linux'] as const) {
+      const s = session()
+      keepSpellCheckOffline(s, platform)
+      expect(s.calls).toEqual([[]])
+      expect(spellCheckInWindows(platform)).toBe(false)
+    }
+  })
+
+  it('leaves macOS on its own checker, which downloads nothing', () => {
+    const s = session()
+    keepSpellCheckOffline(s, 'darwin')
+    expect(s.calls).toEqual([])
+    expect(spellCheckInWindows('darwin')).toBe(true)
   })
 })

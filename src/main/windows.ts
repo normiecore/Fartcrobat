@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { send } from './ipc'
 import { APP_ORIGIN } from './protocol'
 import { appImageFile } from './util/appImage'
+import { spellCheckInWindows } from './util/spellcheck'
 
 /** Document windows (print jobs use hidden windows that are not part of this set). */
 const windows = new Set<BrowserWindow>()
@@ -408,9 +409,8 @@ export function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // Chromium on Linux downloads Hunspell dictionaries from Google on first use; Fartcrobat
-      // promises to work offline, so spell checking uses only the OS checker (Windows, macOS).
-      spellcheck: process.platform !== 'linux'
+      // Only where the spell checker works without downloading dictionaries (util/spellcheck.ts).
+      spellcheck: spellCheckInWindows()
     }
   })
   windows.add(win)
