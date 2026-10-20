@@ -487,7 +487,7 @@ function buildRebuild(s: Session, revision: number, spec: ReflowSpec, rejected: 
         }
       ],
       changes: [
-        item(0, 'title', 'Title', [spec.title, spec.subtitle].filter(Boolean).join('\n'), fragmentsOf(0), ['Always kept'], false),
+        item(0, 'title', 'Title', [spec.title, spec.subtitle].filter(Boolean).join('\n'), fragmentsOf(0), [], false),
         ...sections,
         item(
           spec.sections.length + 1,

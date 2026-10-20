@@ -215,7 +215,11 @@ const ReviewPage = memo(function ReviewPage({
   all: boolean
 }) {
   const { marks, clip } = useMemo(
-    () => pageMarks(useInlineReview.getState().review!, pageIndex),
+    () => {
+      // sig and report name everything pageMarks reads for this page.
+      const r = useInlineReview.getState().review
+      return r ? pageMarks(r, pageIndex) : { marks: [], clip: [] }
+    },
     [report, sig, pageIndex] // eslint-disable-line react-hooks/exhaustive-deps
   )
   const source = useProposalSource(doc, report.proposal)

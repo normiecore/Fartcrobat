@@ -336,6 +336,12 @@ test('the proposal is rendered sharp at the zoom of the page, not stretched', as
     expect(proposed).toEqual(live)
     expect(proposed[0]).toBe(Math.round(612 * 3 * (96 / 72) * dpr))
     expect(Math.round(css)).toBe(Math.round(612 * 3 * (96 / 72)))
+    // Higher up the whole page is too big for one bitmap: a sharp detail tile covers the view.
+    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(12))
+    const tile = page.locator('.fc-agent-access-review-proposal canvas.viewer-page-detail').first()
+    await expect(tile).toBeVisible({ timeout: 15_000 })
+    const scale = await tile.evaluate((c: HTMLCanvasElement) => c.width / c.getBoundingClientRect().width)
+    expect(scale).toBeCloseTo(await page.evaluate(() => devicePixelRatio), 2)
     await review.getByRole('button', { name: 'Discard batch', exact: true }).click()
     expect(errorOf(await pending)).toContain('[declined]')
   } finally { await s.close() }
