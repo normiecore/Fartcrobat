@@ -2,22 +2,34 @@ import { test, expect } from '@playwright/test'
 import { fixturePath, waitForRender } from './helpers'
 import { startSession, startShim, dataOf, errorOf, expectAudit } from './agent-helpers'
 
+/** The companion block a tool result carries when its conversation joined the chat. */
+function companionOf(result: { content: { type: string; text?: string }[] }): { session: string; status: string } | undefined {
+  for (const c of result.content) {
+    try {
+      const data = JSON.parse(c.type === 'text' ? c.text! : '{}')
+      if (data?.companion) return data.companion
+    } catch {}
+  }
+  return undefined
+}
+
 test('companion chats with its owner, moves, minimizes and ends cleanly', async () => {
   const s = await startSession([fixturePath('text.pdf')])
   try {
     const { page, agent } = s
     await waitForRender(page)
     // MCP initialization advertises tools without connecting to Fartcrobat. The first tool
-    // call authenticates the local pipe and makes the connected-client companion appear.
-    const first = await agent.call('get_context')
-    const companionData = first.content.map(c => {
-      try { return JSON.parse(c.type === 'text' ? c.text! : '{}') } catch { return null }
-    }).find(data => data?.companion)
-    const session = companionData.companion.session
-    expect(session).toBeTruthy()
+    // call authenticates the local pipe and makes the connected-client companion appear, but
+    // joins nothing: the person has not opened the chat.
+    expect(companionOf(await agent.call('get_context'))).toBeUndefined()
     const companion = page.getByRole('region', { name: 'AI companion' })
     await expect(companion).toBeVisible()
-    await companion.getByRole('button', { name: 'Chat with companion', exact: true }).click()
+    expect(errorOf(await agent.call('companion_chat'))).toContain('Chat here')
+    await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
+    await expect(companion.getByText('Waiting for a conversation', { exact: true })).toBeVisible()
+    // Opened: the next call of the conversation joins, without an invitation.
+    const session = companionOf(await agent.call('get_context'))!.session
+    expect(session).toBeTruthy()
     await expect(companion.getByText('Connected to Claude', { exact: true })).toBeVisible()
     expect(errorOf(await agent.call('companion_chat'))).toContain('Another conversation')
     expect(JSON.stringify(await agent.call('get_context'))).not.toContain(session)
@@ -49,6 +61,11 @@ test('companion chats with its owner, moves, minimizes and ends cleanly', async 
     await companion.getByRole('button', { name: 'Chat with companion', exact: true }).click()
     await companion.getByRole('button', { name: 'End & clear', exact: true }).click()
     expect(errorOf(await agent.call('companion_chat', { session, wait_seconds: 0 }))).toContain('ended')
+    // Ended: the conversation does not rejoin on its next call, nor by asking.
+    expect(companionOf(await agent.call('get_context'))).toBeUndefined()
+    expect(errorOf(await agent.call('companion_chat'))).toContain('Chat ended')
+    await companion.getByRole('button', { name: 'Allow a new conversation', exact: true }).click()
+    expect(companionOf(await agent.call('get_context'))?.status).toBe('joined')
     await expectAudit(s.userData, agent.calls, [
       'Please inspect my layout',
       'I’ll check the columns and spacing.'
@@ -62,19 +79,24 @@ test('ChatGPT has its own avatar and cannot consume another connection’s chat'
   const s = await startSession()
   const gpt = await startShim(s.userData, { name: 'codex', version: '1.0' })
   try {
+    dataOf(await s.agent.call('get_context'))
+    const companion = s.page.getByRole('region', { name: 'AI companion' })
+    await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
     const { session } = dataOf(await s.agent.call('companion_chat'))
     expect(errorOf(await gpt.call('companion_chat', { session, wait_seconds: 0 }))).toContain(
       'another connection'
     )
+    // Its conversation went away: the chat ends, and no other conversation joins until allowed.
     await s.agent.close()
-    const companion = s.page.getByRole('region', { name: 'AI companion' })
     await expect(companion.getByRole('img', { name: 'OpenAI inspired companion' })).toBeVisible()
+    await expect(companion).toContainText('Chat ended')
+    expect(errorOf(await gpt.call('companion_chat'))).toContain('Chat ended')
+    await companion.getByRole('button', { name: 'Allow a new conversation', exact: true }).click()
     const joined = dataOf(await gpt.call('companion_chat'))
     expect(joined.status).toBe('joined')
-    await companion.getByRole('button', { name: 'Chat with companion', exact: true }).click()
     await expect(companion).toContainText('Connected to ChatGPT')
     await gpt.close()
-    await expect(companion).toContainText('Waiting for a conversation')
+    await expect(companion).toContainText('Chat ended')
   } finally {
     await gpt.close()
     await s.close()

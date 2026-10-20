@@ -9,6 +9,7 @@ let common: typeof import('@features/agent-access/tools/common')
 let runtime: typeof import('@features/agent-access/tools/act-runtime')
 let wait: typeof import('@features/agent-access/tools/wait')
 let ui: typeof import('@features/agent-access/ui/store')
+let companion: typeof import('@features/agent-access/ui/companionStore')
 let useApp: typeof import('@renderer/app/store').useApp
 
 beforeAll(async () => {
@@ -19,6 +20,7 @@ beforeAll(async () => {
   runtime = await import('@features/agent-access/tools/act-runtime')
   wait = await import('@features/agent-access/tools/wait')
   ui = await import('@features/agent-access/ui/store')
+  companion = await import('@features/agent-access/ui/companionStore')
   ;({ useApp } = await import('@renderer/app/store'))
   // The main process, after the modules read the (missing) preload bridge at load time.
   ;(window as any).api = { invoke: async () => {}, on: () => () => {} }
@@ -29,6 +31,8 @@ const WAIT_MS = 40
 
 beforeEach(() => {
   ui.useAgentUi.setState({ calls: [], running: 0 })
+  // As the app starts: nobody has opened the companion chat.
+  companion.useCompanion.setState({ owner: null, messages: [], listening: false, autoJoin: false, ended: false })
   for (const d of useApp.getState().dialogs) d.resolve(undefined)
   useApp.setState({ docs: [], activeDocId: null, dialogs: [] })
   wait.setStillRunningMs(WAIT_MS)
@@ -76,6 +80,47 @@ async function waitFor(d: ReturnType<typeof deps>, ticket: string, more: Record<
   await runner.handleRequest(req, d.d)
   return d.replies.find((r) => r.id === req.id)!
 }
+
+describe('the companion chat and calls that cannot carry its token', () => {
+  // The person opened the chat: the next conversation that uses Fartcrobat may join.
+  const armed = () =>
+    companion.useCompanion.setState({ owner: null, messages: [], listening: false, autoJoin: true, ended: false })
+
+  it('a call that answered still_running does not take the chat: its token would go nowhere', async () => {
+    armed()
+    const hold = gate()
+    const d = deps({ get_page_text: async () => (await hold.promise, { data: { text: 'page' } }) })
+    const req = request('get_page_text', { handle: 'w1-x-doc-1' })
+    const running = runner.handleRequest(req, d.d)
+    const ticket = ((await d.replyTo(req)).result.data as { ticket: string }).ticket
+    const req2 = request('wait_for_result', { ticket })
+    const waiting = runner.handleRequest(req2, d.d)
+    hold.open()
+    await running
+    await waiting
+    expect(d.replies.find((r) => r.id === req2.id)!.result).toEqual({ data: { text: 'page' } })
+    expect(companion.useCompanion.getState().owner).toBeNull()
+    // The conversation's next direct reply carries the token.
+    const next = request('get_context')
+    await runner.handleRequest(next, deps({ get_context: async () => ({ data: {} }) }).d)
+    expect(companion.useCompanion.getState().owner).toMatchObject({ id: 1 })
+  })
+
+  it('a call the AI app cancelled does not take the chat, even if it finishes anyway', async () => {
+    armed()
+    const hold = gate()
+    // A handler that ignores the abort and returns within the grace period.
+    const d = deps({ get_page_text: async () => (await hold.promise, { data: { text: 'late' } }) })
+    const req = request('get_page_text', { handle: 'w1-x-doc-1' })
+    const running = runner.handleRequest(req, { ...d.d, stillRunningMs: () => 60_000 })
+    await vi.waitFor(() => expect(runner.runningCalls()).toContain(req.id))
+    runner.cancelRequest(req.id, 1000)
+    hold.open()
+    await running
+    expect(companion.useCompanion.getState().owner).toBeNull()
+    expect(d.replies.find((r) => r.id === req.id)?.result.companion).toBeUndefined()
+  })
+})
 
 describe('calls that run long', () => {
   it('answer still_running with a ticket and hand their result to wait_for_result, once', async () => {

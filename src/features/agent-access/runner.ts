@@ -195,7 +195,11 @@ export async function handleRequest(request: AgentCallRequest, deps: RunnerDeps 
           ...(detail.document ? { document: detail.document } : {}),
           ...(result.error ? { error: result.error.message } : {})
         })
-      if (!result.error && request.tool !== 'companion_chat' && request.tool !== 'wait_for_result' &&
+      // Joins only on a reply that goes straight back to a live call: the token in a ticket's
+      // result (wait_for_result) or a cancelled call's reply would reach nobody, and leave the chat
+      // owned by no one who can use it.
+      if (!ticket && !controller.signal.aborted && !result.error && request.tool !== 'companion_chat' &&
+          request.tool !== 'wait_for_result' &&
           (request.allowCompanionJoin ?? (request.tool !== 'list_documents' || request.currentWindow))) {
         const companion = autoJoinCompanion(request.connectionId, appLabel(request.client.name),
           `${request.windowId}-chat-${BOOT}-${crypto.randomUUID()}`)

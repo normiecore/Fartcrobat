@@ -8,6 +8,8 @@ import { BOOT } from '../tools/common'
 import { appLabel, useAgentUi } from './store'
 import {
   activitySentence,
+  allowNewConversation,
+  armCompanion,
   endCompanion,
   sendCompanionMessage,
   useCompanion
@@ -141,8 +143,9 @@ export function AgentCompanion() {
     }
   }, [])
   useEffect(() => {
+    // Its conversation went away: nobody else joins until the person allows a new conversation.
     if (owner && status && (!status.enabled || !status.connections.some((c) => c.id === owner.id)))
-      endCompanion(false)
+      endCompanion()
   }, [owner, status])
   useEffect(() => {
     if (!loaded) return
@@ -252,7 +255,10 @@ export function AgentCompanion() {
           className={`${P}-avatar-button`}
           aria-label={chat ? 'Hide companion chat' : 'Chat with companion'}
           aria-expanded={chat}
-          onClick={() => setChat(!chat)}
+          onClick={() => {
+            if (!chat) armCompanion()
+            setChat(!chat)
+          }}
         >
           <CompanionAvatar provider={provider} busy={busy} />
         </button>
@@ -261,7 +267,14 @@ export function AgentCompanion() {
         </div>
       </div>
       {!chat ? (
-        <button type="button" className={`${P}-chat-toggle`} onClick={() => setChat(true)}>
+        <button
+          type="button"
+          className={`${P}-chat-toggle`}
+          onClick={() => {
+            armCompanion()
+            setChat(true)
+          }}
+        >
           <MessageCircle size={14} />
           {owner ? 'Continue chat' : 'Chat here'}
         </button>
@@ -282,11 +295,12 @@ export function AgentCompanion() {
           {!owner ? (
             <div className={`${P}-setup`}>
               <p>
-                Ask Claude or ChatGPT to use Fartcrobat. This chat connects automatically when its first
-                tool finishes—no invitation needed.
+                {companion.autoJoin
+                  ? 'Ask Claude or ChatGPT to use Fartcrobat. The next conversation that does connects to this chat, no invitation needed.'
+                  : 'Chat ended. No conversation can connect until you allow a new one.'}
               </p>
               {!companion.autoJoin && (
-                <button type="button" onClick={() => useCompanion.setState({ autoJoin: true })}>
+                <button type="button" onClick={allowNewConversation}>
                   Allow a new conversation
                 </button>
               )}
@@ -362,7 +376,7 @@ export function AgentCompanion() {
                 <button
                   type="button"
                   onClick={() => {
-                    endCompanion(false)
+                    endCompanion()
                     setDraft('')
                     setNotice('Chat ended and cleared.')
                   }}

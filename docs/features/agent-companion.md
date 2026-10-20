@@ -49,12 +49,19 @@ speech input, API-backed standalone chat, or stream the desktop app's entire con
 
 ## 0.2.1: automatic conversation joining
 
-The first successful Fartcrobat tool call joins an available companion automatically and returns
-its private token in a separate MCP content block. The token belongs to the calling conversation,
-not to the whole Claude Desktop connection. Subsequent tokenless calls never disclose an existing
-token, even on the same connection. `companion_chat` must carry the token to consume or reply to
-messages. A second conversation cannot silently take over. End & clear pauses joining until the
-person selects Allow a new conversation; a disconnect clears the old session.
+Opening the chat (Chat here, or the avatar) lets the next conversation that uses Fartcrobat join:
+its next successful tool call returns the private token in a separate MCP content block. Nothing
+joins before the person opens the chat, so a conversation that only asks about a document is not
+told to listen, and who reads what the person types is their choice. One conversation joins per
+opening. The token belongs to the calling conversation, not to the whole Claude Desktop
+connection. Subsequent tokenless calls never disclose an existing token, even on the same
+connection. `companion_chat` must carry the token to consume or reply to messages. A second
+conversation cannot silently take over. End & clear, or a disconnect of the joined conversation,
+ends the chat: nobody joins again until the person selects Allow a new conversation.
+
+Only a reply that goes straight back to a live call joins (`runner.ts`): a call that answered
+still_running (its result goes through wait_for_result) or that the AI app cancelled would carry
+the token to nobody and leave the chat owned by no one who can use it.
 
 No invitation is needed. The AI app still controls tool calls: it must follow the returned listening
 instructions, and Fartcrobat cannot wake a finished or closed external conversation. Connection

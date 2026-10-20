@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   activitySentence,
+  allowNewConversation,
+  armCompanion,
   autoJoinCompanion,
   endCompanion,
   exchangeCompanion,
@@ -18,7 +20,12 @@ const base = {
 const join = () => exchangeCompanion({ ...base, joining: true })
 const listen = (patch: Partial<Parameters<typeof exchangeCompanion>[0]> = {}) =>
   exchangeCompanion({ ...base, joining: false, ...patch })
-beforeEach(() => endCompanion(false))
+// As the app starts, then the person opens the chat.
+const fresh = () => useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: false, ended: false })
+beforeEach(() => {
+  fresh()
+  armCompanion()
+})
 afterEach(() => {
   endCompanion()
   vi.useRealTimers()
@@ -91,13 +98,27 @@ describe('companion conversations', () => {
     await expect(join()).rejects.toThrow(/Another conversation/)
     expect(useCompanion.getState().messages[0].delivered).toBeUndefined()
   })
+  it('lets no conversation join until the person opens the chat', async () => {
+    fresh()
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toBeUndefined()
+    await expect(join()).rejects.toThrow(/Chat here/)
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toMatchObject({ session: 'first' })
+  })
   it('respects End & clear until the user allows a new conversation', async () => {
     autoJoinCompanion(1, 'Claude', 'first')
     endCompanion()
     expect(autoJoinCompanion(1, 'Claude', 'second')).toBeUndefined()
     await expect(join()).rejects.toThrow(/Chat ended/)
-    useCompanion.setState({ autoJoin: true })
+    // Opening the chat again does not undo the end; only allowing a new conversation does.
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toBeUndefined()
+    allowNewConversation()
     expect(autoJoinCompanion(1, 'Claude', 'second')).toMatchObject({ session: 'second' })
+  })
+  it('lets one conversation join per opening of the chat', () => {
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toMatchObject({ session: 'first' })
+    expect(useCompanion.getState().autoJoin).toBe(false)
   })
   it('describes only observable tool activity', () => {
     expect(activitySentence()).toBe('Ready when you are.')

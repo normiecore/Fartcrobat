@@ -426,6 +426,7 @@ describeUnix('agent access pipe', () => {
       client: { name: 'claude-ai', version: '1.0' },
       windowId: 'w1',
       currentWindow: expect.any(Boolean),
+      allowCompanionJoin: true,
       tool: 'find_text',
       args: { handle: 'w1-b1-doc-2', query: 'John Smith', pages: '1-3' }
     })

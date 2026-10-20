@@ -11,7 +11,14 @@ export interface CompanionMessage {
   documentHandle?: string
 }
 interface CompanionState {
+  /**
+   * Whether the next conversation that uses Fartcrobat joins the chat. Off until the person opens
+   * the chat (armCompanion), and off again when they end it or its conversation disconnects, until
+   * they allow a new conversation: who reads what they type is their choice.
+   */
   autoJoin: boolean
+  /** The person ended the chat (or its conversation went away): only "Allow a new conversation" arms it. */
+  ended: boolean
   minimized: boolean
   revealed: boolean
   owner: { id: number; name: string; session: string } | null
@@ -19,7 +26,8 @@ interface CompanionState {
   messages: CompanionMessage[]
 }
 export const useCompanion = create<CompanionState>(() => ({
-  autoJoin: true,
+  autoJoin: false,
+  ended: false,
   minimized: false,
   revealed: false,
   owner: null,
@@ -29,9 +37,21 @@ export const useCompanion = create<CompanionState>(() => ({
 let nextId = 0
 let wake: (() => void) | null = null
 
-export function endCompanion(pauseAutoJoin = true) {
-  useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: !pauseAutoJoin })
+/** Ends the chat: the conversation is cut off, messages are cleared and nobody joins until allowed. */
+export function endCompanion() {
+  useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: false, ended: true })
   wake?.()
+}
+
+/** The person opened the chat: the next conversation that uses Fartcrobat may join (not after an end). */
+export function armCompanion() {
+  const s = useCompanion.getState()
+  if (!s.owner && !s.ended && !s.autoJoin) useCompanion.setState({ autoJoin: true })
+}
+
+/** "Allow a new conversation" after the chat ended. */
+export function allowNewConversation() {
+  if (!useCompanion.getState().owner) useCompanion.setState({ autoJoin: true, ended: false })
 }
 export function sendCompanionMessage(text: string, document?: string, documentHandle?: string) {
   const s = useCompanion.getState()
@@ -67,9 +87,14 @@ export async function exchangeCompanion(options: {
   if (joining) {
     if (s.owner)
       throw new Error('Another conversation owns this companion chat. Use the token returned to your conversation, or ask the person to end it first.')
-    if (!s.autoJoin) throw new Error('Chat ended. Ask the person to allow a new conversation in Fartcrobat.')
+    if (!s.autoJoin)
+      throw new Error(
+        s.ended
+          ? 'Chat ended. Ask the person to allow a new conversation in Fartcrobat.'
+          : 'The person has not opened the chat in Fartcrobat. Ask them to click Chat here first.'
+      )
     if (!s.owner)
-      useCompanion.setState({ owner: { id: connectionId, name, session }, revealed: true, messages: [] })
+      useCompanion.setState({ owner: { id: connectionId, name, session }, revealed: true, messages: [], autoJoin: false })
     return {
       session: useCompanion.getState().owner!.session,
       status: 'joined',
@@ -162,7 +187,8 @@ export function activitySentence(call?: CallRecord): string {
 export function autoJoinCompanion(connectionId: number, name: string, session: string) {
   const state = useCompanion.getState()
   if (!state.autoJoin || state.owner) return undefined
-  useCompanion.setState({ owner: { id: connectionId, name, session }, revealed: true, messages: [] })
+  // One conversation per arming: after it, only the person can let another one in.
+  useCompanion.setState({ owner: { id: connectionId, name, session }, revealed: true, messages: [], autoJoin: false })
   return { session, status: 'joined' as const, instructions: COMPANION_INSTRUCTIONS }
 }
 
