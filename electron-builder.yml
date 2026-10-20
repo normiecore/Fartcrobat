@@ -13,13 +13,16 @@ files:
   # The renderer, preload and main bundles contain all code (electron.vite.config.ts bundles
   # every dependency; only Electron and Node built-ins are external), so node_modules is not needed.
   - '!node_modules/**'
-  # The agent helper (npm run build:agent) only ships inside the extension below.
+  # The agent helper (npm run build:agent) ships as the two plain files below, not in app.asar.
   - '!out/agent/**'
-# The Claude Desktop extension, a plain file next to app.asar that the system can open
-# (Preferences > AI apps > Add to Claude Desktop).
+# Next to app.asar: the Claude Desktop extension, which the system opens (Preferences > AI apps >
+# Add to Claude Desktop), and the MCP helper that AI apps set up by hand run with Node (Connect
+# ChatGPT Desktop; the app gives them a copy in userData, src/features/agent-access/main/helperCopy.ts).
 extraResources:
   - from: out/agent/fartcrobat.mcpb
     to: agent/fartcrobat.mcpb
+  - from: out/agent/shim.mjs
+    to: agent/shim.mjs
 asar: true
 asarUnpack:
   - resources/**

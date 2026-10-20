@@ -40,10 +40,10 @@ export interface Agent {
  * gets the display and ELECTRON_DISABLE_SANDBOX so a copy of the app it starts (to hand over to the
  * running one) can come up on this machine, like the app the tests launch with --no-sandbox.
  */
-export async function startShim(userData: string, client = { name: 'claude-ai', version: '0.14.0' }): Promise<Agent> {
+export async function startShim(userData: string, client = { name: 'claude-ai', version: '0.14.0' }, shim = SHIM): Promise<Agent> {
   const env: Record<string, string> = { ...getDefaultEnvironment(), FARTCROBAT_USER_DATA: userData, ELECTRON_DISABLE_SANDBOX: '1' }
   for (const key of ['DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR']) if (process.env[key]) env[key] = process.env[key]!
-  const transport = new StdioClientTransport({ command: process.execPath, args: [SHIM], env, stderr: 'pipe' })
+  const transport = new StdioClientTransport({ command: process.execPath, args: [shim], env, stderr: 'pipe' })
   let stderr = ''
   transport.stderr?.on('data', (chunk) => {
     stderr += String(chunk)
