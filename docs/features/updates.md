@@ -145,8 +145,9 @@ AppImages, in detail:
   download that does not match its checksum is refused. The Mac app and the `.deb` (on Ubuntu 24.04
   with AppArmor limiting user namespaces, as desktops have it) offer it and open its release page.
   The policy stops every request. Linux AppImage with `linux.sh` (root, throwaway machine);
-  everything in `.github/workflows/update-rehearsal.yml`. On 20 Oct 2026 the released 0.2.0 AppImage
-  and Windows installer (per user and per machine) passed, and its `.deb` in a cloud session.
+  everything in `.github/workflows/update-rehearsal.yml`. On 20 Oct 2026 the released 0.2.0 passed
+  all of it: the AppImage, the Windows installer (per user and per machine, x64 and combined), the
+  Mac `.dmg` and the `.deb`.
   The Windows runners elevate without asking, so a per-machine update's UAC prompt is not covered.
 - Manual, after publishing a release: start the previous version once on each platform and let it
   update from the real github.com, including a Windows per-machine install on a machine with UAC

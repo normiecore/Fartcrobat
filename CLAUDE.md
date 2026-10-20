@@ -46,9 +46,9 @@ Office conversion when installed, with a built-in fallback.
   - The update rehearsal (`tests/update-rehearsal/README.md`) tries it without publishing, from
     each kind of download: on 20 Oct 2026 the released 0.2.0 AppImage and Windows installer (per
     user and per machine) updated themselves to a test 0.2.1 from a fake GitHub (Restart now,
-    Later, a wrong checksum, the policy off), and the released `.deb` offered it and opened its
-    release page (in a cloud session; the Mac and AppArmor runs are the workflow's `mac` and `deb`
-    jobs). `.github/workflows/update-rehearsal.yml` runs all of it. Run it before each release; after
+    Later, a wrong checksum, the policy off), and the released Mac app and `.deb` (with Ubuntu
+    24.04's AppArmor setting) offered it and opened its release page.
+    `.github/workflows/update-rehearsal.yml` runs all of it. Run it before each release; after
     publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform,
     and try a Windows per-machine install with UAC on (as an administrator and as a standard
     user): the runners elevate without asking, so the rehearsal cannot show the UAC prompt.
