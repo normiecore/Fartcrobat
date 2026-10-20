@@ -23,6 +23,7 @@ import {
   findApp,
   installCandidates,
   launchMethod,
+  separateProfile,
   macBundle,
   parseAppInfo,
   parseRegQuery,
@@ -464,6 +465,18 @@ describe('agent shim: starting the app', () => {
     const profile = { FARTCROBAT_USER_DATA: '/tmp/profile' }
     expect(launchMethod(packaged(winExe), { ...winEnv, ...profile }, 'win32')).toBe('direct')
     expect(launchMethod(packaged(macExe), profile, 'darwin')).toBe('direct')
+    // The Connect ChatGPT Desktop setup names the usual folder: that is no separate profile, and
+    // the app starts as for the Claude extension (WMI keeps it out of ChatGPT's MSIX package).
+    const usualWin = { ...winEnv, FARTCROBAT_USER_DATA: 'c:\\users\\me\\appdata\\roaming\\fartcrobat\\' }
+    expect(launchMethod(packaged(winExe), usualWin, 'win32', String.raw`C:\Users\me`)).toBe('wmi')
+    const usualMac = { FARTCROBAT_USER_DATA: '/Users/me/Library/Application Support/Fartcrobat' }
+    expect(launchMethod(packaged(macExe), usualMac, 'darwin', '/Users/me')).toBe('launch-services')
+    expect(separateProfile({}, 'linux', '/home/me')).toBe(false)
+    // ChatGPT does not pass XDG_CONFIG_HOME on: the setup's folder then differs from the one the
+    // helper would guess, and is still the app's own.
+    expect(separateProfile({ FARTCROBAT_USER_DATA: '/home/me/.config/Fartcrobat' }, 'linux', '/home/me')).toBe(false)
+    expect(separateProfile({ FARTCROBAT_USER_DATA: '/home/me/.cfg/Fartcrobat' }, 'linux', '/home/me')).toBe(true)
+    expect(separateProfile({ ...winEnv, FARTCROBAT_USER_DATA: 'D:\\profile' }, 'win32', 'C:\\Users\\me')).toBe(true)
 
     expect(macBundle(macExe)).toBe('/Applications/Fartcrobat.app')
     expect(macBundle('/Applications/Fartcrobat.app/Contents/Frameworks/x')).toBeNull()

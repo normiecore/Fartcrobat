@@ -117,6 +117,37 @@ async function exists(file: string): Promise<boolean> {
   }
 }
 
+const APP_NAME = 'Fartcrobat'
+
+/** Electron's usual userData folder for Fartcrobat, whatever FARTCROBAT_USER_DATA says. */
+export function defaultUserDataDir(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir()
+): string {
+  if (platform === 'win32') return win32.join(env.APPDATA || win32.join(home, 'AppData', 'Roaming'), APP_NAME)
+  if (platform === 'darwin') return posix.join(home, 'Library', 'Application Support', APP_NAME)
+  return posix.join(env.XDG_CONFIG_HOME || posix.join(home, '.config'), APP_NAME)
+}
+
+/**
+ * FARTCROBAT_USER_DATA names a separate profile (development, tests). The Connect ChatGPT Desktop
+ * setup names the usual folder as well, because ChatGPT passes servers only some of the
+ * environment (XDG_CONFIG_HOME, for one): that is not a separate profile, and the app starts as
+ * for the Claude extension.
+ */
+export function separateProfile(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir()
+): boolean {
+  const named = env.FARTCROBAT_USER_DATA
+  if (!named) return false
+  const usual = defaultUserDataDir(env, platform, home)
+  if (platform === 'win32') return win32.resolve(named).toLowerCase() !== win32.resolve(usual).toLowerCase()
+  return posix.resolve(named) !== posix.resolve(usual)
+}
+
 /**
  * How to start the app: app.json when the app has run before (and the executable is still there),
  * else the installed copy. Null when there is nothing to start. An app.json that says agent access
@@ -131,7 +162,7 @@ export async function findApp(
   const info = await readAppInfo(userData, platform)
   if (info && (info.enabled === false || (await exists(info.executable)))) return info
   // A separate profile (development, tests) only starts what it recorded itself.
-  if (env.FARTCROBAT_USER_DATA) return null
+  if (separateProfile(env, platform, home)) return null
   const registered =
     platform === 'win32' ? await Promise.all([regInstallLocation('HKCU'), regInstallLocation('HKLM')]) : []
   for (const exe of installCandidates(platform, env, home, registered))
@@ -161,11 +192,12 @@ export function macBundle(executable: string): string | null {
 export function launchMethod(
   target: LaunchTarget,
   env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform
+  platform: NodeJS.Platform,
+  home: string = homedir()
 ): LaunchMethod {
   // A separate profile (development, tests) is named in the environment, and only a direct start
   // passes that on: WMI and LaunchServices give the app the person's usual environment.
-  if (env.FARTCROBAT_USER_DATA) return 'direct'
+  if (separateProfile(env, platform, home)) return 'direct'
   if (platform === 'win32') return 'wmi'
   if (platform === 'darwin' && !target.args.length && macBundle(target.executable)) return 'launch-services'
   return 'direct'

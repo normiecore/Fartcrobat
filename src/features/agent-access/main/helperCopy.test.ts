@@ -38,6 +38,15 @@ describe('refreshHelperCopy', () => {
     expect(readdirSync(join(d, 'userData', 'agent-helper'))).toEqual(['shim.mjs'])
   })
 
+  it('two setups at once both get the copy', async () => {
+    const d = folder()
+    const shipped = join(d, 'shim.mjs')
+    writeFileSync(shipped, 'x'.repeat(1 << 20))
+    const copy = join(d, 'userData', 'agent-helper', 'shim.mjs')
+    expect(await Promise.all([refreshHelperCopy(shipped, copy, true), refreshHelperCopy(shipped, copy, true)])).toEqual([true, true])
+    expect(readdirSync(join(d, 'userData', 'agent-helper'))).toEqual(['shim.mjs'])
+  })
+
   it('fails when the shipped helper is missing', async () => {
     const d = folder()
     await expect(refreshHelperCopy(join(d, 'missing.mjs'), join(d, 'copy.mjs'), true)).rejects.toThrow(/ENOENT/)
