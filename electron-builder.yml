@@ -45,7 +45,12 @@ win:
       arch: [x64, arm64]
   icon: build/icon.ico
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+# One file per kind of computer (scripts/release-downloads.mjs checks each build against the table
+# in README.md and the release notes): installers for x64 and for arm64, not also one for both. An
+# install keeps the installer it ran for its next update's differential download, which only
+# matches when it is the file the updater picks for its processor.
 nsis:
+  buildUniversalInstaller: false
   # build/installer.nsh registers Fartcrobat under Default apps (RegisteredApplications).
   include: build/installer.nsh
   oneClick: false
@@ -73,6 +78,8 @@ mac:
       arch: [x64, arm64]
   category: public.app-category.productivity
   icon: build/icon.png
+  # The processor in every name: x64 (Intel) or arm64 (Apple silicon). The .zip is for updates.
+  artifactName: ${productName}-${version}-${arch}-mac.${ext}
   darkModeSupport: true
   # Ad-hoc signed by default ("-"): unsigned apps that electron-builder modified are reported as
   # "damaged" on Apple Silicon, while ad-hoc signed ones get the normal "Open Anyway" path. The
@@ -83,6 +90,7 @@ mac:
     NSHumanReadableCopyright: Fartcrobat is free software under the GNU AGPL v3 or later.
 dmg:
   title: Fartcrobat ${version}
+  artifactName: ${productName}-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
