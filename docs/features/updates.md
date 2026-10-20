@@ -128,6 +128,12 @@ AppImages, in detail:
   packaged build. Every other spec runs with checks off (`launch` sets
   `FARTCROBAT_UPDATE_CHECKS=0`, the one test variable packaged builds honour, and only to turn
   automatic checks off, so runs against a packaged build ask github.com nothing either).
-- Manual, before relying on it: publish 0.2.0 with this feature, then 0.2.1, and update a Windows
-  per-user install, a Windows per-machine install and an AppImage from 0.2.0 to 0.2.1; check that a
-  restart with unsaved changes asks first, and that the policy value hides everything.
+- Update rehearsal (`tests/update-rehearsal/README.md`): the released previous version, installed
+  for real, updates itself from a fake GitHub (an HTTPS proxy that answers for github.com) to a
+  build of the next version: Restart now asks about unsaved changes first, Later installs on quit, a
+  download that does not match its checksum is refused, and the policy stops every request. Linux
+  AppImage with `linux.sh` (root, throwaway machine); Windows per user and per machine in
+  `.github/workflows/update-rehearsal.yml`. On 20 Oct 2026 the released 0.2.0 AppImage passed all
+  four scenarios.
+- Manual, after publishing a release: start the previous version once on each platform and let it
+  update from the real github.com.

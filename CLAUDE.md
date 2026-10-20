@@ -12,11 +12,13 @@ Office conversion when installed, with a built-in fallback.
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`). It has no updater.
+- v0.2.0 (17 Oct 2026) is the first release with the in-app updater and its `latest*.yml` files,
+  and with certificate encryption and native MCP editing.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
   access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
-  encryption). #11 merged main into the old session branch.
-- `package.json` is still 0.1.0: the updater from #12 has not shipped in a release yet.
+  encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0). #11 merged main
+  into the old session branch. Open: #17 (0.2.1, companion joining and on-document review).
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
@@ -35,10 +37,11 @@ Office conversion when installed, with a built-in fallback.
   more, so updates replace it in place. A review (install safety, security, release pipeline, UI)
   found 15 issues, all fixed in the PR, among them an inherited `APPIMAGE` variable that would
   have made a .deb install replace another app's AppImage.
-  - Not yet tried for real: no release has latest*.yml yet. Next step: bump to
-    0.2.0 (PR), run the Release workflow, install 0.2.0 by hand on Windows (per user and per
-    machine) and as an AppImage, then release 0.2.1 and check that each updates itself, that
-    Restart now with unsaved changes asks first, and that `AutoUpdate`=0 hides everything.
+  - The update rehearsal (`tests/update-rehearsal/README.md`) tries it without publishing: the
+    released 0.2.0 AppImage updated itself to a test 0.2.1 from a fake GitHub on 20 Oct 2026
+    (Restart now, Later, a wrong checksum, the policy off: all pass). The Windows half (per user,
+    per machine) runs in `.github/workflows/update-rehearsal.yml`. Run it before each release; after
+    publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform.
 - **Agent access** (`docs/features/agent-access.md`): merged with the review fixes from #9. Known
   gaps are listed in #9 and backlog items 15 and 16. Nothing has been tried on Windows or with a
   real Claude Desktop yet.
@@ -137,6 +140,8 @@ outputs are committed; tests never generate them at run time.
   showed up on 2 CPUs, or tool checks that behaved differently when a tool was missing.
 - `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` runs e2e specs against a packaged
   build (the release workflow smoke-tests this way).
+- `sudo env "PATH=$PATH" tests/update-rehearsal/linux.sh` updates the latest released AppImage to a
+  build of this checkout from a fake GitHub (root, throwaway machines only; README there).
 - Every push to any branch runs CI and failures email the owner. Verify locally first, and put
   `[skip ci]` in intermediate commits that don't need a run. But make sure a PR's head commit runs
   CI before it is merged: #5 was merged with `[skip ci]` on every commit and turned `main` red.
