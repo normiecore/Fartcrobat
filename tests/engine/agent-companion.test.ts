@@ -4,6 +4,7 @@ import {
   allowNewConversation,
   armCompanion,
   autoJoinCompanion,
+  disarmCompanion,
   endCompanion,
   exchangeCompanion,
   sendCompanionMessage,
@@ -32,6 +33,20 @@ afterEach(() => {
 })
 
 describe('companion conversations', () => {
+  it('closing the chat before a conversation joins takes the opening back; opening it again lets one in', () => {
+    disarmCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'w1-chat-a')).toBeUndefined()
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'w1-chat-a')?.status).toBe('joined')
+    // A joined chat stays joined when it is hidden.
+    disarmCompanion()
+    expect(useCompanion.getState().owner?.session).toBe('w1-chat-a')
+    // An ended chat stays ended: hiding and reopening it does not allow a new conversation.
+    endCompanion()
+    disarmCompanion()
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'w1-chat-b')).toBeUndefined()
+  })
   it('does not accept prompts without an active session', () => {
     expect(() => sendCompanionMessage('Read this')).toThrow(/use a Fartcrobat tool/)
   })

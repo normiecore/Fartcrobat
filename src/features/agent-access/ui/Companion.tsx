@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { GripHorizontal, MessageCircle, Minus, Send, Settings, X } from 'lucide-react'
 import { invoke, openPreferences, useActiveDoc, useApp } from '@renderer/sdk'
 import { usePopupEscape } from '@renderer/ui/Menu'
+import { shimForwardsCompanion } from '@shared/agent/protocol'
 import { useInlineReview } from './reviewState'
 import { BOOT } from '../tools/common'
 import { appLabel, useAgentUi } from './store'
@@ -10,6 +11,7 @@ import {
   activitySentence,
   allowNewConversation,
   armCompanion,
+  disarmCompanion,
   endCompanion,
   sendCompanionMessage,
   useCompanion
@@ -103,6 +105,7 @@ export function AgentCompanion() {
   positionRef.current = position
   const owner = companion.owner
   const connections = status?.connections ?? []
+  const outdated = connections.find((c) => !shimForwardsCompanion(c.shimVersion))
   const provider = owner?.name ?? appLabel(connections[0]?.client.name)
   const call = calls.find(
     (c) =>
@@ -117,7 +120,12 @@ export function AgentCompanion() {
       ? 'Connect your AI app to get started.'
       : reviewing ? 'Your edits are ready to review on the page.' : activitySentence(call)
 
-  usePopupEscape(chat, () => setChat(false))
+  // Opening the chat lets the next conversation in; closing it before one joins takes that back.
+  const hideChat = () => {
+    setChat(false)
+    disarmCompanion()
+  }
+  usePopupEscape(chat, hideChat)
   useEffect(() => {
     let alive = true
     void invoke('store:get', POSITION_KEY)
@@ -144,9 +152,17 @@ export function AgentCompanion() {
   }, [])
   useEffect(() => {
     // Its conversation went away: nobody else joins until the person allows a new conversation.
-    if (owner && status && (!status.enabled || !status.connections.some((c) => c.id === owner.id)))
+    if (owner && status && (!status.enabled || !status.connections.some((c) => c.id === owner.id))) {
       endCompanion()
+      // A message half typed for that conversation must not go to the next one.
+      setDraft('')
+    }
   }, [owner, status])
+  const session = owner?.session
+  useEffect(() => {
+    // A new conversation starts without the last one's notice ("Chat ended and cleared.").
+    if (session) setNotice('')
+  }, [session])
   useEffect(() => {
     if (!loaded) return
     const fit = () => {
@@ -173,7 +189,7 @@ export function AgentCompanion() {
     void invoke('store:set', POSITION_KEY, { ...positionRef.current, minimized }).catch(() => {})
   }
   const minimize = () => {
-    setChat(false)
+    hideChat()
     useCompanion.setState({ minimized: true })
     persist(true)
   }
@@ -256,8 +272,11 @@ export function AgentCompanion() {
           aria-label={chat ? 'Hide companion chat' : 'Chat with companion'}
           aria-expanded={chat}
           onClick={() => {
-            if (!chat) armCompanion()
-            setChat(!chat)
+            if (chat) hideChat()
+            else {
+              armCompanion()
+              setChat(true)
+            }
           }}
         >
           <CompanionAvatar provider={provider} busy={busy} />
@@ -288,7 +307,7 @@ export function AgentCompanion() {
                   : `Connected to ${owner.name}`
                 : companion.autoJoin ? 'Waiting for a conversation' : 'Chat ended'}
             </span>
-            <button type="button" aria-label="Hide chat" onClick={() => setChat(false)}>
+            <button type="button" aria-label="Hide chat" onClick={hideChat}>
               <X size={14} />
             </button>
           </div>
@@ -303,6 +322,13 @@ export function AgentCompanion() {
                 <button type="button" onClick={allowNewConversation}>
                   Allow a new conversation
                 </button>
+              )}
+              {companion.autoJoin && outdated && (
+                <p className={`${P}-hint`}>
+                  {appLabel(outdated.client.name)} uses the Fartcrobat extension from an older version, which doesn’t
+                  connect to this chat by itself. Add it again in Preferences &gt; AI apps, then restart{' '}
+                  {appLabel(outdated.client.name)}.
+                </p>
               )}
               <p className={`${P}-hint`}>
                 Your desktop AI session must stay active. This companion doesn’t run its own model.

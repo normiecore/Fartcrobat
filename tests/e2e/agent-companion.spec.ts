@@ -25,6 +25,10 @@ test('companion chats with its owner, moves, minimizes and ends cleanly', async 
     const companion = page.getByRole('region', { name: 'AI companion' })
     await expect(companion).toBeVisible()
     expect(errorOf(await agent.call('companion_chat'))).toContain('Chat here')
+    // Opened and closed again before anything joined: still nobody joins.
+    await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
+    await companion.getByRole('button', { name: 'Hide chat', exact: true }).click()
+    expect(companionOf(await agent.call('get_context'))).toBeUndefined()
     await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
     await expect(companion.getByText('Waiting for a conversation', { exact: true })).toBeVisible()
     // Opened: the next call of the conversation joins, without an invitation.

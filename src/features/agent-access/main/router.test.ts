@@ -191,6 +191,14 @@ describe('agent router', () => {
     expect(JSON.stringify(sink.audits)).not.toContain('w2-chat-private')
   })
 
+  it('a shim that would drop the companion token (an extension added from 0.2.0) never joins the chat', async () => {
+    const host = new FakeHost('w1')
+    const { router } = setup(host)
+    for (const shimVersion of ['0.2.0', '0.1.0', '0.2.1', '0.10.0', '1.0.0', '0.0.0-dev']) router.call({ ...call('get_page_text', { handle: 'w1-b1-doc-1' }), shimVersion })
+    await waitFor(() => expect(host.requests).toHaveLength(6))
+    expect(host.requests.map(r => r.request.allowCompanionJoin)).toEqual([false, false, true, true, true, true])
+  })
+
   it('asks every window for list_documents and merges in window creation order', async () => {
     const host = new FakeHost('w1', 'w2', 'w3')
     host.focused = 'w2'

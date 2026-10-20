@@ -17,6 +17,25 @@
 /** Bumped when either side's messages change incompatibly. */
 export const AGENT_PROTOCOL_VERSION = 1
 
+/**
+ * The first shim that hands a result's `companion` token on to the AI app. Older ones (a Claude
+ * Desktop extension added from 0.2.0, which keeps its own copy of the shim until it is added again)
+ * drop it, so a join from their calls would leave the chat owned by a conversation that never
+ * learns its session.
+ */
+export const COMPANION_SHIM_VERSION = '0.2.1'
+
+/** The shim passes the companion token on: a release older than COMPANION_SHIM_VERSION does not. */
+export function shimForwardsCompanion(shimVersion: string): boolean {
+  const release = /^(\d+)\.(\d+)\.(\d+)$/
+  const v = release.exec(shimVersion)
+  // Development and unknown builds are taken as current.
+  if (!v) return true
+  const min = release.exec(COMPANION_SHIM_VERSION)!
+  for (let i = 1; i <= 3; i++) if (Number(v[i]) !== Number(min[i])) return Number(v[i]) > Number(min[i])
+  return true
+}
+
 /** Folder under userData that holds the endpoint file, the app file and the audit log. */
 export const AGENT_DIR = 'agent-access'
 /** Written on every start while agent access is on, removed on quit or when it is turned off. */

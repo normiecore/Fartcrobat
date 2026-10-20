@@ -49,6 +49,12 @@ export function armCompanion() {
   if (!s.owner && !s.ended && !s.autoJoin) useCompanion.setState({ autoJoin: true })
 }
 
+/** The person closed or minimized the chat before a conversation joined: nobody joins until it is opened again. */
+export function disarmCompanion() {
+  const s = useCompanion.getState()
+  if (!s.owner && s.autoJoin) useCompanion.setState({ autoJoin: false })
+}
+
 /** "Allow a new conversation" after the chat ended. */
 export function allowNewConversation() {
   if (!useCompanion.getState().owner) useCompanion.setState({ autoJoin: true, ended: false })

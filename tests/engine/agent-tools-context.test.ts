@@ -475,7 +475,7 @@ describe('list_signatures output', () => {
 
 describe('activity panel state', () => {
   it('names AI apps and their connection', () => {
-    const conn = (id: number, name: string): AgentConnectionInfo => ({ id, client: { name, version: '1.0' }, since: 0, running: 0 })
+    const conn = (id: number, name: string): AgentConnectionInfo => ({ id, client: { name, version: '1.0' }, shimVersion: '0.2.1', since: 0, running: 0 })
     expect(appLabel('claude-ai')).toBe('Claude')
     expect(appLabel('Claude Code')).toBe('Claude')
     expect(appLabel('cursor')).toBe('cursor')

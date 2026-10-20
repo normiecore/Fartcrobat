@@ -6,7 +6,7 @@ import type {
   AgentCallRequest,
   AgentProgress
 } from '@shared/agent/bridge'
-import type { AgentClientInfo, AgentErrorCode, AgentToolResult } from '@shared/agent/protocol'
+import { shimForwardsCompanion, type AgentClientInfo, type AgentErrorCode, type AgentToolResult } from '@shared/agent/protocol'
 import { agentTool } from '@shared/agent/tools'
 import { auditEntry } from './audit'
 
@@ -30,6 +30,8 @@ export interface WindowHost {
 export interface RouterCall {
   connectionId: number
   client: AgentClientInfo
+  /** The shim's version; unknown is taken as current. */
+  shimVersion?: string
   /** The shim's id (unique per connection). */
   id: string
   tool: string
@@ -348,7 +350,9 @@ export class AgentRouter {
         client,
         windowId: t.windowId,
         currentWindow,
-        allowCompanionJoin: !p.fanOut || p.companionWindow === t.windowId,
+        allowCompanionJoin:
+          (p.call.shimVersion === undefined || shimForwardsCompanion(p.call.shimVersion)) &&
+          (!p.fanOut || p.companionWindow === t.windowId),
         tool,
         args
       })
