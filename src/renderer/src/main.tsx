@@ -84,8 +84,9 @@ async function boot() {
       const doc = getActiveDoc()
       unsubDoc = doc
         ? doc.store.subscribe((ds, dp) => {
-            // Menu-visible state only: replies that change nothing no longer notify (applyChanges).
-            if (ds.dirty !== dp.dirty || ds.title !== dp.title || ds.journal !== dp.journal || ds.selection !== dp.selection || ds.layout !== dp.layout || ds.zoomMode !== dp.zoomMode || ds.showAnnotations !== dp.showAnnotations || ds.info !== dp.info)
+            // Everything the native menu reads (enabled states, check marks): replies that change
+            // nothing no longer notify (applyChanges). Back/forward history moves with currentPage.
+            if (ds.dirty !== dp.dirty || ds.title !== dp.title || ds.journal !== dp.journal || ds.selection !== dp.selection || ds.layout !== dp.layout || ds.zoomMode !== dp.zoomMode || ds.showAnnotations !== dp.showAnnotations || ds.info !== dp.info || ds.currentPage !== dp.currentPage || ds.search !== dp.search || ds.coverPage !== dp.coverPage)
               refreshChrome()
           })
         : null

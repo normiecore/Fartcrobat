@@ -22,6 +22,11 @@ export interface InlineReview {
   /** How many cards (in reading order) are shown so far. */
   revealed: number
   selected: number
+  /**
+   * The card a decision left selected because no shown card was pending, or -1. The next card to
+   * arrive takes the selection from it; a card the person picks (patchReview) never loses it.
+   */
+  advanceFrom: number
   hovered: number
   showOriginal: boolean
   /** Edits are being checked (clicks wait), or the preview is being updated. */
@@ -35,7 +40,7 @@ export const useInlineReview = create<{ review: InlineReview | null }>(() => ({ 
 export function patchReview(patch: Partial<Pick<InlineReview, 'selected' | 'hovered' | 'showOriginal'>>) {
   const review = useInlineReview.getState().review
   if (review && Object.entries(patch).some(([k, v]) => review[k as keyof InlineReview] !== v))
-    useInlineReview.setState({ review: { ...review, ...patch } })
+    useInlineReview.setState({ review: { ...review, ...patch, ...('selected' in patch ? { advanceFrom: -1 } : {}) } })
 }
 
 /** About 0.4 s per change, at most about 6 s in all. */
@@ -150,9 +155,10 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
       const r = get()
       if (!r || r.revealed >= count) return
       const card = order[r.revealed]
-      // The person decided the card they were on: the arriving one is next (A, A, A... works).
-      const selected = r.decisions[r.selected] !== 'pending' && r.decisions[card] === 'pending' ? card : r.selected
-      update({ revealed: r.revealed + 1, selected })
+      // The person decided the card they were on and nothing shown was pending: the arriving one
+      // is next (A, A, A... works). A card they went back to themselves keeps the selection.
+      const advance = r.advanceFrom >= 0 && r.advanceFrom === r.selected && r.decisions[card] === 'pending'
+      update({ revealed: r.revealed + 1, ...(advance ? { selected: card, advanceFrom: -1 } : {}) })
       options.onReveal?.(card)
       if (r.revealed + 1 < count) revealTimer = setTimeout(reveal, step)
     }
@@ -220,8 +226,10 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
       if (!valid.length) return
       const prev = current.decisions
       const next = prev.map((d, i) => (valid.includes(i) ? (accept ? 'accepted' : 'rejected') : d)) as Decision[]
-      const selected = valid.includes(current.selected) ? nextPending(current, next, current.selected) : current.selected
-      update({ decisions: next, selected, error: '' })
+      const decidedSelected = valid.includes(current.selected)
+      const selected = decidedSelected ? nextPending(current, next, current.selected) : current.selected
+      const advanceFrom = decidedSelected ? (selected === current.selected ? selected : -1) : current.advanceFrom
+      update({ decisions: next, selected, advanceFrom, error: '' })
       if (mode !== 'edit') {
         if (rejectedOf(current, next).join() !== rejectedOf(current, prev).join()) scheduleRevise()
         return maybeFinish()
@@ -277,6 +285,7 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
         rank,
         revealed: step > 0 ? 0 : count,
         selected: order.find((c) => report.changes[c].rejectable) ?? 0,
+        advanceFrom: -1,
         hovered: -1,
         showOriginal: false,
         busy: '',

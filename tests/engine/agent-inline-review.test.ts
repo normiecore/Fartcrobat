@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { REVISE_DELAY_MS, startReview, useInlineReview, type ReviewOptions } from '@features/agent-access/ui/reviewState'
+import { REVISE_DELAY_MS, patchReview, startReview, useInlineReview, type ReviewOptions } from '@features/agent-access/ui/reviewState'
 import type { ProposalCheck, ReviewChange, TextPreview } from '@features/agent-access/engine'
 import type { Rect } from '@shared/geometry'
 
@@ -206,6 +206,21 @@ describe('live reveal', () => {
     await review().decide([1], false)
     expect(review().selected).toBe(1)
     expect(review().decisions).toEqual(['pending', 'rejected', 'accepted'])
+  })
+  it('a decided card the person went back to keeps the selection while changes arrive', async () => {
+    vi.useFakeTimers()
+    const ten = preview(Array.from({ length: 10 }, (_, i) => change(i, 1, [72, 20 + i * 30, 300, 40 + i * 30])))
+    startReview(options({ report: ten, revealStep: 400 }))
+    await vi.advanceTimersByTimeAsync(1100)
+    expect(review().revealed).toBe(3)
+    await review().decide([0], true)
+    await review().decide([1], true)
+    patchReview({ selected: 0 })
+    await vi.advanceTimersByTimeAsync(400)
+    expect(review().revealed).toBe(4)
+    expect(review().selected).toBe(0)
+    await review().decide([review().selected], false)
+    expect(review().decisions.slice(0, 4)).toEqual(['rejected', 'accepted', 'pending', 'pending'])
   })
   it('caps the whole reveal at about 6 seconds', async () => {
     vi.useFakeTimers()
