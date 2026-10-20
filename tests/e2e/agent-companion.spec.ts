@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { fixturePath, waitForRender } from './helpers'
+import { fixturePath, runCommand, waitForRender } from './helpers'
 import { startSession, startShim, dataOf, errorOf, expectAudit } from './agent-helpers'
 
 /** The companion block a tool result carries when its conversation joined the chat. */
@@ -30,6 +30,12 @@ test('companion chats with its owner, moves, minimizes and ends cleanly', async 
     await companion.getByRole('button', { name: 'Hide chat', exact: true }).click()
     expect(companionOf(await agent.call('get_context'))).toBeUndefined()
     await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
+    await expect(companion.getByText('Waiting for a conversation', { exact: true })).toBeVisible()
+    // Read Mode hides the open chat, and Escape there leaves Read Mode, not the hidden chat.
+    await runCommand(page, 'view.readMode')
+    await expect(companion).toBeHidden()
+    await page.keyboard.press('Escape')
+    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().readMode)).toBe(false)
     await expect(companion.getByText('Waiting for a conversation', { exact: true })).toBeVisible()
     // Opened: the next call of the conversation joins, without an invitation.
     const session = companionOf(await agent.call('get_context'))!.session

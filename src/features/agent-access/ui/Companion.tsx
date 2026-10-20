@@ -125,7 +125,9 @@ export function AgentCompanion() {
     setChat(false)
     disarmCompanion()
   }
-  usePopupEscape(chat, hideChat)
+  const hidden = !loaded || readMode || companion.minimized || (!connections.length && !companion.revealed && !owner)
+  // Only a chat on screen takes Escape: in Read Mode it leaves Read Mode.
+  usePopupEscape(chat && !hidden, hideChat)
   useEffect(() => {
     let alive = true
     void invoke('store:get', POSITION_KEY)
@@ -193,8 +195,7 @@ export function AgentCompanion() {
     useCompanion.setState({ minimized: true })
     persist(true)
   }
-  if (!loaded || readMode || companion.minimized || (!connections.length && !companion.revealed && !owner))
-    return null
+  if (hidden) return null
   const pending = companion.messages.some((m) => m.role === 'user' && !m.delivered)
   return createPortal(
     <section ref={root} className={P} style={{ left: position.x, top: position.y }} aria-label="AI companion">
