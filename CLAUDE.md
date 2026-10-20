@@ -17,7 +17,9 @@ Office conversion when installed, with a built-in fallback.
 - From 0.2.1 on a release has one file per kind of computer (Windows x64 and arm64 installers, no
   combined one; Mac `.dmg` for arm64 and x64, both named; Ubuntu/Debian `.deb`; AppImage for other
   Linux). `scripts/release-downloads.mjs` holds the table that README.md (Install) and the top of
-  the release notes show, and each release build checks its files against it.
+  the release notes show, and each release build checks its files against it. Merge #18 (which
+  makes that change) before #17: #17 publishes 0.2.1 as soon as its version bump reaches `main`,
+  and both edit the publish step of `release.yml`.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
   access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate

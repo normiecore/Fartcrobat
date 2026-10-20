@@ -134,7 +134,8 @@ jobs:
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
             # The notes written on GitHub keep their text, under the download table.
             gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/body.md"
-            if ! grep -q '^## Download$' "$RUNNER_TEMP/body.md"; then
+            # [[:space:]]: a body saved on GitHub's web page has CRLF line ends.
+          if ! grep -qE '^## Download[[:space:]]*$' "$RUNNER_TEMP/body.md"; then
               { cat "$RUNNER_TEMP/downloads.md"; echo; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/notes.md"
               gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
             fi

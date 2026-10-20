@@ -115,7 +115,9 @@ AppImages, in detail:
   it (and that it made no other installer). 0.2.0 also shipped one Windows installer for both
   processors; from 0.2.1 on `nsis.buildUniversalInstaller` is off. An install keeps the installer it
   ran for its next update's differential download, and the updater picks the installer for its own
-  processor, so an install made with the combined installer gets a full download once.
+  processor, so an install made with the combined installer gets a full download once. The arm64
+  installer stops on an x64 PC and names the x64 file (`build/installer.nsh`, `customInit`): it
+  would otherwise unpack nothing there.
 - A release written on GitHub first must be saved as a draft, not published, until the workflow
   has attached the installers: installed copies offer the latest published release at once, and
   would find no update metadata (or, while files are being replaced, metadata for files that are

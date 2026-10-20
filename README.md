@@ -78,12 +78,20 @@ computer. Download the one for yours and open it:
 
 - Not sure which? On Windows, Settings > System > About says "x64-based processor" or "ARM-based
   processor". On a Mac, Apple menu > About This Mac says "Chip Apple M..." or "Processor ... Intel".
-- The installers are not code signed yet. Windows may say "Windows protected your PC": choose More
-  info, then Run anyway. macOS may say it could not verify Fartcrobat: open System Settings >
-  Privacy & Security and choose Open Anyway.
-- On Ubuntu and Debian, open the `.deb` with App Center or run `sudo apt install ./<file>`. The
-  AppImage updates itself and needs FUSE 2 (`sudo apt install libfuse2t64` on Ubuntu 24.04,
-  `libfuse2` before).
+- Windows: open the `.exe`. The installers are not code signed yet: if the browser says the file
+  isn't commonly downloaded, choose Keep; if Windows says "Windows protected your PC", choose More
+  info, then Run anyway. The arm64 installer stops on an x64 PC and says which file to get.
+- Mac: open the `.dmg` and drag Fartcrobat to Applications. If macOS says it could not verify
+  Fartcrobat, open System Settings > Privacy & Security and choose Open Anyway.
+- Ubuntu: open the `.deb` with App Center (Debian, Mint, Pop!_OS: with your software installer), or
+  run `sudo apt install ./<file>` in the folder you downloaded it to. Take the `.deb` on Ubuntu:
+  on 24.04 the AppImage starts without Chromium's sandbox (Ubuntu limits the user namespaces it
+  needs, and the `.deb` installs the AppArmor profile that allows them).
+- AppImage: make it executable first (right-click > Properties > Executable as Program, or
+  `chmod +x Fartcrobat-x86_64.AppImage`), then open it. It updates itself, and it needs FUSE 2:
+  `sudo apt install libfuse2t64` on Ubuntu 24.04 and later, `libfuse2` on 22.04.
+- 0.2.0, the release before this table, names its Intel Mac file `Fartcrobat-0.2.0.dmg` and also
+  has `Fartcrobat-Setup-0.2.0.exe`, one Windows installer for both processors.
 - The other files of a release are for in-app updates (`.zip`, `.blockmap`, `latest*.yml`) and for
   unpacking by hand (`.tar.gz`).
 

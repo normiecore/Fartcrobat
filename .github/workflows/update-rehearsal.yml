@@ -87,6 +87,14 @@ jobs:
       - run: npm run dist:win -- --publish never "-c.extraMetadata.version=${{ needs.versions.outputs.new }}" "-c.directories.output=build-new"
       # One installer per processor, the files the download table names (scripts/release-downloads.mjs).
       - run: node scripts/release-downloads.mjs --dir build-new --version "${{ needs.versions.outputs.new }}" --platform win
+      # The arm64 installer stops on this x64 PC instead of installing nothing (build/installer.nsh).
+      - name: The arm64 installer refuses an x64 PC
+        run: |
+          $p = Start-Process -FilePath "build-new\Fartcrobat-Setup-${{ needs.versions.outputs.new }}-arm64.exe" -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 1) { throw "The arm64 installer exited with $($p.ExitCode) on x64, not 1" }
+          reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall /s /f Fartcrobat 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'The arm64 installer installed something on x64' }
+          $global:LASTEXITCODE = 0
       - uses: actions/upload-artifact@v4
         with:
           name: rehearsal-windows-build
@@ -253,9 +261,12 @@ jobs:
           dir="$RUNNER_TEMP/appimage"
           gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p Fartcrobat-x86_64.AppImage -D "$dir"
           chmod +x "$dir/Fartcrobat-x86_64.AppImage"
+          # The AppImage's launcher (AppRun) turns Chromium's sandbox off when this fails.
+          if unshare -Ur true 2>/dev/null; then sandbox="with Chromium's sandbox"; else sandbox="without Chromium's sandbox (its launcher adds --no-sandbox when user namespaces are unavailable)"; fi
           status=0
-          APPIMAGE_EXTRACT_AND_RUN=1 FARTCROBAT_UPDATE_CHECKS=0 timeout 20 xvfb-run -a "$dir/Fartcrobat-x86_64.AppImage" > "$dir/log.txt" 2>&1 || status=$?
-          if [ "$status" = 124 ]; then result="It was still running after 20 s."; else result="It stopped with status $status."; fi
+          APPIMAGE_EXTRACT_AND_RUN=1 FARTCROBAT_UPDATE_CHECKS=0 timeout -k 5 20 xvfb-run -a "$dir/Fartcrobat-x86_64.AppImage" > "$dir/log.txt" 2>&1 || status=$?
+          if [ "$status" = 124 ]; then result="It was still running after 20 s, $sandbox."; else result="It stopped with status $status."; fi
+          pkill -f appimage_extracted_ || true
           {
             echo "### The released AppImage where AppArmor limits user namespaces (Ubuntu 24.04 desktops)"
             echo
@@ -264,7 +275,7 @@ jobs:
             echo '```'
             tail -n 15 "$dir/log.txt"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:

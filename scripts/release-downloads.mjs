@@ -56,11 +56,17 @@ export function releaseNotes(version) {
     'Not sure which? On Windows, Settings > System > About says "x64-based processor" or "ARM-based processor". ' +
       'On a Mac, Apple menu > About This Mac says "Chip Apple M..." for Apple silicon or "Processor ... Intel".',
     '',
-    'The installers are not code signed yet. Windows may say "Windows protected your PC": choose More info, then Run anyway. ' +
-      'macOS may say it could not verify Fartcrobat: open System Settings > Privacy & Security and choose Open Anyway.',
+    'The installers are not code signed yet. Windows: if the browser says the file isn\'t commonly downloaded, choose Keep; ' +
+      'if Windows says "Windows protected your PC", choose More info, then Run anyway. ' +
+      'Mac: open the .dmg and drag Fartcrobat to Applications; if macOS says it could not verify Fartcrobat, ' +
+      'open System Settings > Privacy & Security and choose Open Anyway.',
     '',
-    `On Ubuntu and Debian, open the .deb with App Center or run \`sudo apt install ./fartcrobat_${version}_amd64.deb\`. ` +
-      'The AppImage updates itself and needs FUSE 2 (on Ubuntu 22.04 and later: `sudo apt install libfuse2t64`, or `libfuse2` before 24.04).',
+    'Ubuntu: open the .deb with App Center (Debian, Mint, Pop!_OS: with your software installer), or run ' +
+      `\`sudo apt install ./fartcrobat_${version}_amd64.deb\` in the folder you downloaded it to. ` +
+      "On Ubuntu take the .deb: on 24.04 the AppImage starts without Chromium's sandbox.",
+    '',
+    'AppImage: make it executable first (right-click > Properties > Executable as Program, or `chmod +x Fartcrobat-x86_64.AppImage`). ' +
+      'It updates itself and needs FUSE 2: `sudo apt install libfuse2t64` on Ubuntu 24.04 and later, `libfuse2` on 22.04.',
     '',
     'The other files are for in-app updates (.zip, .blockmap, latest*.yml) and for unpacking by hand (.tar.gz).',
     ''
