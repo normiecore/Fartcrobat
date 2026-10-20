@@ -105,6 +105,8 @@ jobs:
           reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall /s /f Fartcrobat 2>$null
           if ($LASTEXITCODE -eq 0) { throw 'The arm64 installer installed something on x64' }
           $global:LASTEXITCODE = 0
+      # Kept as long as GitHub allows re-runs (30 days): "Re-run failed jobs" re-runs only the
+      # windows legs, and they download this build from the first attempt.
       - uses: actions/upload-artifact@v4
         with:
           name: rehearsal-windows-build
@@ -112,7 +114,7 @@ jobs:
             build-new/latest.yml
             build-new/*.exe
             build-new/*.blockmap
-          retention-days: 3
+          retention-days: 30
 
   windows:
     needs: [versions, windows-build]
