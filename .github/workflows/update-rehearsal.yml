@@ -78,6 +78,8 @@ jobs:
           name: rehearsal-linux
           path: ${{ runner.temp }}/rehearsal/out/
           retention-days: 14
+          # "Re-run failed jobs" uploads again under the same name.
+          overwrite: true
 
   windows-build:
     needs: versions
@@ -170,6 +172,8 @@ jobs:
           name: rehearsal-windows-${{ matrix.scope }}-${{ matrix.scenario }}-${{ matrix.installer }}
           path: ${{ runner.temp }}\rehearsal\out\
           retention-days: 14
+          # "Re-run failed jobs" uploads again under the same name.
+          overwrite: true
 
   # The released Mac app tells people about the next version and sends them to its release page
   # (it installs updates only once releases are Developer ID signed).
@@ -216,6 +220,8 @@ jobs:
           name: rehearsal-mac
           path: ${{ runner.temp }}/rehearsal/out/
           retention-days: 14
+          # "Re-run failed jobs" uploads again under the same name.
+          overwrite: true
 
   # The released .deb, on Ubuntu 24.04 as a desktop has it, tells people about the next version and
   # sends them to its release page (installing needs a root password prompt).
@@ -293,3 +299,5 @@ jobs:
           name: rehearsal-deb
           path: ${{ runner.temp }}/rehearsal/out/
           retention-days: 14
+          # "Re-run failed jobs" uploads again under the same name.
+          overwrite: true
