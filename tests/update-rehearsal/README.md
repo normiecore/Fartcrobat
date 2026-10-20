@@ -28,8 +28,8 @@ version people have installed is what has to work, and it can only be tried with
 | A download that does not match its published checksum is refused | yes | |
 | The machine policy turns updates off: no request reaches GitHub | `/etc/fartcrobat/policy.json` | `AutoUpdate`=0 |
 
-Each run writes screenshots, the requests the app made (`*-requests.txt`) and how much the download
-fetched (`*-download.txt`) to its `out/` folder.
+Each run writes screenshots, the requests the app made in each scenario (`*-requests.txt`) and how the
+download went (`*-download.txt`: differential or full, how many bytes) to its `out/` folder.
 
 ## Running it
 
@@ -51,6 +51,18 @@ fetched (`*-download.txt`) to its `out/` folder.
 
 - macOS: updates only notify there until releases are Developer ID signed (backlog 1).
 - The real github.com: after publishing, start the previous version once and let it update.
-- SmartScreen and Gatekeeper, and the installer's own windows (the update installs silently).
+- SmartScreen and Gatekeeper, and the installer's own windows.
+- UAC: GitHub's Windows runners run every step as an administrator and elevate without asking, so
+  the per-machine run covers replacing the files in Program Files and the HKLM entries, but not the
+  UAC prompt a per-machine update shows on a normal machine, a cancelled prompt (the installer
+  quits and Fartcrobat stays closed), or a standard user who cannot approve it. Try those by hand
+  after publishing (`docs/features/updates.md`, Testing).
+- The rehearsed build's own updater: the new version only starts and checks for updates. Its
+  download and install run when the next release is rehearsed with it as the old version (unit
+  tests and `tests/e2e/updates.spec.ts` cover that code until then).
+- A differential download on Windows: the rehearsal installs the combined x64 and arm64 installer,
+  which is what an install keeps for the next update, while the updater picks the x64 installer and
+  its blockmap. So the first update of such an install falls back to a full download (the
+  `*-download.txt` report says which happened). On Linux the download must be differential.
 - Mounting the AppImage with FUSE: the rehearsal runs it with `APPIMAGE_EXTRACT_AND_RUN=1`, which
   still sets `APPIMAGE`, the file the update replaces.

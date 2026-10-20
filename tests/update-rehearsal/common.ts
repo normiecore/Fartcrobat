@@ -77,6 +77,23 @@ export function describe(requests: GitHubRequest[]): string[] {
   return requests.map((r) => `${r.status} ${r.method} ${r.host ?? ''}${r.path ?? ''}${r.range ? ` [${r.range}]` : ''}${r.accept?.includes('json') ? ' (json)' : ''}`)
 }
 
+/**
+ * How the update was fetched from the asset host. A differential download makes only range
+ * requests; when it fails, electron-updater quietly downloads the whole file instead (a 200).
+ */
+export function downloadSummary(parts: GitHubRequest[]): { differential: boolean; text: string } {
+  const files = [...new Set(parts.map((r) => r.path?.split('/').pop()))].join(', ')
+  const bytes = parts.reduce((n, r) => n + (r.bytes ?? 0), 0)
+  const full = parts.filter((r) => r.status === 200 && !r.range).length
+  const differential = parts.length > 0 && parts.every((r) => r.status === 206 && !!r.range)
+  const how = differential
+    ? 'differential (byte ranges only)'
+    : full
+      ? `full download, after ${parts.length - full} range requests`
+      : `statuses ${[...new Set(parts.map((r) => r.status))].join(',')}`
+  return { differential, text: `${files || 'nothing'}: ${parts.length} requests, ${bytes} bytes, ${how}` }
+}
+
 /** Base64 SHA-512 of a file, as latest*.yml writes it. */
 export function sha512(file: string): Promise<string> {
   return new Promise((resolve, reject) => {

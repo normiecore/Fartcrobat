@@ -68,7 +68,9 @@ chmod 755 "$HOME_DIR"
 node "$ROOT/tests/update-rehearsal/make-certs.mjs" "$WORK/tls"
 install -d -o "$TEST_USER" -g "$TEST_USER" "$HOME_DIR/.pki/nssdb"
 install -o "$TEST_USER" -m 644 "$WORK/tls/ca.pem" "$HOME_DIR/.pki/rehearsal-ca.pem"
-runuser -u "$TEST_USER" -- sh -c "certutil -d sql:$HOME_DIR/.pki/nssdb -N --empty-password 2>/dev/null || true"
+# A database from an earlier run is kept (certutil -N would ask for its password).
+[ -f "$HOME_DIR/.pki/nssdb/cert9.db" ] ||
+  runuser -u "$TEST_USER" -- certutil -d "sql:$HOME_DIR/.pki/nssdb" -N --empty-password </dev/null
 runuser -u "$TEST_USER" -- certutil -d "sql:$HOME_DIR/.pki/nssdb" -D -n 'Fartcrobat Update Rehearsal CA' 2>/dev/null || true
 runuser -u "$TEST_USER" -- certutil -d "sql:$HOME_DIR/.pki/nssdb" -A -t 'C,,' -n 'Fartcrobat Update Rehearsal CA' -i "$HOME_DIR/.pki/rehearsal-ca.pem"
 

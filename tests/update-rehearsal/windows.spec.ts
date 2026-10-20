@@ -6,7 +6,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import { execFileSync, type ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { checkFromHelpMenu, describe, downloadUpdate, env, HERE, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
+import { checkFromHelpMenu, describe, downloadSummary, downloadUpdate, env, HERE, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
 
 const WORK = env('REHEARSAL_WORK')
 const OLD = env('REHEARSAL_OLD')
@@ -43,15 +43,18 @@ async function install() {
   const installer = join(RELEASES, `v${OLD}`, `Fartcrobat-Setup-${OLD}.exe`)
   execFileSync(installer, SCOPE === 'machine' ? ['/S', '/allusers'] : ['/S'], { stdio: 'inherit', timeout: 10 * 60_000 })
   await expect
-    .poll(() => installed()?.version, { timeout: 60_000, message: `The ${OLD} installer left no entry for this scope:\n${uninstallEntries()}` })
+    .poll(() => installed()?.version, { timeout: 60_000 })
     .toBe(OLD)
+    .catch((err: Error) => {
+      throw new Error(`The ${OLD} installer left no entry for this scope:\n${uninstallEntries()}\n\n${err.message}`)
+    })
   // The installer may start the app when it finishes; the scenarios start it themselves.
   killApps()
 }
 
 function reg(args: string[]): string {
   try {
-    return execFileSync('reg', ['query', ...args], { encoding: 'utf8' })
+    return execFileSync('reg', ['query', ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
   } catch {
     return ''
   }
@@ -124,16 +127,19 @@ async function waitForExit(proc: ChildProcess) {
   await new Promise<void>((resolve) => proc.once('exit', () => resolve()))
 }
 
+/**
+ * Writes what the app asked the fake GitHub, and how it downloaded the installer. Not asserted to
+ * be differential: an install made with the combined x64 + arm64 installer (the one installed
+ * here) caches that file, while the updater picks the x64 installer and its blockmap, so its first
+ * update falls back to a full download (README.md).
+ */
 async function report() {
   const reqs = await gh.requests()
   writeFileSync(join(OUT, `${SCOPE}-${SCENARIO}-requests.txt`), describe(reqs).join('\n') + '\n')
-  const parts = reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' && /\.exe$/.test(r.path ?? ''))
-  writeFileSync(
-    join(OUT, `${SCOPE}-${SCENARIO}-download.txt`),
-    `${[...new Set(parts.map((r) => r.path?.split('/').pop()))].join(', ')}: ${parts.length} requests, ` +
-      `${parts.reduce((n, r) => n + (r.bytes ?? 0), 0)} bytes, statuses ${[...new Set(parts.map((r) => r.status))].join(',')}\n`
-  )
-  return reqs
+  const download = downloadSummary(reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' && /\.exe$/.test(r.path ?? '')))
+  writeFileSync(join(OUT, `${SCOPE}-${SCENARIO}-download.txt`), download.text + '\n')
+  console.log(`Download: ${download.text}`)
+  return { reqs, download }
 }
 
 test(`${SCOPE}: Restart now asks about unsaved changes, then installs ${NEW} and starts it`, async () => {
@@ -166,9 +172,10 @@ test(`${SCOPE}: Restart now asks about unsaved changes, then installs ${NEW} and
   expect(running()).toBeGreaterThan(0)
   killApps()
 
-  const reqs = await report()
+  const { reqs } = await report()
   expect(reqs.filter((r) => r.refused && /github/.test(r.host ?? ''))).toEqual([])
   expect(reqs.some((r) => r.path?.endsWith(`/releases/download/v${NEW}/latest.yml`))).toBe(true)
+  expect(reqs.some((r) => r.host === 'release-assets.githubusercontent.com' && r.path?.includes(`/v${NEW}/`))).toBe(true)
 
   const again = await startApp()
   try {
@@ -207,7 +214,7 @@ test(`${SCOPE}: AutoUpdate=0 under ${POLICY_KEY}: no request reaches GitHub`, as
     await shot(page, `${SCOPE}-policy`)
     await new Promise((r) => setTimeout(r, 40_000))
     await app.close().catch(() => {})
-    const reqs = await report()
+    const { reqs } = await report()
     expect(reqs.filter((r) => r.host === 'github.com' || r.host === 'release-assets.githubusercontent.com')).toEqual([])
   } finally {
     execFileSync('reg', ['delete', POLICY_KEY, '/f'], { stdio: 'ignore' })

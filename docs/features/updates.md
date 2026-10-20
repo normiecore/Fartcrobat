@@ -135,5 +135,8 @@ AppImages, in detail:
   AppImage with `linux.sh` (root, throwaway machine); Windows per user and per machine in
   `.github/workflows/update-rehearsal.yml`. On 20 Oct 2026 the released 0.2.0 AppImage passed all
   four scenarios.
+  The Windows runners elevate without asking, so a per-machine update's UAC prompt is not covered.
 - Manual, after publishing a release: start the previous version once on each platform and let it
-  update from the real github.com.
+  update from the real github.com, including a Windows per-machine install on a machine with UAC
+  on, once as an administrator and once as a standard user (and cancel the prompt once: the
+  installer quits and Fartcrobat stays closed).

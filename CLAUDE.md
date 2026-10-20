@@ -41,7 +41,9 @@ Office conversion when installed, with a built-in fallback.
     released 0.2.0 AppImage updated itself to a test 0.2.1 from a fake GitHub on 20 Oct 2026
     (Restart now, Later, a wrong checksum, the policy off: all pass). The Windows half (per user,
     per machine) runs in `.github/workflows/update-rehearsal.yml`. Run it before each release; after
-    publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform.
+    publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform,
+    and try a Windows per-machine install with UAC on (as an administrator and as a standard
+    user): the runners elevate without asking, so the rehearsal cannot show the UAC prompt.
 - **Agent access** (`docs/features/agent-access.md`): merged with the review fixes from #9. Known
   gaps are listed in #9 and backlog items 15 and 16. Nothing has been tried on Windows or with a
   real Claude Desktop yet.

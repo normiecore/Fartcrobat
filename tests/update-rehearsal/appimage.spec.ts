@@ -9,8 +9,9 @@ import { join } from 'node:path'
 import {
   checkFromHelpMenu,
   describe,
-  HERE,
+  downloadSummary,
   downloadUpdate,
+  HERE,
   env,
   sha512,
   shot,
@@ -109,8 +110,9 @@ async function waitForExit(proc: ChildProcess) {
   await new Promise<void>((resolve) => proc.once('exit', () => resolve()))
 }
 
-async function report(name: string) {
-  const reqs = await gh.requests()
+/** Writes the requests of one scenario (from its first) to out/<name>-requests.txt and returns them. */
+async function report(name: string, from: number) {
+  const reqs = (await gh.requests()).slice(from)
   writeFileSync(join(WORK, 'out', `${name}-requests.txt`), describe(reqs).join('\n') + '\n')
   return reqs
 }
@@ -152,19 +154,19 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
   expect(appProcesses().length).toBeGreaterThan(0)
   killApps()
 
-  const reqs = (await report('restart-now')).slice(before)
+  const reqs = await report('restart-now', before)
   // The release was found and downloaded from GitHub only, and in parts (differential download).
   // Other hosts the app tried are refused; they are listed in out/, not part of the update.
   const others = reqs.filter((r) => r.refused)
   writeFileSync(join(WORK, 'out', 'other-hosts.txt'), [...new Set(others.map((r) => r.host))].join('\n') + '\n')
   expect(others.filter((r) => /github/.test(r.host ?? ''))).toEqual([])
   expect(reqs.some((r) => r.path?.endsWith(`/releases/download/v${NEW}/latest-linux.yml`))).toBe(true)
-  const parts = reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' && r.path?.endsWith('.AppImage'))
-  expect(parts.length).toBeGreaterThan(0)
-  writeFileSync(
-    join(WORK, 'out', 'restart-now-download.txt'),
-    `${parts.length} requests, ${parts.reduce((n, r) => n + (r.bytes ?? 0), 0)} bytes, statuses ${[...new Set(parts.map((r) => r.status))].join(',')}\n`
+  const download = downloadSummary(
+    reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' && r.path?.endsWith('.AppImage'))
   )
+  writeFileSync(join(WORK, 'out', 'restart-now-download.txt'), download.text + '\n')
+  console.log(`Download: ${download.text}`)
+  expect(download.differential, download.text).toBe(true)
 
   // The new version, started again: it is NEW and up to date.
   const again = await startApp()
@@ -205,6 +207,8 @@ test('a download that does not match its published checksum is refused, and the 
     await expect(card).toContainText('Fartcrobat 99.0.0 is available.', { timeout: 60_000 })
     await card.getByRole('button', { name: 'Download' }).click()
     await expect(card.getByRole('button', { name: 'Try again' })).toBeVisible({ timeout: 240_000 })
+    // Refused for its checksum, not for any other failure (all of which also offer Try again).
+    await expect(card).toContainText('The downloaded update was damaged.')
     await shot(page, 'appimage-tampered')
     await app.close().catch(() => {})
     await waitForExit(proc)
@@ -227,7 +231,7 @@ test('autoUpdate off in policy.json: no request reaches GitHub', async () => {
     // Past the automatic check, which comes 30 s after start.
     await new Promise((r) => setTimeout(r, 40_000))
     await app.close().catch(() => {})
-    const reqs = (await report('policy-off')).slice(before)
+    const reqs = await report('policy-off', before)
     expect(reqs.filter((r) => r.host === 'github.com' || r.host === 'release-assets.githubusercontent.com')).toEqual([])
   } finally {
     rmSync(POLICY, { force: true })
