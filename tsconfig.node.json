@@ -22,6 +22,7 @@
     "src/features/*/main/**/*",
     "src/features/digital-signatures/lib/**/*",
     "src/agent-shim/**/*",
-    "tests/e2e/**/*"
+    "tests/e2e/**/*",
+    "tests/update-rehearsal/**/*"
   ]
 }

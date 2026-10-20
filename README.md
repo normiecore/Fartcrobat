@@ -64,17 +64,50 @@ the app makes by itself is a check for a new release on GitHub (see Updates belo
 
 ## Install
 
-Installers are built by GitHub Actions for each tagged release: `.exe` (Windows, x64 and arm64),
-`.dmg` and `.zip` (macOS), `.AppImage`, `.deb` and `.tar.gz` (Linux). Each registers Fartcrobat
-as a handler for `.pdf` files.
+Each [release](https://github.com/normiecore/Fartcrobat/releases/latest) has one file per kind of
+computer. Download the one for yours and open it:
+
+| Your computer | File |
+| --- | --- |
+| Windows (most PCs) | `Fartcrobat-Setup-<version>-x64.exe` |
+| Windows on Arm (Snapdragon, Surface Pro X) | `Fartcrobat-Setup-<version>-arm64.exe` |
+| Mac with Apple silicon (M1 or later) | `Fartcrobat-<version>-arm64.dmg` |
+| Mac with an Intel processor | `Fartcrobat-<version>-x64.dmg` |
+| Ubuntu, Debian, Linux Mint, Pop!_OS | `fartcrobat_<version>_amd64.deb` |
+| Other Linux (Fedora, Arch, openSUSE...) | `Fartcrobat-x86_64.AppImage` |
+
+- Not sure which? On Windows, Settings > System > About says "x64-based processor" or "ARM-based
+  processor". On a Mac, Apple menu > About This Mac says "Chip Apple M..." or "Processor ... Intel".
+- Windows: open the `.exe`. The installers are not code signed yet: if the browser says the file
+  isn't commonly downloaded, choose Keep; if Windows says "Windows protected your PC", choose More
+  info, then Run anyway. The arm64 installer stops on an x64 PC and says which file to get.
+- Mac: open the `.dmg` and drag Fartcrobat to Applications. If macOS says it could not verify
+  Fartcrobat, open System Settings > Privacy & Security and choose Open Anyway.
+- Ubuntu: open the `.deb` with App Center (Debian, Mint, Pop!_OS: with your software installer), or
+  run `sudo apt install ./<file>` in the folder you downloaded it to. Take the `.deb` on Ubuntu:
+  on 24.04 the AppImage starts without Chromium's sandbox (Ubuntu limits the user namespaces it
+  needs, and the `.deb` installs the AppArmor profile that allows them).
+- AppImage: make it executable first (right-click > Properties > Executable as Program, or
+  `chmod +x Fartcrobat-x86_64.AppImage`), then open it. It updates itself, and it needs FUSE 2:
+  `sudo apt install libfuse2t64` on Ubuntu 24.04 and later, `libfuse2` on 22.04.
+- 0.2.0, the release before this table, names its Intel Mac file `Fartcrobat-0.2.0.dmg` and also
+  has `Fartcrobat-Setup-0.2.0.exe`, one Windows installer for both processors.
+- The other files of a release are for in-app updates (`.zip`, `.blockmap`, `latest*.yml`) and for
+  unpacking by hand (`.tar.gz`).
+
+Every install registers Fartcrobat as a handler for `.pdf` files. The table is kept in
+`scripts/release-downloads.mjs`, which checks each release build against it and puts it at the top
+of the release notes.
 
 ## Updates
 
 Fartcrobat checks GitHub for a new release 30 seconds after it starts and then every 6 hours, and
 shows a notification when there is one. The check is one HTTPS request for the latest release
 page; nothing about you or your documents is sent. On Windows and with the AppImage, Download
-installs the update when you restart Fartcrobat (or the next time you quit); elsewhere it opens the
-release page. Help > Check for Updates... checks at once.
+installs the update when you restart Fartcrobat (or the next time you quit). On a Mac (until the
+app is signed) and with the `.deb`, Download opens the release page: download the new file for your
+computer from the table above and open it, as for the first install. Help > Check for Updates...
+checks at once.
 
 To turn automatic checks off, use Preferences > Updates. Organizations can turn checks off (or
 on) for a computer: the `AutoUpdate` REG_DWORD under `HKLM\SOFTWARE\Policies\Fartcrobat` on

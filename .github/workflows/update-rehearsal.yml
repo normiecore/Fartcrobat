@@ -1,0 +1,284 @@
+name: Update rehearsal
+
+# The newest release updates itself to a build of the next version, on Linux (AppImage) and Windows
+# (installed per user and per machine), from a fake GitHub; on a Mac (.dmg) and with the Ubuntu .deb
+# it finds the next version and sends the person to its release page. See
+# tests/update-rehearsal/README.md. Nothing is published: the fake answers for github.com inside
+# each runner.
+on:
+  workflow_dispatch:
+    inputs:
+      old:
+        description: 'Released version to update from (default: the latest release)'
+        required: false
+      new:
+        description: 'Version the rehearsal build gets (default: the next patch version)'
+        required: false
+  push:
+    paths:
+      - 'tests/update-rehearsal/**'
+      - '.github/workflows/update-rehearsal.yml'
+      - 'src/features/updates/**'
+      - 'electron-builder.yml'
+      - 'scripts/release-downloads.mjs'
+
+concurrency:
+  group: update-rehearsal-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  versions:
+    runs-on: ubuntu-24.04
+    outputs:
+      old: ${{ steps.v.outputs.old }}
+      new: ${{ steps.v.outputs.new }}
+    steps:
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OLD: ${{ inputs.old }}
+          NEW: ${{ inputs.new }}
+        run: |
+          [ -n "$OLD" ] || OLD=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName | sed 's/^v//')
+          [ -n "$NEW" ] || NEW=$(echo "$OLD" | awk -F. '{ printf "%d.%d.%d", $1, $2, $3 + 1 }')
+          echo "Rehearsal: $OLD -> $NEW"
+          echo "old=$OLD" >> "$GITHUB_OUTPUT"
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb libnss3-tools
+      - run: npm ci
+      - name: Rehearse the AppImage update
+        run: sudo env "PATH=$PATH" REHEARSAL_WORK="$RUNNER_TEMP/rehearsal" tests/update-rehearsal/linux.sh --old "${{ needs.versions.outputs.old }}" --new "${{ needs.versions.outputs.new }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-linux
+          path: ${{ runner.temp }}/rehearsal/out/
+          retention-days: 14
+
+  windows-build:
+    needs: versions
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The next version, built as the release workflow builds it, with only the version changed.
+      - run: npm run dist:win -- --publish never "-c.extraMetadata.version=${{ needs.versions.outputs.new }}" "-c.directories.output=build-new"
+      # One installer per processor, the files the download table names (scripts/release-downloads.mjs).
+      - run: node scripts/release-downloads.mjs --dir build-new --version "${{ needs.versions.outputs.new }}" --platform win
+      # The arm64 installer stops on this x64 PC instead of installing nothing (build/installer.nsh).
+      - name: The arm64 installer refuses an x64 PC
+        run: |
+          $p = Start-Process -FilePath "build-new\Fartcrobat-Setup-${{ needs.versions.outputs.new }}-arm64.exe" -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 1) { throw "The arm64 installer exited with $($p.ExitCode) on x64, not 1" }
+          reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall /s /f Fartcrobat 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'The arm64 installer installed something on x64' }
+          $global:LASTEXITCODE = 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rehearsal-windows-build
+          path: |
+            build-new/latest.yml
+            build-new/*.exe
+            build-new/*.blockmap
+          retention-days: 3
+
+  windows:
+    needs: [versions, windows-build]
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { scope: user, scenario: restart, installer: x64 }
+          - { scope: user, scenario: later, installer: x64 }
+          - { scope: user, scenario: policy, installer: x64 }
+          - { scope: machine, scenario: restart, installer: x64 }
+          # 0.2.0 also shipped one installer for both processors: what its installs do (the spec
+          # skips when the old release has none).
+          - { scope: user, scenario: restart, installer: combined }
+    name: windows (${{ matrix.scope }}, ${{ matrix.scenario }}, ${{ matrix.installer }})
+    env:
+      REHEARSAL_OLD: ${{ needs.versions.outputs.old }}
+      REHEARSAL_NEW: ${{ needs.versions.outputs.new }}
+      REHEARSAL_SCOPE: ${{ matrix.scope }}
+      REHEARSAL_SCENARIO: ${{ matrix.scenario }}
+      REHEARSAL_INSTALLER: ${{ matrix.installer }}
+    steps:
+      - run: |
+          "REHEARSAL_WORK=$env:RUNNER_TEMP\rehearsal" >> $env:GITHUB_ENV
+          "REHEARSAL_OUT=$env:RUNNER_TEMP\rehearsal\out" >> $env:GITHUB_ENV
+          git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - uses: actions/download-artifact@v4
+        with:
+          name: rehearsal-windows-build
+          path: ${{ runner.temp }}\rehearsal\releases\v${{ needs.versions.outputs.new }}
+      - name: The released installers of the old version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "v$env:REHEARSAL_OLD" --repo "$env:GITHUB_REPOSITORY" -p latest.yml -p "Fartcrobat-Setup-*" -D "$env:REHEARSAL_WORK\releases\v$env:REHEARSAL_OLD"
+      - name: Test certificate, trusted machine-wide on this throwaway runner
+        run: |
+          node tests/update-rehearsal/make-certs.mjs "$env:REHEARSAL_WORK\tls"
+          certutil -addstore -f Root "$env:REHEARSAL_WORK\tls\ca.cer"
+      - name: Rehearse the update (${{ matrix.scope }}, ${{ matrix.scenario }}, ${{ matrix.installer }} installer)
+        run: npx playwright test -c tests/update-rehearsal/playwright.config.ts windows
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-windows-${{ matrix.scope }}-${{ matrix.scenario }}-${{ matrix.installer }}
+          path: ${{ runner.temp }}\rehearsal\out\
+          retention-days: 14
+
+  # The released Mac app tells people about the next version and sends them to its release page
+  # (it installs updates only once releases are Developer ID signed).
+  mac:
+    needs: versions
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      REHEARSAL_OLD: ${{ needs.versions.outputs.old }}
+      REHEARSAL_NEW: ${{ needs.versions.outputs.new }}
+      REHEARSAL_KIND: mac
+      REHEARSAL_EXE: /Applications/Fartcrobat.app/Contents/MacOS/Fartcrobat
+    steps:
+      - run: |
+          echo "REHEARSAL_WORK=$RUNNER_TEMP/rehearsal" >> "$GITHUB_ENV"
+          echo "REHEARSAL_OUT=$RUNNER_TEMP/rehearsal/out" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: The released app of the old version, from its .dmg
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # macos-latest has Apple silicon.
+          dmg="Fartcrobat-$REHEARSAL_OLD-arm64.dmg"
+          gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p "$dmg" -D "$REHEARSAL_WORK/old"
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg" "$REHEARSAL_WORK/old/$dmg"
+          cp -R "$RUNNER_TEMP/dmg/Fartcrobat.app" /Applications/
+          hdiutil detach "$RUNNER_TEMP/dmg"
+      - name: Test certificate, trusted machine-wide on this throwaway runner
+        run: |
+          node tests/update-rehearsal/make-certs.mjs "$REHEARSAL_WORK/tls"
+          sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$REHEARSAL_WORK/tls/ca.pem"
+      - name: Rehearse the update notice
+        run: npx playwright test -c tests/update-rehearsal/playwright.config.ts notify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-mac
+          path: ${{ runner.temp }}/rehearsal/out/
+          retention-days: 14
+
+  # The released .deb, on Ubuntu 24.04 as a desktop has it, tells people about the next version and
+  # sends them to its release page (installing needs a root password prompt).
+  deb:
+    needs: versions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      REHEARSAL_OLD: ${{ needs.versions.outputs.old }}
+      REHEARSAL_NEW: ${{ needs.versions.outputs.new }}
+      REHEARSAL_KIND: deb
+      REHEARSAL_EXE: /opt/Fartcrobat/fartcrobat
+    steps:
+      - run: |
+          echo "REHEARSAL_WORK=$RUNNER_TEMP/rehearsal" >> "$GITHUB_ENV"
+          echo "REHEARSAL_OUT=$RUNNER_TEMP/rehearsal/out" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb libnss3-tools
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Ubuntu's desktop setting, AppArmor limiting user namespaces
+        # GitHub's runner image turns the limit off; Ubuntu 24.04 desktops have it on, and the .deb
+        # installs an AppArmor profile for Fartcrobat so that its sandbox still works.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+      - name: The released .deb of the old version, installed as people install it
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deb="fartcrobat_${REHEARSAL_OLD}_amd64.deb"
+          gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p "$deb" -D "$REHEARSAL_WORK/old"
+          sudo apt-get install -y "$REHEARSAL_WORK/old/$deb"
+          ls -l /opt/Fartcrobat/chrome-sandbox /etc/apparmor.d/fartcrobat
+      - name: Test certificate, trusted by this user (Chromium reads the user's NSS database)
+        run: |
+          node tests/update-rehearsal/make-certs.mjs "$REHEARSAL_WORK/tls"
+          mkdir -p "$HOME/.pki/nssdb"
+          [ -f "$HOME/.pki/nssdb/cert9.db" ] || certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password </dev/null
+          certutil -d "sql:$HOME/.pki/nssdb" -A -t 'C,,' -n 'Fartcrobat Update Rehearsal CA' -i "$REHEARSAL_WORK/tls/ca.pem"
+      - name: Rehearse the update notice
+        run: xvfb-run -a npx playwright test -c tests/update-rehearsal/playwright.config.ts notify
+      - name: For comparison, the AppImage with the same setting
+        # Not a check: the job summary says whether the released AppImage starts where AppArmor limits
+        # user namespaces, as on an Ubuntu 24.04 desktop (README.md sends Ubuntu users to the .deb).
+        # Extracted rather than mounted, so FUSE is not in question.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir="$RUNNER_TEMP/appimage"
+          gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p Fartcrobat-x86_64.AppImage -D "$dir"
+          chmod +x "$dir/Fartcrobat-x86_64.AppImage"
+          # The AppImage's launcher (AppRun) turns Chromium's sandbox off when this fails.
+          if unshare -Ur true 2>/dev/null; then sandbox="with Chromium's sandbox"; else sandbox="without Chromium's sandbox (its launcher adds --no-sandbox when user namespaces are unavailable)"; fi
+          status=0
+          APPIMAGE_EXTRACT_AND_RUN=1 FARTCROBAT_UPDATE_CHECKS=0 timeout -k 5 20 xvfb-run -a "$dir/Fartcrobat-x86_64.AppImage" > "$dir/log.txt" 2>&1 || status=$?
+          if [ "$status" = 124 ]; then result="It was still running after 20 s, $sandbox."; else result="It stopped with status $status."; fi
+          pkill -f appimage_extracted_ || true
+          {
+            echo "### The released AppImage where AppArmor limits user namespaces (Ubuntu 24.04 desktops)"
+            echo
+            echo "$result"
+            echo
+            echo '```'
+            tail -n 15 "$dir/log.txt"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-deb
+          path: ${{ runner.temp }}/rehearsal/out/
+          retention-days: 14
