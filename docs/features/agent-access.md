@@ -148,8 +148,9 @@ Contracts (do not change without updating every side):
 - Finds the app through `<userData>/agent-access/endpoint.json` (userData: `FARTCROBAT_USER_DATA`,
   else `%APPDATA%\Fartcrobat`, `~/Library/Application Support/Fartcrobat`,
   `$XDG_CONFIG_HOME/Fartcrobat` or `~/.config/Fartcrobat`). If the app is not running, starts it
-  from `app.json` when its executable still exists; otherwise, unless `FARTCROBAT_USER_DATA` is
-  set, from the installed copy (Windows: the installer's `InstallLocation` in HKCU or HKLM,
+  from `app.json` when its executable still exists; otherwise, unless `FARTCROBAT_USER_DATA` names
+  a separate profile (a folder other than the usual one, `separateProfile` in `launch.ts`), from
+  the installed copy (Windows: the installer's `InstallLocation` in HKCU or HKLM,
   `%LOCALAPPDATA%\Programs\Fartcrobat`, `Program Files\Fartcrobat`; macOS: `/Applications` or
   `~/Applications`; Linux: `/opt/Fartcrobat`). Waits up to 30 s for the endpoint. Reconnects after
   the app restarts. Verifies the app's MAC before sending anything.

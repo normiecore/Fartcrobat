@@ -174,10 +174,11 @@ outputs are committed; tests never generate them at run time.
   workflow). That push publishes: the release workflow builds the installers, runs the full CI
   suite (`ci.yml`) and the update rehearsal (`update-rehearsal.yml`) on the same commit, and only
   then creates the tag and the release, with the download table and `docs/releases/v<version>.md`
-  as notes. When a job of that run fails, fix the cause and use "Re-run failed jobs" on the same
-  run, which keeps the merged commit. A manual run on `main` with the version publishes main's head
-  as it is then, so use it only while that head is still the version bump; never run it in
-  addition to the merge. A `v*` tag push also publishes (the Claude session git proxy refuses tag
+  as notes. When a job of that run fails for a reason outside the code (a runner, the network),
+  use "Re-run failed jobs" on the same run, which keeps the merged commit. For a fix in the code,
+  merge the fix and run the workflow by hand on `main` with the version: that publishes main's head
+  as it is then, so only while it is the version bump plus that fix, and never in addition to a
+  run that can still publish. A `v*` tag push also publishes (the Claude session git proxy refuses tag
   pushes), and a tag that already names another commit stops the publish.
 - In-app updates (`docs/features/updates.md`) download from the latest GitHub release, so every
   release must carry `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and the `.blockmap` files
@@ -273,12 +274,16 @@ capture, scanner input.
 ### 0.2.1 (#17, 20 Oct 2026)
 
 - Companion: opening the chat lets the next conversation that uses Fartcrobat join, without an
-  invitation; closing the chat before one joins, End & clear or a disconnect take that back until
-  the person allows a new conversation. Shims older than 0.2.1 drop the token, so their calls never
-  join (`shimForwardsCompanion`), and the chat and Preferences ask for the extension to be added
-  again. Conversation-token isolation, on-document edit review (a save keeps it open, any edit
+  invitation. Closing or minimizing it before one joins takes that back until it is opened again;
+  End & clear, or a disconnect of the joined conversation, ends it until the person allows a new
+  conversation. Shims older than 0.2.1 drop the token, so their calls never join by themselves
+  (`shimForwardsCompanion`; an explicit `companion_chat` still joins), and the chat and
+  Preferences ask for the extension to be added again. Conversation-token isolation, on-document edit review (a save keeps it open, any edit
   ends it) and three working poses. See the agent-companion and agent-text-editing notes.
 - Connect ChatGPT Desktop works in installed builds: `shim.mjs` ships next to app.asar and the
-  setup points at a copy in `<userData>/agent-helper/`, refreshed at each start.
+  setup points at a copy in `<userData>/agent-helper/`, refreshed at each start. The setup's
+  `FARTCROBAT_USER_DATA` names the usual folder, which the helper does not take for a separate
+  profile (`separateProfile` in `src/agent-shim/launch.ts`): it starts the app through WMI or
+  LaunchServices, as for the Claude extension.
 - Merging #17 publishes 0.2.1 (see "To release"). Merge it with "Create a merge commit": one of its
   commit messages names the skip marker, which a squash would carry into main's head commit.

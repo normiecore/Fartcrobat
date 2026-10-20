@@ -18,7 +18,12 @@ Settings > MCP servers, save and restart. Installed copies ship the helper next 
 (electron-builder.yml) and point ChatGPT at a copy in `<userData>/agent-helper/shim.mjs`
 (`main/helperCopy.ts`): an AppImage's resources move on every launch, and an update replaces them.
 Each start refreshes that copy when it exists, so it always matches the app. The release
-workflow runs `tests/e2e/agent-chatgpt.spec.ts` against the packaged app. The advanced section supplies a TOML entry for the
+workflow runs `tests/e2e/agent-chatgpt.spec.ts` against the packaged app. The setup also names
+the userData folder in `FARTCROBAT_USER_DATA`, because ChatGPT passes servers only part of the
+environment (XDG_CONFIG_HOME, for one). The helper does not take the usual folder for a separate
+profile (`separateProfile` in `src/agent-shim/launch.ts`), so it starts Fartcrobat as for the
+Claude extension: through WMI on Windows, which keeps it out of ChatGPT's MSIX package and its
+private AppData, and with LaunchServices on a Mac. The advanced section supplies a TOML entry for the
 same Codex host. It never rewrites the user's existing config or claims an installed connection
 until a client actually connects. This is local-computer MCP, not a web/mobile connector.
 
@@ -72,8 +77,9 @@ reply on its way back can still do that; End & clear, then Allow a new conversat
 
 A shim from before 0.2.1 drops the token (it builds results from `data` and images only), and a
 Claude Desktop extension keeps the shim it was added with until it is added again. Calls from such
-a shim never join (`shimForwardsCompanion` in `src/shared/agent/protocol.ts`, applied by the
-router), and the chat and the connection list tell the person to add the extension again.
+a shim never join by themselves (`shimForwardsCompanion` in `src/shared/agent/protocol.ts`,
+applied by the router; an explicit `companion_chat` still joins, since its session comes back in
+`data`), and the chat and the connection list tell the person to add the extension again.
 
 No invitation is needed. The AI app still controls tool calls: it must follow the returned listening
 instructions, and Fartcrobat cannot wake a finished or closed external conversation. Connection
