@@ -306,7 +306,7 @@
 .fc-agent-access-companion .fc-agent-access-companion-drag { cursor: grab; touch-action: none; user-select: none; margin-right: auto; }
 .fc-agent-access-companion-presence { display: flex; align-items: center; gap: 8px; padding: 4px; }
 .fc-agent-access-companion-avatar { width: 72px; height: 64px; flex-shrink: 0; filter: drop-shadow(0 3px 3px #0002); }
-.fc-agent-access-companion-avatar.is-busy { animation: fc-agent-access-bob 1.8s ease-in-out infinite; }
+
 @keyframes fc-agent-access-bob { 50% { transform: translateY(-4px); } }
 .fc-agent-access-companion-bubble { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 15px 15px 15px 4px; padding: 10px 12px; box-shadow: var(--shadow-sm); line-height: 1.45; overflow-wrap: anywhere; }
 .fc-agent-access-companion-chat-toggle { float: right; background: var(--bg-elev) !important; font-size: 12px; }
@@ -324,3 +324,18 @@
 .fc-agent-access-companion-setup button { border: 1px solid var(--border); background: var(--bg); }
 .fc-agent-access-chatgpt-config { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; font-size: 12px; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { .fc-agent-access-companion-avatar.is-busy { animation: none; } }
+
+/* On-page proposals are visual staging, not annotations that could leak into a saved PDF. */
+.fc-agent-access-inline-layer { pointer-events: auto; overflow: hidden; }
+.fc-agent-access-inline-layer > img { position: absolute; left: 0; top: 0; max-width: none; pointer-events: none; }
+.fc-agent-access-review-mark { position: absolute; border: 1px solid #b36c00; background: #ffbc3115; cursor: pointer; }
+.fc-agent-access-review-mark.is-selected { border-width: 2px; background: #ffbc3125; }
+.fc-agent-access-review-badge { position: absolute; top: 4px; left: 6px; padding: 3px 7px; background: var(--bg-elev); color: var(--text); border: 1px solid var(--border); font-size: 11px; }
+.fc-agent-access-inline-panel { height: 100%; min-height: 0; font-size: 13px; }
+.fc-agent-access-inline-panel p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.fc-agent-access-inline-panel del { background: #d8434320; }
+.fc-agent-access-inline-panel ins { background: #22985b20; }
+.fc-agent-access-inline-panel img { width: 100%; height: auto; }
+.fc-agent-access-inline-panel figure { margin: 12px 0; }
+.fc-agent-access-review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.fc-agent-access-review-warning { border-left: 3px solid #b36c00; padding-left: 8px; }

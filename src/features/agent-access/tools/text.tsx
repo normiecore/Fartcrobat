@@ -7,10 +7,11 @@ import type { FlowSpec } from '../flow'
 import type { ReflowSpec } from '../reflow'
 import type { TextPreview } from '../engine'
 import { validateTextChanges, type TextChange } from '../textEdits'
+import { reviewInDocument } from '../ui/InlineReview'
+import { useInlineReview } from '../ui/reviewState'
 import { flashRect } from '../ui/store'
 import {
   auditName,
-  confirmAgentAction,
   pageIndex,
   parsePages,
   resolveDoc,
@@ -23,76 +24,19 @@ import { toBase64 } from './contextShape'
 import { engineTask, undoLabel } from './act-runtime'
 import { runAsAgent } from './common'
 
-function Preview({ report }: { report: TextPreview }) {
-  return (
-    <div className="fc-agent-access-text-review">
-      <p>
-        Review these changes to the PDF open in Fartcrobat. Apply changes makes one undoable edit; it does not
-        save the file.
-      </p>
-      {report.issues.length > 0 && (
-        <ul>
-          {report.issues.map((issue, i) => (
-            <li key={i}>
-              Page {issue.page}: {issue.message}
-            </li>
-          ))}
-        </ul>
-      )}
-      {report.changes.map((c, i) => (
-        <section key={i} className="fc-agent-access-text-diff">
-          <b>
-            Page {c.page} · Change {i + 1}
-          </b>
-          <div className="fc-agent-access-text-columns">
-            <div>
-              <h3>Before</h3>
-              <pre>{c.before || '(New text)'}</pre>
-            </div>
-            <div>
-              <h3>After</h3>
-              <pre>{c.after || '(Delete text)'}</pre>
-            </div>
-          </div>
-        </section>
-      ))}
-      {report.previews.map((p) => (
-        <section key={p.page}>
-          <b>Page {p.page} preview</b>
-          <div className="fc-agent-access-text-columns">
-            <figure>
-              <figcaption>Before</figcaption>
-              {p.before.length ? (
-                <img
-                  alt={'Page ' + p.page + ' before edits'}
-                  src={'data:image/png;base64,' + toBase64(p.before)}
-                />
-              ) : (
-                <p>New continuation page</p>
-              )}
-            </figure>
-            <figure>
-              <figcaption>After</figcaption>
-              <img
-                alt={'Page ' + p.page + ' proposed edits'}
-                src={'data:image/png;base64,' + toBase64(p.after)}
-              />
-            </figure>
-          </div>
-        </section>
-      ))}
-      <p>
-        {report.flow
-          ? 'Text flows through the proposed columns and pages. Check spacing, repeated labels and fonts before applying.'
-          : report.rebuilt
-            ? 'This is a new document design. Only apply it if you want the original layout replaced.'
-            : 'PDF text blocks do not push surrounding content onto another page. Use design-preserving text flow for larger rewrites.'}
-      </p>
-    </div>
-  )
+/** Another review holds the page: refuse before switching the person's tab away from it. */
+function refuseWhileReviewing() {
+  if (useInlineReview.getState().review)
+    throw new ToolError('busy', 'Another edit review is open in Fartcrobat. Wait until the person has finished it.')
 }
 
-export { Preview as TextReview }
+async function reviewProposal(ctx: Parameters<ToolHandler>[1], options: Parameters<typeof reviewInDocument>[0]) {
+  try { return await reviewInDocument(options) }
+  catch (error) {
+    throwIfAborted(ctx)
+    throw new ToolError('failed', (error as Error).message)
+  }
+}
 
 const inspect: ToolHandler = async (args, ctx) => {
   const doc = resolveDoc(ctx, args.handle)
@@ -170,37 +114,37 @@ const edit: ToolHandler = async (args, ctx) => {
         note: 'Nothing changed. Resolve the blocking layout issues and preview again.'
       }
     }
+  refuseWhileReviewing()
   activateDocument(doc.id)
   const first = report.changes[0]
   doc.view?.goToPage(first.page - 1)
-  const accepted = await confirmAgentAction(ctx, {
-    title: 'Review text changes',
-    message: <Preview report={report} />,
-    confirmLabel: 'Apply changes',
-    width: 1000
+  const accepted = await reviewProposal(ctx, {
+    doc, title: 'Review text changes', report, signal: ctx.signal,
+    preview: indices => ops.preview(args.revision as number, indices.map(i => changes[i]))
   })
-  if (!accepted) {
+  if (!accepted.length) {
     throwIfAborted(ctx)
-    throw new ToolError(
-      'declined',
-      'The person declined the text changes in Fartcrobat. Nothing changed. Do not retry unless they ask.'
-    )
+    throw new ToolError('declined', 'The person declined the text changes. Nothing changed. Do not retry unless asked.')
   }
   throwIfAborted(ctx)
   if (hasActiveEditors())
     throw new ToolError('busy', 'The person is typing. Finish editing and inspect the text again.')
   // The worker rechecks its revision and layout atomically, including changes during the review.
   const result = await engineTask('Could not apply text edits', () =>
-    runAsAgent(doc, () => ops.apply(args.revision as number, changes))
+    runAsAgent(doc, () => ops.apply(args.revision as number, accepted.map(i => changes[i])))
   )
-  if (first.bbox) {
-    doc.view?.scrollToRect(first.page - 1, first.bbox, { center: true })
-    flashRect(doc.id, first.page - 1, first.bbox)
+  // The first edit that was applied, not a rejected one.
+  const shown = report.changes[accepted[0]] ?? first
+  if (shown.bbox) {
+    doc.view?.scrollToRect(shown.page - 1, shown.bbox, { center: true })
+    flashRect(doc.id, shown.page - 1, shown.bbox)
   }
   ctx.audit({ summary: 'edited ' + result.changed + ' text blocks' })
   return {
     data: {
       ...result,
+      acceptedEdits: accepted.map(i => i + 1),
+      rejectedEdits: changes.map((_, i) => i).filter(i => !accepted.includes(i)).map(i => i + 1),
       applied: true,
       saved: false,
       undoLabel: await undoLabel(doc),
@@ -300,20 +244,15 @@ async function reviewAndApply(
       images: previews.map((p) => ({ mimeType: 'image/png' as const, data: toBase64(p.after) }))
     }
   }
+  refuseWhileReviewing()
   activateDocument(doc.id)
   doc.view?.goToPage((previews[0]?.page ?? 1) - 1)
-  const ok = await confirmAgentAction(ctx, {
-    title: report.rebuilt ? 'Review new document design' : 'Review text flow',
-    message: <Preview report={report} />,
-    confirmLabel: 'Apply changes',
-    width: 1000
+  const accepted = await reviewProposal(ctx, {
+    doc, title: report.rebuilt ? 'Review new document design' : 'Review text flow', report, signal: ctx.signal
   })
-  if (!ok) {
+  if (!accepted.length) {
     throwIfAborted(ctx)
-    throw new ToolError(
-      'declined',
-      'The person declined the proposed layout. Nothing changed. Do not retry unless they ask.'
-    )
+    throw new ToolError('declined', 'The person declined the proposed layout. Nothing changed. Do not retry unless asked.')
   }
   throwIfAborted(ctx)
   if (hasActiveEditors())

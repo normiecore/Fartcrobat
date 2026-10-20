@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
-import { Bot } from 'lucide-react'
+import { Bot, FileCheck } from 'lucide-react'
 import { defineFeature, onMainEvent } from '@renderer/sdk'
+import { InlineReviewLayer, InlineReviewPanel } from './ui/InlineReview'
 import { ActivityPanel } from './ui/ActivityPanel'
 import { FlashLayer } from './ui/FlashLayer'
 import { AgentCompanion } from './ui/Companion'
@@ -28,8 +29,8 @@ function AgentAccessGlobal() {
 
 export default defineFeature({
   id: 'agent-access',
-  rightPanels: [{ id: 'agent-activity', label: 'Agent activity', icon: Bot, order: 90, component: ActivityPanel }],
-  pageLayers: [{ id: 'agent-access-flash', order: 95, component: FlashLayer }],
+  rightPanels: [{ id: 'agent-review', label: 'Review edits', icon: FileCheck, order: 89, component: InlineReviewPanel }, { id: 'agent-activity', label: 'Agent activity', icon: Bot, order: 90, component: ActivityPanel }],
+  pageLayers: [{ id: 'agent-review-preview', order: 99, component: InlineReviewLayer }, { id: 'agent-access-flash', order: 95, component: FlashLayer }],
   settings: [{ id: 'ai-apps', label: 'AI apps', order: 90, component: AgentSettings }],
   globals: [AgentAccessGlobal]
 })

@@ -116,7 +116,7 @@ class TestClient {
 const hmac = (token: string, text: string) => createHmac('sha256', token).update(text).digest('hex')
 
 /** Runs the handshake as the shim does, checking the app's proof too. */
-async function authenticate(client: TestClient, token: string, name = 'claude-ai') {
+async function authenticate(client: TestClient, token: string, name = 'claude-ai', shimVersion = '0.2.1') {
   const hello = await client.next('hello')
   const nonce = randomBytes(32).toString('hex')
   client.send({
@@ -125,7 +125,7 @@ async function authenticate(client: TestClient, token: string, name = 'claude-ai
     mac: hmac(token, `client:${hello.nonce}`),
     nonce,
     client: { name, version: '1.0' },
-    shimVersion: '0.1.0'
+    shimVersion
   })
   const ready = await client.next('ready')
   expect(ready.mac).toBe(hmac(token, `server:${nonce}`))
@@ -177,9 +177,9 @@ describeUnix('agent access pipe', () => {
     return c
   }
 
-  async function connected(name?: string) {
+  async function connected(name?: string, shimVersion?: string) {
     const c = await connect()
-    const ready = await authenticate(c, endpoint().token, name)
+    const ready = await authenticate(c, endpoint().token, name, shimVersion)
     return { client: c, connectionId: ready.connectionId }
   }
 
@@ -245,6 +245,7 @@ describeUnix('agent access pipe', () => {
       {
         id: ready.connectionId,
         client: { name: 'claude-ai', version: '1.0' },
+        shimVersion: '0.2.1',
         since: expect.any(Number),
         running: 0
       }
@@ -408,6 +409,16 @@ describeUnix('agent access pipe', () => {
     await connected('claude-ai')
   })
 
+  it('calls from a Claude Desktop extension added from 0.2.0 never join the companion chat', async () => {
+    await start()
+    const { client } = await connected('claude-ai', '0.2.0')
+    expect(service.status().connections[0].shimVersion).toBe('0.2.0')
+    client.send({ t: 'call', id: 'c1', tool: 'find_text', args: { handle: 'w1-b1-doc-2', query: 'x' } })
+    await waitFor(() => expect(host.requests).toHaveLength(1))
+    // That shim drops the companion token, so a join would leave the chat with an owner who never learns its session.
+    expect(host.requests[0].request.allowCompanionJoin).toBe(false)
+  })
+
   it('routes a call to its window, relays progress and the result, and audits it without content', async () => {
     await start()
     const { client, connectionId } = await connected()
@@ -426,6 +437,7 @@ describeUnix('agent access pipe', () => {
       client: { name: 'claude-ai', version: '1.0' },
       windowId: 'w1',
       currentWindow: expect.any(Boolean),
+      allowCompanionJoin: true,
       tool: 'find_text',
       args: { handle: 'w1-b1-doc-2', query: 'John Smith', pages: '1-3' }
     })

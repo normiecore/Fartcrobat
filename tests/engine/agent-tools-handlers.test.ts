@@ -341,6 +341,11 @@ describe('initial view', () => {
 
 
 describe('native text editing review', () => {
+  async function nextReview() {
+    const { useInlineReview } = await import('@features/agent-access/ui/reviewState')
+    await vi.waitFor(() => expect(useInlineReview.getState().review).not.toBeNull())
+    return useInlineReview.getState().review!
+  }
   async function proposal() {
     const e = await openFixture('text.pdf')
     const doc = modelFor(e, 'CV.pdf')
@@ -355,33 +360,59 @@ describe('native text editing review', () => {
     expect(preview.images).toHaveLength(1)
     expect(useApp.getState().dialogs).toHaveLength(0)
     const pending = call('edit_text', args)
-    const dialog = await nextDialog()
-    expect(dialogText(dialog)).toContain('Review text changes')
-    dialog.resolve(false)
+    const review = await nextReview()
+    expect(review.title).toBe('Review text changes')
+    expect(useApp.getState().dialogs).toHaveLength(0)
+    review.cancel()
     expect((await errorOf(pending)).code).toBe('declined')
     expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
   })
   it('Apply creates one Agent undo step and stale proposals never overwrite person changes', async () => {
-    const { e, args } = await proposal()
+    const { e, doc, args } = await proposal()
     const pending = call('edit_text', args)
-    ;(await nextDialog()).resolve(true)
+    await (await nextReview()).decide([0], true)
     expect((await pending).data).toMatchObject({ applied: true, saved: false, undoLabel: 'Agent: Edit Text Batch' })
     expect(await e.call('edit-text.text', 0)).toContain('swift brown fox')
     await e.doc.undo()
     const snap = (await call('get_editable_text', { page: 1 })).data
     const stale = call('edit_text', { ...args, revision: snap.revision })
-    const dialog = await nextDialog()
+    await nextReview()
     await e.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [10,10,20,20], contents: 'Person note' })
-    dialog.resolve(true)
+    await (doc as any).applyChanges(e.lastChanges)
     expect((await errorOf(stale)).message).toContain('document changed')
     expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
+  })
+  it('saving during review keeps it open: a save is not a change to review against', async () => {
+    const { e, doc, args } = await proposal()
+    const pending = call('edit_text', args)
+    const review = await nextReview()
+    const { version } = await e.doc.saveWithVersion({})
+    await (doc as any).applyChanges(e.lastChanges)
+    await e.doc.markSaved('CV.pdf', version)
+    await (doc as any).applyChanges(e.lastChanges)
+    expect(e.lastChanges?.document).toBe(true)
+    const { useInlineReview } = await import('@features/agent-access/ui/reviewState')
+    expect(useInlineReview.getState().review).toBe(review)
+    await review.decide([0], true)
+    expect((await pending).data).toMatchObject({ applied: true })
+    expect(await e.call('edit-text.text', 0)).toContain('swift brown fox')
+  })
+  it('a second proposal while a review is open is refused before it switches tabs', async () => {
+    const { args } = await proposal()
+    const pending = call('edit_text', args)
+    const review = await nextReview()
+    const active = useApp.getState().activeDocId
+    expect((await errorOf(call('edit_text', args))).code).toBe('busy')
+    expect(useApp.getState().activeDocId).toBe(active)
+    review.cancel()
+    expect((await errorOf(pending)).code).toBe('declined')
   })
   it('cancellation during review closes the proposal without changing text', async () => {
     const { e, args } = await proposal()
     const abort = new AbortController()
     const ctx = { ...ctxFor(), signal: abort.signal }
     const pending = call('edit_text', args, ctx)
-    await nextDialog()
+    await nextReview()
     abort.abort()
     expect((await errorOf(pending)).code).toBe('aborted')
     expect(useApp.getState().dialogs).toHaveLength(0)

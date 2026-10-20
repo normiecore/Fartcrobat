@@ -23,10 +23,9 @@ import {
   type RejectMessage,
   type ShimToApp
 } from '@shared/agent/protocol'
-import { findApp, startApp, type LaunchedApp } from './launch'
+import { defaultUserDataDir, findApp, startApp, type LaunchedApp } from './launch'
 import { errorResult } from './result'
 
-const APP_NAME = 'Fartcrobat'
 /** How long the app may take to appear after the shim starts it. */
 export const START_TIMEOUT_MS = 30_000
 /** How long a connected app may take to finish the handshake (the app allows 10 s). */
@@ -82,10 +81,7 @@ export function userDataDir(
   platform: NodeJS.Platform = process.platform,
   home: string = homedir()
 ): string {
-  if (env.FARTCROBAT_USER_DATA) return env.FARTCROBAT_USER_DATA
-  if (platform === 'win32') return win32.join(env.APPDATA || win32.join(home, 'AppData', 'Roaming'), APP_NAME)
-  if (platform === 'darwin') return posix.join(home, 'Library', 'Application Support', APP_NAME)
-  return posix.join(env.XDG_CONFIG_HOME || posix.join(home, '.config'), APP_NAME)
+  return env.FARTCROBAT_USER_DATA || defaultUserDataDir(env, platform, home)
 }
 
 export function endpointPath(userData: string, platform: NodeJS.Platform = process.platform): string {

@@ -49,5 +49,6 @@ export function toCallToolResult(result: AgentToolResult): CallToolResult {
       content.push({ type: 'image', data: image.data, mimeType: image.mimeType })
   // An empty content list reads as "nothing happened" to a model; say the tool finished.
   if (!content.length) content.push({ type: 'text', text: 'Done.' })
+  if (result.companion) content.push({ type: 'text', text: JSON.stringify({ companion: result.companion }) })
   return { content }
 }

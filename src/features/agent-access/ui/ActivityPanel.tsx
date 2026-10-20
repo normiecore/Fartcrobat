@@ -1,6 +1,7 @@
 /** Right panel "Agent activity" (also shown in a popover on Home): connections and recent calls. */
 import { Ban, Bot, Check, CircleAlert, Loader2, Settings, ShieldX, Unplug } from 'lucide-react'
 import type { AgentConnectionInfo } from '@shared/agent/bridge'
+import { shimForwardsCompanion } from '@shared/agent/protocol'
 import { Button, EmptyState, invoke, openPreferences, Section, showError, type DocumentModel } from '@renderer/sdk'
 import { appLabel, documentLabel, durationLabel, timeLabel, useAgentUi, type CallRecord } from './store'
 import { useCompanion } from './companionStore'
@@ -68,6 +69,9 @@ export function ConnectionList({ connections, compact }: { connections: AgentCon
               Connected since {timeLabel(c.since, false)}
               {c.running ? ` · ${c.running} running` : ''}
             </span>
+            {!shimForwardsCompanion(c.shimVersion) && (
+              <span className="shell-muted">Uses the extension from an older Fartcrobat: add it again to chat in Fartcrobat.</span>
+            )}
           </div>
           <Button size="sm" icon={Unplug} title="It cannot connect again until you allow it." onClick={() => disconnect(c.id)}>
             Disconnect

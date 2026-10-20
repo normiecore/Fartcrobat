@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   activitySentence,
+  allowNewConversation,
+  armCompanion,
+  autoJoinCompanion,
+  disarmCompanion,
   endCompanion,
   exchangeCompanion,
   sendCompanionMessage,
@@ -17,15 +21,34 @@ const base = {
 const join = () => exchangeCompanion({ ...base, joining: true })
 const listen = (patch: Partial<Parameters<typeof exchangeCompanion>[0]> = {}) =>
   exchangeCompanion({ ...base, joining: false, ...patch })
-beforeEach(() => endCompanion())
+// As the app starts, then the person opens the chat.
+const fresh = () => useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: false, ended: false })
+beforeEach(() => {
+  fresh()
+  armCompanion()
+})
 afterEach(() => {
   endCompanion()
   vi.useRealTimers()
 })
 
 describe('companion conversations', () => {
+  it('closing the chat before a conversation joins takes the opening back; opening it again lets one in', () => {
+    disarmCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'w1-chat-a')).toBeUndefined()
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'w1-chat-a')?.status).toBe('joined')
+    // A joined chat stays joined when it is hidden.
+    disarmCompanion()
+    expect(useCompanion.getState().owner?.session).toBe('w1-chat-a')
+    // An ended chat stays ended: hiding and reopening it does not allow a new conversation.
+    endCompanion()
+    disarmCompanion()
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'w1-chat-b')).toBeUndefined()
+  })
   it('does not accept prompts without an active session', () => {
-    expect(() => sendCompanionMessage('Read this')).toThrow(/Start companion/)
+    expect(() => sendCompanionMessage('Read this')).toThrow(/use a Fartcrobat tool/)
   })
   it('delivers only once and displays the reply associated with the user message', async () => {
     await join()
@@ -45,7 +68,7 @@ describe('companion conversations', () => {
     sendCompanionMessage('Private question')
     await expect(listen({ connectionId: 2 })).rejects.toThrow(/another connection/)
     await expect(exchangeCompanion({ ...base, joining: true, connectionId: 2 })).rejects.toThrow(
-      /Another AI app/
+      /Another conversation/
     )
     await expect(listen({ session: 'old' })).rejects.toThrow(/ended/)
     expect(useCompanion.getState().messages[0].delivered).toBeUndefined()
@@ -81,6 +104,36 @@ describe('companion conversations', () => {
     expect(() => sendCompanionMessage('x'.repeat(8001))).toThrow(/8,000/)
     sendCompanionMessage('First')
     expect(() => sendCompanionMessage('Second')).toThrow(/still waiting/)
+  })
+  it('never leaks an existing token to another chat on the same connection', async () => {
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toMatchObject({ session: 'first' })
+    sendCompanionMessage('Private question')
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toBeUndefined()
+    expect(autoJoinCompanion(2, 'ChatGPT', 'third')).toBeUndefined()
+    await expect(join()).rejects.toThrow(/Another conversation/)
+    expect(useCompanion.getState().messages[0].delivered).toBeUndefined()
+  })
+  it('lets no conversation join until the person opens the chat', async () => {
+    fresh()
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toBeUndefined()
+    await expect(join()).rejects.toThrow(/Chat here/)
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toMatchObject({ session: 'first' })
+  })
+  it('respects End & clear until the user allows a new conversation', async () => {
+    autoJoinCompanion(1, 'Claude', 'first')
+    endCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toBeUndefined()
+    await expect(join()).rejects.toThrow(/Chat ended/)
+    // Opening the chat again does not undo the end; only allowing a new conversation does.
+    armCompanion()
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toBeUndefined()
+    allowNewConversation()
+    expect(autoJoinCompanion(1, 'Claude', 'second')).toMatchObject({ session: 'second' })
+  })
+  it('lets one conversation join per opening of the chat', () => {
+    expect(autoJoinCompanion(1, 'Claude', 'first')).toMatchObject({ session: 'first' })
+    expect(useCompanion.getState().autoJoin).toBe(false)
   })
   it('describes only observable tool activity', () => {
     expect(activitySentence()).toBe('Ready when you are.')

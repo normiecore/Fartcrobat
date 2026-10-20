@@ -7,6 +7,7 @@ import type { MainContext } from '@main/context'
 import { allWindows, createWindow, showWindow } from '@main/windows'
 import type { AgentCallReply, AgentCallRequest, AgentProgress, AgentStatus } from '@shared/agent/bridge'
 import { launchInfo } from './main/endpoint'
+import { refreshHelperCopy } from './main/helperCopy'
 import type { WindowHost } from './main/router'
 import { AgentAccess } from './main/service'
 
@@ -126,6 +127,16 @@ class ElectronWindows implements WindowHost {
  * The Claude Desktop extension shipped with the app. Unpackaged, it is built next to this bundle
  * (out/agent beside out/main), wherever the app was started from.
  */
+/** The MCP helper as shipped: next to app.asar when installed, from npm run build:agent otherwise. */
+function bundledHelper(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'agent', 'shim.mjs') : join(__dirname, '..', 'agent', 'shim.mjs')
+}
+
+/** Where an AI app set up by hand (Connect ChatGPT Desktop) runs the helper from (main/helperCopy.ts). */
+function helperForApps(): string {
+  return app.isPackaged ? join(app.getPath('userData'), 'agent-helper', 'shim.mjs') : bundledHelper()
+}
+
 function extensionPath(): string {
   return app.isPackaged
     ? join(process.resourcesPath, 'agent', 'fartcrobat.mcpb')
@@ -195,9 +206,12 @@ export function register(ctx: MainContext) {
     await agent.audit.ensure()
     shell.showItemInFolder(agent.audit.file)
   })
-  ctx.handle('feature:agent-access:chatgptConfig', () => {
-    const shim = app.isPackaged ? join(process.resourcesPath, 'agent', 'shim.mjs') : join(__dirname, '..', 'agent', 'shim.mjs')
-    if (!existsSync(shim)) throw new Error('The MCP helper is missing. Build or reinstall Fartcrobat first.')
+  // After an update, an AI app set up earlier gets the helper of this version.
+  if (app.isPackaged) void refreshHelperCopy(bundledHelper(), helperForApps(), false).catch(() => {})
+  ctx.handle('feature:agent-access:chatgptConfig', async () => {
+    const shim = helperForApps()
+    if (!existsSync(bundledHelper())) throw new Error('The MCP helper is missing. Build or reinstall Fartcrobat first.')
+    if (app.isPackaged) await refreshHelperCopy(bundledHelper(), shim, true)
     const command = 'node'
     const args = [shim]
     const env = { FARTCROBAT_USER_DATA: app.getPath('userData') }

@@ -1,11 +1,21 @@
 name: Release
 
-# Builds installers for Windows, macOS and Linux. Run it manually to only build them. To publish
-# a GitHub release with the installers attached, either run it manually on main with a version
-# (the tag v<version> is created on the commit it built), or push a tag like v0.2.0. To write the
-# release notes on GitHub first, save the release as a draft (do not publish it), run this
-# workflow, and publish the draft once the installers are attached: installed copies offer the
-# latest published release as soon as it exists.
+# Builds installers for Windows, macOS and Linux, and publishes them as a GitHub release.
+# - Merging a version bump of package.json into main publishes that version (merge the release PR
+#   with "Create a merge commit": a squash that carries "[skip ci]" from one of its commits skips
+#   this workflow). Notes come from docs/releases/v<version>.md when it exists, under the table of
+#   which file to download.
+# - Before publishing, the full CI suite (ci.yml) and the update rehearsal (update-rehearsal.yml)
+#   must pass on the same commit; installed copies on Windows and AppImages install a release
+#   silently, so nothing untested is published.
+# - When a job of that run fails for a reason outside the code (a runner, the network), use
+#   "Re-run failed jobs" on the same run: it keeps the merged commit. A manual run builds only;
+#   with a version (main only) it publishes main's head as it is then, so for a fix in the code,
+#   merge the fix and run it while main's head is the version bump plus that fix, never in addition
+#   to a run that can still publish. A v* tag push also publishes, the tagged commit.
+# - To write the notes on GitHub first, save the release as a draft (do not publish it): this
+#   workflow attaches the installers to the draft and points its tag at the commit it built and
+#   tested, and you publish it. Publishing it pushes the tag, and that run stops at once.
 on:
   workflow_dispatch:
     inputs:
@@ -15,12 +25,76 @@ on:
         default: ''
   push:
     tags: ['v*']
+    branches: [main]
+    paths: [package.json]
 
 permissions:
   contents: read
 
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.version.outputs.build }}
+      publish: ${{ steps.version.outputs.publish }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Select the release version
+        id: version
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BEFORE: ${{ github.event.before }}
+          REQUESTED: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          build=true
+          publish=false
+          if [[ "$EVENT" == push && "$REF" == refs/heads/main ]]; then
+            # A merged version bump is the release request. Dependency-only changes do not release.
+            if [[ ! "$BEFORE" =~ ^[0-9a-f]{40}$ || "$BEFORE" =~ ^0+$ ]]; then
+              echo "::error::No previous main commit to compare package.json with ($BEFORE). Run this workflow by hand with the version."
+              exit 1
+            fi
+            # Any number of commits may have been pushed (a rebase merge): fetch the one before them.
+            git fetch --no-tags --depth=1 origin "$BEFORE"
+            previous="$(git show "$BEFORE:package.json" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>console.log(JSON.parse(s).version))")"
+            if [[ "$version" == "$previous" ]]; then build=false; else publish=true; fi
+          elif [[ "$REF" == refs/tags/v* ]]; then
+            [[ "$REF" == "refs/tags/v$version" ]]
+            if [[ "$(gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)" == false ]]; then
+              # Publishing a draft on GitHub pushes its tag: that release is already out. Unless it
+              # was published before this workflow attached the files installed copies update from.
+              assets="$(gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+              for meta in latest.yml latest-mac.yml latest-linux.yml; do
+                if ! grep -qx "$meta" <<< "$assets"; then
+                  echo "::error::Release v$version is published without $meta, so installed copies cannot update to it. Make it a draft again (Edit release > Save draft), then run this workflow by hand on main with version $version."
+                  exit 1
+                fi
+              done
+              echo "::notice::Release v$version is already published. Nothing to do."
+              build=false
+            else
+              publish=true
+            fi
+          elif [[ "$EVENT" == workflow_dispatch && -n "$REQUESTED" && "$REF" == refs/heads/main ]]; then
+            [[ "$REQUESTED" == "$version" ]]
+            publish=true
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -61,9 +135,10 @@ jobs:
         # installer they could pick by mistake (scripts/release-downloads.mjs).
         run: node scripts/release-downloads.mjs --dir release --platform ${{ matrix.platform }}
       - name: Smoke-test the packaged app
-        # Opens, renders, searches and runs OCR in the packaged build (no node_modules, asar).
+        # Opens, renders, searches and runs OCR in the packaged build (no node_modules, asar), and
+        # runs the MCP helper that Connect ChatGPT Desktop names (it ships next to app.asar).
         if: matrix.os == 'ubuntu-24.04'
-        run: xvfb-run -a npx playwright test tests/e2e/smoke.spec.ts tests/e2e/ocr.spec.ts
+        run: xvfb-run -a npx playwright test tests/e2e/smoke.spec.ts tests/e2e/ocr.spec.ts tests/e2e/agent-chatgpt.spec.ts
         env:
           FARTCROBAT_EXECUTABLE: release/linux-unpacked/fartcrobat
       - uses: actions/upload-artifact@v4
@@ -83,22 +158,47 @@ jobs:
             release/*.blockmap
           if-no-files-found: error
 
+  # Everything ci.yml checks, on this commit (typecheck, lint, unit tests, build, end-to-end tests).
+  checks:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  # The latest release updates itself to a build of this version on every platform.
+  rehearsal:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-rehearsal.yml
+    with:
+      new: ${{ needs.prepare.outputs.version }}
+
   publish:
-    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.version != '' && github.ref == 'refs/heads/main')
-    needs: build
+    if: needs.prepare.outputs.publish == 'true'
+    needs: [prepare, build, checks, rehearsal]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    # One publish at a time: a second run for the same version then finds the release published
+    # (and stops) or a finished draft, never one still being uploaded.
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          # Only the installers: the checks and the rehearsal upload screenshots and logs too.
+          pattern: installers-*
           merge-multiple: true
       - name: Create the GitHub release (or add the installers to it)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', inputs.version) }}
+          TAG: v${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
           # The installers carry the version from package.json: the tag must say the same.
@@ -121,6 +221,14 @@ jobs:
           fi
           # Which one file each person downloads, at the top of the notes (README.md, Install).
           node scripts/release-downloads.mjs --dir dist --version "${TAG#v}" --notes > "$RUNNER_TEMP/downloads.md"
+          written="docs/releases/$TAG.md"
+          # The tag names the commit that was built and tested. One that already exists elsewhere (made
+          # by hand, or by publishing a draft that pointed at another branch) is never moved.
+          tagged="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | awk '{ sha = $1 } $2 ~ /\^\{\}$/ { peeled = $1 } END { print peeled ? peeled : sha }')"
+          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::Tag $TAG already exists on $tagged, not on the commit this run built and tested ($GITHUB_SHA). Delete that tag (Releases > Tags), then re-run this job."
+            exit 1
+          fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             # Made on GitHub first (Releases > Draft a new release, Save draft): attach the
             # installers. Only to a draft: installed copies already offer a published release, and
@@ -131,18 +239,30 @@ jobs:
               echo "::error::Release $TAG is already published, so installed copies already offer it. Make it a draft again (Edit release > Save draft) and re-run this job, or delete the release and re-run to create it."
               exit 1
             fi
+            # A draft's tag is made when it is published, on its target: make that this commit.
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
             # The notes written on GitHub keep their text, under the download table.
             gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/body.md"
+            # A draft without text gets the notes written for this version.
+            if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/body.md" && [ -f "$written" ]; then cp "$written" "$RUNNER_TEMP/body.md"; fi
             # [[:space:]]: a body saved on GitHub's web page has CRLF line ends.
-          if ! grep -qE '^## Download[[:space:]]*$' "$RUNNER_TEMP/body.md"; then
+            if ! grep -qE '^## Download[[:space:]]*$' "$RUNNER_TEMP/body.md"; then
               { cat "$RUNNER_TEMP/downloads.md"; echo; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/notes.md"
               gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
             fi
             echo "::notice::The installers are attached to the draft release $TAG. Publish it on GitHub when it is ready."
           else
             # A manual run creates the tag on the commit it built.
-            # --notes goes before the generated notes.
-            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fartcrobat $TAG" \
-              --notes "$(cat "$RUNNER_TEMP/downloads.md")" --generate-notes
+            # The download table, then the notes written for this version (docs/releases/<tag>.md)
+            # or, without them, GitHub's generated list of changes.
+            if [ -f "$written" ]; then
+              { cat "$RUNNER_TEMP/downloads.md"; echo; cat "$written"; } > "$RUNNER_TEMP/notes.md"
+              gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fartcrobat $TAG" \
+                --notes-file "$RUNNER_TEMP/notes.md"
+            else
+              # --notes goes before the generated notes.
+              gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fartcrobat $TAG" \
+                --notes "$(cat "$RUNNER_TEMP/downloads.md")" --generate-notes
+            fi
           fi

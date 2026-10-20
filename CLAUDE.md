@@ -17,15 +17,14 @@ Office conversion when installed, with a built-in fallback.
 - From 0.2.1 on a release has one file per kind of computer (Windows x64 and arm64 installers, no
   combined one; Mac `.dmg` for arm64 and x64, both named; Ubuntu/Debian `.deb`; AppImage for other
   Linux). `scripts/release-downloads.mjs` holds the table that README.md (Install) and the top of
-  the release notes show, and each release build checks its files against it. Merge #18 (which
-  makes that change) before #17: #17 publishes 0.2.1 as soon as its version bump reaches `main`,
-  and both edit the publish step of `release.yml`.
+  the release notes show, and each release build checks its files against it.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
   access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
-  per computer, update rehearsal for every download). #11 merged main into the old session branch.
-  Open: #17 (0.2.1, companion joining and on-document review).
+  per computer, update rehearsal for every download), #19 (no request to Google for spell-check
+  dictionaries). #11 merged main into the old session branch. Open: #17 (0.2.1, companion joining
+  and on-document review); merging it publishes 0.2.1.
 - 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
   turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
   0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
@@ -33,7 +32,7 @@ Office conversion when installed, with a built-in fallback.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
-- About 1540 unit tests (vitest) and 163 end-to-end tests (Playwright on Electron).
+- About 1590 unit tests (vitest) and 172 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
@@ -53,7 +52,8 @@ Office conversion when installed, with a built-in fallback.
     user and per machine) updated themselves to a test 0.2.1 from a fake GitHub (Restart now,
     Later, a wrong checksum, the policy off), and the released Mac app and `.deb` (with Ubuntu
     24.04's AppArmor setting) offered it and opened its release page.
-    `.github/workflows/update-rehearsal.yml` runs all of it. Run it before each release; after
+    `.github/workflows/update-rehearsal.yml` runs all of it, and every release runs it before
+    publishing (release.yml); after
     publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform,
     and try a Windows per-machine install with UAC on (as an administrator and as a standard
     user): the runners elevate without asking, so the rehearsal cannot show the UAC prompt.
@@ -78,15 +78,17 @@ Office conversion when installed, with a built-in fallback.
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Suggested order for the next session: review the native MCP editing branch, cut 0.2.0 (so people get the updater and
-  certificate encryption), then the update test with 0.2.1 and the Windows checklist.
+- Next, once 0.2.1 is published: let an installed 0.2.0 update from the real github.com once per
+  platform, try a Windows per-machine update with UAC on, run the Windows certificate checklist,
+  and try agent access and the companion with a real Claude Desktop and ChatGPT Desktop (backlog
+  16).
 
 
 ### Native MCP editing (16 Oct 2026)
 
 - Branch codex/live-mcp-text-editing adds get_editable_text, edit_text, get_document_layout,
   reflow_text and rebuild_document. See docs/features/agent-text-editing.md.
-- Native edits and linked column/page flows happen in the open PDF, with a before/after review,
+- Native edits and linked column/page flows happen in the open PDF, with an on-document review,
   revision guards and one undo step. Flow templates keep artwork and unmanaged content; static
   page labels and link/comment anchors need review. A clean new design is a separate tool.
 - The MCP client performs semantic/visual interpretation using the exposed structure and renders.
@@ -100,11 +102,12 @@ Office conversion when installed, with a built-in fallback.
 
 - See docs/features/agent-companion.md. Draggable provider sprites, observed activity bubbles,
   compact in-app MCP conversation, and installation-specific ChatGPT Desktop setup are added.
-- companion_chat is client-initiated: the user starts it once from the external desktop chat;
-  it cannot wake an idle AI session. No API provider, credentials or automatic model is added.
+- companion_chat is client-initiated: the person opens the chat (Chat here) and the next successful
+  tool call of a conversation hands it the session (0.2.1); it cannot wake an idle AI session. No
+  API provider, credentials or automatic model is added.
 - Chat history stays in memory. Position only is persisted. MCP now exposes 37 tools.
-- Local cloud environment blocks Unix sockets and Electron single-instance launch; full MCP
-  desktop tests must run on CI/a supported local desktop, not be claimed passed here.
+- The agent e2e specs (`tests/e2e/agent-*.spec.ts`) run in a Claude cloud session like the others
+  (Unix sockets work there, checked 20 Oct 2026), also against a packaged build.
 
 ## Where things are
 
@@ -166,17 +169,25 @@ outputs are committed; tests never generate them at run time.
 - `.github/workflows/ci.yml`: ubuntu-24.04, Node 22, installs pypdf (`tests/requirements.txt`),
   poppler-utils and LibreOffice, then typecheck, lint, unit tests, build, e2e under xvfb.
 - `.github/workflows/release.yml`: builds installers on Windows, macOS and Linux.
-- To release: bump `version` in `package.json` on `main` (via a PR), then Actions > Release > Run
-  workflow on `main` with that version. The publish job checks the version matches, creates the
-  tag on the built commit and attaches the installers. Pushing a `v*` tag also works, but the
-  Claude session git proxy refuses tag pushes, so use the manual run.
+- To release: merge a PR that bumps `version` in `package.json` into `main`, with "Create a merge
+  commit" (a squash can carry a `[skip ci]` from one of its commits, and GitHub then skips the
+  workflow). That push publishes: the release workflow builds the installers, runs the full CI
+  suite (`ci.yml`) and the update rehearsal (`update-rehearsal.yml`) on the same commit, and only
+  then creates the tag and the release, with the download table and `docs/releases/v<version>.md`
+  as notes. When a job of that run fails for a reason outside the code (a runner, the network),
+  use "Re-run failed jobs" on the same run, which keeps the merged commit. For a fix in the code,
+  merge the fix and run the workflow by hand on `main` with the version: that publishes main's head
+  as it is then, so only while it is the version bump plus that fix, and never in addition to a
+  run that can still publish. A `v*` tag push also publishes (the Claude session git proxy refuses tag
+  pushes), and a tag that already names another commit stops the publish.
 - In-app updates (`docs/features/updates.md`) download from the latest GitHub release, so every
   release must carry `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and the `.blockmap` files
   (electron-builder writes them; the publish job fails without them). v0.1.0 has no updater: people
   on it install the next version by hand once. To write release notes on GitHub first, save the
-  release as a draft and do not publish it until the workflow has attached the installers
-  (installed copies offer a published release at once); the publish job refuses to add files to a
-  published release.
+  release as a draft and do not publish it until the workflow has attached the installers and
+  pointed its tag at the built commit (installed copies offer a published release at once); the
+  publish job refuses to add files to a published release. Publishing the draft pushes the tag;
+  that run sees the release is out and stops.
 - Windows installers are unsigned and macOS builds are only ad-hoc signed. Signing uses the
   `CSC_LINK` and `CSC_KEY_PASSWORD` repository secrets when they exist.
 
@@ -259,3 +270,20 @@ Roughly in priority order:
 
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.
+
+### 0.2.1 (#17, 20 Oct 2026)
+
+- Companion: opening the chat lets the next conversation that uses Fartcrobat join, without an
+  invitation. Closing or minimizing it before one joins takes that back until it is opened again;
+  End & clear, or a disconnect of the joined conversation, ends it until the person allows a new
+  conversation. Shims older than 0.2.1 drop the token, so their calls never join by themselves
+  (`shimForwardsCompanion`; an explicit `companion_chat` still joins), and the chat and
+  Preferences ask for the extension to be added again. Conversation-token isolation, on-document edit review (a save keeps it open, any edit
+  ends it) and three working poses. See the agent-companion and agent-text-editing notes.
+- Connect ChatGPT Desktop works in installed builds: `shim.mjs` ships next to app.asar and the
+  setup points at a copy in `<userData>/agent-helper/`, refreshed at each start. The setup's
+  `FARTCROBAT_USER_DATA` names the usual folder, which the helper does not take for a separate
+  profile (`separateProfile` in `src/agent-shim/launch.ts`): it starts the app through WMI or
+  LaunchServices, as for the Claude extension.
+- Merging #17 publishes 0.2.1 (see "To release"). Merge it with "Create a merge commit": one of its
+  commit messages names the skip marker, which a squash would carry into main's head commit.

@@ -1,13 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { GripHorizontal, MessageCircle, Minus, Send, Settings, X } from 'lucide-react'
-import { invoke, openPreferences, showError, useActiveDoc, useApp } from '@renderer/sdk'
+import { invoke, openPreferences, useActiveDoc, useApp } from '@renderer/sdk'
 import { usePopupEscape } from '@renderer/ui/Menu'
+import { shimForwardsCompanion } from '@shared/agent/protocol'
+import { useInlineReview } from './reviewState'
 import { BOOT } from '../tools/common'
 import { appLabel, useAgentUi } from './store'
 import {
   activitySentence,
-  COMPANION_START_PROMPT,
+  allowNewConversation,
+  armCompanion,
+  disarmCompanion,
   endCompanion,
   sendCompanionMessage,
   useCompanion
@@ -32,21 +36,35 @@ export function clampPosition(
 /** Small vector sprites stay sharp at every screen scale. Branding identifies the connected app. */
 export function CompanionAvatar({ provider, busy = false }: { provider: string; busy?: boolean }) {
   const claude = provider === 'Claude'
+  const [pose, setPose] = useState(0)
+  useEffect(() => {
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)')
+    let timer: ReturnType<typeof setInterval> | undefined
+    const update = () => {
+      clearInterval(timer)
+      setPose(0)
+      if (busy && !motion.matches) timer = setInterval(() => setPose(p => (p + 1) % 3), 1100)
+    }
+    update()
+    motion.addEventListener('change', update)
+    return () => { clearInterval(timer); motion.removeEventListener('change', update) }
+  }, [busy])
   return (
     <svg
       className={`${P}-avatar ${busy ? 'is-busy' : ''}`}
+      data-pose={pose}
       viewBox="0 0 80 64"
       aria-label={claude ? 'Claude pixel companion' : 'OpenAI inspired companion'}
       role="img"
     >
       {claude ? (
-        <g fill="#c68162" shapeRendering="crispEdges">
+        <g fill="#c68162" shapeRendering="crispEdges" transform={pose === 1 ? "translate(0 -2) rotate(-3 40 32)" : pose === 2 ? "rotate(3 40 32)" : undefined}>
           <path d="M18 12h44v34H18zM10 23h8v17h-8zM62 23h8v17h-8zM22 46h8v12h-8zM50 46h8v12h-8z" />
           <path fill="#282422" d="M27 25h6v8h-6zM47 25h6v8h-6z" />
         </g>
       ) : (
         <g>
-          <g fill="none" stroke="#5c9f91" strokeWidth="7" strokeLinejoin="round">
+          <g transform={pose === 1 ? "rotate(-5 40 30)" : pose === 2 ? "rotate(5 40 30)" : undefined} fill="none" stroke="#5c9f91" strokeWidth="7" strokeLinejoin="round">
             {Array.from({ length: 6 }, (_, i) => (
               <path
                 key={i}
@@ -69,6 +87,7 @@ export function AgentCompanion() {
   const status = useAgentUi((s) => s.status)
   const calls = useAgentUi((s) => s.calls)
   const companion = useCompanion()
+  const reviewing = useInlineReview(s => !!s.review)
   const readMode = useApp((s) => s.readMode)
   const doc = useActiveDoc()
   const [chat, setChat] = useState(false)
@@ -86,6 +105,7 @@ export function AgentCompanion() {
   positionRef.current = position
   const owner = companion.owner
   const connections = status?.connections ?? []
+  const outdated = connections.find((c) => !shimForwardsCompanion(c.shimVersion))
   const provider = owner?.name ?? appLabel(connections[0]?.client.name)
   const call = calls.find(
     (c) =>
@@ -93,14 +113,21 @@ export function AgentCompanion() {
       c.tool !== 'wait_for_result' &&
       (!owner || c.id.startsWith(`${owner.id}:`))
   )
-  const busy = call?.outcome === 'running' || call?.outcome === 'pending'
+  const busy = !reviewing && (call?.outcome === 'running' || call?.outcome === 'pending')
   const message = !status?.enabled
     ? 'AI access is turned off.'
     : !connections.length
       ? 'Connect your AI app to get started.'
-      : activitySentence(call)
+      : reviewing ? 'Your edits are ready to review on the page.' : activitySentence(call)
 
-  usePopupEscape(chat, () => setChat(false))
+  // Opening the chat lets the next conversation in; closing it before one joins takes that back.
+  const hideChat = () => {
+    setChat(false)
+    disarmCompanion()
+  }
+  const hidden = !loaded || readMode || companion.minimized || (!connections.length && !companion.revealed && !owner)
+  // Only a chat on screen takes Escape: in Read Mode it leaves Read Mode.
+  usePopupEscape(chat && !hidden, hideChat)
   useEffect(() => {
     let alive = true
     void invoke('store:get', POSITION_KEY)
@@ -126,9 +153,18 @@ export function AgentCompanion() {
     }
   }, [])
   useEffect(() => {
-    if (owner && status && (!status.enabled || !status.connections.some((c) => c.id === owner.id)))
+    // Its conversation went away: nobody else joins until the person allows a new conversation.
+    if (owner && status && (!status.enabled || !status.connections.some((c) => c.id === owner.id))) {
       endCompanion()
+      // A message half typed for that conversation must not go to the next one.
+      setDraft('')
+    }
   }, [owner, status])
+  const session = owner?.session
+  useEffect(() => {
+    // A new conversation starts without the last one's notice ("Chat ended and cleared.").
+    if (session) setNotice('')
+  }, [session])
   useEffect(() => {
     if (!loaded) return
     const fit = () => {
@@ -155,12 +191,11 @@ export function AgentCompanion() {
     void invoke('store:set', POSITION_KEY, { ...positionRef.current, minimized }).catch(() => {})
   }
   const minimize = () => {
-    setChat(false)
+    hideChat()
     useCompanion.setState({ minimized: true })
     persist(true)
   }
-  if (!loaded || readMode || companion.minimized || (!connections.length && !companion.revealed && !owner))
-    return null
+  if (hidden) return null
   const pending = companion.messages.some((m) => m.role === 'user' && !m.delivered)
   return createPortal(
     <section ref={root} className={P} style={{ left: position.x, top: position.y }} aria-label="AI companion">
@@ -237,7 +272,13 @@ export function AgentCompanion() {
           className={`${P}-avatar-button`}
           aria-label={chat ? 'Hide companion chat' : 'Chat with companion'}
           aria-expanded={chat}
-          onClick={() => setChat(!chat)}
+          onClick={() => {
+            if (chat) hideChat()
+            else {
+              armCompanion()
+              setChat(true)
+            }
+          }}
         >
           <CompanionAvatar provider={provider} busy={busy} />
         </button>
@@ -246,7 +287,14 @@ export function AgentCompanion() {
         </div>
       </div>
       {!chat ? (
-        <button type="button" className={`${P}-chat-toggle`} onClick={() => setChat(true)}>
+        <button
+          type="button"
+          className={`${P}-chat-toggle`}
+          onClick={() => {
+            armCompanion()
+            setChat(true)
+          }}
+        >
           <MessageCircle size={14} />
           {owner ? 'Continue chat' : 'Chat here'}
         </button>
@@ -257,30 +305,32 @@ export function AgentCompanion() {
               {owner
                 ? companion.listening
                   ? `${owner.name} is listening`
-                  : `${owner.name} session joined`
-                : 'Start companion chat'}
+                  : `Connected to ${owner.name}`
+                : companion.autoJoin ? 'Waiting for a conversation' : 'Chat ended'}
             </span>
-            <button type="button" aria-label="Hide chat" onClick={() => setChat(false)}>
+            <button type="button" aria-label="Hide chat" onClick={hideChat}>
               <X size={14} />
             </button>
           </div>
           {!owner ? (
             <div className={`${P}-setup`}>
               <p>
-                Connect Claude Desktop or ChatGPT Desktop in AI apps. Then paste this invitation into a chat
-                there to let it listen here.
+                {companion.autoJoin
+                  ? 'Ask Claude or ChatGPT to use Fartcrobat. The next conversation that does connects to this chat, no invitation needed.'
+                  : 'Chat ended. No conversation can connect until you allow a new one.'}
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(COMPANION_START_PROMPT)
-                    .then(() => setNotice('Invitation copied. Paste it into your AI app.'))
-                    .catch((e) => showError(e, 'Could not copy invitation'))
-                }}
-              >
-                Copy chat invitation
-              </button>
+              {!companion.autoJoin && (
+                <button type="button" onClick={allowNewConversation}>
+                  Allow a new conversation
+                </button>
+              )}
+              {companion.autoJoin && outdated && (
+                <p className={`${P}-hint`}>
+                  {appLabel(outdated.client.name)} uses the Fartcrobat extension from an older version, which doesn’t
+                  connect to this chat by itself. Add it again in Preferences &gt; AI apps, then restart{' '}
+                  {appLabel(outdated.client.name)}.
+                </p>
+              )}
               <p className={`${P}-hint`}>
                 Your desktop AI session must stay active. This companion doesn’t run its own model.
               </p>
@@ -362,7 +412,7 @@ export function AgentCompanion() {
                 </button>
               </div>
               {!companion.listening && (
-                <p className={`${P}-hint`}>If replies stop, ask your AI app to resume companion chat.</p>
+                <p className={`${P}-hint`}>Waiting for your AI app to listen. If replies stop, resume the same conversation there.</p>
               )}
             </>
           )}
