@@ -1,4 +1,6 @@
 /** Right panel "Agent activity" (also shown in a popover on Home): connections and recent calls. */
+import { memo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { Ban, Bot, Check, CircleAlert, Loader2, Settings, ShieldX, Unplug } from 'lucide-react'
 import type { AgentConnectionInfo } from '@shared/agent/bridge'
 import { shimForwardsCompanion } from '@shared/agent/protocol'
@@ -27,7 +29,8 @@ const OUTCOME: Record<CallRecord['outcome'], { label: string; icon: typeof Check
   pending: { label: 'Still running', icon: Loader2 }
 }
 
-function CallRow({ call }: { call: CallRecord }) {
+// A record keeps its identity until its call changes, so only that row renders again.
+const CallRow = memo(function CallRow({ call }: { call: CallRecord }) {
   const o = OUTCOME[call.outcome]
   const doc = documentLabel(call.document)
   return (
@@ -51,7 +54,7 @@ function CallRow({ call }: { call: CallRecord }) {
       </div>
     </li>
   )
-}
+})
 
 export function ConnectionList({ connections, compact }: { connections: AgentConnectionInfo[]; compact?: boolean }) {
   if (!connections.length) return <p className={`shell-muted ${P}-none`}>No AI app is connected.</p>
@@ -108,13 +111,13 @@ export function BlockedList({ blocked }: { blocked: string[] }) {
 
 /** Connections, recent calls and a way to the settings. `onLeave` closes a popover around it. */
 export function ActivityView({ onLeave }: { onLeave?: () => void }) {
-  const status = useAgentUi((s) => s.status)
+  const status = useAgentUi(useShallow((s) => ({ off: s.status?.enabled === false, connections: s.status?.connections, blocked: s.status?.blocked })))
   const calls = useAgentUi((s) => s.calls)
-  const connections = status?.connections ?? []
+  const connections = status.connections ?? []
   return (
     <div className={`${P}-activity`}>
       <Button size="sm" onClick={() => { useCompanion.setState({ minimized: false, revealed: true }); onLeave?.() }}>Show companion</Button>
-      {status && !status.enabled && (
+      {status.off && (
         <p className={`${P}-note`}>Agent access is turned off. AI apps cannot work with your documents.</p>
       )}
       <Section
@@ -128,7 +131,7 @@ export function ActivityView({ onLeave }: { onLeave?: () => void }) {
         }
       >
         <ConnectionList connections={connections} compact />
-        <BlockedList blocked={status?.blocked ?? []} />
+        <BlockedList blocked={status.blocked ?? []} />
       </Section>
       <Section title="Recent activity">
         {calls.length ? (
