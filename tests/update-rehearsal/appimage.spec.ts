@@ -98,7 +98,8 @@ async function startApp(): Promise<{ app: ElectronApplication; page: Page; proc:
     ].join('\n')
   )
   chmodSync(launcher, 0o755)
-  const app = await electron.launch({ executablePath: launcher, args: [], timeout: 120_000 })
+  // With Chromium's sandbox, as from a desktop (Playwright turns it off on Linux by default).
+  const app = await electron.launch({ executablePath: launcher, args: [], chromiumSandbox: true, timeout: 120_000 })
   const page = await app.firstWindow({ timeout: 120_000 })
   await page.waitForSelector('.shell', { timeout: 120_000 })
   // Kept: Playwright drops the ElectronApplication's process once it is closed.

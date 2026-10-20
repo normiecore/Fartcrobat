@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // A stand-in for github.com in update rehearsals (tests/update-rehearsal/README.md). A packaged
 // Fartcrobat always asks github.com, so this is an HTTP proxy: the app is pointed at it (the
-// https_proxy variable on Linux, --proxy-server on Windows) and it answers HTTPS for github.com and
+// https_proxy variable for the AppImage, --proxy-server elsewhere) and it answers HTTPS for github.com and
 // GitHub's release asset host itself, with a test certificate, as GitHub would. Every other host is
 // refused, so a rehearsal never reaches the internet.
 //

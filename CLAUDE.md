@@ -14,6 +14,10 @@ Office conversion when installed, with a built-in fallback.
   `.tar.gz`). It has no updater.
 - v0.2.0 (17 Oct 2026) is the first release with the in-app updater and its `latest*.yml` files,
   and with certificate encryption and native MCP editing.
+- From 0.2.1 on a release has one file per kind of computer (Windows x64 and arm64 installers, no
+  combined one; Mac `.dmg` for arm64 and x64, both named; Ubuntu/Debian `.deb`; AppImage for other
+  Linux). `scripts/release-downloads.mjs` holds the table that README.md (Install) and the top of
+  the release notes show, and each release build checks its files against it.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
   access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
@@ -37,10 +41,12 @@ Office conversion when installed, with a built-in fallback.
   more, so updates replace it in place. A review (install safety, security, release pipeline, UI)
   found 15 issues, all fixed in the PR, among them an inherited `APPIMAGE` variable that would
   have made a .deb install replace another app's AppImage.
-  - The update rehearsal (`tests/update-rehearsal/README.md`) tries it without publishing: the
-    released 0.2.0 AppImage updated itself to a test 0.2.1 from a fake GitHub on 20 Oct 2026
-    (Restart now, Later, a wrong checksum, the policy off: all pass). The Windows half (per user,
-    per machine) runs in `.github/workflows/update-rehearsal.yml`. Run it before each release; after
+  - The update rehearsal (`tests/update-rehearsal/README.md`) tries it without publishing, from
+    each kind of download: on 20 Oct 2026 the released 0.2.0 AppImage and Windows installer (per
+    user and per machine) updated themselves to a test 0.2.1 from a fake GitHub (Restart now,
+    Later, a wrong checksum, the policy off), and the released `.deb` offered it and opened its
+    release page (in a cloud session; the Mac and AppArmor runs are the workflow's `mac` and `deb`
+    jobs). `.github/workflows/update-rehearsal.yml` runs all of it. Run it before each release; after
     publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform,
     and try a Windows per-machine install with UAC on (as an administrator and as a standard
     user): the runners elevate without asking, so the rehearsal cannot show the UAC prompt.

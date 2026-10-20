@@ -2,6 +2,8 @@
 // on a windows-latest runner: the released installer of the previous version, installed silently
 // per user or per machine, updates the app from a fake GitHub (fake-github.mjs) to a build of the
 // next version. One scenario per job (REHEARSAL_SCENARIO), each on a fresh runner.
+// REHEARSAL_INSTALLER picks the installer that was run: x64 (the file people download), or
+// combined, the installer for both processors that 0.2.0 also shipped.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync, type ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -13,12 +15,16 @@ const OLD = env('REHEARSAL_OLD')
 const NEW = env('REHEARSAL_NEW')
 const SCOPE = env('REHEARSAL_SCOPE') as 'user' | 'machine'
 const SCENARIO = env('REHEARSAL_SCENARIO') as 'restart' | 'later' | 'policy'
+const INSTALLER = (process.env.REHEARSAL_INSTALLER ?? 'x64') as 'x64' | 'combined'
 const RELEASES = join(WORK, 'releases')
+const INSTALLER_FILE = join(RELEASES, `v${OLD}`, INSTALLER === 'x64' ? `Fartcrobat-Setup-${OLD}-x64.exe` : `Fartcrobat-Setup-${OLD}.exe`)
+const NAME = `${SCOPE}-${SCENARIO}-${INSTALLER}`
 const OUT = join(WORK, 'out')
 const UNINSTALL = `${SCOPE === 'machine' ? 'HKLM' : 'HKCU'}\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall`
 const POLICY_KEY = 'HKLM\\SOFTWARE\\Policies\\Fartcrobat'
 
 test.skip(process.platform !== 'win32', 'Windows only')
+test.skip(process.platform === 'win32' && !existsSync(INSTALLER_FILE), `${OLD} has no ${INSTALLER} installer`)
 test.setTimeout(15 * 60_000)
 
 let gh: FakeGitHub
@@ -40,8 +46,7 @@ test.afterAll(() => {
 
 /** The released installer of OLD, run silently as an administrator deploying it would. */
 async function install() {
-  const installer = join(RELEASES, `v${OLD}`, `Fartcrobat-Setup-${OLD}.exe`)
-  execFileSync(installer, SCOPE === 'machine' ? ['/S', '/allusers'] : ['/S'], { stdio: 'inherit', timeout: 10 * 60_000 })
+  execFileSync(INSTALLER_FILE, SCOPE === 'machine' ? ['/S', '/allusers'] : ['/S'], { stdio: 'inherit', timeout: 10 * 60_000 })
   await expect
     .poll(() => installed()?.version, { timeout: 60_000 })
     .toBe(OLD)
@@ -128,27 +133,27 @@ async function waitForExit(proc: ChildProcess) {
 }
 
 /**
- * Writes what the app asked the fake GitHub, and how it downloaded the installer. Not asserted to
- * be differential: an install made with the combined x64 + arm64 installer (the one installed
- * here) caches that file, while the updater picks the x64 installer and its blockmap, so its first
- * update falls back to a full download (README.md).
+ * Writes what the app asked the fake GitHub, and how it downloaded the installer. An install keeps
+ * the installer it ran for the next update's differential download, but the updater picks the x64
+ * installer and its blockmap: an install made with the combined installer gets a full download
+ * once (README.md).
  */
 async function report() {
   const reqs = await gh.requests()
-  writeFileSync(join(OUT, `${SCOPE}-${SCENARIO}-requests.txt`), describe(reqs).join('\n') + '\n')
+  writeFileSync(join(OUT, `${NAME}-requests.txt`), describe(reqs).join('\n') + '\n')
   const download = downloadSummary(reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' && /\.exe$/.test(r.path ?? '')))
-  writeFileSync(join(OUT, `${SCOPE}-${SCENARIO}-download.txt`), download.text + '\n')
+  writeFileSync(join(OUT, `${NAME}-download.txt`), download.text + '\n')
   console.log(`Download: ${download.text}`)
   return { reqs, download }
 }
 
-test(`${SCOPE}: Restart now asks about unsaved changes, then installs ${NEW} and starts it`, async () => {
+test(`${SCOPE}, ${INSTALLER} installer: Restart now asks about unsaved changes, then installs ${NEW} and starts it`, async () => {
   test.skip(SCENARIO !== 'restart')
   const { app, page, proc } = await startApp()
   expect(await version(app)).toBe(OLD)
   await checkFromHelpMenu(page)
   await downloadUpdate(page, NEW)
-  await shot(page, `${SCOPE}-ready`)
+  await shot(page, `${NAME}-ready`)
 
   const document = join(WORK, 'notes.pdf')
   if (!existsSync(document)) copyFileSync(join(HERE, '..', 'fixtures', 'text.pdf'), document)
@@ -172,24 +177,25 @@ test(`${SCOPE}: Restart now asks about unsaved changes, then installs ${NEW} and
   expect(running()).toBeGreaterThan(0)
   killApps()
 
-  const { reqs } = await report()
+  const { reqs, download } = await report()
   expect(reqs.filter((r) => r.refused && /github/.test(r.host ?? ''))).toEqual([])
   expect(reqs.some((r) => r.path?.endsWith(`/releases/download/v${NEW}/latest.yml`))).toBe(true)
-  expect(reqs.some((r) => r.host === 'release-assets.githubusercontent.com' && r.path?.includes(`/v${NEW}/`))).toBe(true)
+  expect(download.text).toContain(`Fartcrobat-Setup-${NEW}-x64.exe:`)
+  if (INSTALLER === 'x64') expect(download.differential, download.text).toBe(true)
 
   const again = await startApp()
   try {
     expect(await version(again.app)).toBe(NEW)
     await checkFromHelpMenu(again.page)
     await expect(again.page.locator('.toast', { hasText: /up to date/i })).toBeVisible({ timeout: 60_000 })
-    await shot(again.page, `${SCOPE}-new-up-to-date`)
+    await shot(again.page, `${NAME}-new-up-to-date`)
   } finally {
     await again.app.close().catch(() => {})
     killApps()
   }
 })
 
-test(`${SCOPE}: Later installs ${NEW} when Fartcrobat quits, without starting it`, async () => {
+test(`${SCOPE}, ${INSTALLER} installer: Later installs ${NEW} when Fartcrobat quits, without starting it`, async () => {
   test.skip(SCENARIO !== 'later')
   const { app, page, proc } = await startApp()
   await checkFromHelpMenu(page)
@@ -204,14 +210,14 @@ test(`${SCOPE}: Later installs ${NEW} when Fartcrobat quits, without starting it
   await report()
 })
 
-test(`${SCOPE}: AutoUpdate=0 under ${POLICY_KEY}: no request reaches GitHub`, async () => {
+test(`${SCOPE}, ${INSTALLER} installer: AutoUpdate=0 under ${POLICY_KEY}: no request reaches GitHub`, async () => {
   test.skip(SCENARIO !== 'policy')
   execFileSync('reg', ['add', POLICY_KEY, '/v', 'AutoUpdate', '/t', 'REG_DWORD', '/d', '0', '/f'], { stdio: 'inherit' })
   try {
     const { app, page } = await startApp()
     await checkFromHelpMenu(page)
     await expect(page.locator('.toast', { hasText: 'Updates are managed by your organization.' })).toBeVisible()
-    await shot(page, `${SCOPE}-policy`)
+    await shot(page, `${NAME}`)
     await new Promise((r) => setTimeout(r, 40_000))
     await app.close().catch(() => {})
     const { reqs } = await report()

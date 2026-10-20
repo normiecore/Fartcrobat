@@ -108,6 +108,14 @@ AppImages, in detail:
   builds with `--publish never`; its publish job uploads `latest.yml`, `latest-mac.yml`,
   `latest-linux.yml` and the `.blockmap` files with the installers, and fails if one is missing.
 - v0.1.0 has no updater: people on it install the next version by hand once.
+- One file per kind of computer, named in README.md (Install) and at the top of each release's
+  notes: `Fartcrobat-Setup-<v>-x64.exe` and `-arm64.exe`, `Fartcrobat-<v>-arm64.dmg` and
+  `-x64.dmg`, `fartcrobat_<v>_amd64.deb`, `Fartcrobat-x86_64.AppImage`.
+  `scripts/release-downloads.mjs` keeps that table, and each release build checks its files against
+  it (and that it made no other installer). 0.2.0 also shipped one Windows installer for both
+  processors; from 0.2.1 on `nsis.buildUniversalInstaller` is off. An install keeps the installer it
+  ran for its next update's differential download, and the updater picks the installer for its own
+  processor, so an install made with the combined installer gets a full download once.
 - A release written on GitHub first must be saved as a draft, not published, until the workflow
   has attached the installers: installed copies offer the latest published release at once, and
   would find no update metadata (or, while files are being replaced, metadata for files that are
@@ -129,12 +137,14 @@ AppImages, in detail:
   `FARTCROBAT_UPDATE_CHECKS=0`, the one test variable packaged builds honour, and only to turn
   automatic checks off, so runs against a packaged build ask github.com nothing either).
 - Update rehearsal (`tests/update-rehearsal/README.md`): the released previous version, installed
-  for real, updates itself from a fake GitHub (an HTTPS proxy that answers for github.com) to a
-  build of the next version: Restart now asks about unsaved changes first, Later installs on quit, a
-  download that does not match its checksum is refused, and the policy stops every request. Linux
-  AppImage with `linux.sh` (root, throwaway machine); Windows per user and per machine in
-  `.github/workflows/update-rehearsal.yml`. On 20 Oct 2026 the released 0.2.0 AppImage passed all
-  four scenarios.
+  for real from each kind of download, finds the next version on a fake GitHub (an HTTPS proxy that
+  answers for github.com). The AppImage and the Windows installer update to a build of it: Restart
+  now asks about unsaved changes first, Later installs on quit, the download is differential, a
+  download that does not match its checksum is refused. The Mac app and the `.deb` (on Ubuntu 24.04
+  with AppArmor limiting user namespaces, as desktops have it) offer it and open its release page.
+  The policy stops every request. Linux AppImage with `linux.sh` (root, throwaway machine);
+  everything in `.github/workflows/update-rehearsal.yml`. On 20 Oct 2026 the released 0.2.0 AppImage
+  and Windows installer (per user and per machine) passed, and its `.deb` in a cloud session.
   The Windows runners elevate without asking, so a per-machine update's UAC prompt is not covered.
 - Manual, after publishing a release: start the previous version once on each platform and let it
   update from the real github.com, including a Windows per-machine install on a machine with UAC

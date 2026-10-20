@@ -27,10 +27,13 @@ jobs:
         include:
           - os: windows-latest
             script: dist:win
+            platform: win
           - os: macos-latest
             script: dist:mac
+            platform: mac
           - os: ubuntu-24.04
             script: dist:linux
+            platform: linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +56,10 @@ jobs:
           # Optional code signing: add these secrets to sign installers.
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - name: One file per kind of computer
+        # The files README.md (Install) and the release notes tell people to download, and no other
+        # installer they could pick by mistake (scripts/release-downloads.mjs).
+        run: node scripts/release-downloads.mjs --dir release --platform ${{ matrix.platform }}
       - name: Smoke-test the packaged app
         # Opens, renders, searches and runs OCR in the packaged build (no node_modules, asar).
         if: matrix.os == 'ubuntu-24.04'
@@ -112,6 +119,8 @@ jobs:
             echo "::error::No .blockmap files were built: in-app updates need them for differential downloads."
             exit 1
           fi
+          # Which one file each person downloads, at the top of the notes (README.md, Install).
+          node scripts/release-downloads.mjs --dir dist --version "${TAG#v}" --notes > "$RUNNER_TEMP/downloads.md"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             # Made on GitHub first (Releases > Draft a new release, Save draft): attach the
             # installers. Only to a draft: installed copies already offer a published release, and
@@ -123,8 +132,16 @@ jobs:
               exit 1
             fi
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            # The notes written on GitHub keep their text, under the download table.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/body.md"
+            if ! grep -q '^## Download$' "$RUNNER_TEMP/body.md"; then
+              { cat "$RUNNER_TEMP/downloads.md"; echo; cat "$RUNNER_TEMP/body.md"; } > "$RUNNER_TEMP/notes.md"
+              gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file "$RUNNER_TEMP/notes.md"
+            fi
             echo "::notice::The installers are attached to the draft release $TAG. Publish it on GitHub when it is ready."
           else
             # A manual run creates the tag on the commit it built.
-            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fartcrobat $TAG" --generate-notes
+            # --notes goes before the generated notes.
+            gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Fartcrobat $TAG" \
+              --notes "$(cat "$RUNNER_TEMP/downloads.md")" --generate-notes
           fi
