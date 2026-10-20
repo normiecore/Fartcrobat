@@ -24,8 +24,8 @@ exact native font metrics, page previews, validated edits and an undoable docume
    It replaces the pages and removes the old images, page annotations/forms and bookmarks.
    Attachments and document security stay. Digitally signed documents are refused.
 5. preview_only returns proposed page images and reports without changing the live document.
-   Otherwise Fartcrobat shows the before/after text and pages. Decline is the default; Escape or
-   cancelling the MCP call declines. Apply changes makes one Agent-labelled undo step.
+   Otherwise Fartcrobat shows the proposal on the document with a Review edits panel (see 0.2.1
+   below). Cancelling the MCP call discards it. The accepted edits make one Agent-labelled undo step.
 6. The agent inspects the resulting pages with render_page. save_document can save a new local
    PDF; editing never silently writes over the source file. Reinstall the bundled Claude Desktop
    extension after updating the app so it advertises the new tools.
@@ -58,7 +58,7 @@ exact native font metrics, page previews, validated edits and an undoable docume
 - src/features/agent-access/engine.ts: inspect, isolated previews, guarded native mutations.
 - textEdits.ts: validated text plans; flow.ts: linked regions and repeated design pages.
 - reflow.ts and reflowEngine.ts: data-only new-design input, native pagination and page replacement.
-- tools/text.tsx: MCP handlers and the before/after review in the existing confirmation UI.
+- tools/text.tsx: MCP handlers; ui/InlineReview.tsx and ui/reviewState.ts: the on-document review.
 - src/features/edit-text/engine.ts: createTextComposer shares the interactive editor's native
   shaping/writing with flows. No parallel text renderer.
 - tests/engine/agent-text.test.ts, agent-reflow.test.ts and agent-tools-handlers.test.ts cover
@@ -79,7 +79,9 @@ modal. Show original toggles the source page for comparison. Per-edit accept/rej
 Reject remaining and Discard batch keep the user in control. Rejecting an edit recomputes the
 preview without it. Decisions remain provisional until the batch is complete; only the accepted
 subset is then applied as a single native, undoable edit. Saving during review cannot save
-unaccepted proposal images or annotations. Any source document mutation invalidates the review.
+unaccepted proposal images or annotations, and does not end the review; any edit of the source
+document does. One review is open at a time: a second proposal is refused (`busy`) before it
+switches the person's tab. The review brings Fartcrobat forward, or flashes it on Windows.
 
 The agent is instructed to submit small meaningful batches so proposals arrive progressively;
 MCP does not stream unfinished tool arguments or model tokens. Linked text flow and full rebuilds

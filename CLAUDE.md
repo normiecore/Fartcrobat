@@ -32,7 +32,7 @@ Office conversion when installed, with a built-in fallback.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
-- About 1540 unit tests (vitest) and 163 end-to-end tests (Playwright on Electron).
+- About 1590 unit tests (vitest) and 172 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
@@ -78,15 +78,17 @@ Office conversion when installed, with a built-in fallback.
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Suggested order for the next session: review the native MCP editing branch, cut 0.2.0 (so people get the updater and
-  certificate encryption), then the update test with 0.2.1 and the Windows checklist.
+- Next, once 0.2.1 is published: let an installed 0.2.0 update from the real github.com once per
+  platform, try a Windows per-machine update with UAC on, run the Windows certificate checklist,
+  and try agent access and the companion with a real Claude Desktop and ChatGPT Desktop (backlog
+  16).
 
 
 ### Native MCP editing (16 Oct 2026)
 
 - Branch codex/live-mcp-text-editing adds get_editable_text, edit_text, get_document_layout,
   reflow_text and rebuild_document. See docs/features/agent-text-editing.md.
-- Native edits and linked column/page flows happen in the open PDF, with a before/after review,
+- Native edits and linked column/page flows happen in the open PDF, with an on-document review,
   revision guards and one undo step. Flow templates keep artwork and unmanaged content; static
   page labels and link/comment anchors need review. A clean new design is a separate tool.
 - The MCP client performs semantic/visual interpretation using the exposed structure and renders.
@@ -100,11 +102,12 @@ Office conversion when installed, with a built-in fallback.
 
 - See docs/features/agent-companion.md. Draggable provider sprites, observed activity bubbles,
   compact in-app MCP conversation, and installation-specific ChatGPT Desktop setup are added.
-- companion_chat is client-initiated: the user starts it once from the external desktop chat;
-  it cannot wake an idle AI session. No API provider, credentials or automatic model is added.
+- companion_chat is client-initiated: the person opens the chat (Chat here) and the next successful
+  tool call of a conversation hands it the session (0.2.1); it cannot wake an idle AI session. No
+  API provider, credentials or automatic model is added.
 - Chat history stays in memory. Position only is persisted. MCP now exposes 37 tools.
-- Local cloud environment blocks Unix sockets and Electron single-instance launch; full MCP
-  desktop tests must run on CI/a supported local desktop, not be claimed passed here.
+- The agent e2e specs (`tests/e2e/agent-*.spec.ts`) run in a Claude cloud session like the others
+  (Unix sockets work there, checked 20 Oct 2026), also against a packaged build.
 
 ## Where things are
 
@@ -171,16 +174,19 @@ outputs are committed; tests never generate them at run time.
   workflow). That push publishes: the release workflow builds the installers, runs the full CI
   suite (`ci.yml`) and the update rehearsal (`update-rehearsal.yml`) on the same commit, and only
   then creates the tag and the release, with the download table and `docs/releases/v<version>.md`
-  as notes. Do not also run it by hand: a manual run on `main` with the version is for recovery
-  (a failed build), and a `v*` tag push also publishes (the Claude session git proxy refuses tag
-  pushes).
+  as notes. When a job of that run fails, fix the cause and use "Re-run failed jobs" on the same
+  run, which keeps the merged commit. A manual run on `main` with the version publishes main's head
+  as it is then, so use it only while that head is still the version bump; never run it in
+  addition to the merge. A `v*` tag push also publishes (the Claude session git proxy refuses tag
+  pushes), and a tag that already names another commit stops the publish.
 - In-app updates (`docs/features/updates.md`) download from the latest GitHub release, so every
   release must carry `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and the `.blockmap` files
   (electron-builder writes them; the publish job fails without them). v0.1.0 has no updater: people
   on it install the next version by hand once. To write release notes on GitHub first, save the
-  release as a draft and do not publish it until the workflow has attached the installers
-  (installed copies offer a published release at once); the publish job refuses to add files to a
-  published release.
+  release as a draft and do not publish it until the workflow has attached the installers and
+  pointed its tag at the built commit (installed copies offer a published release at once); the
+  publish job refuses to add files to a published release. Publishing the draft pushes the tag;
+  that run sees the release is out and stops.
 - Windows installers are unsigned and macOS builds are only ad-hoc signed. Signing uses the
   `CSC_LINK` and `CSC_KEY_PASSWORD` repository secrets when they exist.
 
@@ -264,13 +270,15 @@ Roughly in priority order:
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.
 
-### 0.2.1 release preparation (18 Oct 2026)
+### 0.2.1 (#17, 20 Oct 2026)
 
-- Automatic companion joining, conversation-token isolation, on-document edit review and three
-  gentle working poses. See the updated agent-companion and agent-text-editing feature notes.
-- Text proposals stay private/in memory until the review batch is complete. Individual text edits
-  can be rejected; reflow/rebuild remains one linked approval. External mutations cancel review.
-- Release workflow now also runs on merged package.json version bumps on main. It compares with
-  the previous commit and skips dependency-only changes. All platform builds and Linux packaged
-  smoke tests must pass before publication; manual runs and tags remain supported.
-- v0.2.0 shipped on 17 Oct with updater metadata. Existing v0.1.0 installs still need one manual update.
+- Companion: opening the chat lets the next conversation that uses Fartcrobat join, without an
+  invitation; closing the chat before one joins, End & clear or a disconnect take that back until
+  the person allows a new conversation. Shims older than 0.2.1 drop the token, so their calls never
+  join (`shimForwardsCompanion`), and the chat and Preferences ask for the extension to be added
+  again. Conversation-token isolation, on-document edit review (a save keeps it open, any edit
+  ends it) and three working poses. See the agent-companion and agent-text-editing notes.
+- Connect ChatGPT Desktop works in installed builds: `shim.mjs` ships next to app.asar and the
+  setup points at a copy in `<userData>/agent-helper/`, refreshed at each start.
+- Merging #17 publishes 0.2.1 (see "To release"). Merge it with "Create a merge commit": one of its
+  commit messages names the skip marker, which a squash would carry into main's head commit.
