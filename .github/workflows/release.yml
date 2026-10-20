@@ -8,10 +8,14 @@ name: Release
 # - Before publishing, the full CI suite (ci.yml) and the update rehearsal (update-rehearsal.yml)
 #   must pass on the same commit; installed copies on Windows and AppImages install a release
 #   silently, so nothing untested is published.
-# - A manual run builds only; with a version (main only) it publishes too. Use it to recover, for
-#   example after a failed build, never in addition to the merge. A v* tag push also publishes.
+# - When a job of that run fails, fix the cause and use "Re-run failed jobs" on the same run: it
+#   keeps the merged commit. A manual run builds only; with a version (main only) it publishes
+#   main's head as it is then, so use it only while that head is still the version bump (or the
+#   bump plus a fix meant for this release), never in addition to the merge. A v* tag push also
+#   publishes, the tagged commit.
 # - To write the notes on GitHub first, save the release as a draft (do not publish it): this
-#   workflow attaches the installers to the draft, and you publish it.
+#   workflow attaches the installers to the draft and points its tag at the commit it built and
+#   tested, and you publish it. Publishing it pushes the tag, and that run stops at once.
 on:
   workflow_dispatch:
     inputs:
@@ -46,6 +50,7 @@ jobs:
           REF: ${{ github.ref }}
           BEFORE: ${{ github.event.before }}
           REQUESTED: ${{ inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           version="$(node -p "require('./package.json').version")"
@@ -63,7 +68,13 @@ jobs:
             if [[ "$version" == "$previous" ]]; then build=false; else publish=true; fi
           elif [[ "$REF" == refs/tags/v* ]]; then
             [[ "$REF" == "refs/tags/v$version" ]]
-            publish=true
+            if [[ "$(gh release view "v$version" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)" == false ]]; then
+              # Publishing a draft on GitHub pushes its tag: that release is already out.
+              echo "::notice::Release v$version is already published. Nothing to do."
+              build=false
+            else
+              publish=true
+            fi
           elif [[ "$EVENT" == workflow_dispatch && -n "$REQUESTED" && "$REF" == refs/heads/main ]]; then
             [[ "$REQUESTED" == "$version" ]]
             publish=true
@@ -116,9 +127,10 @@ jobs:
         # installer they could pick by mistake (scripts/release-downloads.mjs).
         run: node scripts/release-downloads.mjs --dir release --platform ${{ matrix.platform }}
       - name: Smoke-test the packaged app
-        # Opens, renders, searches and runs OCR in the packaged build (no node_modules, asar).
+        # Opens, renders, searches and runs OCR in the packaged build (no node_modules, asar), and
+        # runs the MCP helper that Connect ChatGPT Desktop names (it ships next to app.asar).
         if: matrix.os == 'ubuntu-24.04'
-        run: xvfb-run -a npx playwright test tests/e2e/smoke.spec.ts tests/e2e/ocr.spec.ts
+        run: xvfb-run -a npx playwright test tests/e2e/smoke.spec.ts tests/e2e/ocr.spec.ts tests/e2e/agent-chatgpt.spec.ts
         env:
           FARTCROBAT_EXECUTABLE: release/linux-unpacked/fartcrobat
       - uses: actions/upload-artifact@v4
@@ -202,6 +214,13 @@ jobs:
           # Which one file each person downloads, at the top of the notes (README.md, Install).
           node scripts/release-downloads.mjs --dir dist --version "${TAG#v}" --notes > "$RUNNER_TEMP/downloads.md"
           written="docs/releases/$TAG.md"
+          # The tag names the commit that was built and tested. One that already exists elsewhere (made
+          # by hand, or by publishing a draft that pointed at another branch) is never moved.
+          tagged="$(git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}" | awk '{ sha = $1 } $2 ~ /\^\{\}$/ { peeled = $1 } END { print peeled ? peeled : sha }')"
+          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "::error::Tag $TAG already exists on $tagged, not on the commit this run built and tested ($GITHUB_SHA). Delete that tag (Releases > Tags), then re-run this job."
+            exit 1
+          fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             # Made on GitHub first (Releases > Draft a new release, Save draft): attach the
             # installers. Only to a draft: installed copies already offer a published release, and
@@ -212,6 +231,8 @@ jobs:
               echo "::error::Release $TAG is already published, so installed copies already offer it. Make it a draft again (Edit release > Save draft) and re-run this job, or delete the release and re-run to create it."
               exit 1
             fi
+            # A draft's tag is made when it is published, on its target: make that this commit.
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA"
             gh release upload "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --clobber
             # The notes written on GitHub keep their text, under the download table.
             gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/body.md"
