@@ -17,15 +17,14 @@ Office conversion when installed, with a built-in fallback.
 - From 0.2.1 on a release has one file per kind of computer (Windows x64 and arm64 installers, no
   combined one; Mac `.dmg` for arm64 and x64, both named; Ubuntu/Debian `.deb`; AppImage for other
   Linux). `scripts/release-downloads.mjs` holds the table that README.md (Install) and the top of
-  the release notes show, and each release build checks its files against it. Merge #18 (which
-  makes that change) before #17: #17 publishes 0.2.1 as soon as its version bump reaches `main`,
-  and both edit the publish step of `release.yml`.
+  the release notes show, and each release build checks its files against it.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
   access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
-  per computer, update rehearsal for every download). #11 merged main into the old session branch.
-  Open: #17 (0.2.1, companion joining and on-document review).
+  per computer, update rehearsal for every download), #19 (no request to Google for spell-check
+  dictionaries). #11 merged main into the old session branch. Open: #17 (0.2.1, companion joining
+  and on-document review); merging it publishes 0.2.1.
 - 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
   turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
   0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
