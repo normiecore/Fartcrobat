@@ -23,8 +23,9 @@ Office conversion when installed, with a built-in fallback.
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
   per computer, update rehearsal for every download), #19 (no request to Google for spell-check
-  dictionaries). #11 merged main into the old session branch. Open: #17 (0.2.1, companion joining
-  and on-document review); merging it publishes 0.2.1.
+  dictionaries), #17 (release 0.2.1: companion joining and on-document review). #11 merged main into
+  the old session branch. The 0.2.2 release PR (from `claude/laughing-tesla-83pgov`) fixes two
+  findings of the last review of #17; merging it publishes 0.2.2.
 - 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
   turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
   0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
@@ -32,7 +33,7 @@ Office conversion when installed, with a built-in fallback.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
-- About 1590 unit tests (vitest) and 172 end-to-end tests (Playwright on Electron).
+- About 1590 unit tests (vitest) and 173 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
@@ -53,10 +54,10 @@ Office conversion when installed, with a built-in fallback.
     Later, a wrong checksum, the policy off), and the released Mac app and `.deb` (with Ubuntu
     24.04's AppArmor setting) offered it and opened its release page.
     `.github/workflows/update-rehearsal.yml` runs all of it, and every release runs it before
-    publishing (release.yml); after
-    publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform,
-    and try a Windows per-machine install with UAC on (as an administrator and as a standard
-    user): the runners elevate without asking, so the rehearsal cannot show the UAC prompt.
+    publishing (release.yml); now that releases are out, let an installed 0.2.0 or 0.2.1 update
+    from the real github.com once per platform, and try a Windows per-machine install with UAC on
+    (as an administrator and as a standard user): the runners elevate without asking, so the
+    rehearsal cannot show the UAC prompt.
 - **Agent access** (`docs/features/agent-access.md`): merged with the review fixes from #9. Known
   gaps are listed in #9 and backlog items 15 and 16. Nothing has been tried on Windows or with a
   real Claude Desktop yet.
@@ -78,8 +79,8 @@ Office conversion when installed, with a built-in fallback.
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Next, once 0.2.1 is published: let an installed 0.2.0 update from the real github.com once per
-  platform, try a Windows per-machine update with UAC on, run the Windows certificate checklist,
+- Next, once 0.2.2 is published: let an installed 0.2.0 or 0.2.1 update from the real github.com
+  once per platform, try a Windows per-machine update with UAC on, run the Windows certificate checklist,
   and try agent access and the companion with a real Claude Desktop and ChatGPT Desktop (backlog
   16).
 
@@ -285,5 +286,15 @@ capture, scanner input.
   `FARTCROBAT_USER_DATA` names the usual folder, which the helper does not take for a separate
   profile (`separateProfile` in `src/agent-shim/launch.ts`): it starts the app through WMI or
   LaunchServices, as for the Claude extension.
-- Merging #17 publishes 0.2.1 (see "To release"). Merge it with "Create a merge commit": one of its
-  commit messages names the skip marker, which a squash would carry into main's head commit.
+- #17 was merged on 20 Oct 2026 with a merge commit, and its Release run published 0.2.1.
+
+### 0.2.2 (20 Oct 2026)
+
+- Fixes the two findings of the last review of #17, both minor. Opening the companion chat keeps
+  the companion on screen (`armCompanion` sets `revealed`): in 0.2.1, when every AI app disconnected
+  before a conversation joined, the companion hid with its chat still open and armed, and the next
+  AI app's first call joined it as the companion reappeared. The rehearsal's Windows build is kept
+  30 days, so "Re-run failed jobs" on a release still finds it (it was 3 days), and the rehearsal's
+  diagnostic uploads overwrite an earlier attempt's, so a re-run cannot stop at a name conflict.
+- `docs/releases/v0.2.2.md` repeats what people coming from 0.2.0 must do (add the Claude
+  extension again), since many will update from 0.2.0 straight to 0.2.2.

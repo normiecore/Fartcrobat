@@ -43,10 +43,14 @@ export function endCompanion() {
   wake?.()
 }
 
-/** The person opened the chat: the next conversation that uses Fartcrobat may join (not after an end). */
+/**
+ * The person opened the chat: the next conversation that uses Fartcrobat may join (not after an end).
+ * The companion stays on screen from then on, so an open chat never waits out of sight, where it
+ * cannot be closed, after every AI app disconnects.
+ */
 export function armCompanion() {
   const s = useCompanion.getState()
-  if (!s.owner && !s.ended && !s.autoJoin) useCompanion.setState({ autoJoin: true })
+  if (!s.owner && !s.ended && !s.autoJoin) useCompanion.setState({ autoJoin: true, revealed: true })
 }
 
 /** The person closed or minimized the chat before a conversation joined: nobody joins until it is opened again. */

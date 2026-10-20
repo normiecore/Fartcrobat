@@ -114,6 +114,28 @@ test('ChatGPT has its own avatar and cannot consume another connection’s chat'
   }
 })
 
+test('an open chat stays on screen when every AI app disconnects, and closing it there lets nobody in', async () => {
+  const s = await startSession([fixturePath('text.pdf')])
+  let gpt: Awaited<ReturnType<typeof startShim>> | undefined
+  try {
+    await waitForRender(s.page)
+    dataOf(await s.agent.call('get_context'))
+    const companion = s.page.getByRole('region', { name: 'AI companion' })
+    await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
+    // The AI app quits before any conversation joins: the open chat stays where it can be closed.
+    await s.agent.close()
+    await expect(companion).toContainText('Connect your AI app to get started.')
+    await expect(companion.getByText('Waiting for a conversation', { exact: true })).toBeVisible()
+    await companion.getByRole('button', { name: 'Hide chat', exact: true }).click()
+    gpt = await startShim(s.userData, { name: 'codex', version: '1.0' })
+    expect(companionOf(await gpt.call('get_context'))).toBeUndefined()
+    await expect(companion.getByRole('button', { name: 'Chat here', exact: true })).toBeVisible()
+  } finally {
+    await gpt?.close()
+    await s.close()
+  }
+})
+
 test('working poses advance gently and respect reduced motion', async () => {
   const s = await startSession([fixturePath('text.pdf')])
   try {
