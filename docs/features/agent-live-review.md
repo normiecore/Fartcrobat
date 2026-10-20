@@ -42,7 +42,7 @@ One proposal per document worker, held for the whole review:
 - `renderProposal(id, version, page, opts: RenderOptions)`: `renderToPixmap` on the held copy, then
   the same transfer as `render.page` (export `toResult` from `src/engine/ops/render.ts`). A wrong id
   or version throws code `STALE_PROPOSAL`, which the render queue drops quietly.
-- `checkProposal(revision, indices)`: validates an edit_text subset without images (the same checks
+- `checkProposal(id, indices)`: validates an edit_text subset without images (the same checks
   as `apply`); used once before the review finishes, and early when a reject touches a kept change.
 - `reviseProposal(id, rejected)`: flow and rebuild only. Rebuilds the held copy with the rejected
   items reverted (flow: `text := original_text`, style overrides dropped) or left out (rebuild),
