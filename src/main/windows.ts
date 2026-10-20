@@ -409,7 +409,7 @@ export function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // Only where the spell checker works without downloading dictionaries (util/spellcheck.ts).
+      // Only where the system provides the spell checker, which downloads nothing (util/spellcheck.ts).
       spellcheck: spellCheckInWindows()
     }
   })

@@ -79,7 +79,7 @@ export function otherHosts(requests: GitHubRequest[]): string[] {
 
 /**
  * Whether a release keeps to "no network request besides the update check". 0.2.0 still asks
- * Google for spell-check dictionaries at start on Windows and Linux (src/main/util/spellcheck.ts),
+ * Google for spell-check dictionaries at start on Linux (src/main/util/spellcheck.ts),
  * so its runs only report other hosts; later releases must not contact any.
  */
 export function contactsOnlyGitHub(release: string): boolean {

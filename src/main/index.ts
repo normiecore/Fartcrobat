@@ -37,8 +37,8 @@ app.setName('Fartcrobat')
 if (process.env.FARTCROBAT_USER_DATA) app.setPath('userData', process.env.FARTCROBAT_USER_DATA)
 // Match the installer's shortcuts so the taskbar groups the window with the pinned icon.
 if (process.platform === 'win32') app.setAppUserModelId('org.fartcrobat.app')
-// Before any session exists: Chromium would otherwise download spell-check dictionaries from
-// Google as each one starts (util/spellcheck.ts).
+// Before any session exists: on Linux Chromium would otherwise download spell-check dictionaries
+// from Google as each one starts (util/spellcheck.ts).
 app.on('session-created', (s) => keepSpellCheckOffline(s))
 
 /**

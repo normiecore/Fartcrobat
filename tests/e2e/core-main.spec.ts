@@ -458,7 +458,7 @@ test('Edit menu commands act on the focused text field, and on the document othe
 
 // ---- privacy, security and packaging -----------------------------------------------------------
 
-test('no spell-check dictionary downloads on Windows and Linux, and every app:// response carries the CSP', async () => {
+test('no spell-check dictionary downloads on Linux, and every app:// response carries the CSP', async () => {
   const { app, page } = await launch()
   try {
     await app.evaluate(({ session }) => {
@@ -471,7 +471,7 @@ test('no spell-check dictionary downloads on Windows and Linux, and every app://
     await name.click()
     await page.keyboard.type('Teh quick borwn fox', { delay: 20 })
     await page.waitForTimeout(1500)
-    if (process.platform !== 'darwin') {
+    if (process.platform === 'linux') {
       // Chromium downloads a dictionary for each language as the session starts, before this
       // listener exists, so the language list is what shows there was none (util/spellcheck.ts).
       expect(await app.evaluate(({ session }) => session.defaultSession.getSpellCheckerLanguages())).toEqual([])

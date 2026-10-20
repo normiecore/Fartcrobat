@@ -44,7 +44,7 @@ both processors that 0.2.0 also shipped (from 0.2.1 on there is one installer pe
 `electron-builder.yml`): its installs update too, but the first time with a full download, because
 the installer an install keeps for the next update is not the x64 one the updater picks.
 
-0.2.0 still asks Google for spell-check dictionaries at start on Windows and Linux, so its runs only
+0.2.0 still asks Google for spell-check dictionaries at start on Linux, so its runs only
 list the other hosts it tried (`contactsOnlyGitHub` in `common.ts`).
 
 Each run writes screenshots, the requests the app made in each scenario (`*-requests.txt`) and how the

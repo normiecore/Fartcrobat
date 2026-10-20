@@ -26,10 +26,10 @@ Office conversion when installed, with a built-in fallback.
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
   per computer, update rehearsal for every download). #11 merged main into the old session branch.
   Open: #17 (0.2.1, companion joining and on-document review).
-- 0.2.0 on Windows and Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at
-  every start: turning Chromium's spell checker off does not stop it, an empty language list does.
-  Fixed for 0.2.1 in `src/main/util/spellcheck.ts`; spell check now underlines only on macOS
-  (backlog 21).
+- 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
+  turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
+  0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
+  nothing (update rehearsal, 20 Oct 2026); Linux has no spell checking, as before (backlog 21).
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
@@ -252,8 +252,8 @@ Roughly in priority order:
     recipients; no macOS Keychain or Linux PKCS#11 smart cards; no EC (ECDH) recipients; signing
     certificate-encrypted files needs a PubSec-aware incremental save; Constrained Language Mode
     machines need an Authenticode-signed helper script (backlog 1).
-21. Spell check on Windows and Linux: Chromium's checker there needs Hunspell dictionaries, which it
-    would download from Google, so it is off (`src/main/util/spellcheck.ts`). Bundling
+21. Spell check on Linux: Chromium's checker there needs Hunspell dictionaries, which it would
+    download from Google, so it is off (`src/main/util/spellcheck.ts`). Bundling
     dictionaries (Electron publishes `hunspell_dictionaries.zip` per release) and pointing
     `setSpellCheckerDictionaryDownloadURL` at a local copy would bring it back offline.
 
