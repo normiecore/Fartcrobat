@@ -472,7 +472,9 @@ test('no spell-check dictionary downloads on Linux, and every app:// response ca
     await page.keyboard.type('Teh quick borwn fox', { delay: 20 })
     await page.waitForTimeout(1500)
     if (process.platform === 'linux') {
-      expect(await app.evaluate(({ session }) => session.defaultSession.isSpellCheckerEnabled())).toBe(false)
+      // Chromium downloads a dictionary for each language as the session starts, before this
+      // listener exists, so the language list is what shows there was none (util/spellcheck.ts).
+      expect(await app.evaluate(({ session }) => session.defaultSession.getSpellCheckerLanguages())).toEqual([])
       expect(await app.evaluate(() => (globalThis as any).__downloads)).toEqual([])
     }
 

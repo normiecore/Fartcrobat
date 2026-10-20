@@ -8,7 +8,7 @@ import { _electron as electron, expect, test, type ElectronApplication, type Pag
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { checkFromHelpMenu, describe, env, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
+import { checkFromHelpMenu, contactsOnlyGitHub, describe, env, otherHosts, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
 
 const WORK = env('REHEARSAL_WORK')
 const OLD = env('REHEARSAL_OLD')
@@ -88,7 +88,10 @@ test(`${KIND}: ${OLD} finds ${NEW}, and Download opens its release page`, async 
     await app.close().catch(() => {})
   }
   const reqs = await report('notify', before)
-  expect(reqs.filter((r) => r.refused && /github/.test(r.host ?? ''))).toEqual([])
+  const others = otherHosts(reqs)
+  console.log(`${OLD} contacted besides GitHub: ${others.join(', ') || 'nothing'}`)
+  expect(others.filter((h) => /github/.test(h))).toEqual([])
+  if (contactsOnlyGitHub(OLD)) expect(others).toEqual([])
   // Found through github.com's latest-release redirect; nothing was downloaded.
   expect(reqs.some((r) => r.host === 'github.com' && r.path === '/normiecore/Fartcrobat/releases/latest')).toBe(true)
   expect(reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' || /\/releases\/download\//.test(r.path ?? ''))).toEqual([])

@@ -8,11 +8,14 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync }
 import { join } from 'node:path'
 import {
   checkFromHelpMenu,
+  contactsOnlyGitHub,
   describe,
   downloadSummary,
   downloadUpdate,
   HERE,
   env,
+  otherHosts,
+  otherHostsAfter,
   sha512,
   shot,
   startFakeGitHub,
@@ -157,10 +160,12 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
 
   const reqs = await report('restart-now', before)
   // The release was found and downloaded from GitHub only, and in parts (differential download).
-  // Other hosts the app tried are refused; they are listed in out/, not part of the update.
-  const others = reqs.filter((r) => r.refused)
-  writeFileSync(join(WORK, 'out', 'other-hosts.txt'), [...new Set(others.map((r) => r.host))].join('\n') + '\n')
-  expect(others.filter((r) => /github/.test(r.host ?? ''))).toEqual([])
+  // Other hosts the app tried are refused and listed in out/ (common.ts, contactsOnlyGitHub).
+  const others = otherHosts(reqs)
+  writeFileSync(join(WORK, 'out', 'other-hosts.txt'), others.join('\n') + '\n')
+  console.log(`${OLD} contacted besides GitHub: ${others.join(', ') || 'nothing'}`)
+  expect(others.filter((h) => /github/.test(h))).toEqual([])
+  if (contactsOnlyGitHub(OLD)) expect(others).toEqual([])
   expect(reqs.some((r) => r.path?.endsWith(`/releases/download/v${NEW}/latest-linux.yml`))).toBe(true)
   const download = downloadSummary(
     reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' && r.path?.endsWith('.AppImage'))
@@ -169,13 +174,16 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
   console.log(`Download: ${download.text}`)
   expect(download.differential, download.text).toBe(true)
 
-  // The new version, started again: it is NEW and up to date.
+  // The new version, started again: it is NEW, up to date, and asks nobody but GitHub.
+  const fromNew = (await gh.requests()).length
+  const startedAt = Date.now()
   const again = await startApp()
   try {
     expect(await version(again.app)).toBe(NEW)
     await checkFromHelpMenu(again.page)
     await expect(again.page.locator('.toast', { hasText: /up to date/i })).toBeVisible({ timeout: 60_000 })
     await shot(again.page, 'appimage-new-up-to-date')
+    expect(await otherHostsAfter(gh, fromNew, startedAt), `${NEW} contacted hosts other than GitHub`).toEqual([])
   } finally {
     await again.app.close().catch(() => {})
     killApps()
