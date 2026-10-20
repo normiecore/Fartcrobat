@@ -1,5 +1,6 @@
 /** Preferences > AI apps. */
 import { useEffect, useId, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { FileText, PlugZap } from 'lucide-react'
 import { Button, Dialog, invoke, openDialog, setPrefs, showError, usePrefs } from '@renderer/sdk'
 import { BlockedList, ConnectionList } from './ActivityPanel'
@@ -103,13 +104,20 @@ function ChatGPTSetup({
 
 export function AgentSettings() {
   const prefs = usePrefs()
-  const status = useAgentUi((s) => s.status)
+  const status = useAgentUi(
+    useShallow((s) => ({
+      policy: s.status?.policy ?? null,
+      error: s.status?.error,
+      connections: s.status?.connections,
+      blocked: s.status?.blocked
+    }))
+  )
   const [installing, setInstalling] = useState(false)
   const [installMessage, setInstallMessage] = useState('')
   useEffect(() => {
     void refreshAgentStatus()
   }, [])
-  const policy = status?.policy ?? null
+  const policy = status.policy
   const on = policy ? policy === 'enabled' : prefs.agentAccess
   const install = async () => {
     setInstalling(true)
@@ -142,15 +150,15 @@ export function AgentSettings() {
         Text they read is sent to that AI app&apos;s service. Passwords never reach the AI app, but a file
         whose password is saved on this device opens for it without asking.
       </p>
-      {status?.error && (
+      {status.error && (
         <div className={`${P}-error`} role="alert">
           {status.error}
         </div>
       )}
       <div className={`${P}-settings-block`}>
         <b>Connected apps</b>
-        <ConnectionList connections={on ? (status?.connections ?? []) : []} />
-        <BlockedList blocked={status?.blocked ?? []} />
+        <ConnectionList connections={on ? (status.connections ?? []) : []} />
+        <BlockedList blocked={status.blocked ?? []} />
       </div>
       <div className={`${P}-settings-actions`}>
         <Button icon={PlugZap} disabled={installing} onClick={() => void install()}>

@@ -5,6 +5,7 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useShallow } from 'zustand/react/shallow'
 import { Bot, X } from 'lucide-react'
 import { FloatingAt, IconButton, PanelFrame, toggleRightPanel, useApp } from '@renderer/sdk'
 import { useCompanion } from './companionStore'
@@ -16,8 +17,18 @@ const POPOVER_WIDTH = 340
 
 export function AgentIndicator() {
   const minimized = useCompanion(s => s.minimized)
-  const connections = useAgentUi((s) => s.status?.connections)
-  const runningHere = useAgentUi((s) => s.running)
+  // Main sends a new status at every call start and finish: take only what the button shows.
+  const { count, label, names, busy } = useAgentUi(
+    useShallow((s) => {
+      const list = s.status?.connections ?? []
+      return {
+        count: list.length,
+        label: list.length ? connectedLabel(list) : 'AI companion',
+        names: [...new Set(list.map((c) => appLabel(c.client.name)))].join(', '),
+        busy: s.running > 0 || list.some((c) => c.running > 0)
+      }
+    })
+  )
   const hasDoc = useApp((s) => s.activeDocId !== null)
   const panelOpen = useApp((s) => s.rightPanelId === 'agent-activity')
   const readMode = useApp((s) => s.readMode)
@@ -35,11 +46,7 @@ export function AgentIndicator() {
     if (hasDoc) setPopover(null)
   }, [hasDoc])
 
-  const list = connections ?? []
-  if ((!list.length && !minimized) || !host || readMode) return null
-  const busy = runningHere > 0 || list.some((c) => c.running > 0)
-  const label = list.length ? connectedLabel(list) : 'AI companion'
-  const names = [...new Set(list.map((c) => appLabel(c.client.name)))].join(', ')
+  if ((!count && !minimized) || !host || readMode) return null
   const open = () => {
     if (minimized) { useCompanion.setState({ minimized: false, revealed: true }); return }
 
