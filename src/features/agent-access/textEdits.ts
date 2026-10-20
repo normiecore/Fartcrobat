@@ -9,6 +9,7 @@ import {
   type Run,
   type Align
 } from '@features/edit-text/model'
+import { fontLabel } from '@features/edit-text/fonts'
 
 export interface TextChange {
   page: number
@@ -164,4 +165,46 @@ export function planTextChange(c: TextChange, blocks: TextBlockInfo[]): PlannedT
       ascent: b?.ascent ?? 1
     }
   }
+}
+
+/** The style of a block's first visible run, as shown in the review. */
+export interface ReviewStyle {
+  font: string
+  size: number
+  color: string
+  bold: boolean
+  italic: boolean
+}
+export function styleOf(runs: Run[], fonts: TextBlockInfo['fonts'] = []): ReviewStyle | undefined {
+  const r = runs.find((r) => r.text.trim()) ?? runs[0]
+  if (!r) return undefined
+  return { font: fontLabel(r.font, fonts), size: r.size, color: r.color.toLowerCase(), bold: r.bold, italic: r.italic }
+}
+const pt = (v: number) => String(Math.round(v * 10) / 10)
+const weight = (s: ReviewStyle) => [s.bold && 'bold', s.italic && 'italic'].filter(Boolean).join(' ') || 'regular'
+
+/** "Aa Calibri 10 → Inter 11 pt" when the font or size changes, or null. */
+export function fontNote(before?: ReviewStyle, after?: ReviewStyle): string | null {
+  if (!before || !after || (before.font === after.font && Math.abs(before.size - after.size) < 0.05)) return null
+  return 'Aa ' + before.font + ' ' + pt(before.size) + ' → ' + after.font + ' ' + pt(after.size) + ' pt'
+}
+
+/** Plain notes on how the style of a change differs from the original. */
+export function styleNotes(before?: ReviewStyle, after?: ReviewStyle): string[] {
+  if (!before || !after) return []
+  const notes: string[] = []
+  const font = fontNote(before, after)
+  if (font) notes.push(font)
+  if (before.color !== after.color) notes.push('Colour ' + before.color + ' → ' + after.color)
+  if (weight(before) !== weight(after)) notes.push('Style ' + weight(before) + ' → ' + weight(after))
+  return notes
+}
+
+/** "Text area left 54 → 40 pt" for the edges of a page's text area that moved, or null. */
+export function marginNote(before: Rect | null, after: Rect | null): string | null {
+  if (!before || !after) return null
+  const edges = (['left', 'top', 'right', 'bottom'] as const).flatMap((name, i) =>
+    Math.abs(before[i] - after[i]) > 1 ? [name + ' ' + pt(before[i]) + ' → ' + pt(after[i])] : []
+  )
+  return edges.length ? 'Text area ' + edges.join(', ') + ' pt' : null
 }

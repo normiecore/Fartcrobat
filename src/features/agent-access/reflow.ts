@@ -27,6 +27,30 @@ const esc = (text: string) =>
     (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]!
   )
 
+/** The new design without the sections rejected in the review (0-based section numbers). */
+export function reviseReflowSpec(spec: ReflowSpec, rejected: number[]): ReflowSpec {
+  const sections = spec.sections.filter((_, i) => !rejected.includes(i))
+  if (!sections.length) throw new EngineError('Keep at least one section of the new design.', 'BAD_REFLOW')
+  return { ...spec, sections }
+}
+
+/** A section's text in reading order, one line per heading, paragraph or bullet. */
+export function sectionText(s: ReflowSection): string {
+  const body = (b: { paragraphs?: string[]; bullets?: string[] }) => [
+    ...(b.paragraphs ?? []),
+    ...(b.bullets ?? []).map((t) => '• ' + t)
+  ]
+  return [
+    s.heading,
+    ...body(s),
+    ...(s.entries ?? []).flatMap((e) => [
+      [e.heading, e.date].filter(Boolean).join(', '),
+      ...(e.detail ? [e.detail] : []),
+      ...body(e)
+    ])
+  ].join('\n')
+}
+
 export function reflowHtml(spec: ReflowSpec): string {
   const fail = (m: string): never => {
     throw new EngineError(m, 'BAD_REFLOW')

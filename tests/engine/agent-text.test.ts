@@ -26,8 +26,10 @@ describe('native MCP text editing', () => {
     const before = await e.doc.journal()
     const preview = await ops.preview(snapshot.revision, [change])
     expect(preview.canApply, JSON.stringify(preview.issues)).toBe(true)
-    expect(preview.previews[0].before.slice(0, 4)).toEqual(new Uint8Array([137, 80, 78, 71]))
-    expect(preview.previews[0].after).not.toEqual(preview.previews[0].before)
+    // preview_only gets PNGs of the proposed pages; the live page is the original.
+    expect(preview.previews.map((p) => p.page)).toEqual([1])
+    expect(preview.previews[0].after.slice(0, 4)).toEqual(new Uint8Array([137, 80, 78, 71]))
+    expect(preview.proposal).toBeUndefined()
     expect(preview.changes[0].after).toContain('swift brown fox')
     expect(await e.doc.journal()).toEqual(before)
     expect((await ops.inspect(0)).revision).toBe(snapshot.revision)
