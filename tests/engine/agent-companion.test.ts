@@ -22,7 +22,8 @@ const join = () => exchangeCompanion({ ...base, joining: true })
 const listen = (patch: Partial<Parameters<typeof exchangeCompanion>[0]> = {}) =>
   exchangeCompanion({ ...base, joining: false, ...patch })
 // As the app starts, then the person opens the chat.
-const fresh = () => useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: false, ended: false })
+const fresh = () =>
+  useCompanion.setState({ owner: null, listening: false, messages: [], autoJoin: false, ended: false, revealed: false })
 beforeEach(() => {
   fresh()
   armCompanion()
@@ -46,6 +47,9 @@ describe('companion conversations', () => {
     disarmCompanion()
     armCompanion()
     expect(autoJoinCompanion(1, 'Claude', 'w1-chat-b')).toBeUndefined()
+  })
+  it('an opened chat keeps the companion on screen, so it can still be closed with no AI app connected', () => {
+    expect(useCompanion.getState()).toMatchObject({ autoJoin: true, revealed: true })
   })
   it('does not accept prompts without an active session', () => {
     expect(() => sendCompanionMessage('Read this')).toThrow(/use a Fartcrobat tool/)
