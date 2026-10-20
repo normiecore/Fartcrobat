@@ -85,3 +85,14 @@ No invitation is needed. The AI app still controls tool calls: it must follow th
 instructions, and Fartcrobat cannot wake a finished or closed external conversation. Connection
 status and listening status remain separate. The companion uses three slow working poses (1.1 s
 per pose), stops while waiting for review, and honours reduced motion.
+
+## 0.2.2: an open chat that loses every AI app
+
+Until a conversation joins, the companion is on screen only while an AI app is connected, or after
+the person showed it from Preferences > AI apps or Agent activity. In 0.2.1, when every app
+disconnected while the chat was open and waiting, the companion left the screen but the opening
+stayed: the first call of whichever app connected next, possibly hours later, joined a chat the
+person could neither see nor close. Now the chat closes as the companion leaves, as if the person
+had closed it, and the companion comes back with Chat here. `followConnections` in
+`companionStore.ts` decides this, and also ends the chat when its own conversation goes away.
+A companion the person showed stays on screen with its chat, so its opening stays too.

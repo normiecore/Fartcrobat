@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { fixturePath, runCommand, waitForRender } from './helpers'
-import { startSession, startShim, dataOf, errorOf, expectAudit } from './agent-helpers'
+import { startSession, startShim, dataOf, errorOf, expectAudit, type Agent } from './agent-helpers'
 
 /** The companion block a tool result carries when its conversation joined the chat. */
 function companionOf(result: { content: { type: string; text?: string }[] }): { session: string; status: string } | undefined {
@@ -110,6 +110,34 @@ test('ChatGPT has its own avatar and cannot consume another connection’s chat'
     await expect(companion).toContainText('Chat ended')
   } finally {
     await gpt.close()
+    await s.close()
+  }
+})
+
+test('an open chat that loses every AI app before one joins comes back closed', async () => {
+  const s = await startSession([fixturePath('text.pdf')])
+  let later: Agent | undefined
+  try {
+    const { page, agent } = s
+    await waitForRender(page)
+    expect(companionOf(await agent.call('get_context'))).toBeUndefined()
+    const companion = page.getByRole('region', { name: 'AI companion' })
+    await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
+    await expect(companion.getByText('Waiting for a conversation', { exact: true })).toBeVisible()
+    // Every AI app goes away before a conversation joins: the companion leaves, open chat and all.
+    await agent.close()
+    await expect(companion).toBeHidden()
+    // The next app's first call does not join a chat the person could not see or close.
+    later = await startShim(s.userData, { name: 'codex', version: '1.0' })
+    expect(companionOf(await later.call('get_context'))).toBeUndefined()
+    await expect(companion.getByRole('button', { name: 'Chat here', exact: true })).toBeVisible()
+    expect(errorOf(await later.call('companion_chat'))).toContain('Chat here')
+    // Opening the chat again lets it in.
+    await companion.getByRole('button', { name: 'Chat here', exact: true }).click()
+    expect(companionOf(await later.call('get_context'))?.status).toBe('joined')
+    await expect(companion.getByText('Connected to ChatGPT', { exact: true })).toBeVisible()
+  } finally {
+    await later?.close()
     await s.close()
   }
 })
