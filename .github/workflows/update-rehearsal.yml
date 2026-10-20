@@ -14,6 +14,15 @@ on:
       new:
         description: 'Version the rehearsal build gets (default: the next patch version)'
         required: false
+  # The release workflow runs it before publishing (release.yml, rehearsal).
+  workflow_call:
+    inputs:
+      old:
+        type: string
+        required: false
+      new:
+        type: string
+        required: false
   push:
     paths:
       - 'tests/update-rehearsal/**'
@@ -22,8 +31,9 @@ on:
       - 'electron-builder.yml'
       - 'scripts/release-downloads.mjs'
 
+# github.workflow is the caller's name when called: a release's rehearsal is never cancelled by a push.
 concurrency:
-  group: update-rehearsal-${{ github.ref }}
+  group: update-rehearsal-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

@@ -3,7 +3,7 @@
 A released Fartcrobat, installed for real from each kind of download, finds the next version and
 updates to it without anything being published: the Windows installer and the Linux AppImage
 install a build of the next version, and the Mac app and the Ubuntu `.deb` send the person to its
-release page. Run it before each release: the in-app updater (`docs/features/updates.md`) of the
+release page. Every release runs it before publishing (`.github/workflows/release.yml`): the in-app updater (`docs/features/updates.md`) of the
 version people have installed is what has to work, and it can only be tried with a newer release.
 
 ## How it works
@@ -60,8 +60,9 @@ download went (`*-download.txt`: differential or full, how many bytes) to its `o
   somewhere else than a new folder in `/tmp`.
 - **CI**: `.github/workflows/update-rehearsal.yml` runs all of it, from the latest release to the
   next patch version, when these files, `src/features/updates/`, `electron-builder.yml` or
-  `scripts/release-downloads.mjs` change, and from the Actions tab (once the repository's default
-  branch is `main`). The Mac and `.deb` steps are in its `mac` and `deb` jobs.
+  `scripts/release-downloads.mjs` change, from the Actions tab (once the repository's default
+  branch is `main`), and in the release workflow before it publishes (to the version being
+  released). The Mac and `.deb` steps are in its `mac` and `deb` jobs.
 
 ## What it does not cover
 

@@ -6,10 +6,13 @@ on:
   pull_request:
   # Run it by hand from the Actions tab.
   workflow_dispatch:
+  # The release workflow runs it before publishing (release.yml, checks).
+  workflow_call:
 
-# A newer push to the same branch replaces the run still in progress.
+# A newer push to the same branch replaces the run still in progress. github.workflow is the
+# caller's name when called, so the release's run never cancels main's own CI, nor the reverse.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

@@ -48,7 +48,8 @@ Office conversion when installed, with a built-in fallback.
     user and per machine) updated themselves to a test 0.2.1 from a fake GitHub (Restart now,
     Later, a wrong checksum, the policy off), and the released Mac app and `.deb` (with Ubuntu
     24.04's AppArmor setting) offered it and opened its release page.
-    `.github/workflows/update-rehearsal.yml` runs all of it. Run it before each release; after
+    `.github/workflows/update-rehearsal.yml` runs all of it, and every release runs it before
+    publishing (release.yml); after
     publishing 0.2.1, let an installed 0.2.0 update from the real github.com once per platform,
     and try a Windows per-machine install with UAC on (as an administrator and as a standard
     user): the runners elevate without asking, so the rehearsal cannot show the UAC prompt.
@@ -161,10 +162,14 @@ outputs are committed; tests never generate them at run time.
 - `.github/workflows/ci.yml`: ubuntu-24.04, Node 22, installs pypdf (`tests/requirements.txt`),
   poppler-utils and LibreOffice, then typecheck, lint, unit tests, build, e2e under xvfb.
 - `.github/workflows/release.yml`: builds installers on Windows, macOS and Linux.
-- To release: bump `version` in `package.json` on `main` (via a PR), then Actions > Release > Run
-  workflow on `main` with that version. The publish job checks the version matches, creates the
-  tag on the built commit and attaches the installers. Pushing a `v*` tag also works, but the
-  Claude session git proxy refuses tag pushes, so use the manual run.
+- To release: merge a PR that bumps `version` in `package.json` into `main`, with "Create a merge
+  commit" (a squash can carry a `[skip ci]` from one of its commits, and GitHub then skips the
+  workflow). That push publishes: the release workflow builds the installers, runs the full CI
+  suite (`ci.yml`) and the update rehearsal (`update-rehearsal.yml`) on the same commit, and only
+  then creates the tag and the release, with the download table and `docs/releases/v<version>.md`
+  as notes. Do not also run it by hand: a manual run on `main` with the version is for recovery
+  (a failed build), and a `v*` tag push also publishes (the Claude session git proxy refuses tag
+  pushes).
 - In-app updates (`docs/features/updates.md`) download from the latest GitHub release, so every
   release must carry `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and the `.blockmap` files
   (electron-builder writes them; the publish job fails without them). v0.1.0 has no updater: people

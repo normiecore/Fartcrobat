@@ -1,11 +1,17 @@
 name: Release
 
-# Builds installers for Windows, macOS and Linux. Run it manually to only build them. To publish
-# a GitHub release with the installers attached, either run it manually on main with a version
-# (the tag v<version> is created on the commit it built), or push a tag like v0.2.0. To write the
-# release notes on GitHub first, save the release as a draft (do not publish it), run this
-# workflow, and publish the draft once the installers are attached: installed copies offer the
-# latest published release as soon as it exists.
+# Builds installers for Windows, macOS and Linux, and publishes them as a GitHub release.
+# - Merging a version bump of package.json into main publishes that version (merge the release PR
+#   with "Create a merge commit": a squash that carries "[skip ci]" from one of its commits skips
+#   this workflow). Notes come from docs/releases/v<version>.md when it exists, under the table of
+#   which file to download.
+# - Before publishing, the full CI suite (ci.yml) and the update rehearsal (update-rehearsal.yml)
+#   must pass on the same commit; installed copies on Windows and AppImages install a release
+#   silently, so nothing untested is published.
+# - A manual run builds only; with a version (main only) it publishes too. Use it to recover, for
+#   example after a failed build, never in addition to the merge. A v* tag push also publishes.
+# - To write the notes on GitHub first, save the release as a draft (do not publish it): this
+#   workflow attaches the installers to the draft, and you publish it.
 on:
   workflow_dispatch:
     inputs:
@@ -47,7 +53,12 @@ jobs:
           publish=false
           if [[ "$EVENT" == push && "$REF" == refs/heads/main ]]; then
             # A merged version bump is the release request. Dependency-only changes do not release.
-            [[ "$BEFORE" =~ ^[0-9a-f]{40}$ ]]
+            if [[ ! "$BEFORE" =~ ^[0-9a-f]{40}$ || "$BEFORE" =~ ^0+$ ]]; then
+              echo "::error::No previous main commit to compare package.json with ($BEFORE). Run this workflow by hand with the version."
+              exit 1
+            fi
+            # Any number of commits may have been pushed (a rebase merge): fetch the one before them.
+            git fetch --no-tags --depth=1 origin "$BEFORE"
             previous="$(git show "$BEFORE:package.json" | node -e "let s='';process.stdin.on('data',c=>s+=c).on('end',()=>console.log(JSON.parse(s).version))")"
             if [[ "$version" == "$previous" ]]; then build=false; else publish=true; fi
           elif [[ "$REF" == refs/tags/v* ]]; then
@@ -127,17 +138,42 @@ jobs:
             release/*.blockmap
           if-no-files-found: error
 
+  # Everything ci.yml checks, on this commit (typecheck, lint, unit tests, build, end-to-end tests).
+  checks:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+
+  # The latest release updates itself to a build of this version on every platform.
+  rehearsal:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/update-rehearsal.yml
+    with:
+      new: ${{ needs.prepare.outputs.version }}
+
   publish:
     if: needs.prepare.outputs.publish == 'true'
-    needs: [prepare, build]
+    needs: [prepare, build, checks, rehearsal]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    # One publish at a time: a second run for the same version then finds the release published
+    # (and stops) or a finished draft, never one still being uploaded.
+    concurrency:
+      group: release-publish
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          # Only the installers: the checks and the rehearsal upload screenshots and logs too.
+          pattern: installers-*
           merge-multiple: true
       - name: Create the GitHub release (or add the installers to it)
         env:
