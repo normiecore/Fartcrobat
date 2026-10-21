@@ -268,10 +268,9 @@ Roughly in priority order:
     download from Google, so it is off (`src/main/util/spellcheck.ts`). Bundling
     dictionaries (Electron publishes `hunspell_dictionaries.zip` per release) and pointing
     `setSpellCheckerDictionaryDownloadURL` at a local copy would bring it back offline.
-22. Live review across calls: each edit_text call is reviewed on its own. Letting later calls of the
-    same conversation append to an open review (so an AI can send one edit per call while the
-    person decides) needs a review id, a "done" signal and per-call tickets; the notes are in
-    `docs/features/agent-live-review.md` (Protocol).
+22. Done for 0.3.1: live review across calls (edit_text answers with a ticket at once, later calls
+    join the open review, wait_for_result is the "done" signal). See below and
+    `docs/features/agent-live-review.md`.
 23. In Claude Desktop on Windows (20 Oct 2026, 0.2.2) one render_page call ("Look at a page") showed
     as failed; the error text was not captured. Ask for it, or reproduce on Windows.
 
@@ -326,3 +325,19 @@ capture, scanner input.
 - 0.3.0 changes tool descriptions only (no arguments), so a Claude Desktop extension added from an
   older version keeps working; adding it again gives Claude the new descriptions. Release notes:
   `docs/releases/v0.3.0.md`.
+
+### Live review across calls (0.3.1, on `claude/laughing-tesla-83pgov`)
+
+- Owner report after trying 0.3.0 with Claude Desktop: Claude planned every edit for minutes and
+  sent one large edit_text at the end, so nothing appeared while it worked. Spec and "As built":
+  `docs/features/agent-live-review.md` ("Live review across calls (0.3.1)").
+- edit_text (not preview_only) answers `{status: 'still_running', ticket, message, review}` once its
+  edits are on the page (`ctx.detach`, runner.ts). Later edit_text calls of the same connection,
+  document and revision join the open review (`tools/editReview.ts`: combined proposal through
+  `propose(revision, changes, replace)`, cards numbered across the review, a pending block replaced
+  in place, a decided one refused). The review is applied once, one undo step, when nothing is
+  pending and the AI waits in wait_for_result (`onTicketWait` in tools/wait.ts) or the person clicks
+  Apply accepted changes; each ticket returns its own call's result. A cancelled call withdraws its
+  pending cards. Limits: 50 edits on 5 pages per call, 100 on 10 per review.
+- No new tool arguments: an extension added from 0.3.0 keeps working; adding it again gives Claude
+  the new edit_text and wait_for_result descriptions and server instructions.

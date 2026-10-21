@@ -17,6 +17,14 @@ export interface ToolContext {
   progress(progress: number, total?: number, message?: string): void
   /** What the audit log records about this call (merged; outcome defaults to 'done'). */
   audit(detail: Partial<AgentAuditDetail>): void
+  /**
+   * Answers the call now with {status: 'still_running', ticket, message, ...extra} while the
+   * handler keeps running; its final result goes to the ticket (wait_for_result), exactly as for a
+   * call that runs longer than the AI app waits. Returns the ticket, also when the call had already
+   * answered still_running (then `extra` is not sent), or null when the call has ended or was
+   * cancelled. Absent where no runner answers the call (tests that call a handler directly).
+   */
+  detach?(extra?: Record<string, unknown>): string | null
 }
 
 /** What a handler returns on success. Errors are thrown as ToolError. */

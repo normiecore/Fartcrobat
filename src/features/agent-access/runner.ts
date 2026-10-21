@@ -4,6 +4,7 @@
  * per call ('feature:agent-access:reply'). Calls run concurrently; nothing here waits on another
  * call or blocks the UI. A call still running after about 45 s (usually waiting for the person)
  * answers still_running with a ticket and keeps going; wait_for_result (tools/wait.ts) collects it.
+ * A handler can answer that way at once (ctx.detach): edit_text does once its edits are on the page.
  */
 import type { AgentAuditDetail, AgentCallReply, AgentCallRequest, AgentProgress } from '@shared/agent/bridge'
 import type { AgentToolResult } from '@shared/agent/protocol'
@@ -72,7 +73,8 @@ export async function executeCall(
   request: AgentCallRequest,
   signal: AbortSignal,
   deps: RunnerDeps,
-  audit: Partial<AgentAuditDetail> = {}
+  audit: Partial<AgentAuditDetail> = {},
+  detach?: ToolContext['detach']
 ): Promise<{ result: AgentToolResult; audit: AgentAuditDetail }> {
   const def = deps.tool(request.tool)
   const handler = def ? deps.handlers[def.name] : undefined
@@ -86,7 +88,8 @@ export async function executeCall(
     request,
     signal,
     progress: (progress, total, message) => deps.progress({ id: request.id, progress, ...(total !== undefined ? { total } : {}), ...(message ? { message } : {}) }),
-    audit: (detail) => void Object.assign(audit, detail)
+    audit: (detail) => void Object.assign(audit, detail),
+    ...(detach ? { detach } : {})
   }
   const args = request.args && typeof request.args === 'object' && !Array.isArray(request.args) ? request.args : {}
   const finish = (result: AgentToolResult) => {
@@ -219,33 +222,45 @@ export async function handleRequest(request: AgentCallRequest, deps: RunnerDeps 
       document: documentOfHandle(request),
       started
     })
+  /**
+   * Answers still_running now and hands the call to a ticket; the handler keeps running and its
+   * result goes to the ticket. `extra` joins the generic answer (a handler's detach).
+   */
+  const toTicket = (extra?: Record<string, unknown>): string | null => {
+    if (ticket) return ticket.id
+    if (ended || controller.signal.aborted) return null
+    if (waitTimer) clearTimeout(waitTimer)
+    waitTimer = null
+    // From here on the call belongs to its ticket: a cancel of the request no longer reaches it.
+    running.delete(request.id)
+    const document = audit.document ?? documentOfHandle(request)
+    const opened = openTicket({
+      windowId: request.windowId,
+      connectionId: request.connectionId,
+      tool: request.tool,
+      ...(document ? { document } : {}),
+      stop: () => stopCall(entry, deps.graceMs ?? CANCEL_GRACE_MS)
+    })
+    ticket = opened
+    send(
+      { data: { ...stillRunning(opened.id), ...extra, status: 'still_running', ticket: opened.id } },
+      { ...(document ? { document } : {}), outcome: 'pending', summary: `still running, ticket ${opened.id}` }
+    )
+    return opened.id
+  }
   if (!ANSWER_AT_ONCE.has(request.tool)) {
     // Answer before the AI app gives up on the call (and cancels it, closing the person's dialog).
     waitTimer = setTimeout(() => {
       waitTimer = null
-      if (ended || controller.signal.aborted) return
-      // From here on the call belongs to its ticket: a cancel of the request no longer reaches it.
-      running.delete(request.id)
-      const document = audit.document ?? documentOfHandle(request)
-      const opened = openTicket({
-        windowId: request.windowId,
-        connectionId: request.connectionId,
-        tool: request.tool,
-        ...(document ? { document } : {}),
-        stop: () => stopCall(entry, deps.graceMs ?? CANCEL_GRACE_MS)
-      })
-      ticket = opened
-      send(
-        { data: stillRunning(opened.id) },
-        { ...(document ? { document } : {}), outcome: 'pending', summary: `still running, ticket ${opened.id}` }
-      )
+      toTicket()
     }, deps.stillRunningMs?.() ?? stillRunningAfterMs())
   }
   // Progress of a call that answered still_running has nobody to go to.
   const progress = (p: AgentProgress) => {
     if (!ticket) deps.progress(p)
   }
-  const out = await executeCall(request, controller.signal, { ...deps, progress }, audit)
+  const detach = ANSWER_AT_ONCE.has(request.tool) ? undefined : (extra?: Record<string, unknown>) => toTicket(extra)
+  const out = await executeCall(request, controller.signal, { ...deps, progress }, audit, detach)
   entry.settle(out.result, out.audit)
 }
 

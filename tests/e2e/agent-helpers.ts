@@ -164,3 +164,28 @@ export async function undoLabel(page: Page): Promise<string | null> {
 export async function appPageText(page: Page, index: number): Promise<string> {
   return page.evaluate(async (i) => (await (window as any).__fartcrobat.getActiveDoc().pageText(i)).text as string, index)
 }
+
+/** The JSON data of a result's text block, or undefined. */
+function jsonOf(result: ToolResult): any {
+  try {
+    return JSON.parse(result.content.find((c) => c.type === 'text')?.text ?? '')
+  } catch {
+    return undefined
+  }
+}
+
+/** The ticket of a still_running answer, or undefined for any other result. */
+export function ticketOf(result: ToolResult): string | undefined {
+  const data = result.isError ? undefined : jsonOf(result)
+  return data?.status === 'still_running' && typeof data.ticket === 'string' ? data.ticket : undefined
+}
+
+/**
+ * The final result of a call: a still_running answer (edit_text gives one as soon as its edits are
+ * on the page) is followed with wait_for_result until the call's own result comes.
+ */
+export async function finalOf(agent: Agent, result: ToolResult | Promise<ToolResult>): Promise<ToolResult> {
+  let r = await result
+  for (let ticket = ticketOf(r); ticket; ticket = ticketOf(r)) r = await agent.call('wait_for_result', { ticket })
+  return r
+}

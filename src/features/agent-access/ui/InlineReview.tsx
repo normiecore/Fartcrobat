@@ -28,10 +28,12 @@ import {
   noteInteraction,
   patchReview,
   personIsReading,
+  readingOrder,
   startReview,
   useInlineReview,
   type Decision,
-  type InlineReview
+  type InlineReview,
+  type ReviewOptions
 } from './reviewState'
 import './review.css'
 
@@ -67,7 +69,7 @@ export async function reviewInDocument(options: {
   revise?: (rejected: number[]) => Promise<TextPreview>
   /** Releases the proposal held in the worker. */
   close?: () => Promise<unknown>
-}) {
+} & Pick<ReviewOptions, 'live' | 'agent' | 'waiting' | 'control'>) {
   const { doc } = options
   const release = () => void options.close?.().catch(() => {})
   const pending = startReview({
@@ -165,8 +167,9 @@ function pageMarks(r: InlineReview, pageIndex: number) {
   /** Regions of the proposal to show, per card. */
   const clip: { card: number; rect: Rect }[] = []
   r.report.changes.forEach((c, i) => {
-    if (!isRevealed(r, i)) return
     const decision = r.decisions[i]
+    // A withdrawn edit is shown as if it was never proposed.
+    if (!isRevealed(r, i) || decision === 'withdrawn') return
     let rects = c.fragments.filter((f) => f.page === page).map((f) => f.rect)
     const before = c.beforePage === page
     if (r.mode === 'edit') {
@@ -360,7 +363,7 @@ function ProposalThumb({ doc, page, source }: { doc: DocumentModel; page: TextPr
   )
 }
 
-const stateLabel: Record<Decision, string> = { pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected' }
+const stateLabel: Record<Decision, string> = { pending: 'Pending', accepted: 'Accepted', rejected: 'Rejected', withdrawn: 'Withdrawn' }
 
 const ChangeCard = memo(function ChangeCard({
   change,
@@ -434,11 +437,14 @@ export function InlineReviewPanel({ doc }: { doc: DocumentModel }) {
   const source = useProposalSource(doc, review?.report.proposal)
   if (!review) return <PanelFrame title="Review edits"><p>No edits waiting for this document.</p></PanelFrame>
   const { decisions, original, report } = review
-  const rejectableCards = decisions.flatMap((d, i) => (original.changes[i].rejectable ? [i] : []))
+  const rejectableCards = decisions.flatMap((d, i) => (original.changes[i].rejectable && d !== 'withdrawn' ? [i] : []))
   const pending = rejectableCards.filter((i) => decisions[i] === 'pending')
   const count = (d: Decision) => rejectableCards.filter((i) => decisions[i] === d).length
-  const shown = review.order.slice(0, review.revealed)
-  const revealing = review.revealed < review.order.length
+  // Cards from later calls join the list in reading order.
+  const shown = readingOrder(original, review.mode, review.order.slice(0, review.revealed).filter((c) => decisions[c] !== 'withdrawn'))
+  const revealing = review.order.slice(review.revealed).some((c) => decisions[c] !== 'withdrawn')
+  // A live review waits for the AI app (or this button) once nothing is pending.
+  const canApply = review.live && !pending.length && !review.aiWaiting && count('accepted') > 0
   const checking = review.busy === 'checking'
   const general = report.issues.filter((i) => i.change === undefined)
   const extra = source ? report.pages.filter((p) => p.page > doc.pageCount) : []
@@ -468,6 +474,13 @@ export function InlineReviewPanel({ doc }: { doc: DocumentModel }) {
         {pending.length} pending · {count('accepted')} accepted · {count('rejected')} rejected
         {review.busy === 'updating' ? ' · Updating preview...' : checking ? ' · Checking edits...' : ''}
       </p>
+      {review.live && (
+        <p className={'fc-agent-access-review-ai' + (review.aiWaiting ? ' is-waiting' : ' is-sending')} aria-live="polite">
+          {review.aiWaiting
+            ? `${review.agent} has sent its edits and is waiting for your decisions.`
+            : `${review.agent} is still sending edits. They are added here as they arrive.`}
+        </p>
+      )}
       {review.error && <p role="alert" className="fc-agent-access-review-error">{review.error}</p>}
       {general.map((issue, i) => <p key={i} className="fc-agent-access-review-warning">Page {issue.page}: {issue.message}</p>)}
       <div className="fc-agent-access-review-actions">
@@ -475,6 +488,11 @@ export function InlineReviewPanel({ doc }: { doc: DocumentModel }) {
         <Button disabled={checking || !pending.length} onClick={() => { review.showAll(); void review.decide(pending, false) }}>Reject remaining</Button>
         <Button onClick={() => review.cancel()}>Discard batch</Button>
       </div>
+      {canApply && (
+        <div className="fc-agent-access-review-actions">
+          <Button variant="primary" disabled={checking} onClick={() => review.apply()}>Apply accepted changes</Button>
+        </div>
+      )}
       <div className="fc-agent-access-review-actions">
         <Button size="sm" onClick={() => patchReview({ showOriginal: !review.showOriginal })}>{review.showOriginal ? 'Show proposed' : 'Show original'}</Button>
         {revealing && <Button size="sm" onClick={() => review.showAll()}>Show all</Button>}

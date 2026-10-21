@@ -8,8 +8,7 @@ import { reviseReflowSpec, type ReflowSpec } from '../reflow'
 import type { TextPreview } from '../engine'
 import { validateTextChanges, type TextChange } from '../textEdits'
 import { reviewInDocument } from '../ui/InlineReview'
-import { useInlineReview } from '../ui/reviewState'
-import { flashRect } from '../ui/store'
+import { editInReview, exclusive, forAgent } from './editReview'
 import {
   auditName,
   pageIndex,
@@ -23,51 +22,6 @@ import { copyRestriction } from './context'
 import { toBase64 } from './contextShape'
 import { engineTask, undoLabel } from './act-runtime'
 import { runAsAgent } from './common'
-
-/** A proposal for a review is being made or reviewed (its copy is held in the worker until then). */
-let reviewing = false
-/**
- * Another review holds the page: refuse before switching the person's tab away from it, and before
- * a new proposal replaces the one that review shows.
- */
-function refuseWhileReviewing() {
-  if (useInlineReview.getState().review || reviewing)
-    throw new ToolError('busy', 'Another edit review is open in Fartcrobat. Wait until the person has finished it.')
-}
-/** Proposes and reviews while no other review can start. */
-async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
-  refuseWhileReviewing()
-  reviewing = true
-  try { return await fn() } finally { reviewing = false }
-}
-
-/**
- * Issues as the AI app numbers its edits: `edit` is 1-based in the call's own list, like
- * acceptedEdits. `numbering` maps the engine's 0-based change index when it ran on a subset.
- */
-function issuesForAgent(issues: TextPreview['issues'], numbering?: number[]) {
-  return issues.map(({ change, ...i }) =>
-    change === undefined ? i : { ...i, edit: (numbering ? numbering[change] : change) + 1 }
-  )
-}
-
-/** The report as the AI app sees it: the review's page geometry stays in Fartcrobat. */
-function forAgent(report: TextPreview) {
-  const { previews: _previews, proposal: _proposal, pages: _pages, margins: _margins, changes, ...rest } = report
-  return {
-    ...rest,
-    issues: issuesForAgent(rest.issues),
-    changes: changes.map((c) => ({
-      page: c.page,
-      label: c.label,
-      before: c.before,
-      after: c.after,
-      bbox: c.bbox,
-      fallbackFonts: c.fallbackFonts,
-      ...(c.notes.length ? { notes: c.notes } : {})
-    }))
-  }
-}
 
 async function reviewProposal(ctx: Parameters<ToolHandler>[1], options: Parameters<typeof reviewInDocument>[0]) {
   try { return await reviewInDocument(options) }
@@ -144,65 +98,8 @@ const edit: ToolHandler = async (args, ctx) => {
       images: report.previews.map((p) => ({ mimeType: 'image/png' as const, data: toBase64(p.after) }))
     }
   }
-  const { report, accepted } = await exclusive(async () => {
-    const report = await engineTask('Could not preview text edits', () =>
-      ops.propose(args.revision as number, changes)
-    )
-    const proposal = report.proposal
-    const close = () => (proposal ? ops.closeProposal(proposal.id) : Promise.resolve())
-    if (ctx.signal.aborted || !report.canApply) {
-      void close().catch(() => {})
-      throwIfAborted(ctx)
-      return { report, accepted: null }
-    }
-    activateDocument(doc.id)
-    doc.view?.goToPage(report.changes[0].page - 1)
-    const accepted = await reviewProposal(ctx, {
-      doc, title: 'Review text changes', report, signal: ctx.signal, close,
-      check: kept => ops.checkProposal(proposal!.id, kept)
-    })
-    return { report, accepted }
-  })
-  if (!accepted)
-    return {
-      data: {
-        ...forAgent(report),
-        applied: false,
-        note: 'Nothing changed. Resolve the blocking layout issues and preview again.'
-      }
-    }
-  const first = report.changes[0]
-  if (!accepted.length) {
-    throwIfAborted(ctx)
-    throw new ToolError('declined', 'The person declined the text changes. Nothing changed. Do not retry unless asked.')
-  }
-  throwIfAborted(ctx)
-  if (hasActiveEditors())
-    throw new ToolError('busy', 'The person is typing. Finish editing and inspect the text again.')
-  // The worker rechecks its revision and layout atomically, including changes during the review.
-  const result = await engineTask('Could not apply text edits', () =>
-    runAsAgent(doc, () => ops.apply(args.revision as number, accepted.map(i => changes[i])))
-  )
-  // The first edit that was applied, not a rejected one.
-  const shown = report.changes[accepted[0]] ?? first
-  if (shown.bbox) {
-    doc.view?.scrollToRect(shown.page - 1, shown.bbox, { center: true })
-    flashRect(doc.id, shown.page - 1, shown.bbox)
-  }
-  ctx.audit({ summary: 'edited ' + result.changed + ' text blocks' })
-  return {
-    data: {
-      ...result,
-      // The engine numbered the accepted subset; the AI app knows its own edits.
-      issues: issuesForAgent(result.issues, accepted),
-      acceptedEdits: accepted.map(i => i + 1),
-      rejectedEdits: changes.map((_, i) => i).filter(i => !accepted.includes(i)).map(i => i + 1),
-      applied: true,
-      saved: false,
-      undoLabel: await undoLabel(doc),
-      note: 'Changes are visible in Fartcrobat. Inspect with render_page; save_document writes a local PDF.'
-    }
-  }
+  // Answers still_running once the edits are on the page; later calls join the review.
+  return editInReview(ctx, doc, args.revision as number, changes)
 }
 
 const layout: ToolHandler = async (args, ctx) => {

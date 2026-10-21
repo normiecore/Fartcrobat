@@ -18,6 +18,7 @@ import {
   styleNotes,
   styleOf,
   validateTextChanges,
+  REVIEW_LIMITS,
   type PlannedTextChange,
   type ReviewStyle,
   type TextChange
@@ -100,9 +101,13 @@ function requireRevision(s: Session, revision: number) {
       'STALE_BLOCK'
     )
 }
-/** Plans the changes; the analysed pages are returned too, so nothing is analysed twice. */
+/**
+ * Plans the changes; the analysed pages are returned too, so nothing is analysed twice. A review
+ * holds the edits of several calls, so the engine takes up to the review limits; each call is held
+ * to the call limits by the handler.
+ */
 function plans(s: Session, changes: TextChange[]) {
-  validateTextChanges(changes, s.pageCount())
+  validateTextChanges(changes, s.pageCount(), REVIEW_LIMITS)
   const blocks = new Map<number, TextBlockInfo[]>()
   const plan = changes.map((c) => {
     if (!blocks.has(c.page)) blocks.set(c.page, editText.ops.analyze(s, c.page))
@@ -635,8 +640,24 @@ export default defineOps('agent-text', {
     }
   },
 
-  /** Proposals for a review: the copy is kept until closeProposal (a blocked edit keeps nothing). */
-  propose(s, revision: number, changes: TextChange[]) {
+  /**
+   * Proposals for a review: the copy is kept until closeProposal (a blocked edit keeps nothing).
+   * With `replace` (the id of the held edit proposal) the changes are the review's combined set
+   * after another call joined it: the new copy replaces the held one under the same id with a new
+   * version, and a blocked set leaves the held one shown as it was.
+   */
+  propose(s, revision: number, changes: TextChange[], replace?: string) {
+    if (replace !== undefined) {
+      const h = heldProposal(s, replace)
+      if (h.kind !== 'edit') throw new EngineError('Only text edits are added to a review.', 'BAD_EDIT')
+      const built = buildEdit(s, revision, changes)
+      if (!built.report.canApply) {
+        built.copy.closeDocument()
+        return built.report
+      }
+      dispose(s)
+      return hold(s, built, 'edit', changes, h)
+    }
     // Release the previous copy first: at most one is held, and building one needs memory too.
     dispose(s)
     const built = buildEdit(s, revision, changes)

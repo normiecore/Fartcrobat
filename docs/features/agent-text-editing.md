@@ -27,7 +27,9 @@ exact native font metrics, page previews, validated edits and an undoable docume
    Otherwise Fartcrobat shows the proposal on the document with a Review edits panel (see "Live
    review" below). The person accepts or rejects each edit (edit_text), paragraph (reflow_text) or
    section (rebuild_document). Cancelling the MCP call discards it. The accepted changes make one
-   Agent-labelled undo step.
+   Agent-labelled undo step. Since 0.3.1 edit_text answers at once with a ticket once its edits are
+   on the page, later edit_text calls of the same conversation join the open review, and
+   wait_for_result returns each call's decisions (see "0.3.1: live review across calls").
 6. The agent inspects the resulting pages with render_page. save_document can save a new local
    PDF; editing never silently writes over the source file. Reinstall the bundled Claude Desktop
    extension after updating the app so it advertises the new tools.
@@ -63,8 +65,10 @@ exact native font metrics, page previews, validated edits and an undoable docume
 - src/features/agent-access/engine.ts: inspect, isolated previews, guarded native mutations.
 - textEdits.ts: validated text plans; flow.ts: linked regions and repeated design pages.
 - reflow.ts and reflowEngine.ts: data-only new-design input, native pagination and page replacement.
-- tools/text.tsx: MCP handlers; ui/InlineReview.tsx (page layer and panel), ui/reviewState.ts
-  (decisions, reveal timer, checks and revisions) and ui/review.css: the on-document review.
+- tools/text.tsx: MCP handlers; tools/editReview.ts: edit_text reviews across calls (joining,
+  replacing, withdrawing, applying once, per-call results); ui/InlineReview.tsx (page layer and
+  panel), ui/reviewState.ts (decisions, reveal timer, checks, revisions and the live review's
+  control) and ui/review.css: the on-document review.
 - src/features/edit-text/engine.ts: createTextComposer shares the interactive editor's native
   shaping/writing with flows. No parallel text renderer.
 - tests/engine/agent-text.test.ts, agent-reflow.test.ts and agent-tools-handlers.test.ts cover
@@ -72,7 +76,8 @@ exact native font metrics, page previews, validated edits and an undoable docume
   layout failures, cancellation and stale proposals. agent-proposal.test.ts covers the held
   proposal (render, check, revise, close, stale versions, markup fields, rebuild sections),
   agent-inline-review.test.ts the decisions and the reveal, core-render-queue.test.ts the render
-  queue's other sources.
+  queue's other sources. agent-live-review.test.ts runs edit_text across calls through the runner
+  and wait_for_result; agent-runner-wait.test.ts covers ctx.detach and the ticket wait listener.
 - tests/e2e/agent-text.spec.ts drives the actual built MCP shim and app.
 
 This does not promise lossless semantic reconstruction of every PDF. The model gets the evidence
@@ -90,7 +95,7 @@ recomputed the preview; since 0.3 it only hides it, see below.) Decisions remain
 subset is then applied as a single native, undoable edit. Saving during review cannot save
 unaccepted proposal images or annotations, and does not end the review; any edit of the source
 document does. One review is open at a time: a second proposal is refused (`busy`) before it
-switches the person's tab. The review brings Fartcrobat forward, or flashes it on Windows.
+switches the person's tab (since 0.3.1 an edit_text of the same conversation joins it instead). The review brings Fartcrobat forward, or flashes it on Windows.
 
 The agent is instructed to submit small meaningful batches so proposals arrive progressively;
 MCP does not stream unfinished tool arguments or model tokens. In 0.2.1 linked text flow and full
@@ -144,3 +149,14 @@ The design note is docs/features/agent-live-review.md. What was built:
   `fc-agent-access-inline-panel` (the companion moves aside from it).
 - Results: edit_text is unchanged; reflow_text and rebuild_document add `acceptedItems` and
   `rejectedItems` (`{item, label}`, item = paragraph or section number from 1).
+
+## 0.3.1: live review across calls
+
+The design is "Live review across calls (0.3.1)" in docs/features/agent-live-review.md; what was
+built and where it chose where the note is silent is in its "As built" list. In short: edit_text
+(not preview_only) answers `{status: 'still_running', ticket, message, review: {edits, pending}}`
+as soon as its edits are on the page (`ctx.detach` in runner.ts), later calls of the same
+connection, document and revision join the review (combined proposal, cards numbered across the
+review), and the review is applied once, as one undo step, when nothing is pending and either the
+AI app waits in wait_for_result or the person clicks Apply accepted changes. Each ticket returns
+that call's `acceptedEdits`, `rejectedEdits` and `replacedEdits`.

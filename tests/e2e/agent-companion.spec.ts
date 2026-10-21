@@ -1,6 +1,6 @@
 import { test, expect, type Locator, type Page } from '@playwright/test'
 import { fixturePath, runCommand, waitForRender } from './helpers'
-import { startSession, startShim, dataOf, errorOf, expectAudit } from './agent-helpers'
+import { startSession, startShim, dataOf, errorOf, expectAudit, finalOf } from './agent-helpers'
 
 /** The companion block a tool result carries when its conversation joined the chat. */
 function companionOf(result: { content: { type: string; text?: string }[] }): { session: string; status: string } | undefined {
@@ -298,7 +298,7 @@ test('during a review the companion moves off the panel without saving that, and
     await expect.poll(covers).toBe(false)
     await expect(companion).toContainText('Your edits are ready to review on the page.')
     await panel.getByRole('button', { name: 'Discard batch', exact: true }).click()
-    expect(errorOf(await declined)).toContain('[declined]')
+    expect(errorOf(await finalOf(agent, declined))).toContain('[declined]')
     // The review is over: back where it was, and that move was never saved.
     await expect.poll(async () => (await boxOf(companion)).x).toBe(before.x)
     expect((await savedPosition(page))?.x).toBeUndefined()
@@ -313,7 +313,7 @@ test('during a review the companion moves off the panel without saving that, and
     expect((await boxOf(companion)).x).toBe(aside.x + 120)
     expect(await covers()).toBe(true)
     await panel.getByRole('button', { name: 'Discard batch', exact: true }).click()
-    expect(errorOf(await again)).toContain('[declined]')
+    expect(errorOf(await finalOf(agent, again))).toContain('[declined]')
     await expect(companion).not.toContainText('Your edits are ready to review on the page.')
     expect((await boxOf(companion)).x).toBe(aside.x + 120)
   } finally {

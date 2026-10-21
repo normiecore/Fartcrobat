@@ -334,3 +334,113 @@ describe('wait_for_result', () => {
     expect((await waitFor(d, ticket)).result).toEqual({ data: 'text' })
   })
 })
+
+describe('calls that hand themselves to a ticket (ctx.detach)', () => {
+  it('answer still_running at once with what the handler adds; the result goes to the ticket', async () => {
+    const hold = gate()
+    const tickets: (string | null)[] = []
+    const d = deps({
+      edit_text: async (_args, ctx) => {
+        ctx.audit({ document: '/docs/a.pdf' })
+        tickets.push(ctx.detach!({ message: 'On the page now.', review: { edits: [{ edit: 1 }], pending: 1 } }))
+        // A second detach keeps the ticket and sends nothing.
+        tickets.push(ctx.detach!({ message: 'ignored' }))
+        await hold.promise
+        return { data: { applied: true } }
+      }
+    })
+    const req = request('edit_text', { handle: 'w1-x-doc-1' })
+    const running = runner.handleRequest(req, { ...d.d, stillRunningMs: () => 60_000 })
+    const first = await d.replyTo(req)
+    const ticket = (first.result.data as { ticket: string }).ticket
+    expect(tickets).toEqual([ticket, ticket])
+    expect(first.result).toEqual({
+      data: { status: 'still_running', ticket, message: 'On the page now.', review: { edits: [{ edit: 1 }], pending: 1 } }
+    })
+    expect(first.audit).toMatchObject({ outcome: 'pending', document: '/docs/a.pdf' })
+    // The request is the ticket's now: a cancel of it does not reach the handler.
+    expect(runner.runningCalls()).not.toContain(req.id)
+    expect(ui.useAgentUi.getState().calls[0]).toMatchObject({ id: req.id, outcome: 'running' })
+    hold.open()
+    await running
+    expect(d.replies.filter((r) => r.id === req.id)).toHaveLength(1)
+    expect((await waitFor(d, ticket)).result).toEqual({ data: { applied: true } })
+  })
+
+  it('after the timer answered still_running, detach returns that ticket without a second answer', async () => {
+    const hold = gate()
+    const seen = gate<string | null>()
+    const d = deps({
+      edit_text: async (_args, ctx) => {
+        await hold.promise
+        seen.open(ctx.detach!({ message: 'late' }))
+        return { data: 'done' }
+      }
+    })
+    const req = request('edit_text')
+    const running = runner.handleRequest(req, d.d)
+    const ticket = ((await d.replyTo(req)).result.data as { ticket: string }).ticket
+    hold.open()
+    expect(await seen.promise).toBe(ticket)
+    await running
+    expect(d.replies.filter((r) => r.id === req.id)).toHaveLength(1)
+    expect((await waitFor(d, ticket)).result).toEqual({ data: 'done' })
+  })
+
+  it('a cancelled call cannot detach, and wait_for_result and list_documents have no detach', async () => {
+    const seen: unknown[] = []
+    const d = deps({
+      edit_text: async (_args, ctx) => {
+        await new Promise((r) => setTimeout(r, 20))
+        seen.push(ctx.detach!())
+        return { data: 'x' }
+      },
+      list_documents: async (_args, ctx) => (seen.push(ctx.detach), { data: { documents: [] } })
+    })
+    const req = request('edit_text')
+    const running = runner.handleRequest(req, { ...d.d, stillRunningMs: () => 60_000 })
+    await vi.waitFor(() => expect(runner.runningCalls()).toContain(req.id))
+    runner.cancelRequest(req.id, 1000)
+    await running
+    await runner.handleRequest(request('list_documents'), d.d)
+    expect(seen).toEqual([null, undefined])
+  })
+})
+
+describe('waiting for a ticket', () => {
+  it('tells listeners when wait_for_result starts and stops waiting, without changing its answer', async () => {
+    const hold = gate()
+    const d = deps({ recognize_text: async () => (await hold.promise, { data: 'text' }) })
+    const req = request('recognize_text')
+    const running = runner.handleRequest(req, d.d)
+    const ticket = ((await d.replyTo(req)).result.data as { ticket: string }).ticket
+    const events: boolean[] = []
+    const off = wait.onTicketWait(ticket, (w) => events.push(w))
+    expect(wait.ticketWaited(ticket)).toBe(false)
+    // Times out: waiting, then not.
+    expect((await waitFor(d, ticket)).result.data).toMatchObject({ status: 'still_running' })
+    expect(events).toEqual([true, false])
+    // A cancel is not waiting for the person.
+    const other = gate()
+    const d2 = deps({ recognize_text: async () => (await other.promise, { data: 'x' }) })
+    const req2 = request('recognize_text')
+    const running2 = runner.handleRequest(req2, d2.d)
+    const ticket2 = ((await d2.replyTo(req2)).result.data as { ticket: string }).ticket
+    const events2: boolean[] = []
+    wait.onTicketWait(ticket2, (w) => events2.push(w))
+    other.open()
+    await running2
+    await waitFor(d2, ticket2, { cancel: true })
+    expect(events2).toEqual([])
+    // Finished while waited for.
+    const w = request('wait_for_result', { ticket })
+    const waiting = runner.handleRequest(w, d.d)
+    await vi.waitFor(() => expect(wait.ticketWaited(ticket)).toBe(true))
+    hold.open()
+    await running
+    await waiting
+    expect(d.replies.find((r) => r.id === w.id)!.result).toEqual({ data: 'text' })
+    expect(events).toEqual([true, false, true, false])
+    off()
+  })
+})

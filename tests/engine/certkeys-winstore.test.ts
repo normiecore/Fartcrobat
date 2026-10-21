@@ -1059,13 +1059,15 @@ describe.skipIf(!STORE_TESTS)('with PowerShell and a test certificate store', ()
   it('tries a certificate once per envelope, and a few times in all (each try is a private key operation)', async () => {
     // A crafted envelope naming the person's certificate 300 times, with damaged content: every
     // try unwraps the key and then fails. 1000 such tries took 107 s.
-    const many = forgeEnvelope(Array.from({ length: 300 }, () => pem('me-enc')), SEED)
-    many[many.length - 1] ^= 0x5a
-    const others = Array.from({ length: 6 }, (_, i) => {
-      const b = forgeEnvelope([pem('me-enc')], SEED)
-      b[b.length - 1] ^= 0x11 + i
+    // The content (24 bytes) is two AES blocks at the end of the envelope. Changing the last byte of
+    // the first block changes the last plaintext byte, the padding length 8, to a value whose padding
+    // check always fails. (Changing the last byte made random padding, valid about 1 time in 256.)
+    const damage = (b: Uint8Array, d: number): Uint8Array => {
+      b[b.length - 17] ^= d
       return b
-    })
+    }
+    const many = damage(forgeEnvelope(Array.from({ length: 300 }, () => pem('me-enc')), SEED), 0x5a)
+    const others = Array.from({ length: 6 }, (_, i) => damage(forgeEnvelope([pem('me-enc')], SEED), 0x11 + i))
     const t0 = performance.now()
     const err = await decryptRecipients(helper, [many, ...others], { thumbprint: thumbOf('me-enc') }).catch((e: unknown) => e)
     expect(performance.now() - t0).toBeLessThan(30_000)
