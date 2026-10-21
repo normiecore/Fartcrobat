@@ -32,12 +32,22 @@ export interface PlannedTextChange {
   edit: TextEdit
 }
 
-export function validateTextChanges(changes: TextChange[], pageCount: number) {
+export interface TextLimits {
+  edits: number
+  pages: number
+  chars: number
+}
+/** What one edit_text call may send. */
+export const CALL_LIMITS: TextLimits = { edits: 50, pages: 5, chars: 60000 }
+/** What one review may hold: the edits of every call that joined it (see agent-live-review.md). */
+export const REVIEW_LIMITS: TextLimits = { edits: 100, pages: 10, chars: 120000 }
+
+export function validateTextChanges(changes: TextChange[], pageCount: number, limits: TextLimits = CALL_LIMITS) {
   const fail = (message: string): never => {
     throw new EngineError(message, 'BAD_EDIT')
   }
-  if (!Array.isArray(changes) || !changes.length || changes.length > 50)
-    fail('Give from 1 to 50 text changes.')
+  if (!Array.isArray(changes) || !changes.length || changes.length > limits.edits)
+    fail(`Give from 1 to ${limits.edits} text changes.`)
   const blocks = new Set<string>()
   const pages = new Set<number>()
   let chars = 0
@@ -103,8 +113,8 @@ export function validateTextChanges(changes: TextChange[], pageCount: number) {
     for (const k of ['bold', 'italic'] as const)
       if (c[k] !== undefined && typeof c[k] !== 'boolean') fail(k + ' must be true or false.')
   }
-  if (chars > 60000 || pages.size > 5)
-    fail('One batch is limited to 60000 characters on 5 pages. Work in smaller batches.')
+  if (chars > limits.chars || pages.size > limits.pages)
+    fail(`One batch is limited to ${limits.chars} characters on ${limits.pages} pages. Work in smaller batches.`)
 }
 
 export function planTextChange(c: TextChange, blocks: TextBlockInfo[]): PlannedTextChange {

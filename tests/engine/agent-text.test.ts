@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type agentText from '@features/agent-access/engine'
 import type textOps from '@features/edit-text/engine'
 import type annotOps from '@engine/ops/annots'
-import { validateTextChanges, type TextChange } from '@features/agent-access/textEdits'
+import { REVIEW_LIMITS, validateTextChanges, type TextChange } from '@features/agent-access/textEdits'
 import { openFixture, roundTrip } from './helpers'
 
 async function setup() {
@@ -138,6 +138,13 @@ describe('native MCP text editing', () => {
         6
       )
     ).toThrow(/5 pages/)
+    // A review holds the edits of several calls: up to 100 edits on 10 pages.
+    const boxes = (n: number, pages: number) =>
+      Array.from({ length: n }, (_, i) => ({ page: i % pages, text: 'A', rect: [0, i, 20, i + 1] as [number, number, number, number] }))
+    expect(() => validateTextChanges(boxes(51, 1), 1)).toThrow(/1 to 50/)
+    expect(() => validateTextChanges(boxes(100, 10), 10, REVIEW_LIMITS)).not.toThrow()
+    expect(() => validateTextChanges(boxes(101, 10), 10, REVIEW_LIMITS)).toThrow(/1 to 100/)
+    expect(() => validateTextChanges(boxes(11, 11), 11, REVIEW_LIMITS)).toThrow(/10 pages/)
   })
 })
 
