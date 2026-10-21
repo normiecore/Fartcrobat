@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { fixturePath, waitForRender, activeDocState } from './helpers'
-import { startSession, dataOf, errorOf, appPageText, expectAudit, undoLabel } from './agent-helpers'
+import { startSession, dataOf, errorOf, appPageText, expectAudit, undoLabel, finalOf } from './agent-helpers'
 import type { Locator, Page } from '@playwright/test'
 
 /** A change's card in the Review edits panel. */
@@ -52,12 +52,12 @@ test('Claude edits native PDF text after review; Decline and Undo preserve the o
     await expect(page.getByRole('img', { name: 'Page 1 proposed edits' })).toBeVisible()
     await dialog.screenshot({ path: 'test-results/agent-text-review.png', animations: 'disabled' })
     await dialog.getByRole('button', { name: 'Discard batch', exact: true }).click()
-    expect(errorOf(await declined)).toContain('[declined]')
+    expect(errorOf(await finalOf(agent, declined))).toContain('[declined]')
     expect(await appPageText(page, 0)).toContain('quick brown fox')
     const applying = agent.start('edit_text', args)
     await expect(dialog).toBeVisible()
     await dialog.getByRole('button', { name: 'Accept all', exact: true }).click()
-    expect(dataOf(await applying).applied).toBe(true)
+    expect(dataOf(await finalOf(agent, applying)).applied).toBe(true)
     expect(await appPageText(page, 0)).toContain('swift brown fox')
     expect(await undoLabel(page)).toBe('Agent: Edit Text Batch')
     expect((await activeDocState(page))?.dirty).toBe(true)
@@ -101,7 +101,7 @@ test('Claude inspects the layout and flows text through columns and new pages in
     await expect(dialog).toContainText('Continuation pages repeat the template artwork')
     await dialog.screenshot({ path: 'test-results/agent-text-flow-review.png', animations: 'disabled' })
     await dialog.getByRole('button', { name: 'Accept all', exact: true }).click()
-    const result = dataOf(await applying)
+    const result = dataOf(await finalOf(agent, applying))
     expect(result.applied).toBe(true)
     expect(result.result.addedPages).toBeGreaterThan(0)
     await expect.poll(() => undoLabel(page)).toBe('Agent: Reflow Text')
@@ -133,7 +133,7 @@ test('a person edit during review makes the proposal stale instead of overwritin
       const d = (window as any).__fartcrobat.getActiveDoc()
       await d.ops('annots').create(0, { type: 'Text', contents: 'Person edit', rect: [20, 20, 40, 40] })
     })
-    expect(errorOf(await pending)).toContain('document changed')
+    expect(errorOf(await finalOf(agent, pending))).toContain('document changed')
     await expect(dialog).not.toBeVisible()
     expect(await appPageText(page, 0)).toContain('quick brown fox')
     expect(dataOf(await agent.call('list_annotations')).count).toBe(1)
@@ -154,7 +154,7 @@ test('an approved new design paginates inside the same tab and Undo restores the
     await expect(dialog).toBeVisible()
     await expect(dialog).toContainText('replaces the original layout')
     await dialog.getByRole('button', { name: 'Accept all', exact: true }).click()
-    expect(dataOf(await pending).applied).toBe(true)
+    expect(dataOf(await finalOf(agent, pending)).applied).toBe(true)
     expect(await appPageText(page, 0)).toContain('Darren Wong')
     expect(await undoLabel(page)).toBe('Agent: Rebuild Document Layout')
     dataOf(await agent.call('undo'))
@@ -183,7 +183,7 @@ test('inline review accepts one edit and rejects another without saving proposal
     await card(review, 'Change 1').getByRole('button', { name: 'Accept edit', exact: true }).click()
     await expect(card(review, 'Change 2')).toBeVisible()
     await card(review, 'Change 2').getByRole('button', { name: 'Reject edit', exact: true }).click()
-    const result = dataOf(await pending)
+    const result = dataOf(await finalOf(agent, pending))
     expect(result.acceptedEdits).toEqual([1])
     expect(result.rejectedEdits).toEqual([2])
     expect(await appPageText(page, 0)).toContain('swift brown fox')
@@ -232,7 +232,7 @@ test('changes arrive one by one, then each is accepted or rejected on its own', 
     await card(review, 'Change 3').getByRole('button', { name: 'Accept edit', exact: true }).click()
     await expect(review.getByRole('status')).toContainText('1 pending · 1 accepted · 1 rejected')
     await card(review, 'Change 1').getByRole('button', { name: 'Accept edit', exact: true }).click()
-    const result = dataOf(await pending)
+    const result = dataOf(await finalOf(agent, pending))
     expect(result.acceptedEdits).toEqual([1, 3])
     expect(result.rejectedEdits).toEqual([2])
     const text = await appPageText(page, 0)
@@ -271,7 +271,7 @@ test('hovering a change in the panel rings it on the page without moving the pag
     await page.keyboard.press('r')
     await expect(card(review, 'Change 2')).toContainText('Rejected')
     await review.getByRole('button', { name: 'Accept all', exact: true }).click()
-    const result = dataOf(await pending)
+    const result = dataOf(await finalOf(agent, pending))
     expect(result.acceptedEdits).toEqual([1, 3])
     expect(result.rejectedEdits).toEqual([2])
   } finally { await s.close() }
@@ -301,7 +301,7 @@ test('a rejected section is left out of the new design and the result lists it',
     await expect(card(review, 'Hobbies')).toContainText('Left out of the new design')
     await expect(review.getByRole('status')).not.toContainText('Updating preview')
     await review.getByRole('button', { name: 'Accept all', exact: true }).click()
-    const result = dataOf(await pending)
+    const result = dataOf(await finalOf(agent, pending))
     expect(result.applied).toBe(true)
     expect(result.acceptedItems).toEqual([{ item: 1, label: 'Summary' }, { item: 3, label: 'Skills' }])
     expect(result.rejectedItems).toEqual([{ item: 2, label: 'Hobbies' }])
@@ -343,6 +343,57 @@ test('the proposal is rendered sharp at the zoom of the page, not stretched', as
     const scale = await tile.evaluate((c: HTMLCanvasElement) => c.width / c.getBoundingClientRect().width)
     expect(scale).toBeCloseTo(await page.evaluate(() => devicePixelRatio), 2)
     await review.getByRole('button', { name: 'Discard batch', exact: true }).click()
-    expect(errorOf(await pending)).toContain('[declined]')
+    expect(errorOf(await finalOf(agent, pending))).toContain('[declined]')
+  } finally { await s.close() }
+})
+
+test('edits sent in separate calls reach the page at once, join one review and are applied as one undo step', async () => {
+  const s = await startSession([fixturePath('text.pdf')])
+  try {
+    const { page, agent } = s
+    await waitForRender(page)
+    const { revision, edits } = await threeEdits(agent)
+    const review = page.getByRole('region', { name: 'Review text changes' })
+    // The first call answers as soon as its edit is on the page, before anyone decided anything.
+    const first = dataOf(await agent.call('edit_text', { revision, edits: [edits[0]] }))
+    expect(first).toMatchObject({ status: 'still_running', review: { edits: [{ edit: 1, page: 1, label: 'Change 1' }], pending: 1 } })
+    expect(first.message).toContain('as its own edit_text call')
+    await expect(card(review, 'Change 1')).toBeVisible()
+    await expect(review).toContainText('Claude is still sending edits')
+    // The person decides it while Claude sends the next one.
+    await card(review, 'Change 1').getByRole('button', { name: 'Accept edit', exact: true }).click()
+    await expect(card(review, 'Change 1')).toContainText('Accepted')
+    const second = dataOf(await agent.call('edit_text', { revision, edits: [edits[1]] }))
+    expect(second.review.edits[0].label).toBe('Change 2')
+    await expect(card(review, 'Change 2')).toBeVisible()
+    await expect(mark(page, 'Change 2')).toHaveAccessibleName('Change 2, pending')
+    await card(review, 'Change 2').getByRole('button', { name: 'Reject edit', exact: true }).click()
+    const third = dataOf(await agent.call('edit_text', { revision, edits: [edits[2]] }))
+    expect(third.review).toMatchObject({ edits: [{ edit: 1, label: 'Change 3' }], pending: 1 })
+    await expect(card(review, 'Change 3')).toBeVisible()
+    await expect(card(review, 'Change 1')).toContainText('Accepted')
+    await card(review, 'Change 3').getByRole('button', { name: 'Accept edit', exact: true }).click()
+    // Nothing pending, but Claude may still send edits: nothing is applied until it waits or the
+    // person applies.
+    await expect(review.getByRole('status')).toContainText('0 pending · 2 accepted · 1 rejected')
+    await expect(review.getByRole('button', { name: 'Apply accepted changes', exact: true })).toBeVisible()
+    await review.screenshot({ path: 'test-results/agent-live-review-calls.png', animations: 'disabled' })
+    expect(await appPageText(page, 0)).toContain('quick brown fox')
+    // Claude has sent everything and collects the decisions: each ticket returns its own call's.
+    const a = dataOf(await agent.call('wait_for_result', { ticket: first.ticket }))
+    expect(a).toMatchObject({ applied: true, acceptedEdits: [1], rejectedEdits: [], undoLabel: 'Agent: Edit Text Batch' })
+    expect(errorOf(await agent.call('wait_for_result', { ticket: second.ticket }))).toContain('[declined]')
+    expect(dataOf(await agent.call('wait_for_result', { ticket: third.ticket }))).toMatchObject({ acceptedEdits: [1] })
+    await expect(review).toHaveCount(0)
+    const text = await appPageText(page, 0)
+    expect(text).toContain('swift brown fox')
+    expect(text).toContain('Lorem ipsum')
+    expect(text).toContain('INVOICE')
+    expect(await undoLabel(page)).toBe('Agent: Edit Text Batch')
+    // One Undo restores everything.
+    dataOf(await agent.call('undo'))
+    const restored = await appPageText(page, 0)
+    expect(restored).toContain('quick brown fox')
+    expect(restored).not.toContain('INVOICE')
   } finally { await s.close() }
 })

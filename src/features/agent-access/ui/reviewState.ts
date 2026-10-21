@@ -1,22 +1,31 @@
 /**
  * One review per window. Decisions remain provisional until the batch is complete. Changes are
  * revealed one by one in reading order by a single timer here, not by the page layers.
+ *
+ * A live review (edit_text, 0.3.1) also takes cards while it is open: every edit_text call of the
+ * same conversation adds its edits (ReviewControl.extend), and a cancelled call takes its pending
+ * ones back (withdraw). It is applied when nothing is pending and either the AI app is waiting for
+ * the decisions (setWaiting) or the person clicks Apply accepted changes.
  */
 import { create } from 'zustand'
 import { inflateRect, rectsIntersect, rectUnion, type Rect } from '@shared/geometry'
 import type { ProposalCheck, ReviewChange, TextPreview } from '../engine'
-export type Decision = 'pending' | 'accepted' | 'rejected'
+/** 'withdrawn': the call that sent the edit was cancelled before the person decided it. */
+export type Decision = 'pending' | 'accepted' | 'rejected' | 'withdrawn'
 export type ReviewMode = 'edit' | 'flow' | 'rebuild'
 export interface InlineReview {
   docId: string
   title: string
   mode: ReviewMode
-  /** The cards: one per change, in the call's order. Their text does not change during the review. */
+  /**
+   * The cards: one per change, in the order they arrived (a live review numbers them across its
+   * calls). Their text changes only when a later call replaces a pending edit.
+   */
   original: TextPreview
   /** The latest proposal (flow and rebuild get a new one after a rejection). */
   report: TextPreview
   decisions: Decision[]
-  /** Cards in reading order; rank[card] is the card's place in it. */
+  /** Cards in the order they are revealed (reading order per arrival); rank[card] is the place. */
   order: number[]
   rank: number[]
   /** How many cards (in reading order) are shown so far. */
@@ -32,8 +41,16 @@ export interface InlineReview {
   /** Edits are being checked (clicks wait), or the preview is being updated. */
   busy: '' | 'checking' | 'updating'
   error: string
+  /** Takes edits from more than one call, and is applied when the AI waits or the person asks. */
+  live: boolean
+  /** Who sends the edits ("Claude"), for the panel. */
+  agent: string
+  /** Live: the AI app is waiting for the decisions (it has sent everything). */
+  aiWaiting: boolean
   decide(cards: number[], accept: boolean): Promise<void>
   showAll(): void
+  /** Live: applies the accepted changes now, without waiting for the AI app. */
+  apply(): void
   cancel(error?: Error): void
 }
 export const useInlineReview = create<{ review: InlineReview | null }>(() => ({ review: null }))
@@ -65,6 +82,8 @@ function reducedMotion() {
 
 export const isRevealed = (r: InlineReview, card: number) => r.rank[card] < r.revealed
 const rejectable = (r: { original: TextPreview }, card: number) => r.original.changes[card]?.rejectable !== false
+/** Cards that would be applied if nothing else is rejected: not rejected or withdrawn. */
+const keptOf = (decisions: Decision[]) => decisions.flatMap((d, i) => (d === 'pending' || d === 'accepted' ? [i] : []))
 /** Change indices of the rejected cards. */
 const rejectedOf = (r: InlineReview, decisions: Decision[]) =>
   decisions.flatMap((d, i) => (d === 'rejected' ? [r.original.changes[i].index] : []))
@@ -83,13 +102,12 @@ export function editRegion(c: ReviewChange): Rect | null {
   return box ? inflateRect(box, 2) : null
 }
 
-/** Reading order: by page, then from the top. */
-function readingOrder(report: TextPreview, mode: ReviewMode): number[] {
-  const cards = report.changes.map((_, i) => i)
-  if (mode !== 'edit') return cards
+/** The cards in reading order: by page, then from the top (flow and rebuild keep their order). */
+export function readingOrder(report: TextPreview, mode: ReviewMode, cards = report.changes.map((_, i) => i)): number[] {
+  if (mode !== 'edit') return [...cards].sort((a, b) => a - b)
   const top = (c: ReviewChange) => (c.bbox ?? c.beforeBox)?.[1] ?? 0
   const left = (c: ReviewChange) => (c.bbox ?? c.beforeBox)?.[0] ?? 0
-  return cards.sort((a, b) => {
+  return [...cards].sort((a, b) => {
     const x = report.changes[a]
     const y = report.changes[b]
     return x.page - y.page || top(x) - top(y) || left(x) - left(y) || a - b
@@ -109,6 +127,30 @@ export interface ReviewOptions {
   onReveal?: (card: number) => void
   /** Milliseconds per change (default: about 0.4 s, at most about 6 s in all; 0 shows all at once). */
   revealStep?: number
+  /** edit_text across calls: see InlineReview.live. Flow and rebuild are never live. */
+  live?: boolean
+  /** Who sends the edits, for the panel (default "The AI app"). */
+  agent?: string
+  /** Live: whether the AI app waits for the decisions from the start (default false). */
+  waiting?: boolean
+  /** Live: receives the handle that adds edits, withdraws them and reports the AI app waiting. */
+  control?: (control: ReviewControl) => void
+}
+
+/** How the edit_text calls of a live review change it while it is open (tools/editReview.ts). */
+export interface ReviewControl {
+  /**
+   * Another call joined: `report` is the combined proposal, indexed by card. Cards from the old
+   * count up are new; `replaced` are cards whose pending edit a later call replaced (pending again,
+   * revealed again). False when the review has ended.
+   */
+  extend(report: TextPreview, replaced: number[]): boolean
+  /** A call was cancelled: its pending cards are taken back (decided ones stay). */
+  withdraw(cards: number[]): void
+  /** Whether the AI app waits for the decisions now. */
+  setWaiting(waiting: boolean): void
+  /** The decisions so far, or null once the review has ended. */
+  decisions(): Decision[] | null
 }
 
 /** Opens the review; resolves with the accepted cards, or none when the person declined. */
@@ -117,10 +159,13 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
   if (options.signal.aborted) return Promise.reject(new Error('Review cancelled.'))
   const { report } = options
   const mode: ReviewMode = report.rebuilt ? 'rebuild' : report.flow ? 'flow' : 'edit'
+  const live = mode === 'edit' && !!options.live
   const count = report.changes.length
   const order = readingOrder(report, mode)
   const rank: number[] = []
   order.forEach((card, i) => (rank[card] = i))
+  const stepFor = (n: number) =>
+    options.revealStep ?? (reducedMotion() ? 0 : Math.min(REVEAL_STEP_MS, REVEAL_TOTAL_MS / Math.max(1, n)))
   return new Promise((resolve, reject) => {
     let finished = false
     let revealTimer: ReturnType<typeof setTimeout> | undefined
@@ -129,6 +174,11 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
     /** The rejected items the current proposal shows, and the last set that could not be shown. */
     let shownKey = ''
     let failedKey: string | null = null
+    /** edit_text: the kept cards last found applicable together ('' before any check). */
+    let checkedKey: string | null = null
+    /** Live: the person clicked Apply accepted changes. */
+    let applyRequested = false
+    let step = stepFor(count)
     const get = () => {
       const review = useInlineReview.getState().review
       return !finished && review?.cancel === cancel ? review : null
@@ -150,21 +200,33 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
     const cancel = (error?: Error) => finish([], error)
     const abort = () => cancel(new Error('Review cancelled.'))
 
-    const step = options.revealStep ?? (reducedMotion() ? 0 : Math.min(REVEAL_STEP_MS, REVEAL_TOTAL_MS / Math.max(1, count)))
+    const scheduleReveal = (delay: number) => {
+      if (revealTimer === undefined) revealTimer = setTimeout(reveal, delay)
+    }
     const reveal = () => {
+      revealTimer = undefined
       const r = get()
-      if (!r || r.revealed >= count) return
-      const card = order[r.revealed]
+      if (!r) return
+      // Withdrawn cards are skipped without a step.
+      let at = r.revealed
+      while (at < r.order.length && r.decisions[r.order[at]] === 'withdrawn') at++
+      if (at >= r.order.length) {
+        if (at !== r.revealed) update({ revealed: at })
+        return
+      }
+      const card = r.order[at]
       // The person decided the card they were on and nothing shown was pending: the arriving one
       // is next (A, A, A... works). A card they went back to themselves keeps the selection.
       const advance = r.advanceFrom >= 0 && r.advanceFrom === r.selected && r.decisions[card] === 'pending'
-      update({ revealed: r.revealed + 1, ...(advance ? { selected: card, advanceFrom: -1 } : {}) })
+      update({ revealed: at + 1, ...(advance ? { selected: card, advanceFrom: -1 } : {}) })
       options.onReveal?.(card)
-      if (r.revealed + 1 < count) revealTimer = setTimeout(reveal, step)
+      if (at + 1 < r.order.length) scheduleReveal(step)
     }
     const showAll = () => {
       clearTimeout(revealTimer)
-      update({ revealed: count })
+      revealTimer = undefined
+      const r = get()
+      if (r) update({ revealed: r.order.length })
     }
 
     /** Finishes when nothing is pending and the proposal shows what was decided. */
@@ -213,16 +275,61 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
       reviseTimer = setTimeout(() => void runRevise(), REVISE_DELAY_MS)
     }
 
-    /** Revealed pending cards after `from` in reading order, then from the start. */
+    /**
+     * edit_text: once nothing is pending, the kept edits are checked once (the complete proposal
+     * was checked when it was made), and the review finishes when it may: at once for a single
+     * call, else when the AI app waits or the person clicks Apply. `undo` is the last decision,
+     * which a failed check takes back so the person changes another one first.
+     */
+    const settleEdit = async (undo?: Map<number, Decision>) => {
+      const r = get()
+      if (!r || r.busy === 'checking' || r.decisions.includes('pending')) return
+      const kept = keptOf(r.decisions)
+      const key = kept.join()
+      if (acceptedOf(r, r.decisions).length && key !== checkedKey) {
+        if (kept.length === r.decisions.length) checkedKey = key
+        else {
+          update({ busy: 'checking' })
+          const takeBack = (error: string) => {
+            const now = get()
+            if (!now) return
+            applyRequested = false
+            const decisions = undo ? now.decisions.map((d, i) => undo.get(i) ?? d) : now.decisions
+            update({ decisions, busy: '', error, ...(undo ? { selected: r.selected } : {}) })
+          }
+          try {
+            const result = await options.check!(kept)
+            if (!get()) return
+            if (!result.canApply) return takeBack(blockingMessage(result))
+            checkedKey = key
+            update({ busy: '' })
+          } catch (e) {
+            return takeBack((e as Error).message)
+          }
+        }
+      }
+      const now = get()
+      if (!now || now.decisions.includes('pending')) return
+      // Decided again while the check ran (a new call, a withdrawal): check what is decided now.
+      const accepted = acceptedOf(now, now.decisions)
+      if (accepted.length && keptOf(now.decisions).join() !== checkedKey) return settleEdit()
+      if (live && !now.aiWaiting && !applyRequested) return
+      finish(accepted)
+    }
+
+    /** Revealed pending cards after `from` in reveal order, then from the start. */
     const nextPending = (r: InlineReview, decisions: Decision[], from: number) => {
-      const after = [...order.slice(rank[from] + 1), ...order.slice(0, rank[from] + 1)]
-      return after.find((c) => decisions[c] === 'pending' && rank[c] < r.revealed) ?? from
+      const at = r.rank[from] ?? -1
+      const after = [...r.order.slice(at + 1), ...r.order.slice(0, at + 1)]
+      return after.find((c) => decisions[c] === 'pending' && r.rank[c] < r.revealed) ?? from
     }
 
     const decide = async (cards: number[], accept: boolean) => {
       const current = get()
       if (!current || current.busy === 'checking') return
-      const valid = cards.filter((c) => c >= 0 && c < count && rejectable(current, c))
+      const valid = cards.filter(
+        (c) => c >= 0 && c < current.decisions.length && rejectable(current, c) && current.decisions[c] !== 'withdrawn'
+      )
       if (!valid.length) return
       const prev = current.decisions
       const next = prev.map((d, i) => (valid.includes(i) ? (accept ? 'accepted' : 'rejected') : d)) as Decision[]
@@ -234,24 +341,9 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
         if (rejectedOf(current, next).join() !== rejectedOf(current, prev).join()) scheduleRevise()
         return maybeFinish()
       }
-      const kept = next.flatMap((d, i) => (d !== 'rejected' ? [i] : []))
-      if (!next.includes('pending')) {
-        const accepted = acceptedOf(current, next)
-        // The complete proposal was checked when it was made; a subset is checked once, here.
-        if (!accepted.length || kept.length === count) return finish(accepted)
-        update({ busy: 'checking' })
-        try {
-          const result = await options.check!(kept)
-          if (!get()) return
-          if (result.canApply) return finish(accepted)
-          // The last decision is not recorded: the person changes another one first.
-          update({ decisions: prev, selected: current.selected, busy: '', error: blockingMessage(result) })
-        } catch (e) {
-          update({ decisions: prev, busy: '', error: (e as Error).message })
-        }
-        return
-      }
+      if (!next.includes('pending')) return settleEdit(new Map(valid.map((c) => [c, prev[c]])))
       // A rejected edit that touches a kept one can change how the kept one is written: check now.
+      const kept = keptOf(next)
       const touches =
         !accept &&
         valid.some((v) => {
@@ -271,8 +363,69 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
       } catch (e) {
         update({ busy: '', error: (e as Error).message })
       }
+      // Decisions made meanwhile may have left nothing pending.
+      void settleEdit()
     }
 
+    const apply = () => {
+      if (!live || !get()) return
+      applyRequested = true
+      void settleEdit()
+    }
+
+    const control: ReviewControl = {
+      extend(next, replaced) {
+        const r = get()
+        if (!r || mode !== 'edit') return false
+        const old = r.decisions.length
+        const fresh = [...new Set([...replaced.filter((c) => c >= 0 && c < old), ...next.changes.map((_, i) => i).slice(old)])]
+        const decisions = next.changes.map((_, i) => (fresh.includes(i) ? 'pending' : (r.decisions[i] ?? 'pending'))) as Decision[]
+        // Shown cards stay shown; new and replaced ones join the queue, in reading order.
+        const shown = r.order.slice(0, r.revealed).filter((c) => !fresh.includes(c))
+        const queued = readingOrder(next, mode, [...r.order.slice(r.revealed).filter((c) => !fresh.includes(c)), ...fresh])
+        const order = [...shown, ...queued]
+        const rank: number[] = []
+        order.forEach((card, i) => (rank[card] = i))
+        step = stepFor(queued.length)
+        checkedKey = null
+        const all = step <= 0
+        useInlineReview.setState({
+          review: {
+            ...r,
+            original: next,
+            report: next,
+            decisions,
+            order,
+            rank,
+            revealed: all ? order.length : shown.length,
+            error: ''
+          }
+        })
+        if (!all && queued.length) scheduleReveal(Math.min(step, 250))
+        return true
+      },
+      withdraw(cards) {
+        const r = get()
+        if (!r || !live) return
+        const gone = cards.filter((c) => r.decisions[c] === 'pending')
+        if (!gone.length) return
+        const decisions = r.decisions.map((d, i) => (gone.includes(i) ? 'withdrawn' : d)) as Decision[]
+        // Nothing left to decide or apply: the review closes.
+        if (decisions.every((d) => d === 'withdrawn')) return finish([])
+        const selected = gone.includes(r.selected) ? nextPending(r, decisions, r.selected) : r.selected
+        update({ decisions, selected: decisions[selected] === 'withdrawn' ? (decisions.findIndex((d) => d !== 'withdrawn')) : selected })
+        void settleEdit()
+      },
+      setWaiting(waiting) {
+        const r = get()
+        if (!r || !live || r.aiWaiting === waiting) return
+        update({ aiWaiting: waiting })
+        if (waiting) void settleEdit()
+      },
+      decisions: () => get()?.decisions ?? null
+    }
+
+    step = stepFor(count)
     useInlineReview.setState({
       review: {
         docId: options.docId,
@@ -290,12 +443,17 @@ export function startReview(options: ReviewOptions): Promise<number[]> {
         showOriginal: false,
         busy: '',
         error: '',
+        live,
+        agent: options.agent ?? 'The AI app',
+        aiWaiting: live && !!options.waiting,
         decide,
         showAll,
+        apply,
         cancel
       }
     })
-    if (step > 0 && count) revealTimer = setTimeout(reveal, Math.min(step, 250))
+    if (live) options.control?.(control)
+    if (step > 0 && count) scheduleReveal(Math.min(step, 250))
     options.signal.addEventListener('abort', abort, { once: true })
     if (options.signal.aborted) abort()
   })

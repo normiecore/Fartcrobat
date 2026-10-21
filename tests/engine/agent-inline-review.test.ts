@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { REVISE_DELAY_MS, patchReview, startReview, useInlineReview, type ReviewOptions } from '@features/agent-access/ui/reviewState'
+import { REVISE_DELAY_MS, patchReview, startReview, useInlineReview, type ReviewControl, type ReviewOptions } from '@features/agent-access/ui/reviewState'
 import type { ProposalCheck, ReviewChange, TextPreview } from '@features/agent-access/engine'
 import type { Rect } from '@shared/geometry'
 
@@ -236,5 +236,120 @@ describe('live reveal', () => {
     review().cancel()
     await vi.advanceTimersByTimeAsync(5000)
     expect(onReveal).not.toHaveBeenCalled()
+  })
+})
+
+describe('live review across calls (edit_text)', () => {
+  /** A live review and its control, as tools/editReview.ts opens it. */
+  function live(extra: Partial<ReviewOptions> = {}) {
+    let control!: ReviewControl
+    const pending = startReview(options({ live: true, agent: 'Claude', control: (c) => (control = c), ...extra }))
+    return { pending, control }
+  }
+  /** The combined proposal after another call added `more` cards. */
+  const grown = (more: ReviewChange[], base = report) => preview([...base.changes, ...more], { proposal: { id: 'p1', version: 2 } })
+
+  it('waits for the AI app once nothing is pending, then finishes', async () => {
+    const check = vi.fn(async () => ok)
+    const { pending, control } = live({ check })
+    await review().decide([0], true)
+    await review().decide([1], false)
+    expect(check).toHaveBeenCalledTimes(1)
+    // Decided, checked, but the AI app may still send edits.
+    expect(review().live).toBe(true)
+    expect(review().aiWaiting).toBe(false)
+    control.setWaiting(true)
+    expect(await pending).toEqual([0])
+    expect(check).toHaveBeenCalledTimes(1)
+  })
+  it('the person can apply without waiting for the AI app', async () => {
+    const { pending } = live()
+    await review().decide([0, 1], true)
+    expect(useInlineReview.getState().review).not.toBeNull()
+    review().apply()
+    expect(await pending).toEqual([0, 1])
+  })
+  it('an AI app already waiting gets the review applied when the last card is decided', async () => {
+    const { pending, control } = live()
+    control.setWaiting(true)
+    await review().decide([0], true)
+    expect(useInlineReview.getState().review).not.toBeNull()
+    await review().decide([1], true)
+    expect(await pending).toEqual([0, 1])
+  })
+  it('cards of a later call join the open review and its reading order', async () => {
+    vi.useFakeTimers()
+    const onReveal = vi.fn()
+    const { pending, control } = live({ revealStep: undefined, onReveal })
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(review().revealed).toBe(2)
+    await review().decide([0, 1], true)
+    // A card higher on page 1 and one on page 2 arrive.
+    expect(control.extend(grown([change(2, 2, [72, 300, 300, 320]), change(3, 1, [72, 40, 300, 60])]), [])).toBe(true)
+    expect(review().decisions).toEqual(['accepted', 'accepted', 'pending', 'pending'])
+    expect(review().order).toEqual([0, 1, 3, 2])
+    expect(review().revealed).toBe(2)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(review().revealed).toBe(4)
+    expect(onReveal.mock.calls.map(([c]) => c)).toEqual([0, 1, 3, 2])
+    control.setWaiting(true)
+    expect(useInlineReview.getState().review).not.toBeNull()
+    await review().decide([2, 3], true)
+    expect(await pending).toEqual([0, 1, 2, 3])
+  })
+  it('a replaced card is pending again and revealed again', async () => {
+    const { pending, control } = live()
+    await review().decide([1], true)
+    const next = preview([change(0, 1, [72, 100, 300, 140], { after: 'newer' }), report.changes[1]], { proposal: { id: 'p1', version: 2 } })
+    control.extend(next, [0])
+    expect(review().decisions).toEqual(['pending', 'accepted'])
+    expect(review().original.changes[0].after).toBe('newer')
+    expect(review().order).toEqual([1, 0])
+    review().cancel()
+    expect(await pending).toEqual([])
+  })
+  it('a withdrawn card is never applied; the decided ones stay', async () => {
+    const check = vi.fn(async () => ok)
+    const { pending, control } = live({ check })
+    await review().decide([0], true)
+    control.withdraw([0, 1])
+    // Only the pending card goes.
+    expect(review().decisions).toEqual(['accepted', 'withdrawn'])
+    expect(check).toHaveBeenLastCalledWith([0])
+    await review().decide([1], true)
+    expect(review().decisions).toEqual(['accepted', 'withdrawn'])
+    control.setWaiting(true)
+    expect(await pending).toEqual([0])
+  })
+  it('closes when every card is withdrawn', async () => {
+    const { pending, control } = live()
+    control.withdraw([0, 1])
+    expect(await pending).toEqual([])
+    expect(useInlineReview.getState().review).toBeNull()
+    expect(control.decisions()).toBeNull()
+    expect(control.extend(report, [])).toBe(false)
+  })
+  it('a kept set that cannot be applied stops Apply until a decision changes', async () => {
+    let fits = false
+    const check = vi.fn(async (): Promise<ProposalCheck> => (fits ? ok : { canApply: false, issues: [{ page: 1, code: 'text_overlap', message: 'Two proposed text blocks would overlap.', blocking: true }] }))
+    const { pending, control } = live({ check })
+    await review().decide([0], false)
+    await review().decide([1], true)
+    // The last decision is taken back, as in a single call's review.
+    expect(review().decisions).toEqual(['rejected', 'pending'])
+    expect(review().error).toContain('overlap')
+    fits = true
+    await review().decide([1], true)
+    control.setWaiting(true)
+    expect(await pending).toEqual([1])
+  })
+  it('flow and rebuild reviews are never live', async () => {
+    const flow = preview([change(0, 1, [72, 100, 300, 130], { kind: 'paragraph' })], { flow: { pages: [1], addedPages: 0, placements: [], warnings: [] } })
+    const control = vi.fn()
+    const pending = startReview(options({ report: flow, live: true, control, revise: async () => flow }))
+    expect(review().live).toBe(false)
+    expect(control).not.toHaveBeenCalled()
+    await review().decide([0], true)
+    expect(await pending).toEqual([0])
   })
 })

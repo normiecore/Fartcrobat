@@ -422,12 +422,13 @@ describe('native text editing review', () => {
     // The engine ran on the accepted edit alone; the AI app still hears about its edit 2.
     expect(grew(result.issues)).toMatchObject({ edit: 2 })
   })
-  it('a second proposal while a review is open is refused before it switches tabs', async () => {
+  it('a proposal from another AI app while a review is open is refused before it switches tabs', async () => {
     const { args } = await proposal()
     const pending = call('edit_text', args)
     const review = await nextReview()
     const active = useApp.getState().activeDocId
-    expect((await errorOf(call('edit_text', args))).code).toBe('busy')
+    expect((await errorOf(call('edit_text', args, ctxFor({}, 2)))).code).toBe('busy')
+    expect((await errorOf(call('reflow_text', { revision: args.revision, regions: [], paragraphs: [] }))).code).toBe('busy')
     expect(useApp.getState().activeDocId).toBe(active)
     review.cancel()
     expect((await errorOf(pending)).code).toBe('declined')

@@ -38,6 +38,9 @@
 .fc-agent-access-review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
 .fc-agent-access-review-warning { border-left: 3px solid #b36c00; padding-left: 8px; }
 .fc-agent-access-review-error { color: var(--danger, #d7373f); }
+/* Live review: whether the AI app is still sending edits or waits for the person. */
+.fc-agent-access-review-ai { border-left: 3px solid var(--accent, #1473e6); padding-left: 8px; }
+.fc-agent-access-review-ai.is-waiting { border-left-color: #2d9d78; }
 .fc-agent-access-review-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .fc-agent-access-review-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .fc-agent-access-review-card { padding: 10px 12px; border: 1px solid var(--border, #aaa); border-left: 4px solid #c77700; border-radius: 6px; cursor: pointer; }
