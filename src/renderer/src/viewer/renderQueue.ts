@@ -3,14 +3,20 @@ import type { DocumentModel } from '../document/DocumentModel'
 
 type Waiter = (r: RenderResult | null) => void
 
+/** Renders a page: the live document's render.page, or another source such as a proposal. */
+export type RenderFn = (pageIndex: number, opts: RenderOptions) => Promise<RenderResult>
+
 interface Job {
   key: string
   pageIndex: number
   opts: RenderOptions
   priority: number
+  render?: RenderFn
   /** Consumers waiting for this render. A queued job nobody waits for any more is dropped. */
   waiters: Set<Waiter>
   started: boolean
+  /** Its source went away (dropPrefix) while it ran: the result is not cached. */
+  dropped?: boolean
 }
 
 interface CacheEntry {
@@ -77,7 +83,19 @@ class BitmapCache {
     this.map.clear()
     this.bytes = 0
   }
+
+  dropPrefix(prefix: string) {
+    for (const [k, e] of [...this.map]) {
+      if (!k.startsWith(prefix)) continue
+      this.map.delete(k)
+      this.bytes -= e.bytes
+      release(e.result)
+    }
+  }
 }
+
+/** A source that no longer exists (a closed proposal): its renders fail on purpose, quietly. */
+const isStale = (err: unknown) => (err as { code?: string } | null)?.code === 'STALE_PROPOSAL'
 
 /**
  * Prioritised, cancellable page rendering with bitmap LRU caches (one queue per document).
@@ -96,7 +114,17 @@ export class RenderQueue {
     return this.pages.get(key) ?? this.tiles.get(key)
   }
 
-  request(key: string, pageIndex: number, opts: RenderOptions, priority: number): { promise: Promise<RenderResult | null>; cancel: () => void } {
+  /**
+   * Renders a page, or joins an identical request. `render` replaces the document's own renderer;
+   * keys must then name its source (proposal keys start with `rv<id>.<version>:`).
+   */
+  request(
+    key: string,
+    pageIndex: number,
+    opts: RenderOptions,
+    priority: number,
+    render?: RenderFn
+  ): { promise: Promise<RenderResult | null>; cancel: () => void } {
     const hit = this.cached(key)
     if (hit) return { promise: Promise.resolve(hit), cancel: () => {} }
     let waiter!: Waiter
@@ -107,7 +135,7 @@ export class RenderQueue {
       job.waiters.add(waiter)
       job.priority = Math.min(job.priority, priority)
     } else {
-      job = { key, pageIndex, opts, priority, waiters: new Set([waiter]), started: false }
+      job = { key, pageIndex, opts, priority, render, waiters: new Set([waiter]), started: false }
       this.byKey.set(key, job)
       this.jobs.push(job)
     }
@@ -145,10 +173,10 @@ export class RenderQueue {
       }
       job.started = true
       this.inFlight++
-      this.doc.core.render
-        .page(job.pageIndex, job.opts)
+      const render = job.render ?? ((page: number, opts: RenderOptions) => this.doc.core.render.page(page, opts))
+      render(job.pageIndex, job.opts)
         .then((result) => {
-          if (this.doc.isClosed) {
+          if (this.doc.isClosed || job.dropped) {
             result.bitmap?.close()
             this.settle(job, null)
             return
@@ -157,7 +185,7 @@ export class RenderQueue {
           this.settle(job, result)
         })
         .catch((err) => {
-          if (!this.doc.isClosed) console.warn('Render failed', err)
+          if (!this.doc.isClosed && !isStale(err)) console.warn('Render failed', err)
           this.settle(job, null)
         })
         .finally(() => {
@@ -174,6 +202,21 @@ export class RenderQueue {
   trim(maxBytes = 0) {
     this.pages.evictTo(maxBytes)
     this.tiles.evictTo(0)
+  }
+
+  /** Forgets every render whose key starts with prefix: cached, queued and running ones. */
+  dropPrefix(prefix: string) {
+    this.pages.dropPrefix(prefix)
+    this.tiles.dropPrefix(prefix)
+    for (const job of [...this.jobs, ...this.byKey.values()]) {
+      if (!job.key.startsWith(prefix)) continue
+      job.dropped = true
+      if (this.byKey.get(job.key) === job) this.byKey.delete(job.key)
+      if (job.started) continue
+      const idx = this.jobs.indexOf(job)
+      if (idx >= 0) this.jobs.splice(idx, 1)
+      this.settle(job, null)
+    }
   }
 
   clear() {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { RenderOptions, RenderResult } from '@engine/ops/render'
 import { RenderQueue } from '@renderer/viewer/renderQueue'
 
@@ -132,5 +132,92 @@ describe('render queue', () => {
     await tick()
     expect(q.cached('k2')).toBeNull()
     expect(bitmaps[2].closed).toBe(true)
+  })
+})
+
+describe('render queue with other sources (a proposal held in the worker)', () => {
+  /** A render function of its own whose renders finish only when the test says so. */
+  function source() {
+    const calls: Call[] = []
+    const render = (page: number, opts: RenderOptions) =>
+      new Promise<RenderResult>((resolve) =>
+        calls.push({ page, opts, finish: (r = {}) => resolve({ width: 10, height: 10, x: 0, y: 0, ...r }) })
+      )
+    return { calls, render }
+  }
+
+  it('renders through the given function, in the same queue, cache and priority order', async () => {
+    const { doc, calls } = fakeDoc()
+    const s = source()
+    const q = new RenderQueue(doc)
+    q.request('busy1', 9, { scale: 1 }, 0)
+    q.request('busy2', 9, { scale: 1 }, 0)
+    const low = q.request('rv1.1:p0:low', 0, { scale: 1 }, 5, s.render)
+    const high = q.request('rv1.1:p1:high', 1, { scale: 2 }, 1, s.render)
+    expect(s.calls).toHaveLength(0)
+    calls[0].finish()
+    await tick()
+    // the higher priority proposal render goes first, to the proposal's function
+    expect(s.calls.map((c) => c.page)).toEqual([1])
+    expect(calls).toHaveLength(2)
+    s.calls[0].finish({ width: 3 })
+    expect((await high.promise)?.width).toBe(3)
+    expect(q.cached('rv1.1:p1:high')?.width).toBe(3)
+    calls[1].finish()
+    await tick()
+    s.calls[1].finish({ width: 4 })
+    expect((await low.promise)?.width).toBe(4)
+  })
+
+  it('dropPrefix forgets cached, queued and running renders of a source and closes their bitmaps', async () => {
+    const { doc, calls } = fakeDoc()
+    const s = source()
+    const q = new RenderQueue(doc)
+    const cachedBitmap = fakeBitmap()
+    const done = q.request('rv1.1:a', 0, { scale: 1 }, 0, s.render)
+    s.calls[0].finish({ bitmap: cachedBitmap })
+    await done.promise
+    const live = q.request('p0:live', 0, { scale: 1 }, 0)
+    calls[0].finish()
+    await live.promise
+    await tick()
+    const runningBitmap = fakeBitmap()
+    const running = q.request('rv1.1:b', 0, { scale: 1 }, 0, s.render)
+    q.request('rv1.2:other-version', 0, { scale: 1 }, 0, s.render)
+    const queued = q.request('rv1.1:c', 1, { scale: 1 }, 0, s.render)
+    expect(s.calls).toHaveLength(3)
+    q.dropPrefix('rv1.1:')
+    await tick()
+    expect(q.cached('rv1.1:a')).toBeNull()
+    expect(cachedBitmap.closed).toBe(true)
+    expect(q.cached('p0:live')).not.toBeNull()
+    expect(await queued.promise).toBeNull()
+    // the running render ends with nothing cached, and its bitmap is released
+    s.calls[1].finish({ bitmap: runningBitmap })
+    expect(await running.promise).toBeNull()
+    expect(q.cached('rv1.1:b')).toBeNull()
+    expect(runningBitmap.closed).toBe(true)
+    // a later request for the same key renders again
+    q.request('rv1.1:b', 0, { scale: 1 }, 0, s.render)
+    s.calls[2].finish()
+    await tick()
+    expect(s.calls).toHaveLength(4)
+  })
+
+  it('a render of a closed proposal fails quietly', async () => {
+    const { doc } = fakeDoc()
+    const q = new RenderQueue(doc)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const stale = Object.assign(new Error('This proposal is no longer shown.'), { code: 'STALE_PROPOSAL' })
+      const r = q.request('rv1.1:x', 0, { scale: 1 }, 0, () => Promise.reject(stale))
+      expect(await r.promise).toBeNull()
+      expect(warn).not.toHaveBeenCalled()
+      const broken = q.request('rv1.1:y', 0, { scale: 1 }, 0, () => Promise.reject(new Error('broken')))
+      expect(await broken.promise).toBeNull()
+      expect(warn).toHaveBeenCalledWith('Render failed', expect.any(Error))
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

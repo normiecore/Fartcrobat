@@ -23,9 +23,9 @@ Office conversion when installed, with a built-in fallback.
   #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
   per computer, update rehearsal for every download), #19 (no request to Google for spell-check
-  dictionaries), #17 (release 0.2.1: companion joining and on-document review). #11 merged main into
-  the old session branch. The 0.2.2 release PR (from `claude/laughing-tesla-83pgov`) fixes two
-  findings of the last review of #17; merging it publishes 0.2.2.
+  dictionaries), #17 (release 0.2.1: companion joining and on-document review), #21 (release
+  0.2.2). #11 merged main into the old session branch. Open: the live edit review PR from
+  `claude/laughing-tesla-83pgov` (see "Live edit review" below); it has no version bump.
 - 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
   turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
   0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
@@ -33,7 +33,7 @@ Office conversion when installed, with a built-in fallback.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
-- About 1590 unit tests (vitest) and 173 end-to-end tests (Playwright on Electron).
+- About 1640 unit tests (vitest) and 179 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
@@ -79,8 +79,8 @@ Office conversion when installed, with a built-in fallback.
   `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Next, once 0.2.2 is published: let an installed 0.2.0 or 0.2.1 update from the real github.com
-  once per platform, try a Windows per-machine update with UAC on, run the Windows certificate checklist,
+- 0.2.1 and 0.2.2 were published on 20 Oct 2026. Next: let an installed 0.2.0 or 0.2.1 update from
+  the real github.com once per platform, try a Windows per-machine update with UAC on, run the Windows certificate checklist,
   and try agent access and the companion with a real Claude Desktop and ChatGPT Desktop (backlog
   16).
 
@@ -268,6 +268,12 @@ Roughly in priority order:
     download from Google, so it is off (`src/main/util/spellcheck.ts`). Bundling
     dictionaries (Electron publishes `hunspell_dictionaries.zip` per release) and pointing
     `setSpellCheckerDictionaryDownloadURL` at a local copy would bring it back offline.
+22. Live review across calls: each edit_text call is reviewed on its own. Letting later calls of the
+    same conversation append to an open review (so an AI can send one edit per call while the
+    person decides) needs a review id, a "done" signal and per-call tickets; the notes are in
+    `docs/features/agent-live-review.md` (Protocol).
+23. In Claude Desktop on Windows (20 Oct 2026, 0.2.2) one render_page call ("Look at a page") showed
+    as failed; the error text was not captured. Ask for it, or reproduce on Windows.
 
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.
@@ -298,3 +304,22 @@ capture, scanner input.
   diagnostic uploads overwrite an earlier attempt's, so a re-run cannot stop at a name conflict.
 - `docs/releases/v0.2.2.md` repeats what people coming from 0.2.0 must do (add the Claude
   extension again), since many will update from 0.2.0 straight to 0.2.2.
+
+### Live edit review (20 Oct 2026, PR from `claude/laughing-tesla-83pgov`)
+
+- Owner request after trying 0.2.2 with Claude Desktop: edits appear one by one with markup and
+  are accepted or rejected each on its own, sharp at any zoom, draggable companion, lower footprint.
+  Design and behaviour: `docs/features/agent-live-review.md`.
+- The proposal copy stays in the worker for the whole review (`propose*`, `renderProposal`,
+  `checkProposal`, `reviseProposal`, `closeProposal` in `src/features/agent-access/engine.ts`) and is
+  drawn by `PageCanvas` with a `source` through the shared render queue. Changes are revealed by
+  one timer in `ui/reviewState.ts`; reject on edit_text only clips the overlay, and the kept subset
+  is checked once. reflow_text items are paragraphs (reject keeps the original wording), and
+  rebuild_document items are sections (reject leaves the section out).
+- `DocumentModel.applyChanges` no longer updates state for replies that changed nothing. Anything
+  that must react to state outside the ChangeSet (the native menu: Show Annotations, document info,
+  redaction marks) refreshes itself explicitly.
+- MuPDF's per-document font and image caches are not journalled: after an Undo, `addFont`,
+  `addSimpleFont` and `addImage` on the live document can return a removed object. Make such
+  objects on a scratch `PDFDocument` and `graftObject` them (edit-text `FontBook`, Edit Images,
+  page marks).

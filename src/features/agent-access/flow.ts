@@ -6,7 +6,7 @@ import type { Session } from '@engine/session'
 import type { Rect } from '@shared/geometry'
 import { extractPageContent } from '@features/export-create/extract'
 import editText, { createTextComposer } from '@features/edit-text/engine'
-import { runsInRange, runsText, type TextEdit } from '@features/edit-text/model'
+import { runsInRange, runsText, type Run, type TextBlockInfo, type TextEdit } from '@features/edit-text/model'
 import { planTextChange, validateTextChanges, type TextChange } from './textEdits'
 
 export interface FlowParagraph extends TextChange {
@@ -28,6 +28,13 @@ export interface FlowResult {
   placements: { paragraph: number; page: number; rect: Rect }[]
   warnings: string[]
 }
+/** What a flow found before it removed the source text, for the review (filled by flowText). */
+export interface FlowTrace {
+  /** Text blocks of every page, before the flow. */
+  blocks: Map<number, TextBlockInfo[]>
+  /** Per paragraph: its source block and the runs it is written with. */
+  sources: { block: TextBlockInfo; runs: Run[] }[]
+}
 const fail = (m: string): never => {
   throw new EngineError(m, 'BAD_FLOW')
 }
@@ -35,7 +42,29 @@ const area = (a: Rect, b: Rect) =>
   Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) *
   Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]))
 
-export function flowText(s: Session, spec: FlowSpec): FlowResult {
+/**
+ * The flow with the given paragraphs keeping their original wording and style (rejected in the
+ * review). They are still flowed, so the paragraphs after them keep their place in reading order.
+ */
+export function reviseFlowSpec(spec: FlowSpec, rejected: number[]): FlowSpec {
+  return {
+    ...spec,
+    paragraphs: spec.paragraphs.map((p, i) =>
+      rejected.includes(i)
+        ? {
+            page: p.page,
+            block_id: p.block_id,
+            original_text: p.original_text,
+            text: p.original_text ?? p.text,
+            ...(p.space_after !== undefined ? { space_after: p.space_after } : {}),
+            ...(p.keep_with_next !== undefined ? { keep_with_next: p.keep_with_next } : {})
+          }
+        : p
+    )
+  }
+}
+
+export function flowText(s: Session, spec: FlowSpec, trace?: FlowTrace): FlowResult {
   if (
     !spec ||
     !Array.isArray(spec.paragraphs) ||
@@ -48,6 +77,7 @@ export function flowText(s: Session, spec: FlowSpec): FlowResult {
     fail('Give 1–100 paragraphs and 1–40 text regions in reading order.')
   if (s.pageCount() > 30) fail('Design-preserving flow currently supports documents up to 30 pages.')
   const allBlocks = new Map(Array.from({ length: s.pageCount() }, (_, p) => [p, editText.ops.analyze(s, p)]))
+  if (trace) trace.blocks = allBlocks
   const warnings = new Set<string>()
   const content = new Map<number, ReturnType<typeof extractPageContent>>()
   const seen = new Set<string>()
@@ -64,7 +94,7 @@ export function flowText(s: Session, spec: FlowSpec): FlowResult {
       fail('Each flow paragraph needs a source page, block_id, exact original_text and replacement text.')
     if (c.rect !== undefined) fail('Set flow regions, not paragraph rects.')
     validateTextChanges([c], s.pageCount())
-    if (!content.has(c.page)) content.set(c.page, extractPageContent(s, c.page, { images: true }))
+    if (!content.has(c.page)) content.set(c.page, extractPageContent(s, c.page, { images: false }))
     if (content.get(c.page)?.erase?.length)
       fail(
         'This source is a scanned page with an OCR text layer. Moving its hidden text would leave the old scanned text visible; use a rebuilt layout or edit the scan explicitly.'
@@ -87,6 +117,7 @@ export function flowText(s: Session, spec: FlowSpec): FlowResult {
       fail('Rotated or right-to-left text needs direct editing rather than a flow.')
     return { change: c, plan: p, composer: createTextComposer(s, c.page, p.edit.runs) }
   })
+  if (trace) trace.sources = prepared.map((p) => ({ block: p.plan.block!, runs: p.plan.edit.runs }))
   const checkRect = (r: Rect, p: number) => {
     const b = s.pageBounds(p)
     if (
@@ -101,7 +132,7 @@ export function flowText(s: Session, spec: FlowSpec): FlowResult {
       r[3] > b[3]
     )
       fail('Every region must be at least 20 by 20 points and inside its page.')
-    if (!content.has(p)) content.set(p, extractPageContent(s, p, { images: true }))
+    if (!content.has(p)) content.set(p, extractPageContent(s, p, { images: false }))
     const c = content.get(p)!
     if (
       c.images.some((i) => area(r, [i.x0, i.y0, i.x1, i.y1]) > 4) ||

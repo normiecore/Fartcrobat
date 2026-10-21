@@ -46,6 +46,7 @@ import {
   cjkLanguage,
   colorOps,
   FontBook,
+  type FontFactory,
   frameQuad,
   glyphHasInk,
   hex2,
@@ -308,7 +309,7 @@ interface OrigFont {
 
 interface Slot {
   key: string
-  create: () => MuPDF.PDFObject
+  create: FontFactory
   synthBold: boolean
   synthItalic: boolean
 }
@@ -331,7 +332,7 @@ class Writer {
   }
 
   /** Makes sure a font object exists; false when MuPDF cannot embed it. */
-  ensure(key: string, create: () => MuPDF.PDFObject): boolean {
+  ensure(key: string, create: FontFactory): boolean {
     if (this.failedKeys.has(key)) return false
     try {
       this.book.resource(key, create)
@@ -343,7 +344,7 @@ class Writer {
     }
   }
 
-  slot(key: string, create: () => MuPDF.PDFObject, synthBold = false, synthItalic = false): string {
+  slot(key: string, create: FontFactory, synthBold = false, synthItalic = false): string {
     const id = `${key}|${synthBold ? 'b' : ''}${synthItalic ? 'i' : ''}`
     if (!this.slots.has(id)) this.slots.set(id, { key, create, synthBold, synthItalic })
     return id
@@ -377,10 +378,10 @@ class Writer {
         const chars = Array.from(run.text).filter((c) => c !== '\n' && !/\s/.test(c))
         const glyphsOk = o.embedded && chars.every((c) => this.origGid(o, c) > 0)
         const key = 'orig:' + o.name
-        if (styleOk && glyphsOk && this.ensure(key, () => this.s.pdf.addFont(o.font))) {
+        if (styleOk && glyphsOk && this.ensure(key, (doc) => doc.addFont(o.font))) {
           const slot = this.slot(
             key,
-            () => this.s.pdf.addFont(o.font),
+            (doc) => doc.addFont(o.font),
             run.bold && !o.bold,
             run.italic && !o.italic
           )
@@ -411,7 +412,7 @@ class Writer {
     const s = this.s
     const font = builtinFont(s, name)
     const simpleKey = 'b14:' + name
-    const simple = this.slot(simpleKey, () => s.pdf.addSimpleFont(font))
+    const simple = this.slot(simpleKey, (doc) => doc.addSimpleFont(font))
     return (ch) => {
       let cp = ch.codePointAt(0)!
       if (cp < 0x20 || ch === '\t') {
@@ -427,12 +428,12 @@ class Writer {
       const gid = font.encodeCharacter(cp)
       if (gid > 0) {
         const key = 'b14cid:' + name
-        if (this.ensure(key, () => s.pdf.addFont(font))) {
+        if (this.ensure(key, (doc) => doc.addFont(font))) {
           return {
             ch,
             adv: safeAdv(font, gid) * size,
             code: hex4(gid),
-            slot: this.slot(key, () => s.pdf.addFont(font)),
+            slot: this.slot(key, (doc) => doc.addFont(font)),
             space
           }
         }
@@ -442,12 +443,12 @@ class Writer {
         const cjk = builtinFont(s, lang)
         if (cjk.encodeCharacter(cp) > 0) {
           const key = 'cjk:' + lang
-          if (this.ensure(key, () => s.pdf.addCJKFont(cjk, lang))) {
+          if (this.ensure(key, (doc) => doc.addCJKFont(cjk, lang))) {
             return {
               ch,
               adv: size,
               code: utf16Hex(ch),
-              slot: this.slot(key, () => s.pdf.addCJKFont(cjk, lang)),
+              slot: this.slot(key, (doc) => doc.addCJKFont(cjk, lang)),
               space
             }
           }
@@ -682,8 +683,8 @@ function restoreGlyphs(
   let restored = 0
   for (const g of lost) {
     const key = 'orig:' + g.fontName
-    if (!w.ensure(key, () => w.s.pdf.addFont(g.font))) continue
-    const slot = w.slot(key, () => w.s.pdf.addFont(g.font))
+    if (!w.ensure(key, (doc) => doc.addFont(g.font))) continue
+    const slot = w.slot(key, (doc) => doc.addFont(g.font))
     const name = w.resourceName(slot)
     const map = w.toUnicode.get(key) ?? new Map<number, string>()
     w.toUnicode.set(key, map)

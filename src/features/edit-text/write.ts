@@ -4,7 +4,7 @@
  */
 import type * as MuPDF from 'mupdf'
 import type { Matrix, Point, Quad } from '@shared/geometry'
-import type { PDFObject, Session } from '@engine/session'
+import type { PDFDocument, PDFObject, Session } from '@engine/session'
 import { isNull, num, readName, readString } from '@engine/util/pdf'
 import { withOwnContent } from './contents'
 
@@ -158,6 +158,16 @@ export function pageFontDict(s: Session, pageIndex: number): PDFObject {
 }
 
 /**
+ * Makes a font object in the document it is given (addSimpleFont, addFont or addCJKFont).
+ *
+ * FontBook runs it on a scratch document and copies the result over. MuPDF keeps a per-document
+ * cache of the font objects those calls made, and the cache is not part of the undo journal: after
+ * an undo it hands back a reference to the object the undo removed, which resolves to null.
+ * FontBook finds its fonts again through a marker key instead.
+ */
+export type FontFactory = (doc: PDFDocument) => PDFObject
+
+/**
  * Font resources used by one commit. Font objects are found again by a marker key on later
  * commits (and on other pages), so repeated edits do not embed the same font twice.
  */
@@ -210,12 +220,12 @@ export class FontBook {
   }
 
   /** Resource name of the font with this key, creating the font object when needed. */
-  resource(key: string, create: () => PDFObject): string {
+  resource(key: string, create: FontFactory): string {
     const known = this.names.get(key)
     if (known) return known
     let ref = this.find(key)
     if (!ref) {
-      ref = create()
+      ref = this.make(create)
       const obj = ref.resolve()
       obj.put(MARKER, this.s.pdf.newString(key))
       if (ref.isIndirect()) this.cache().set(key, ref.asIndirect())
@@ -234,6 +244,16 @@ export class FontBook {
     }
     this.names.set(key, name)
     return name
+  }
+
+  /** A new font object in this document, made without MuPDF's font cache (see FontFactory). */
+  private make(create: FontFactory): PDFObject {
+    const scratch = new this.s.mupdf.PDFDocument()
+    try {
+      return this.s.pdf.graftObject(create(scratch))
+    } finally {
+      scratch.destroy()
+    }
   }
 
   /** The font object for a key (after resource() created it). */

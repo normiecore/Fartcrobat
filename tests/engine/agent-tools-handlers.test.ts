@@ -397,6 +397,31 @@ describe('native text editing review', () => {
     expect((await pending).data).toMatchObject({ applied: true })
     expect(await e.call('edit-text.text', 0)).toContain('swift brown fox')
   })
+  it('issues name the edit as the call numbers it, also after the person rejected some', async () => {
+    const e = await openFixture('text.pdf')
+    modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const edit = (start: string, text: (t: string) => string) => {
+      const b = snap.blocks.find((b: any) => b.text.startsWith(start))
+      return { page: 1, block_id: b.block_id, original_text: b.text, text: text(b.text) }
+    }
+    const edits = [
+      edit('Hello', (t) => t.replace('quick', 'swift')),
+      edit('Visit', (t) => t + ' and read the full documentation of the product there')
+    ]
+    const grew = (issues: any[]) => issues.find((i) => i.code === 'text_grew')
+    const preview = (await call('edit_text', { revision: snap.revision, edits, preview_only: true })).data
+    expect(grew(preview.issues)).toMatchObject({ edit: 2 })
+    expect(preview.issues.some((i: any) => 'change' in i)).toBe(false)
+    const pending = call('edit_text', { revision: snap.revision, edits })
+    const review = await nextReview()
+    await review.decide([0], false)
+    await review.decide([1], true)
+    const result = (await pending).data
+    expect(result).toMatchObject({ acceptedEdits: [2], rejectedEdits: [1] })
+    // The engine ran on the accepted edit alone; the AI app still hears about its edit 2.
+    expect(grew(result.issues)).toMatchObject({ edit: 2 })
+  })
   it('a second proposal while a review is open is refused before it switches tabs', async () => {
     const { args } = await proposal()
     const pending = call('edit_text', args)
@@ -406,6 +431,60 @@ describe('native text editing review', () => {
     expect(useApp.getState().activeDocId).toBe(active)
     review.cancel()
     expect((await errorOf(pending)).code).toBe('declined')
+  })
+  it('the review shows a proposal held in the worker and releases it when it ends', async () => {
+    const { e, args } = await proposal()
+    const pending = call('edit_text', args)
+    const review = await nextReview()
+    const { id, version } = review.report.proposal!
+    expect(review.report.previews).toEqual([])
+    await expect(e.call('agent-text.renderProposal', id, version, 0, { scale: 1 })).resolves.toMatchObject({ width: 612 })
+    await review.decide([0], true)
+    expect((await pending).data).toMatchObject({ applied: true, acceptedEdits: [1], rejectedEdits: [] })
+    await expect(e.call('agent-text.renderProposal', id, version, 0, { scale: 1 })).rejects.toMatchObject({ code: 'STALE_PROPOSAL' })
+  })
+  it('reflow: a rejected paragraph keeps its original wording and the result lists the items', async () => {
+    const e = await openFixture('text.pdf')
+    modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const hello = snap.blocks.find((b: any) => b.text.startsWith('Hello'))
+    const lorem = snap.blocks.find((b: any) => b.text.startsWith('Lorem'))
+    const pending = call('reflow_text', {
+      revision: snap.revision,
+      regions: [{ page: 1, rect: [72, 112, 280, 280] }, { page: 1, rect: [300, 112, 520, 280] }],
+      paragraphs: [
+        { page: 1, block_id: hello.block_id, original_text: hello.text, text: 'A rewritten opening.' },
+        { page: 1, block_id: lorem.block_id, original_text: lorem.text, text: 'A short closing paragraph.' }
+      ]
+    })
+    const review = await nextReview()
+    expect(review.mode).toBe('flow')
+    expect(review.original.changes.map((c) => c.label)).toEqual(['Paragraph 1', 'Paragraph 2'])
+    await review.decide([0], false)
+    await review.decide([1], true)
+    const result = (await pending).data
+    expect(result.acceptedItems).toEqual([{ item: 2, label: 'Paragraph 2' }])
+    expect(result.rejectedItems).toEqual([{ item: 1, label: 'Paragraph 1' }])
+    expect(result.undoLabel).toBe('Agent: Reflow Text')
+    const text = (await e.call('edit-text.text', 0)) as string
+    // Still flowed (so wrapped at the column width), in its original words.
+    expect(text.replace(/\s+/g, ' ')).toContain(hello.text.replace(/\s+/g, ' '))
+    expect(text).toContain('A short closing paragraph.')
+    expect(text).not.toContain('A rewritten opening')
+  })
+  it('rebuild: rejecting every section declines the new design', async () => {
+    const e = await openFixture('text.pdf')
+    modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const pending = call('rebuild_document', {
+      revision: snap.revision, title: 'Darren Wong',
+      sections: [{ heading: 'Summary', paragraphs: ['Analyst.'] }, { heading: 'Skills', bullets: ['SQL'] }]
+    })
+    const review = await nextReview()
+    expect(review.decisions).toEqual(['accepted', 'pending', 'pending', 'accepted'])
+    await review.decide([1, 2], false)
+    expect((await errorOf(pending)).code).toBe('declined')
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
   })
   it('cancellation during review closes the proposal without changing text', async () => {
     const { e, args } = await proposal()

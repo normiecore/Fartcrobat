@@ -2,8 +2,17 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { useDocState, usePageVersion, type DocumentModel } from '../document/DocumentModel'
 import { useApp } from '../app/store'
 import type { PageGeometry } from './geometry'
-import { drawResult, renderQueueFor } from './renderQueue'
+import { drawResult, renderQueueFor, type RenderFn } from './renderQueue'
 import type { CssRect } from './geometry'
+
+/**
+ * Where a PageCanvas gets its pixels when it does not show the live page (e.g. a proposed version
+ * of it). `key` names the source and its version in the render caches.
+ */
+export interface PageSource {
+  key: string
+  render: RenderFn
+}
 
 /** Max pixels for the full-page base bitmap; above this, a sharp detail tile covers the viewport. */
 const MAX_BASE_PIXELS = 8_000_000
@@ -14,7 +23,9 @@ export function PageCanvas({
   geometry,
   priority,
   visibleRect,
-  hidden
+  hidden,
+  source,
+  label
 }: {
   doc: DocumentModel
   pageIndex: number
@@ -24,6 +35,10 @@ export function PageCanvas({
   visibleRect: CssRect | null
   /** Annotation ids to hide (while being dragged). */
   hidden?: number[]
+  /** Draw this source instead of the live page (its version is part of its key). */
+  source?: PageSource
+  /** Accessible name; the canvas is then an image. */
+  label?: string
 }) {
   const baseRef = useRef<HTMLCanvasElement>(null)
   const detailRef = useRef<HTMLCanvasElement>(null)
@@ -36,16 +51,20 @@ export function PageCanvas({
   const baseScale = Math.min(desired, Math.sqrt(MAX_BASE_PIXELS / Math.max(1, area)))
   const needsDetail = baseScale < desired * 0.97
   const hiddenKey = hidden?.length ? hidden.join(',') : ''
+  const sourceKey = source ? source.key + ':' : ''
+  const pageKey = source ? `p${pageIndex}` : `p${pageIndex}:v${version}`
+  const render = source?.render
 
   // Base layer: whole page.
   useEffect(() => {
     const q = renderQueueFor(doc)
-    const key = `p${pageIndex}:v${version}:s${baseScale.toFixed(4)}:r${geometry.rotation}:${colorMode}:h${hiddenKey}:a${annots}`
+    const key = `${sourceKey}${pageKey}:s${baseScale.toFixed(4)}:r${geometry.rotation}:${colorMode}:h${hiddenKey}:a${annots}`
     const req = q.request(
       key,
       pageIndex,
       { scale: baseScale, rotate: geometry.rotation, colorMode, hide: hidden, annots },
-      priority
+      priority,
+      render
     )
     let alive = true
     req.promise.then((r) => {
@@ -57,7 +76,7 @@ export function PageCanvas({
     }
     // priority intentionally excluded: re-prioritising should not restart renders
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, pageIndex, version, baseScale, geometry.rotation, colorMode, hiddenKey, annots])
+  }, [doc, pageIndex, pageKey, sourceKey, baseScale, geometry.rotation, colorMode, hiddenKey, annots])
 
   // Detail tile: sharp rendering of the visible region at high zoom.
   const vr = visibleRect
@@ -68,7 +87,7 @@ export function PageCanvas({
   useLayoutEffect(() => {
     const canvas = detailRef.current
     if (!canvas) return
-    const content = `d${pageIndex}:v${version}:s${desired.toFixed(4)}:r${geometry.rotation}:${colorMode}:h${hiddenKey}:a${annots}`
+    const content = `${sourceKey}d${pageKey}:s${desired.toFixed(4)}:r${geometry.rotation}:${colorMode}:h${hiddenKey}:a${annots}`
     // The tile is placed and sized in CSS pixels of the scale it was rendered at. It may stay up
     // while only the visible region moves (scrolling), but not once the zoom, view rotation or
     // content changed: until the new tile arrives, the (stretched) base canvas is correct.
@@ -99,7 +118,8 @@ export function PageCanvas({
           annots,
           clip: [clip.left * dpr, clip.top * dpr, clip.right * dpr, clip.bottom * dpr]
         },
-        priority - 0.5
+        priority - 0.5,
+        render
       )
       cancel = req.cancel
       req.promise.then((r) => {
@@ -121,11 +141,16 @@ export function PageCanvas({
       cancel()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, pageIndex, version, desired, needsDetail, tileKey, geometry.rotation, colorMode, hiddenKey, annots])
+  }, [doc, pageIndex, pageKey, sourceKey, desired, needsDetail, tileKey, geometry.rotation, colorMode, hiddenKey, annots])
 
   return (
     <>
-      <canvas ref={baseRef} className="viewer-page-canvas" style={{ width: geometry.cssWidth, height: geometry.cssHeight }} />
+      <canvas
+        ref={baseRef}
+        className="viewer-page-canvas"
+        style={{ width: geometry.cssWidth, height: geometry.cssHeight }}
+        {...(label ? { role: 'img', 'aria-label': label } : {})}
+      />
       <canvas ref={detailRef} className="viewer-page-detail" style={{ display: 'none' }} />
     </>
   )
