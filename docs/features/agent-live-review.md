@@ -127,6 +127,59 @@ decides them.
 - **The panel** says whether the AI is still sending edits or waiting for the person, and numbers
   cards across the whole review. New cards join the reveal as they arrive.
 
+#### As built (0.3.1)
+
+- Runner (`runner.ts`): `ctx.detach(extra)` opens the ticket exactly as the 45 s timer does and
+  answers `{status: 'still_running', ticket, message, ...extra}`; every other still_running answer
+  keeps its generic shape. A second detach, or one after the timer already answered, returns the
+  same ticket and sends nothing; a call that has ended or was cancelled gets null. wait_for_result
+  and list_documents have no detach. The router tracks the ticket as any other (status
+  still_running).
+- wait_for_result (`tools/wait.ts`): `onTicketWait(ticket, listener)` is told when a
+  wait_for_result starts waiting for the ticket and when the last one stops (a `cancel: true` is
+  not waiting). Its answers are unchanged.
+- Coordinator (`tools/editReview.ts`, used by edit_text in `tools/text.tsx`): one session per
+  window from the first proposal until the review is applied or ends. Proposals of joining calls
+  and the review's subset checks run one at a time (a queue), so a check is always numbered for
+  the proposal it checks, and a call of the same conversation sent while the first is still being
+  proposed waits and then joins. Cards are numbered across the review from 0 ("Change N") and never
+  renumbered; `held` maps the engine's edit numbers to cards.
+- Engine: `propose(revision, changes, replace)` with the held proposal's id builds the combined set
+  first and keeps the shown copy when it is blocked; otherwise the new copy takes the same id with
+  the next version (the viewer drops the old version's bitmaps). The engine plans up to the review
+  limits (`REVIEW_LIMITS`, 100 edits on 10 pages, 120000 characters); the handler holds each call
+  to `CALL_LIMITS` (50 on 5 pages, 60000 characters), `validateTextChanges(..., limits)`.
+- Review store (`ui/reviewState.ts`): a live review (`live: true`, edit_text only) gets a
+  `ReviewControl` with `extend` (new cards and replaced ones join the reveal queue in reading
+  order; shown cards stay shown), `withdraw`, `setWaiting` and `decisions`. A new decision
+  `'withdrawn'` hides a card and leaves it out of checks and the apply. Once nothing is pending the
+  kept set is checked once, as before (a failed check takes back the last decision), and the review
+  finishes when the AI app waits or the person clicks Apply accepted changes. The panel lists shown
+  cards in reading order.
+
+Where the spec was silent:
+
+- A call whose only edits were replaced, or all rejected, gets `declined`; its message names the
+  rejected and replaced edits and says whether other edits of the review were applied. Every
+  successful result carries `replacedEdits` (empty when none), so its shape is the same each time.
+- A combined proposal with a blocking issue refuses the new call with `failed`, naming its own edits
+  ("Edit 2: ...") and earlier ones ("Change 3 (an earlier edit): ..."). An edit of a decided block
+  is `invalid_args`, and so is a call that would take the review beyond its limits; nothing of such
+  a call is added.
+- A call of the same conversation and document with another revision gets `failed` ("The document
+  changed since that revision ..."): the document cannot change while its review is open, so the
+  revision is an old one. Another conversation or document, reflow_text and rebuild_document get
+  `busy`. preview_only still runs during a review, as before, and does not join it.
+- A withdrawn block can be edited again by a later call: it takes the card back as pending.
+- When every card is withdrawn the review closes. When cards were decided but every call has gone,
+  the review stays for the person to apply or discard.
+- With nothing accepted and nothing pending, a live review still waits for the AI app (or Discard
+  batch); the Apply button shows only when something is accepted.
+- A detached call is "waiting" only while a wait_for_result for its ticket runs; between two
+  wait_for_result calls (each waits about 45 s) the review is not applied. A handler called without
+  a runner (tests) counts as waiting, which is the 0.3.0 behaviour.
+- The still_running answer itself does not carry a companion token (as for the timer's answer).
+
 ## Performance
 
 - No PNGs during a review, no per-decision copies for edit_text (reject only clips the overlay), no
