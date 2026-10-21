@@ -78,6 +78,46 @@ export function openTicket(opts: {
   }
 }
 
+/** Listeners per ticket, told when a wait_for_result starts or stops waiting for it. */
+const waitListeners = new Map<string, Set<(waiting: boolean) => void>>()
+/** wait_for_result calls waiting for each ticket now. */
+const waiters = new Map<string, number>()
+
+/**
+ * Tells `listener` whether the AI app is waiting for the ticket's result in a wait_for_result
+ * (true when one starts waiting, false when the last one stops). An edit review uses it to apply
+ * itself once the AI has sent everything (see tools/editReview.ts). Returns the unsubscribe.
+ */
+export function onTicketWait(ticket: string, listener: (waiting: boolean) => void): () => void {
+  let set = waitListeners.get(ticket)
+  if (!set) waitListeners.set(ticket, (set = new Set()))
+  set.add(listener)
+  return () => {
+    set.delete(listener)
+    if (!set.size && waitListeners.get(ticket) === set) waitListeners.delete(ticket)
+  }
+}
+
+/** True while a wait_for_result waits for the ticket. */
+export function ticketWaited(ticket: string): boolean {
+  return (waiters.get(ticket) ?? 0) > 0
+}
+
+function waiting(ticket: string, delta: 1 | -1) {
+  const before = waiters.get(ticket) ?? 0
+  const after = Math.max(0, before + delta)
+  if (after) waiters.set(ticket, after)
+  else waiters.delete(ticket)
+  if (!before === !after) return
+  for (const listener of [...(waitListeners.get(ticket) ?? [])]) {
+    try {
+      listener(after > 0)
+    } catch (err) {
+      console.warn('A ticket listener failed', err)
+    }
+  }
+}
+
 /** What a call answers while it keeps running. */
 export function stillRunning(ticket: string) {
   return {
@@ -130,9 +170,19 @@ const waitForResult: ToolHandler = async (args, ctx) => {
   // A stopped call ends soon: the runner answers it as cancelled after its grace period at most.
   const cancel = args.cancel === true
   if (cancel && !t.final) t.stop()
-  if (!t.final && !(await settledWithin(t.done, cancel ? null : stillRunningMs, ctx))) {
-    ctx.audit({ ...(t.document ? { document: t.document } : {}), outcome: 'pending', summary: `${t.tool}: still running` })
-    return { data: stillRunning(id) }
+  if (!t.final) {
+    // A review learns that the AI app is waiting for the person now (a cancel is not waiting).
+    if (!cancel) waiting(id, 1)
+    let settled: boolean
+    try {
+      settled = await settledWithin(t.done, cancel ? null : stillRunningMs, ctx)
+    } finally {
+      if (!cancel) waiting(id, -1)
+    }
+    if (!settled) {
+      ctx.audit({ ...(t.document ? { document: t.document } : {}), outcome: 'pending', summary: `${t.tool}: still running` })
+      return { data: stillRunning(id) }
+    }
   }
   // Another wait for the same ticket may have taken the result first.
   if (tickets.get(id) !== t || !t.final) throw unknown()
