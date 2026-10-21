@@ -24,8 +24,8 @@ Office conversion when installed, with a built-in fallback.
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
   per computer, update rehearsal for every download), #19 (no request to Google for spell-check
   dictionaries), #17 (release 0.2.1: companion joining and on-document review), #21 (release
-  0.2.2). #11 merged main into the old session branch. Open: the live edit review PR from
-  `claude/laughing-tesla-83pgov` (see "Live edit review" below); it has no version bump.
+  0.2.2), #23 (live edit review, see below). #11 merged main into the old session branch. Open:
+  the 0.3.0 release PR from `claude/laughing-tesla-83pgov`; merging it publishes 0.3.0.
 - 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
   turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
   0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
@@ -305,7 +305,7 @@ capture, scanner input.
 - `docs/releases/v0.2.2.md` repeats what people coming from 0.2.0 must do (add the Claude
   extension again), since many will update from 0.2.0 straight to 0.2.2.
 
-### Live edit review (20 Oct 2026, PR from `claude/laughing-tesla-83pgov`)
+### Live edit review (#23, merged 21 Oct 2026; ships in 0.3.0)
 
 - Owner request after trying 0.2.2 with Claude Desktop: edits appear one by one with markup and
   are accepted or rejected each on its own, sharp at any zoom, draggable companion, lower footprint.
@@ -323,3 +323,6 @@ capture, scanner input.
   `addSimpleFont` and `addImage` on the live document can return a removed object. Make such
   objects on a scratch `PDFDocument` and `graftObject` them (edit-text `FontBook`, Edit Images,
   page marks).
+- 0.3.0 changes tool descriptions only (no arguments), so a Claude Desktop extension added from an
+  older version keeps working; adding it again gives Claude the new descriptions. Release notes:
+  `docs/releases/v0.3.0.md`.
