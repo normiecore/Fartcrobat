@@ -493,6 +493,52 @@ describe('AForm functions through the form runtime', () => {
     expect(calls).toEqual(['print', 'reset:a', 'reset:all', 'submit:https://example.com/x', 'url:https://example.com', 'page:3', 'unsupported:Emailing forms'])
   })
 
+  it('only prints, saves, exports, imports, submits or opens links on a click or keystroke', () => {
+    const calls: string[] = []
+    const host: RuntimeHost = {
+      print: () => calls.push('print'),
+      save: () => calls.push('save'),
+      exportData: () => calls.push('export'),
+      importData: () => calls.push('import'),
+      submitForm: (url) => calls.push(`submit:${url}`),
+      launchURL: (url) => calls.push(`url:${url}`),
+      gotoPage: (p) => calls.push(`page:${p}`),
+      notSupported: (w) => calls.push(`unsupported:${w}`)
+    }
+    const everything =
+      'this.print(); print(); app.execMenuItem("Print"); app.execMenuItem("Save"); this.saveAs("/tmp/x.pdf"); ' +
+      'this.exportAsFDF(); this.importAnFDF(); this.submitForm("https://example.com/s"); app.launchURL("https://example.com/l");'
+    const rt = new FormRuntime(
+      {
+        fields: [
+          field('a', { scripts: { format: everything, calculate: everything } }),
+          field('b', { scripts: { keystroke: 'if (event.change == "p") this.print();', validate: 'app.launchURL("https://example.com/v");' } })
+        ],
+        values: { a: '1' },
+        calcOrder: ['a'],
+        docScripts: [everything + ' this.pageNum = 2;']
+      },
+      host
+    )
+    // Document-level scripts (on open), formatting (on render) and calculations do nothing.
+    rt.format('a')
+    rt.calculate()
+    expect(calls).toEqual(['page:2'])
+    // A button click may; a calculation it starts may not.
+    calls.length = 0
+    rt.runAction(everything + ' this.calculateNow();')
+    expect(calls).toEqual(['print', 'print', 'print', 'save', 'save', 'export', 'import', 'submit:https://example.com/s', 'url:https://example.com/l'])
+    // Typing and committing a value are the person's own actions too.
+    calls.length = 0
+    rt.keystroke('b', { value: '', change: 'p', selStart: 0, selEnd: 0 })
+    rt.commit('b', 'x')
+    expect(calls).toEqual(['print', 'url:https://example.com/v'])
+    // After the click, functions defined by document scripts are blocked again.
+    calls.length = 0
+    rt.calculate()
+    expect(calls).toEqual([])
+  })
+
   it('records problems instead of failing on broken or unsupported scripts', () => {
     const rt = new FormRuntime({
       fields: [field('a', { scripts: { format: 'xfa.resolveNode("x")', keystroke: 'if (' } }), field('b', { scripts: { calculate: 'event.value = ;' } })],
