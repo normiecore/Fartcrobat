@@ -294,7 +294,12 @@ test(`${SCOPE}, ${INSTALLER} installer: Restart now asks about unsaved changes, 
       await managed.app.close().catch(() => {})
     }
   } finally {
-    for (const key of policyKeys) execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' })
+    // Only the old key was written; reg.exe fails on the other one, which must not hide the result.
+    for (const key of policyKeys) {
+      try {
+        execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' })
+      } catch {}
+    }
     killApps()
   }
 })
