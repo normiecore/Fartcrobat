@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CircleCheck, CircleX, Download, FileStack, ShieldCheck, ShieldOff, ShieldQuestion } from 'lucide-react'
 import { Button, Dialog, openDialog, showError, toast, type DocumentModel } from '@renderer/sdk'
 import type { CertDetails } from '../lib/x509'
-import { permissionText, signatureStatus } from '../status'
+import { displayedSigningTime, permissionText, signatureStatus } from '../status'
 import type { SignatureReport } from '../types'
 import { exportCertificate, trustCertificate, untrustCertificate } from './ids'
 import { StatusIcon } from './StatusIcon'
@@ -104,8 +104,8 @@ export function CertificateViewer({ chain, initial = 0, onClose }: { chain: Cert
           <div className="fc-digital-signatures-trustline">
             {isTrusted ? (
               <>
-                <CircleCheck size={16} className="fc-digital-signatures-ok" /> You trust this certificate. Signatures made with it (or with
-                certificates it issued) show a known identity.
+                <CircleCheck size={16} className="fc-digital-signatures-ok" /> You trust this certificate. Signatures made with it
+                {cert.isCA ? ' (or with certificates it issued as a certificate authority)' : ''} show a known identity.
               </>
             ) : (
               <>
@@ -174,7 +174,7 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
           <div className="fc-digital-signatures-verdict-title">{st.title}</div>
           <div className="shell-muted">
             {r.kind === 'timestamp' ? 'Document timestamp' : r.kind === 'certification' ? 'Certified by' : 'Signed by'} <b>{r.signerName}</b>
-            {r.signingTime ? <> on {formatDateTime(r.timestamp?.valid ? r.timestamp.time : r.signingTime)}</> : null}
+            {r.signingTime ? <> on {formatDateTime(displayedSigningTime(r, trusted))}</> : null}
           </div>
         </div>
       </div>
@@ -230,10 +230,11 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
       <Row label="Reason">{r.reason}</Row>
       <Row label="Location">{r.location}</Row>
       <Row label="Contact info">{r.contactInfo}</Row>
-      <Row label="Signing time">{r.signingTime ? `${formatDateTime(r.signingTime)}${r.timestamp ? '' : ' (from the signer’s computer)'}` : 'Not given'}</Row>
+      <Row label="Signing time">{r.signingTime ? `${formatDateTime(r.signingTime)}${r.kind === 'timestamp' ? '' : ' (from the signer’s computer)'}` : 'Not given'}</Row>
       {r.timestamp && (
         <Row label="Timestamp">
-          {formatDateTime(r.timestamp.time)} by {r.timestamp.authority} {r.timestamp.valid ? '' : '(could not be verified)'}
+          {formatDateTime(r.timestamp.time)} by {r.timestamp.authority}{' '}
+          {!r.timestamp.valid ? '(could not be verified)' : st.timestampTrusted ? '' : '(the time-stamping authority is not trusted)'}
         </Row>
       )}
       <Row label="Field">

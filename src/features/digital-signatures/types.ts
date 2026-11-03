@@ -176,7 +176,12 @@ export interface SignatureReport {
   contactInfo: string
   /** ISO time the signer's computer claims (signed attribute or /M). */
   signingTime: string | null
-  timestamp: { time: string; authority: string; valid: boolean } | null
+  /**
+   * Embedded timestamp. `valid` only says the token matches and its signature verified; whether the
+   * authority is trusted comes from its chain (`timestampTrusted` in status.ts). For document
+   * timestamps the authority's chain is `certificates`, and these two lists are empty.
+   */
+  timestamp: { time: string; authority: string; valid: boolean; certificates: CertDetails[]; chainVerified: boolean[] } | null
   subFilter: string
   digestAlgorithm: string
   signatureAlgorithm: string
@@ -195,7 +200,10 @@ export interface SignatureReport {
   signatureValid: boolean | null
   /** Signer first. */
   certificates: CertDetails[]
-  /** For each certificate in `certificates`, whether its issuer's signature verified. */
+  /**
+   * For each certificate in `certificates`, whether its issuer's signature verified and the issuer
+   * may issue certificates (CA, key usage, path length, validity). Trust never flows past a false.
+   */
   chainVerified: boolean[]
   chainComplete: boolean
   certValidAtSigning: boolean | null
