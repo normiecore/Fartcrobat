@@ -14,7 +14,7 @@ const root = resolve(__dirname, '../..')
 let dir: string
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'fartcrobat-regex-'))
+  dir = mkdtempSync(join(tmpdir(), 'inkmoor-regex-'))
   const entry = join(dir, 'entry.ts')
   writeFileSync(
     entry,

@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process'
 import { writeFile } from 'node:fs/promises'
+import { PRODUCT_NAME } from '@shared/identity'
 
 /**
- * Marks a file Fartcrobat wrote out of a PDF (an attachment) as coming from the Internet, as a
+ * Marks a file Inkmoor wrote out of a PDF (an attachment) as coming from the Internet, as a
  * browser marks a download: on Windows the Zone.Identifier stream (SmartScreen, Office Protected
  * View), on macOS the com.apple.quarantine attribute (Gatekeeper). Never fails: a file system
  * without streams or attributes just keeps the file unmarked.
@@ -19,7 +20,7 @@ export const ZONE_IDENTIFIER = '[ZoneTransfer]\r\nZoneId=3\r\n'
 
 /** macOS: the com.apple.quarantine value, "flags;hex seconds since 1970;agent;" (no event id). */
 export function quarantineValue(nowMs: number): string {
-  return `0083;${Math.floor(nowMs / 1000).toString(16)};Fartcrobat;`
+  return `0083;${Math.floor(nowMs / 1000).toString(16)};${PRODUCT_NAME};`
 }
 
 const defaults: MarkDeps = {

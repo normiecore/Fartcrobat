@@ -139,8 +139,8 @@ describe('marking attachments as downloaded', () => {
   it('sets com.apple.quarantine with /usr/bin/xattr on macOS', async () => {
     const f = fake('darwin')
     await markAsDownloaded('/Users/me/a.docx', f.deps)
-    expect(quarantineValue(0x65000000 * 1000 + 999)).toBe('0083;65000000;Fartcrobat;')
-    expect(f.runs).toEqual([['/usr/bin/xattr', ['-w', 'com.apple.quarantine', '0083;65000000;Fartcrobat;', '/Users/me/a.docx']]])
+    expect(quarantineValue(0x65000000 * 1000 + 999)).toBe('0083;65000000;Inkmoor;')
+    expect(f.runs).toEqual([['/usr/bin/xattr', ['-w', 'com.apple.quarantine', '0083;65000000;Inkmoor;', '/Users/me/a.docx']]])
     expect(f.writes).toEqual([])
   })
 
