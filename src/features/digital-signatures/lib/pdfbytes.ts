@@ -798,7 +798,9 @@ function objectEnd(bytes: Uint8Array, p: number, limit: number): number {
 /**
  * Whether the bytes from `end` to the end of the file consist only of what the given
  * cross-reference sections account for: the objects they list, the sections themselves and the
- * trailer lines. Anything else (objects no section lists, stray sections) makes them untrustworthy.
+ * trailer lines, and every object they list (in the update or in the signed revision) starts
+ * where they say. Anything else (objects no section lists, stray sections, entries that point to
+ * another object) makes them untrustworthy.
  */
 function tailAccounted(bytes: Uint8Array, end: number, newer: XrefSection[]): boolean {
   const starts = new Set<number>()
@@ -806,11 +808,12 @@ function tailAccounted(bytes: Uint8Array, end: number, newer: XrefSection[]): bo
     starts.add(skipWs(bytes, s.offset))
     if (s.xrefStm !== null && s.xrefStm >= end) starts.add(skipWs(bytes, s.xrefStm))
     for (const [num, off] of s.offsets!) {
-      if (off < end) continue
+      // Every entry must point to that object, also when it points into the signed revision:
+      // otherwise a reader repairs the file and may pick up objects no section lists.
       if (off >= bytes.length) return false
       const at = skipWs(bytes, off)
       if (objectHeader(bytes, at)?.num !== num) return false
-      starts.add(at)
+      if (off >= end) starts.add(at)
     }
   }
   const sorted = [...starts].sort((a, b) => a - b)

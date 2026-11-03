@@ -76,6 +76,7 @@ function emptyReport(f: SigField, v: PDFObject): SignatureReport {
     lock: lockInfo(f),
     changes: [],
     changesUnknown: false,
+    restrictionsUnknown: false,
     problems: [],
     warnings: [],
     unknownReason: null
@@ -160,8 +161,16 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
   const changed = ctx.revs && !ctx.repaired ? objectsChangedAfter(src, ctx.revs, chk.end) : null
   const before = openRevision(ctx.s, src, chk.end)
   try {
+    if (!before) {
+      // Without the signed revision there is nothing to judge the changes by, not even the
+      // field lock or the certification the signer applied: the current document may have
+      // dropped them.
+      r.changesUnknown = true
+      r.restrictionsUnknown = true
+      return r
+    }
     // The field lock as signed: a later update cannot remove it.
-    if (before) r.lock = lockInfo(f, f.fieldNum > 0 ? before.newIndirect(f.fieldNum) : null)
+    r.lock = lockInfo(f, f.fieldNum > 0 ? before.newIndirect(f.fieldNum) : null)
     if (changed === null) {
       r.changesUnknown = true
       return r
@@ -179,10 +188,21 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
       r.changes = []
       r.changesUnknown = true
     }
+    // Reading the objects can make MuPDF repair the file (an entry that points to the wrong
+    // object); from then on it shows objects the cross-reference sections do not list.
+    if (wasRepaired(ctx.s.pdf) || wasRepaired(before)) {
+      ctx.repaired = true
+      r.changes = []
+      r.changesUnknown = true
+    }
   } finally {
     before?.destroy()
   }
   return r
+}
+
+function wasRepaired(pdf: PDFDocument): boolean {
+  return safe(() => pdf.wasRepaired(), true)
 }
 
 /** The signed revision (the file up to `end`) opened on its own, or null. */
@@ -352,7 +372,7 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
     }
   }
   certified ??= certification(pdf)
-  const repaired = !!src && safe(() => pdf.wasRepaired(), false)
+  const repaired = !!src && wasRepaired(pdf)
   const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired }
   if (certified && src) {
     const certField = fields.find((f) => {
@@ -373,6 +393,14 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
       const r = emptyReport(f, v)
       r.problems.push(`The signature could not be checked: ${(err as Error).message}`)
       signatures.push(r)
+    }
+  }
+  // A repair while checking one signature also affects the ones checked before it.
+  if (src && wasRepaired(pdf)) {
+    for (const r of signatures) {
+      if (r.coversWholeFile || !r.revisionEnd) continue
+      r.changes = []
+      r.changesUnknown = true
     }
   }
   signatures.sort((a, b) => (a.revisionEnd || Infinity) - (b.revisionEnd || Infinity))

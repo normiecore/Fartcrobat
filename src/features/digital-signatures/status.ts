@@ -39,7 +39,7 @@ export function trustedIndex(r: SignatureReport, trusted: Set<string>): number {
 
 export function signatureStatus(r: SignatureReport, trusted: Set<string>): SignatureStatus {
   const details: string[] = []
-  const restricted = r.permission !== null || r.lock !== null
+  const restricted = r.permission !== null || r.lock !== null || !!r.restrictionsUnknown
   const disallowed = r.changes.filter((c) => !c.allowed)
   const ti = trustedIndex(r, trusted)
   const identityKnown = ti >= 0

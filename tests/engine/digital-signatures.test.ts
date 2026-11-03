@@ -798,4 +798,86 @@ describe('updates after signing', () => {
     expect(signatureStatus({ ...r, lock: { action: 'All', fields: [], permission: null } }, new Set()).level).toBe('invalid')
     expect(signatureStatus({ ...r, kind: 'certification', permission: 2 }, new Set()).level).toBe('invalid')
   })
+
+  describe('judges each change by what the object is in the signed revision', () => {
+    /** The changes of the only signature, its status level, and whether the page shows the new amount. */
+    async function check(name: string) {
+      const bytes = fixture(`digital-signatures/${name}`)
+      const report = await validateBytes(bytes)
+      const r = report.signatures[0]
+      return { r, report, level: signatureStatus(r, new Set()).level, shows999: pageText(bytes).includes('999 EUR') }
+    }
+
+    it('reports a replaced form XObject as content even when the page also lists it as a comment', async () => {
+      const { r, level, shows999 } = await check('update-annots-xobject.pdf')
+      expect(shows999).toBe(true)
+      expect(r.changes.some((c) => c.category === 'content' && c.page === 0 && !c.allowed)).toBe(true)
+      expect(VALID).not.toContain(level)
+    })
+
+    it('reports a replaced form XObject as content even when a new comment names it as its popup', async () => {
+      const { r, level, shows999 } = await check('update-popup-p3.pdf')
+      expect(shows999).toBe(true)
+      expect(r.kind).toBe('certification')
+      expect(r.changes.some((c) => c.category === 'content' && !c.allowed)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('reports a replaced form XObject as content even when the form lists it as a field', async () => {
+      const { r, level, shows999 } = await check('update-fields-p2.pdf')
+      expect(shows999).toBe(true)
+      expect(r.changes.some((c) => c.category === 'content' && !c.allowed)).toBe(true)
+      expect(r.changes.some((c) => c.category === 'form')).toBe(false)
+      expect(level).toBe('invalid')
+    })
+
+    it('does not take a changed action for validation data because /DSS lists it', async () => {
+      const { r, level } = await check('update-dss-p1.pdf')
+      expect(r.changes.some((c) => c.category === 'other' && !c.allowed)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('reports NeedAppearances and DA changes under a certification', async () => {
+      const p1 = await check('update-needappearances-p1.pdf')
+      expect(p1.r.changes).toContainEqual(expect.objectContaining({ category: 'other', allowed: false, description: 'The form settings were changed' }))
+      expect(p1.level).toBe('invalid')
+      const p2 = await check('update-da-p2.pdf')
+      expect(p2.r.changes).toContainEqual(expect.objectContaining({ category: 'other', allowed: false, description: 'The form settings were changed' }))
+      expect(p2.level).toBe('invalid')
+    })
+
+    it('treats an update entry that points to another object of the signed revision as unknown changes', async () => {
+      const bytes = fixture('digital-signatures/update-xref-mismatch.pdf')
+      const r = (await validateBytes(bytes)).signatures[0]
+      expect(r.changesUnknown).toBe(true)
+      expect(VALID).not.toContain(signatureStatus(r, new Set()).level)
+    })
+
+    it('treats a repair that only reading the changed objects sets off as unknown changes', async () => {
+      const bytes = fixture('digital-signatures/update-signed-mismatch.pdf')
+      // Opening the file alone does not need a repair.
+      const doc = new mupdf.PDFDocument(bytes)
+      expect(doc.wasRepaired()).toBe(false)
+      doc.destroy()
+      const r = (await validateBytes(bytes)).signatures[0]
+      expect(r.changesUnknown).toBe(true)
+      expect(r.changes).toEqual([])
+      expect(VALID).not.toContain(signatureStatus(r, new Set()).level)
+    })
+
+    it('fails closed when the signed revision cannot be opened', async () => {
+      const bytes = fixture('digital-signatures/update-encrypt-dropped.pdf')
+      const r = (await validateBytes(bytes)).signatures[0]
+      expect(r.integrity).toBe(true)
+      // The signed revision needs a password; the update dropped it along with the field lock.
+      const signedPart = new mupdf.PDFDocument(bytes.slice(0, r.revisionEnd))
+      expect(signedPart.needsPassword()).toBe(true)
+      signedPart.destroy()
+      expect(r.changesUnknown).toBe(true)
+      expect(r.restrictionsUnknown).toBe(true)
+      const st = signatureStatus(r, new Set())
+      expect(st.level).toBe('invalid')
+      expect(st.details.join(' ')).toMatch(/cannot be checked against what the signer allowed/)
+    })
+  })
 })

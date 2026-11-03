@@ -206,6 +206,11 @@ export interface SignatureReport {
   changes: ChangeEntry[]
   /** Details could not be determined for later changes. */
   changesUnknown: boolean
+  /**
+   * The signed revision could not be read, so the restrictions the signer applied (field lock,
+   * certification) are not known: later changes count as not allowed.
+   */
+  restrictionsUnknown: boolean
   /** Fatal problems (signature invalid). */
   problems: string[]
   /** Problems that make the signature questionable. */
