@@ -58,6 +58,13 @@ Malformed document timestamps (one directory up, the same one-page layout):
   doctimestamp-pkcs7-token.pdf  the same with an embedded timestamp from tsa over the signature value
   sig-rfc3161.pdf               field "Signature1", /Type /Sig with /SubFilter /ETSI.RFC3161, a
                                 token over the byte range signed by tsa
+  doctimestamp-docmdp.pdf       a /DocTimeStamp (ETSI.RFC3161, token by tsa) whose dictionary
+                                carries a DocMDP /Reference (P 1), and the catalog's /Perms /DocMDP
+                                points at it: a document timestamp cannot certify a document
+  doctimestamp-perms.pdf        the same without the /Reference, only /Perms /DocMDP pointing at it
+  sig-rfc3161-docmdp.pdf        sig-rfc3161.pdf with a DocMDP /Reference (P 1) and /Perms /DocMDP
+  doctimestamp-econtent.pdf     a /DocTimeStamp whose token holds a genuine TSTInfo from tsa, signed
+                                by tsa, but with eContentType id-data instead of id-ct-TSTInfo
 """
 import datetime
 import hashlib
@@ -234,6 +241,47 @@ def main() -> None:
                 lambda b: timestamp(work, b, "tsa"),
             ),
         )
+        docmdp_ref = (
+            b" /Reference [<< /Type /SigRef /TransformMethod /DocMDP"
+            b" /TransformParams << /Type /TransformParams /P 1 /V /1.2 >> >>]"
+        )
+        perms = b" /Perms << /DocMDP 5 0 R >>"
+        write(
+            HERE / "doctimestamp-docmdp.pdf",
+            lambda: one_page_signed_pdf(
+                b"Document timestamp with a certification reference - TEST KEYS ONLY",
+                b"Timestamp1",
+                b"/Type /DocTimeStamp /Filter /Adobe.PPKLite /SubFilter /ETSI.RFC3161" + docmdp_ref,
+                lambda b: timestamp(work, b, "tsa"),
+                perms,
+            ),
+        )
+        write(
+            HERE / "doctimestamp-perms.pdf",
+            lambda: one_page_signed_pdf(
+                b"Document timestamp named as the certification - TEST KEYS ONLY",
+                b"Timestamp1",
+                b"/Type /DocTimeStamp /Filter /Adobe.PPKLite /SubFilter /ETSI.RFC3161",
+                lambda b: timestamp(work, b, "tsa"),
+                perms,
+            ),
+        )
+        write(
+            HERE / "sig-rfc3161-docmdp.pdf",
+            lambda: one_page_signed_pdf(
+                b"Signature in the document timestamp format with a certification reference - TEST KEYS ONLY",
+                b"Signature1",
+                b"/Type /Sig /Filter /Adobe.PPKLite /SubFilter /ETSI.RFC3161 /Name (tsa) /M (D:20250601000000Z)" + docmdp_ref,
+                lambda b: timestamp(work, b, "tsa"),
+                perms,
+            ),
+        )
+        write(
+            HERE / "doctimestamp-econtent.pdf",
+            lambda: doc_timestamp_pdf(
+                work, lambda b: cms_sign(work, encapsulated_content(work, timestamp(work, b, "tsa")), "tsa", ID_DATA_OID)
+            ),
+        )
 
 
 def write(path: Path, make_bytes) -> bytes:
@@ -248,6 +296,7 @@ def write(path: Path, make_bytes) -> bytes:
 # ---- timestamp tokens and the signed PDF (openssl) -----------------------------------------
 
 TST_INFO_OID = "1.2.840.113549.1.9.16.1.4"
+ID_DATA_OID = "1.2.840.113549.1.7.1"
 TS_CONFIG = """
 [ tsa ]
 default_tsa = tsa_config
@@ -382,13 +431,13 @@ def doc_timestamp_pdf(work: Path, token_for) -> bytes:
     )
 
 
-def one_page_signed_pdf(text: bytes, field: bytes, sig_entries: bytes, sign) -> bytes:
+def one_page_signed_pdf(text: bytes, field: bytes, sig_entries: bytes, sign, catalog_extra: bytes = b"") -> bytes:
     """A one-page PDF with one signature field whose /Contents is sign(the bytes in its byte range)."""
     contents_len = 16384
     placeholder_range = b"[0 0000000000 0000000000 0000000000]"
     stream = b"BT /F1 18 Tf 72 720 Td (" + text + b") Tj ET"
     objects = [
-        b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> >>",
+        b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >>" + catalog_extra + b" >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>",
         b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (" + field + b") /F 4 /Rect [72 560 300 640] /P 3 0 R /V 5 0 R >>",

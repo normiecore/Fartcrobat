@@ -3,6 +3,7 @@ import type { PDFDocument, PDFObject, Session } from '@engine/session'
 import { isNull, parsePdfDate, readName, readNumber, readString } from '@engine/util/pdf'
 import { Asn1Error, bytesEqual, contentOf, parseAsn1 } from '../lib/asn1'
 import { verifySignedData, parseTstInfo, type CmsVerification } from '../lib/cms'
+import { OID } from '../lib/oids'
 import { CryptoUnsupportedError, digest, parsePublicKey, rsaPkcs1Verify } from '../lib/crypto'
 import {
   checkByteRange,
@@ -45,6 +46,16 @@ interface Context {
   later: { r: SignatureReport; changed: Map<number, XrefEntryType> }[]
   /** Object number of each report's signature dictionary. */
   vNums: Map<SignatureReport, number>
+  /** The signature value the catalog's /Perms /DocMDP names when it is a timestamp (not a certification), else -1. */
+  rejectedCertification: number
+}
+
+/**
+ * A document timestamp, or a signature value in the RFC 3161 token format. Neither can certify a
+ * document: the token's signer is a time-stamping authority, not the author.
+ */
+function timestampLike(v: PDFObject): boolean {
+  return readName(v.get('Type')) === 'DocTimeStamp' || readName(v.get('SubFilter')) === 'ETSI.RFC3161'
 }
 
 function emptyReport(f: SigField, v: PDFObject): SignatureReport {
@@ -101,6 +112,9 @@ async function verifyCms(r: SignatureReport, contents: Uint8Array, data: Uint8Ar
   }
   if (sub === 'ETSI.RFC3161') {
     const v = await verifySignedData(contents, null)
+    // The token must say that it holds timestamp information (id-ct-TSTInfo), not just hold bytes
+    // that happen to parse as one.
+    if (v.eContentType !== OID.tstInfo) throw new Asn1Error('The timestamp token does not hold timestamp information')
     if (!v.eContent) throw new Asn1Error('The timestamp token has no content')
     const info = parseTstInfo(v.eContent)
     const d = await digest(info.digestName, data)
@@ -160,7 +174,9 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
   const vRef = f.field.resolve().get('V')
   const vNum = vRef.isIndirect() ? vRef.asIndirect() : f.fieldNum
   ctx.vNums.set(r, vNum)
-  if (docMdp || (ctx.certified && ctx.certified.sigNum === vNum)) {
+  const tsLike = timestampLike(v)
+  // ctx.certified never names a timestamp (see validateSignatures).
+  if (!tsLike && (docMdp || (ctx.certified && ctx.certified.sigNum === vNum))) {
     r.kind = 'certification'
     r.permission = docMdp?.permission ?? ctx.certified?.permission ?? 2
   }
@@ -170,6 +186,14 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
     return r
   }
   const chk = await checkSignatureData(ctx, r, v, vNum)
+  // After the cached data checks, which replace problems and warnings.
+  if (tsLike && docMdp) {
+    r.problems.push(
+      'This timestamp carries a certification (DocMDP) reference, but a timestamp cannot certify a document. It is not treated as a certification.'
+    )
+  } else if (tsLike && ctx.rejectedCertification === vNum) {
+    r.warnings.push('The document names this timestamp as its certification, but a timestamp cannot certify a document. It is not treated as one.')
+  }
   if (!chk) return r
 
   // Permission in force for this signature: certification (if signed at or after it) and lock.
@@ -454,6 +478,8 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
   let certAt = Infinity
   for (const f of fields.filter((x) => x.signed)) {
     const vRef = f.field.resolve().get('V')
+    // A timestamp with a DocMDP reference is reported as a problem by validateOne, not a certification.
+    if (timestampLike(vRef.resolve())) continue
     const ref = readReferences(vRef).find((x) => x.method === 'DocMDP')
     const br = readByteRange(vRef.resolve())
     const at = br.length === 4 ? br[2] + br[3] : Infinity
@@ -462,14 +488,25 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
       certAt = at
     }
   }
-  certified ??= certification(pdf)
-  const repaired = !!src && wasRepaired(pdf)
-  const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired, later: [], vNums: new Map() }
-  if (certified && src) {
-    const certField = fields.find((f) => {
+  const signedValue = (sigNum: number) =>
+    fields.find((f) => {
       const v = f.field.resolve().get('V')
-      return v.isIndirect() && v.asIndirect() === certified.sigNum
+      return v.isIndirect() && v.asIndirect() === sigNum
     })
+  // /Perms /DocMDP naming a timestamp does not make it a certification either.
+  let rejected: Context['certified'] = null
+  if (!certified) {
+    certified = certification(pdf)
+    const named = certified ? signedValue(certified.sigNum) : undefined
+    if (certified && named && timestampLike(named.field.resolve().get('V').resolve())) {
+      rejected = certified
+      certified = null
+    }
+  }
+  const repaired = !!src && wasRepaired(pdf)
+  const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired, later: [], vNums: new Map(), rejectedCertification: rejected?.sigNum ?? -1 }
+  if (certified && src) {
+    const certField = signedValue(certified.sigNum)
     if (certField) {
       const br = readByteRange(certField.field.resolve().get('V').resolve())
       if (br.length === 4) ctx.certEnd = br[2] + br[3]
@@ -506,7 +543,8 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
     revisionCount: revs?.sections.length ?? 0,
     certified: certified?.permission ?? null,
     certifiedBy: certSig?.signerName ?? null,
-    locked: locked || certified?.permission === 1,
+    // A rejected certification that allows no changes still keeps the document locked.
+    locked: locked || certified?.permission === 1 || rejected?.permission === 1,
     validatedAt: Date.now()
   }
 }

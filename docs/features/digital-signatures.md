@@ -44,3 +44,19 @@ Its status is decided like this (`status.ts`, `worker/validate.ts`, `worker/late
 - Agent access reports the same level and title (`list_signatures`: `status`, `summary`,
   `changedAfterSigning` is false only when nothing or only later signatures followed;
   `signedAgainLater` marks the latter).
+
+## Certificate chains and timestamps
+
+- Trust flows down a chain only through issuers that may issue certificates (CA basic
+  constraints, keyCertSign, path length, valid at the signing time); a trusted certificate above
+  the signer counts only when it is a CA (`chainTrustedIndex` in `status.ts`, `buildChain` in
+  `lib/x509.ts`).
+- A timestamp's time is relied on only when its token verified, the token's own signer has the
+  time-stamping extended key usage and was valid at that time, and that signer is trusted
+  (`timestampTrusted`). Otherwise the time shown is what the signer claims, with a note
+  (`signingTimeNote`), in the panel, Signature Properties and agent output.
+- A document timestamp is `/Type /DocTimeStamp` with `/SubFilter /ETSI.RFC3161`; its authority is
+  the token's signer, never a timestamp nested in the token. The token must be marked as
+  id-ct-TSTInfo. Any other combination (a /DocTimeStamp in CMS format, an RFC 3161 token as a /Sig)
+  is malformed and invalid. A timestamp never certifies a document: a DocMDP /Reference in its
+  dictionary is a problem, and /Perms /DocMDP naming it is ignored (with a warning).

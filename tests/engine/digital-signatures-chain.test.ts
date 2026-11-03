@@ -566,3 +566,94 @@ describe('malformed document timestamps', () => {
     expect(signatureStatus(sig, new Set(['ROOT'])).level).toBe('invalid')
   })
 })
+
+describe('timestamps that claim to certify the document', () => {
+  // ../doctimestamp-docmdp.pdf, ../doctimestamp-perms.pdf and ../sig-rfc3161-docmdp.pdf from make_chain.py.
+  const sha = async (name: string) => (await describeCertificate(cert(name))).sha256
+
+  async function validate(name: string) {
+    const engine = await createLocalEngine()
+    const res = await engine.ops<typeof docOps>('doc').open(new Uint8Array(readFileSync(join(DIR, '..', name))), { fileName: name })
+    expect(res.ok).toBe(true)
+    const report = await engine.ops<typeof sigOps>('digital-signatures').validate()
+    expect(report.signatures).toHaveLength(1)
+    return { report, r: report.signatures[0] }
+  }
+
+  it('reports a document timestamp with a DocMDP reference as a problem, not as a certification', async () => {
+    const { report, r } = await validate('doctimestamp-docmdp.pdf')
+    expect(r.kind).toBe('timestamp')
+    expect(r.permission).toBeNull()
+    expect(r.integrity).toBe(true)
+    expect(r.timestamp).toMatchObject({ valid: true, authorityOk: true })
+    expect(r.problems.join(' ')).toMatch(/certification \(DocMDP\) reference/)
+    expect(report.certified).toBeNull()
+    expect(report.certifiedBy).toBeNull()
+    // Its P 1 still keeps the document locked.
+    expect(report.locked).toBe(true)
+    for (const names of [[], ['tsa'], ['tsa-root']]) {
+      const trusted = new Set(await Promise.all(names.map(sha)))
+      const st = signatureStatus(r, trusted)
+      expect(st.level).toBe('invalid')
+      expect(st.title).toBe('Document timestamp is invalid.')
+      expect(st.details.join(' ')).not.toMatch(/document is certified/)
+      expect(overallStatus(report, trusted)!.level).toBe('invalid')
+      const out = signaturesOut(report, trusted)
+      expect(out.signatures[0]).toMatchObject({ kind: 'timestamp', status: 'invalid' })
+      expect(out).not.toHaveProperty('certified')
+    }
+  })
+
+  it('reports a /Sig in the RFC 3161 format with a DocMDP reference as a problem, not as a certification', async () => {
+    const { report, r } = await validate('sig-rfc3161-docmdp.pdf')
+    expect(r.kind).toBe('approval')
+    expect(r.permission).toBeNull()
+    expect(r.problems.join(' ')).toMatch(/not a document timestamp/)
+    expect(r.problems.join(' ')).toMatch(/certification \(DocMDP\) reference/)
+    expect(report.certified).toBeNull()
+    expect(report.certifiedBy).toBeNull()
+    for (const names of [[], ['tsa'], ['tsa-root']]) {
+      const trusted = new Set(await Promise.all(names.map(sha)))
+      const st = signatureStatus(r, trusted)
+      expect(st.level).toBe('invalid')
+      expect(st.identityKnown).toBe(false)
+      expect(st.details.join(' ')).not.toMatch(/document is certified|identity is valid/)
+    }
+  })
+
+  it('does not take /Perms /DocMDP naming a document timestamp as a certification', async () => {
+    const { report, r } = await validate('doctimestamp-perms.pdf')
+    expect(r.kind).toBe('timestamp')
+    expect(r.permission).toBeNull()
+    expect(r.problems).toEqual([])
+    expect(r.warnings.join(' ')).toMatch(/names this timestamp as its certification/)
+    expect(report.certified).toBeNull()
+    expect(report.certifiedBy).toBeNull()
+    // /Perms names no permission without a reference: nothing to lock.
+    expect(report.locked).toBe(false)
+    const trusted = new Set([await sha('tsa-root')])
+    const st = signatureStatus(r, trusted)
+    expect(st.level).toBe('warning')
+    expect(st.details.join(' ')).not.toMatch(/document is certified/)
+  })
+})
+
+describe('RFC 3161 token content type', () => {
+  it('does not accept a document timestamp token whose content is not marked as TSTInfo', async () => {
+    // ../doctimestamp-econtent.pdf: a genuine TSTInfo from tsa, signed by tsa, but encapsulated as
+    // id-data instead of id-ct-TSTInfo.
+    const name = 'doctimestamp-econtent.pdf'
+    const engine = await createLocalEngine()
+    const res = await engine.ops<typeof docOps>('doc').open(new Uint8Array(readFileSync(join(DIR, '..', name))), { fileName: name })
+    expect(res.ok).toBe(true)
+    const report = await engine.ops<typeof sigOps>('digital-signatures').validate()
+    const r = report.signatures[0]
+    expect(r.kind).toBe('timestamp')
+    expect(r.problems.join(' ')).toMatch(/does not hold timestamp information/)
+    expect(r.timestamp).toBeNull()
+    expect(r.integrity).not.toBe(true)
+    const trusted = new Set([(await describeCertificate(cert('tsa-root'))).sha256])
+    expect(signatureStatus(r, trusted).level).toBe('invalid')
+    expect(timestampTrusted(r, trusted)).toBe(false)
+  })
+})
