@@ -792,4 +792,32 @@ describe('regular expression analysis', () => {
     const ahead = analysePattern('(?=a*a*)b', 'y')
     expect(matchCost(ahead, false, true, text, 1000)).toBeLessThan(matchCost(ahead, false, true, text, 0))
   })
+
+  it('counts the assertions V8 compiles as a choice, and limits the compile work', () => {
+    // Only Electron's V8 takes long on these (tests/engine/forms-fill-js-electron.test.ts runs
+    // them there); check the analysis here as well.
+    const chain = (unit: string, n: number) => `(?:${unit}|)`.repeat(n) + 'x'
+    const refused = (src: string, flags: string) => !(matchCost(analysePattern(src, flags), false, false, '', 0) < Infinity)
+    for (const [src, flags] of [
+      [chain('\\b', 14), 'iu'],
+      [chain('\\B', 14), 'iu'],
+      [chain('(?i:\\b)', 14), 'u'],
+      [chain('$', 14), 'imu'],
+      [chain('^', 14), 'mi'],
+      [chain('(?m:$)', 14), 'iu'],
+      [chain('(?i:(?m:^))', 14), 'u'],
+      [chain('', 20), '']
+    ])
+      expect(refused(src, flags), `/${src}/${flags}`).toBe(true)
+    // Short chains, and the same assertions where V8 compiles them plainly.
+    for (const [src, flags] of [
+      [chain('\\b', 8), 'iu'],
+      [chain('\\b', 14), 'i'],
+      [chain('$', 14), 'i'],
+      [chain('(?-m:$)', 14), 'mi'],
+      [`(?m:a)${chain('$', 14)}`, 'i'],
+      [chain('', 14), '']
+    ])
+      expect(refused(src, flags), `/${src}/${flags}`).toBe(false)
+  })
 })

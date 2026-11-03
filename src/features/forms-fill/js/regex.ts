@@ -14,12 +14,13 @@
  *   (`\u{2}` is `u{2}` there), by a parser of its own: a pattern is never handed to V8's
  *   backtracking engine (which compiles it on its first match, in time that can itself grow
  *   exponentially with the pattern) before these checks pass. One it cannot read exactly is
- *   refused. So are those that can take
- *   exponential time: backreferences, and a repeated group whose body can match in more than one
- *   way (`(a+)+`, `(a|ab)*`). For the rest,
- *   one match attempt is bounded by a polynomial: size * c * (n + 1)^k, where k counts the
- *   unbounded quantifiers (plus one when the match can start at any position) and c the choices
- *   of counted quantifiers and alternations.
+ *   refused. So are those that can take exponential time: backreferences, and a repeated group
+ *   whose body can match in more than one way (`(a+)+`, `(a|ab)*`). For the rest, one match
+ *   attempt is bounded by a polynomial: size * c * (n + 1)^k, where k counts the unbounded
+ *   quantifiers (plus one when the match can start at any position) and c the choices of counted
+ *   quantifiers and alternations (and the assertions V8 compiles as a choice: word boundaries
+ *   with the `u` flag, ^ and $ in multiline mode). Compiling the pattern takes about size * c,
+ *   which has a lower limit of its own.
  *
  * Every native match goes through `exec` (String.prototype.replace/split/match/search call it for
  * each match, split once per position), so each one is checked before it starts: one that could
@@ -57,12 +58,23 @@ interface Cost {
 }
 
 const ZERO: Cost = { k: 0, logC: 0, size: 1, variable: false }
+/**
+ * An assertion V8 compiles as a choice of lookarounds (see `atom`). Only one way can succeed, so
+ * matching is not ambiguous, but compiling follows each one.
+ */
+const BOUNDARY: Cost = { k: 0, logC: Math.log(2), size: 4, variable: false }
 const MAX_PATTERN = 2000
 
 /** Most work one linear-engine match may do: about (n + 1) * (size + 1). Tens of ms at worst. */
 export const MAX_LINEAR_MATCH = 1e7
 /** Most work one backtracking match may do (the polynomial bound above). */
 export const MAX_BACKTRACKING_MATCH = 5e7
+/**
+ * Most work compiling a pattern for the backtracking engine may do (`compileCost`). Compiling is
+ * one native step that the time budget cannot stop: measured on Electron's V8, this is at most
+ * about 50 ms.
+ */
+export const MAX_BACKTRACKING_COMPILE = 5e6
 /** Milliseconds of matching allowed per event (document load, click, keystroke, agent fill). */
 export const REGEX_TIME_BUDGET_MS = 250
 
@@ -91,10 +103,15 @@ class PatternParser {
   groups = 0
   /** A lookbehind was seen. */
   lookbehind = false
+  /** ^ and $ match at line ends here (the `m` flag, or inside a `(?m:)` group). */
+  private multiline: boolean
   constructor(
     private readonly src: string,
-    private readonly unicode: boolean
-  ) {}
+    private readonly unicode: boolean,
+    multiline: boolean
+  ) {
+    this.multiline = multiline
+  }
 
   parse(): PatternInfo {
     const r = this.alternation()
@@ -150,6 +167,7 @@ class PatternParser {
     const c = s[this.i]
     if (c === '(') {
       this.i++
+      const multiline = this.multiline
       if (s[this.i] === '?') {
         const head = /\?(?::|=|!|<=|<!|<([^>]*)>|[a-zA-Z]*(?:-[a-zA-Z]*)?:)/y
         head.lastIndex = this.i
@@ -160,10 +178,17 @@ class PatternParser {
         } else {
           if (m[1] !== undefined) this.groups++
           if (m[0].startsWith('?<=') || m[0].startsWith('?<!')) this.lookbehind = true
+          // Modifiers: (?m:) turns multiline on in the group, (?-m:) off.
+          const [on, off = ''] = m[0].slice(1, -1).split('-')
+          if (/^[a-zA-Z]*$/.test(on) && /^[a-zA-Z]*$/.test(off)) {
+            if (on.includes('m')) this.multiline = true
+            if (off.includes('m')) this.multiline = false
+          }
           this.i += m[0].length
         }
       } else this.groups++
       const body = this.alternation().cost
+      this.multiline = multiline
       if (s[this.i] !== ')') throw this.unsupported()
       this.i++
       return { ...body, size: body.size + 1 }
@@ -177,11 +202,20 @@ class PatternParser {
       return ZERO
     }
     if (c === '\\') {
+      const d = s[this.i + 1]
       this.escape()
+      // With the u flag, V8 compiles a word boundary (when case is ignored, which a (?i:) group
+      // can turn on anywhere) as a choice between two pairs of lookarounds.
+      if (this.unicode && (d === 'b' || d === 'B')) return BOUNDARY
       return ZERO
     }
     // Quantifier characters cannot start an atom (V8 refuses those patterns).
     if (c === '*' || c === '+' || c === '?') this.inexact ??= 'quantifier'
+    // In multiline mode V8 compiles ^ and $ as a choice too (a line end or the end of the text).
+    if ((c === '^' || c === '$') && this.multiline) {
+      this.i++
+      return BOUNDARY
+    }
     // ^ $ . and literal characters (including a { } or ] that is not part of a quantifier or class).
     this.i++
     return ZERO
@@ -280,7 +314,7 @@ export function analysePattern(source: string, flags: string): PatternInfo {
   const key = `${flags}/${source}`
   const known = recent.get(key)
   if (known) return known
-  const parser = new PatternParser(source, flags.includes('u'))
+  const parser = new PatternParser(source, flags.includes('u'), flags.includes('m'))
   const info = parser.parse()
   if (parser.inexact) info.inexact = parser.inexact
   // The work per position is at least the length of the pattern, whatever the analysis says.
@@ -315,10 +349,18 @@ export function matchCost(info: PatternInfo, linear: boolean, sticky: boolean, i
   // A lookbehind can read the text before `start` as well.
   const rest = (info.lookbehind ? input.length : Math.max(0, input.length - start)) + 1
   if (linear) return rest * (info.size + 1)
+  // V8 compiles the pattern for its backtracking engine on the first match, in time that can grow
+  // with the choices it has to follow even where they consume no text (`(?:|)` repeated).
+  if (compileCost(info) > MAX_BACKTRACKING_COMPILE) return Infinity
   // A search tries every position from `start`; ^ fails at once at all but the first.
   const fixed = sticky || info.anchored
   const attempt = Math.exp(info.logC) * rest ** (info.k + (fixed ? 0 : 1))
   return (info.size + 1) * (attempt + rest)
+}
+
+/** Work V8 may do compiling a pattern for the backtracking engine, in rough tens of ns. */
+export function compileCost(info: PatternInfo): number {
+  return Math.exp(info.logC) * (info.size + 1)
 }
 
 /** Tracks the time native matches take during one event (see the comment at the top). */
