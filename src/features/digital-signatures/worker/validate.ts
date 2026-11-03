@@ -1,8 +1,9 @@
 /** Signature validation against the exact bytes the document was opened from. */
-import type { PDFObject, Session } from '@engine/session'
+import type { PDFDocument, PDFObject, Session } from '@engine/session'
 import { isNull, parsePdfDate, readName, readNumber, readString } from '@engine/util/pdf'
 import { Asn1Error, bytesEqual, contentOf, parseAsn1 } from '../lib/asn1'
 import { verifySignedData, parseTstInfo, type CmsVerification } from '../lib/cms'
+import { OID } from '../lib/oids'
 import { CryptoUnsupportedError, digest, parsePublicKey, rsaPkcs1Verify } from '../lib/crypto'
 import {
   checkByteRange,
@@ -13,12 +14,14 @@ import {
   revisionNumberAt,
   signedBytes,
   sizeAt,
-  type RevisionInfo
+  type RevisionInfo,
+  type XrefEntryType
 } from '../lib/pdfbytes'
-import { buildChain, describeCertificate, displayName, parseCertificate, type Certificate } from '../lib/x509'
+import { buildChain, describeCertificate, displayName, isTimestampAuthority, parseCertificate, type Certificate } from '../lib/x509'
 import type { MdpPermission, SignatureReport, ValidationReport } from '../types'
 import { describeChanges } from './changes'
-import { certification, listSignatureFields, lockInfo, readReferences, type SigField } from './fields'
+import { certification, listSignatureFields, lockInfo, readReferences, safe, signedFieldIn, type SigField } from './fields'
+import { laterUpdatesOtherThanSigning } from './later'
 
 function readByteRange(v: PDFObject): number[] {
   const raw = v.get('ByteRange')
@@ -37,6 +40,22 @@ interface Context {
   certified: { permission: MdpPermission; sigNum: number } | null
   /** Revision end of the certification signature (changes after it are governed by DocMDP). */
   certEnd: number
+  /** MuPDF had to repair the file: it does not read it the way its cross-reference sections say. */
+  repaired: boolean
+  /** Signatures followed by later updates, to check once every signature is verified. */
+  later: { r: SignatureReport; changed: Map<number, XrefEntryType> }[]
+  /** Object number of each report's signature dictionary. */
+  vNums: Map<SignatureReport, number>
+  /** The signature value the catalog's /Perms /DocMDP names when it is a timestamp (not a certification), else -1. */
+  rejectedCertification: number
+}
+
+/**
+ * A document timestamp, or a signature value in the RFC 3161 token format. Neither can certify a
+ * document: the token's signer is a time-stamping authority, not the author.
+ */
+function timestampLike(v: PDFObject): boolean {
+  return readName(v.get('Type')) === 'DocTimeStamp' || readName(v.get('SubFilter')) === 'ETSI.RFC3161'
 }
 
 function emptyReport(f: SigField, v: PDFObject): SignatureReport {
@@ -74,6 +93,9 @@ function emptyReport(f: SigField, v: PDFObject): SignatureReport {
     lock: lockInfo(f),
     changes: [],
     changesUnknown: false,
+    restrictionsUnknown: false,
+    laterUpdates: 'other',
+    permissionInForce: null,
     problems: [],
     warnings: [],
     unknownReason: null
@@ -90,11 +112,22 @@ async function verifyCms(r: SignatureReport, contents: Uint8Array, data: Uint8Ar
   }
   if (sub === 'ETSI.RFC3161') {
     const v = await verifySignedData(contents, null)
+    // The token must say that it holds timestamp information (id-ct-TSTInfo), not just hold bytes
+    // that happen to parse as one.
+    if (v.eContentType !== OID.tstInfo) throw new Asn1Error('The timestamp token does not hold timestamp information')
     if (!v.eContent) throw new Asn1Error('The timestamp token has no content')
     const info = parseTstInfo(v.eContent)
     const d = await digest(info.digestName, data)
     r.integrity = v.digestOk && bytesEqual(d, info.imprint)
-    r.timestamp = { time: info.time.toISOString(), authority: info.tsa || (v.signer ? displayName(v.signer.subject) : ''), valid: r.integrity && v.signatureOk }
+    // The authority's chain is the signature's own chain (r.certificates).
+    r.timestamp = {
+      time: info.time.toISOString(),
+      authority: info.tsa || (v.signer ? displayName(v.signer.subject) : ''),
+      valid: r.integrity && v.signatureOk,
+      authorityOk: isTimestampAuthority(v.signer, info.time),
+      certificates: [],
+      chainVerified: []
+    }
     r.signingTime = info.time.toISOString()
     return v
   }
@@ -127,7 +160,7 @@ async function verifyX509RsaSha1(r: SignatureReport, v: PDFObject, contents: Uin
     return null
   }
   const d = await digest('SHA-1', data)
-  const ok = rsaPkcs1Verify(parsePublicKey(signer.publicKey.spki), sig, d) !== null
+  const ok = rsaPkcs1Verify(parsePublicKey(signer.publicKey.spki), sig, d, 'SHA-1') !== null
   r.integrity = ok
   r.signatureValid = ok
   return signer
@@ -140,7 +173,10 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
   const docMdp = refs.find((x) => x.method === 'DocMDP')
   const vRef = f.field.resolve().get('V')
   const vNum = vRef.isIndirect() ? vRef.asIndirect() : f.fieldNum
-  if (docMdp || (ctx.certified && ctx.certified.sigNum === vNum)) {
+  ctx.vNums.set(r, vNum)
+  const tsLike = timestampLike(v)
+  // ctx.certified never names a timestamp (see validateSignatures).
+  if (!tsLike && (docMdp || (ctx.certified && ctx.certified.sigNum === vNum))) {
     r.kind = 'certification'
     r.permission = docMdp?.permission ?? ctx.certified?.permission ?? 2
   }
@@ -150,30 +186,128 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
     return r
   }
   const chk = await checkSignatureData(ctx, r, v, vNum)
+  // After the cached data checks, which replace problems and warnings.
+  if (tsLike && docMdp) {
+    r.problems.push(
+      'This timestamp carries a certification (DocMDP) reference, but a timestamp cannot certify a document. It is not treated as a certification.'
+    )
+  } else if (tsLike && ctx.rejectedCertification === vNum) {
+    r.warnings.push('The document names this timestamp as its certification, but a timestamp cannot certify a document. It is not treated as one.')
+  }
   if (!chk) return r
 
-  // Byte range must not have been tampered with by a later update of this signature dictionary.
-  if (ctx.revs && !r.coversWholeFile) {
-    const changed = objectsChangedAfter(ctx.revs, chk.end)
+  // Permission in force for this signature: certification (if signed at or after it) and lock.
+  const inForce = (): MdpPermission | null => {
+    let permission: MdpPermission | null = null
+    if (ctx.certified && chk.end >= ctx.certEnd && ctx.certEnd > 0) permission = ctx.certified.permission
+    if (r.lock?.permission) permission = permission ? (Math.min(permission, r.lock.permission) as MdpPermission) : r.lock.permission
+    return permission
+  }
+  r.permissionInForce = inForce()
+  if (r.coversWholeFile) {
+    r.laterUpdates = 'none'
+    return r
+  }
+  // Later updates: what they changed, judged by the rules in force when this signature was made.
+  // A repaired file is not read the way its cross-reference sections say, so its changes are unknown.
+  const changed = ctx.revs && !ctx.repaired ? objectsChangedAfter(src, ctx.revs, chk.end) : null
+  const before = openRevision(ctx.s, src, chk.end)
+  try {
+    if (!before) {
+      // Without the signed revision there is nothing to judge the changes by, not even the
+      // field lock or the certification the signer applied: the current document may have
+      // dropped them.
+      r.changesUnknown = true
+      r.restrictionsUnknown = true
+      return r
+    }
+    // The field lock as signed, read from the field that held this signature value in the signed
+    // revision: a later update can neither remove the lock nor move the value to another field.
+    const signedField = vRef.isIndirect() ? signedFieldIn(before, vNum) : null
+    if (signedField) r.lock = lockInfo(f, signedField)
+    else r.restrictionsUnknown = true
+    const permission = inForce()
+    r.permissionInForce = permission
     if (changed === null) {
       r.changesUnknown = true
-    } else {
-      if (changed.has(vNum) && changed.get(vNum) !== 'f') r.problems.push('The signature dictionary was changed after signing.')
-      // Permission in force for this signature: certification (if signed at or after it) and lock.
-      let permission: MdpPermission | null = null
-      if (ctx.certified && chk.end >= ctx.certEnd && ctx.certEnd > 0) permission = ctx.certified.permission
-      if (r.lock?.permission) permission = permission ? (Math.min(permission, r.lock.permission) as MdpPermission) : r.lock.permission
-      const lockedFields = r.lock ? (r.lock.action === 'All' ? '*' : r.lock.action === 'Include' ? r.lock.fields : null) : null
-      try {
-        r.changes = describeChanges(ctx.s.pdf, changed, sizeAt(ctx.revs, chk.end), { permission, lockedFields })
-      } catch {
-        r.changesUnknown = true
-      }
+      return r
     }
-  } else if (!ctx.revs && !r.coversWholeFile) {
-    r.changesUnknown = true
+    // Byte range must not have been tampered with by a later update of this signature dictionary.
+    if (changed.has(vNum) && changed.get(vNum) !== 'f') r.problems.push('The signature dictionary was changed after signing.')
+    try {
+      r.changes = describeChanges(ctx.s.pdf, changed, sizeAt(ctx.revs!, chk.end), { permission, lock: r.lock, before })
+    } catch {
+      r.changes = []
+      r.changesUnknown = true
+    }
+    // Reading the objects can make MuPDF repair the file (an entry that points to the wrong
+    // object); from then on it shows objects the cross-reference sections do not list.
+    if (wasRepaired(ctx.s.pdf) || wasRepaired(before)) {
+      ctx.repaired = true
+      r.changes = []
+      r.changesUnknown = true
+    }
+    if (!r.changesUnknown) ctx.later.push({ r, changed })
+  } finally {
+    before?.destroy()
   }
   return r
+}
+
+/**
+ * Decides, for each signature followed by later updates, whether those updates are only later
+ * signatures (laterUpdates 'signing'); it stays 'other' otherwise. The later signatures must have
+ * verified, and the newest of them must cover the whole file. See later.ts.
+ */
+function judgeLaterUpdates(ctx: Context, signatures: SignatureReport[]) {
+  const src = ctx.src!
+  const verified = signatures.filter((x) => x.integrity === true && x.signatureValid === true && !x.problems.length && x.revisionEnd > 0 && ctx.vNums.has(x))
+  const coveredBySignature = verified.some((x) => x.coversWholeFile)
+  const todo = coveredBySignature && !ctx.repaired ? ctx.later.filter((x) => !x.r.changesUnknown) : []
+  let now: PDFDocument | null = null
+  try {
+    if (todo.length) now = openRevision(ctx.s, src, src.length)
+    for (const { r, changed } of todo) {
+      const laterSigs = new Set(verified.filter((x) => x.revisionEnd > r.revisionEnd).map((x) => ctx.vNums.get(x)!))
+      if (!now || !laterSigs.size) continue
+      const before = openRevision(ctx.s, src, r.revisionEnd)
+      if (!before) continue
+      try {
+        const why = laterUpdatesOtherThanSigning(now, before, changed, laterSigs)
+        if (why === null && !wasRepaired(now) && !wasRepaired(before)) r.laterUpdates = 'signing'
+      } finally {
+        before.destroy()
+      }
+    }
+  } finally {
+    now?.destroy()
+  }
+  // A change describeChanges has nothing to say about (an object MuPDF reads without any
+  // reference to it, for one) is still a change.
+  for (const r of signatures) {
+    if (r.laterUpdates === 'other' && !r.coversWholeFile && r.revisionEnd > 0 && !r.changesUnknown && !r.changes.length) {
+      r.changes.push({ category: 'other', allowed: false, description: 'Other parts of the document were changed' })
+    }
+  }
+}
+
+function wasRepaired(pdf: PDFDocument): boolean {
+  return safe(() => pdf.wasRepaired(), true)
+}
+
+/** The signed revision (the file up to `end`) opened on its own, or null. */
+function openRevision(s: Session, src: Uint8Array, end: number): PDFDocument | null {
+  let doc: PDFDocument | null = null
+  try {
+    doc = new s.mupdf.PDFDocument(src.slice(0, end))
+    if (doc.needsPassword() && !(s.password && doc.authenticatePassword(s.password))) throw new Error('password')
+    return doc
+  } catch {
+    try {
+      doc?.destroy()
+    } catch {}
+    return null
+  }
 }
 
 /** Report fields that only depend on the file bytes and the signature value (cached per file). */
@@ -250,6 +384,20 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
   const holder = objectAt(src, r.byteRange[1])
   if (holder !== null && holder !== vNum) r.problems.push('The signed data does not belong to this signature field.')
 
+  // A document timestamp is an RFC 3161 token signed by the authority, and an RFC 3161 token is
+  // only a document timestamp. Any other combination is malformed and is not checked further: its
+  // signer is no time-stamping authority, and no time in it can be relied on.
+  const docTimeStamp = readName(v.get('Type')) === 'DocTimeStamp'
+  if (docTimeStamp !== (r.subFilter === 'ETSI.RFC3161')) {
+    r.problems.push(
+      docTimeStamp
+        ? 'This document timestamp is not an RFC 3161 timestamp (its format is not ETSI.RFC3161), so it cannot be checked.'
+        : 'This signature uses the document timestamp format (ETSI.RFC3161) but is not a document timestamp, so it cannot be checked.'
+    )
+    if (!r.signerName) r.signerName = 'Unknown signer'
+    return { end: chk.end }
+  }
+
   const data = signedBytes(src, r.byteRange)
   let signer: Certificate | null = null
   let pool: Certificate[] = []
@@ -266,7 +414,18 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
         signer = ver.signer
         pool = ver.certificates
         if (ver.signingTime && r.kind !== 'timestamp') r.signingTime = ver.signingTime.toISOString()
-        if (ver.timestamp) r.timestamp = { time: ver.timestamp.time.toISOString(), authority: ver.timestamp.authority, valid: ver.timestamp.valid }
+        // An RFC 3161 token's authority is the token's own signer (set by verifyCms). A token
+        // nested in its SignerInfo is not that authority and is ignored.
+        if (ver.timestamp && r.subFilter !== 'ETSI.RFC3161') {
+          r.timestamp = {
+            time: ver.timestamp.time.toISOString(),
+            authority: ver.timestamp.authority,
+            valid: ver.timestamp.valid,
+            authorityOk: ver.timestamp.authorityOk,
+            certificates: await Promise.all(ver.timestamp.chain.map((l) => describeCertificate(l.cert))),
+            chainVerified: ver.timestamp.chain.map((l) => l.verified)
+          }
+        }
         if (ver.signingCertificateOk === false) r.problems.push('The signing-certificate reference in the signature does not match the certificate.')
         if (!signer) r.problems.push("The signer's certificate is missing from the signature.")
       }
@@ -279,17 +438,17 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
   if (r.signatureValid === false && r.integrity !== false) r.problems.push('The signature value does not match the signer’s certificate.')
 
   if (signer) {
-    const { chain, complete } = await buildChain(signer, pool)
+    const when = r.timestamp?.valid ? new Date(r.timestamp.time) : r.signingTime ? new Date(r.signingTime) : new Date()
+    const { chain, complete } = await buildChain(signer, pool, when)
     r.chainComplete = complete
     r.chainVerified = chain.map((l) => l.verified)
     r.certificates = await Promise.all(chain.map((l) => describeCertificate(l.cert)))
     if (!r.signerName || r.kind !== 'timestamp') r.signerName = displayName(signer.subject)
-    const when = r.timestamp?.valid ? new Date(r.timestamp.time) : r.signingTime ? new Date(r.signingTime) : new Date()
     r.certValidAtSigning = when >= signer.notBefore && when <= signer.notAfter
     r.certExpiredNow = Date.now() > signer.notAfter.getTime()
     if (r.certValidAtSigning === false) r.warnings.push("The signer's certificate was not valid at the signing time.")
     const brokenLink = r.chainVerified.findIndex((ok, i) => !ok && (i < chain.length - 1 || complete))
-    if (brokenLink >= 0) r.warnings.push('A certificate in the chain does not verify against its issuer.')
+    if (brokenLink >= 0) r.warnings.push('A certificate in the chain was not validly issued by the next one (its signature does not verify, or the issuer may not issue certificates).')
   }
   if (!r.signerName) r.signerName = 'Unknown signer'
   return { end: chk.end }
@@ -313,13 +472,41 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
   const src = s.sourceBytes
   // Only signed documents need the revision structure of the file.
   const revs: RevisionInfo | null = src && fields.some((f) => f.signed) ? await revisionsOf(src) : null
-  const certified = certification(pdf)
-  const ctx: Context = { s, src, revs, certified, certEnd: 0 }
-  if (certified && src) {
-    const certField = fields.find((f) => {
+  // The certification is the signature whose own (signed) dictionary carries a DocMDP reference;
+  // the catalog's /Perms can be changed or removed by a later update.
+  let certified: Context['certified'] = null
+  let certAt = Infinity
+  for (const f of fields.filter((x) => x.signed)) {
+    const vRef = f.field.resolve().get('V')
+    // A timestamp with a DocMDP reference is reported as a problem by validateOne, not a certification.
+    if (timestampLike(vRef.resolve())) continue
+    const ref = readReferences(vRef).find((x) => x.method === 'DocMDP')
+    const br = readByteRange(vRef.resolve())
+    const at = br.length === 4 ? br[2] + br[3] : Infinity
+    if (ref && (!certified || at < certAt)) {
+      certified = { permission: ref.permission ?? 2, sigNum: vRef.isIndirect() ? vRef.asIndirect() : f.fieldNum }
+      certAt = at
+    }
+  }
+  const signedValue = (sigNum: number) =>
+    fields.find((f) => {
       const v = f.field.resolve().get('V')
-      return v.isIndirect() && v.asIndirect() === certified.sigNum
+      return v.isIndirect() && v.asIndirect() === sigNum
     })
+  // /Perms /DocMDP naming a timestamp does not make it a certification either.
+  let rejected: Context['certified'] = null
+  if (!certified) {
+    certified = certification(pdf)
+    const named = certified ? signedValue(certified.sigNum) : undefined
+    if (certified && named && timestampLike(named.field.resolve().get('V').resolve())) {
+      rejected = certified
+      certified = null
+    }
+  }
+  const repaired = !!src && wasRepaired(pdf)
+  const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired, later: [], vNums: new Map(), rejectedCertification: rejected?.sigNum ?? -1 }
+  if (certified && src) {
+    const certField = signedValue(certified.sigNum)
     if (certField) {
       const br = readByteRange(certField.field.resolve().get('V').resolve())
       if (br.length === 4) ctx.certEnd = br[2] + br[3]
@@ -336,6 +523,15 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
       signatures.push(r)
     }
   }
+  // A repair while checking one signature also affects the ones checked before it.
+  if (src && wasRepaired(pdf)) {
+    for (const r of signatures) {
+      if (r.coversWholeFile || !r.revisionEnd) continue
+      r.changes = []
+      r.changesUnknown = true
+    }
+  }
+  if (src) judgeLaterUpdates(ctx, signatures)
   signatures.sort((a, b) => (a.revisionEnd || Infinity) - (b.revisionEnd || Infinity))
   signatures.forEach((r, i) => (r.signedVersion = i + 1))
   const certSig = signatures.find((x) => x.kind === 'certification')
@@ -347,7 +543,8 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
     revisionCount: revs?.sections.length ?? 0,
     certified: certified?.permission ?? null,
     certifiedBy: certSig?.signerName ?? null,
-    locked: locked || certified?.permission === 1,
+    // A rejected certification that allows no changes still keeps the document locked.
+    locked: locked || certified?.permission === 1 || rejected?.permission === 1,
     validatedAt: Date.now()
   }
 }

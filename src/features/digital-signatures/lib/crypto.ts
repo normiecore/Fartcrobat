@@ -1,7 +1,7 @@
 /**
  * Cryptographic primitives on top of WebCrypto (available in the renderer, the engine worker and
- * Node). RSA PKCS#1 v1.5 verification is done with BigInt so that any digest in the DigestInfo is
- * accepted (WebCrypto is strict about the encoding and lacks MD5/SHA-224).
+ * Node). RSA PKCS#1 v1.5 verification is done with BigInt so that the digest is not tied to the key
+ * (WebCrypto fixes it at import), comparing the exact encoding.
  */
 import {
   Asn1Error,
@@ -216,33 +216,33 @@ function bigIntToBytes(v: bigint, len: number): Uint8Array {
 }
 
 /**
- * RSA PKCS#1 v1.5 signature check. Returns the digest algorithm found in the DigestInfo when the
- * signature matches `expectedDigest`, or null.
+ * RSA PKCS#1 v1.5 signature check (RFC 8017 8.2.2). The decoded block must be exactly the
+ * EMSA-PKCS1-v1_5 encoding of `expectedDigest` for `digestName`, with the DigestInfo parameters
+ * either NULL or absent. Returns the digest name when the signature matches, or null.
  */
-export function rsaPkcs1Verify(key: PublicKeyInfo, signature: Uint8Array, expectedDigest: Uint8Array): DigestName | null {
+export function rsaPkcs1Verify(key: PublicKeyInfo, signature: Uint8Array, expectedDigest: Uint8Array, digestName: DigestName): DigestName | null {
   if (!key.modulus || !key.exponent) return null
   const k = Math.ceil(key.bits / 8)
   if (signature.length > k) return null
   const s = bytesToBigInt(signature)
   if (s >= key.modulus) return null
   const em = bigIntToBytes(modPow(s, key.exponent, key.modulus), k)
-  if (em[0] !== 0 || em[1] !== 1) return null
-  let i = 2
-  while (i < em.length && em[i] === 0xff) i++
-  if (i < 10 || em[i] !== 0) return null
-  const t = em.subarray(i + 1)
-  try {
-    const info = parseAsn1(t)
-    if (info.end !== t.length) return null
-    const algOid = readOid(info.children[0].children[0])
-    const value = contentOf(expectUniversal(info.children[1], TAG.OCTET_STRING, 'digest'))
-    const name = DIGEST_BY_OID[algOid]
-    if (!name || !bytesEqual(value, expectedDigest)) return null
-    return name
-  } catch {
-    // adbe.x509.rsa_sha1 style: the bare digest without DigestInfo
-    return bytesEqual(t, expectedDigest) ? 'SHA-1' : null
+  const algOid = Object.keys(DIGEST_BY_OID).find((oid) => DIGEST_BY_OID[oid] === digestName)
+  if (!algOid) return null
+  const digestInfos = [
+    der.sequence(der.sequence(der.oid(algOid), der.null()), der.octetString(expectedDigest)),
+    der.sequence(der.sequence(der.oid(algOid)), der.octetString(expectedDigest))
+  ]
+  for (const t of digestInfos) {
+    const padLen = k - t.length - 3
+    if (padLen < 8) continue
+    const expected = new Uint8Array(k)
+    expected[1] = 0x01
+    expected.fill(0xff, 2, 2 + padLen)
+    expected.set(t, 3 + padLen)
+    if (bytesEqual(em, expected)) return digestName
   }
+  return null
 }
 
 export interface SignatureAlgorithm {
@@ -266,7 +266,7 @@ export async function verifySignature(
   const hashName = implied ?? digestName
   if (key.type === 'RSA' && alg.oid !== OID.rsaPSS) {
     const d = await digest(hashName, data)
-    return rsaPkcs1Verify(key, signature, d) !== null
+    return rsaPkcs1Verify(key, signature, d, hashName) !== null
   }
   if (alg.oid === OID.rsaPSS || key.type === 'RSA-PSS') {
     const pss = readPssParams(alg.params)

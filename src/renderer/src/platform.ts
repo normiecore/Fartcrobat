@@ -62,9 +62,12 @@ export function readFile(path: string): Promise<Uint8Array> {
   return invoke('file:read', path)
 }
 
-/** Writes a file atomically through the main process. */
-export function writeFile(path: string, data: Uint8Array): Promise<void> {
-  return invoke('file:write', path, data)
+/**
+ * Writes a file atomically through the main process. `fromDocument`: the bytes were taken out of
+ * a PDF (an attachment), so the file is marked as coming from the Internet.
+ */
+export function writeFile(path: string, data: Uint8Array, opts?: { fromDocument?: boolean }): Promise<void> {
+  return opts ? invoke('file:write', path, data, opts) : invoke('file:write', path, data)
 }
 
 /** Shows a native save dialog and writes the data there. Returns the chosen path or null. */
@@ -72,10 +75,11 @@ export async function saveBytesAs(
   data: Uint8Array,
   defaultName: string,
   filters: FileFilter[] = [PDF_FILTER],
-  title?: string
+  title?: string,
+  opts?: { fromDocument?: boolean }
 ): Promise<string | null> {
   const path = await invoke('file:saveDialog', { defaultPath: defaultName, filters, title })
   if (!path) return null
-  await writeFile(path, data)
+  await writeFile(path, data, opts)
   return path
 }

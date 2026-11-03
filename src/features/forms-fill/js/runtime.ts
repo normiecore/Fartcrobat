@@ -157,6 +157,12 @@ export class FormRuntime {
   readonly problems: ScriptProblem[] = []
   /** Set by scripts through this.calculate = false. */
   calculateEnabled = true
+  /**
+   * True while a script runs because of the person's own click or typing (button actions,
+   * keystroke and commit checks). Printing, saving, importing, exporting, submitting and opening
+   * links are only allowed then, never from document-level, format or calculation scripts.
+   */
+  private userAction = false
 
   constructor(
     snapshot: FormSnapshot,
@@ -197,6 +203,8 @@ export class FormRuntime {
       alert: (m) => this.alerts.push(m)
     }
     this.interp = new Interpreter({ ...createAFLibrary(afHost), ...this.globals() })
+    // Opening the document is one event: all its document-level scripts share one time budget.
+    this.interp.beginEvent()
     for (const src of snapshot.docScripts ?? []) {
       try {
         this.interp.run(src, { scope: this.interp.global, thisValue: this.docObject, globalObject: this.docObject })
@@ -257,7 +265,22 @@ export class FormRuntime {
       this.problems.push({ field, event, message, unsupported })
   }
 
-  private run(name: string, eventName: string, script: string, init: Record<string, JsValue>): EventObject | null {
+  /**
+   * Starts an event: the scripts that run until the next one (for example a commit, then the
+   * formatting and calculations it causes) share one time budget. Call it as each click,
+   * keystroke or agent request starts handling.
+   */
+  beginEvent() {
+    this.interp.beginEvent()
+  }
+
+  /** Runs `fn` only when the running script was started by the person (see `userAction`). */
+  whenUserAction(what: string, fn: () => void) {
+    if (this.userAction) fn()
+    else console.warn(`[forms-fill] Ignored ${what} from a script that did not run on a click or keystroke`)
+  }
+
+  private run(name: string, eventName: string, script: string, init: Record<string, JsValue>, userAction = false): EventObject | null {
     const ev = new EventObject({
       name: eventName,
       type: 'Field',
@@ -270,7 +293,9 @@ export class FormRuntime {
       ...init
     })
     const prev = this.current
+    const prevUserAction = this.userAction
     this.current = ev
+    this.userAction = userAction
     this.interp.global.vars.set('event', ev)
     try {
       this.interp.run(script, { thisValue: this.docObject, globalObject: this.docObject })
@@ -280,6 +305,7 @@ export class FormRuntime {
       return null
     } finally {
       this.current = prev
+      this.userAction = prevUserAction
       this.interp.global.vars.set('event', prev ?? undefined)
     }
   }
@@ -307,17 +333,20 @@ export class FormRuntime {
       willCommit: false,
       fieldFull: false,
       commitKey: 0
-    })
+    }, true)
     const alerts = this.takeAlerts()
     if (!ev) return { rc: true, change: k.change, alerts }
     return { rc: ev.rc, change: ev.change, alerts }
   }
 
   /**
-   * Final keystroke check and validation when the user commits a value. Returns the value to
-   * store (scripts may normalise it) or rc=false with Acrobat's message.
+   * Final keystroke check and validation when a value is committed. Returns the value to store
+   * (scripts may normalise it) or rc=false with Acrobat's message. `userAction` says whether the
+   * person typed or chose the value (not an AI app over agent access): only then may the scripts
+   * print, save, submit or open links.
    */
-  commit(name: string, value: string): { rc: boolean; value: string; alerts: string[] } {
+  commit(name: string, value: string, opts: { userAction?: boolean } = {}): { rc: boolean; value: string; alerts: string[] } {
+    const userAction = opts.userAction ?? false
     const f = this.fields.get(name)
     if (!f) return { rc: true, value, alerts: [] }
     let v = value
@@ -331,12 +360,12 @@ export class FormRuntime {
         willCommit: true,
         fieldFull: false,
         commitKey: 2
-      })
+      }, userAction)
       if (ev && !ev.rc) return { rc: false, value, alerts: this.takeAlerts() }
       if (ev) v = valueToString(ev.value)
     }
     if (f.scripts.validate) {
-      const ev = this.run(name, 'Validate', f.scripts.validate, { value: v, willCommit: true, change: '' })
+      const ev = this.run(name, 'Validate', f.scripts.validate, { value: v, willCommit: true, change: '' }, userAction)
       if (ev && !ev.rc) return { rc: false, value, alerts: this.takeAlerts() }
       if (ev) v = valueToString(ev.value)
     }
@@ -410,7 +439,7 @@ export class FormRuntime {
     }
   }
 
-  /** Runs a button or document action script. */
+  /** Runs a button action script (the person clicked the button or pressed a key on it). */
   runAction(script: string, targetName = ''): { alerts: string[]; error?: string; changes: FieldChange[] } {
     this.scriptWrites.clear()
     this.propWrites.clear()
@@ -422,7 +451,9 @@ export class FormRuntime {
       rc: true
     })
     const prev = this.current
+    const prevUserAction = this.userAction
     this.current = ev
+    this.userAction = true
     this.interp.global.vars.set('event', ev)
     let error: string | undefined
     try {
@@ -432,6 +463,7 @@ export class FormRuntime {
       this.problem(targetName, 'Mouse Up', err)
     } finally {
       this.current = prev
+      this.userAction = prevUserAction
       this.interp.global.vars.set('event', prev ?? undefined)
     }
     const changes = this.collectChanges(new Map(this.scriptWrites))
@@ -496,14 +528,16 @@ export class FormRuntime {
       beep: nf('beep', () => undefined),
       launchURL: nf('launchURL', (a) => {
         const url = toStr(a[0] instanceof JsObject ? a[0].props.get('cURL') : a[0])
-        if (host.launchURL) host.launchURL(url)
-        else notSupported('Opening web links')
+        this.whenUserAction('app.launchURL', () => {
+          if (host.launchURL) host.launchURL(url)
+          else notSupported('Opening web links')
+        })
         return undefined
       }),
       execMenuItem: nf('execMenuItem', (a) => {
         const item = toStr(a[0])
-        if (/print/i.test(item) && host.print) host.print()
-        else if (/^save/i.test(item) && host.save) host.save()
+        if (/print/i.test(item) && host.print) this.whenUserAction(`app.execMenuItem("${item}")`, () => host.print?.())
+        else if (/^save/i.test(item) && host.save) this.whenUserAction(`app.execMenuItem("${item}")`, () => host.save?.())
         else if (/nextpage/i.test(item)) host.gotoPage?.((host.currentPage?.() ?? 0) + 1)
         else if (/prevpage/i.test(item)) host.gotoPage?.((host.currentPage?.() ?? 0) - 1)
         else if (/firstpage/i.test(item)) host.gotoPage?.(0)
@@ -592,8 +626,10 @@ class DocObject extends HostObject {
         })
       case 'print':
         return nf('print', () => {
-          if (host.print) host.print()
-          else host.notSupported?.('Printing')
+          rt.whenUserAction('print()', () => {
+            if (host.print) host.print()
+            else host.notSupported?.('Printing')
+          })
           return undefined
         })
       case 'pageNum':
@@ -605,8 +641,10 @@ class DocObject extends HostObject {
       case 'submitForm':
         return nf('submitForm', (a) => {
           const url = a[0] instanceof JsObject ? toStr(a[0].props.get('cURL') ?? '') : toStr(a[0] ?? '')
-          if (host.submitForm) host.submitForm(url)
-          else host.notSupported?.('Submitting forms')
+          rt.whenUserAction('submitForm()', () => {
+            if (host.submitForm) host.submitForm(url)
+            else host.notSupported?.('Submitting forms')
+          })
           return undefined
         })
       case 'mailForm':
@@ -618,21 +656,21 @@ class DocObject extends HostObject {
         })
       case 'saveAs':
         return nf('saveAs', () => {
-          if (host.save) host.save()
+          rt.whenUserAction('saveAs()', () => host.save?.())
           return undefined
         })
       case 'exportAsFDF':
       case 'exportAsXFDF':
       case 'exportAsText':
         return nf(name, () => {
-          if (host.exportData) host.exportData()
+          rt.whenUserAction(`${name}()`, () => host.exportData?.())
           return undefined
         })
       case 'importAnFDF':
       case 'importAnXFDF':
       case 'importTextData':
         return nf(name, () => {
-          if (host.importData) host.importData()
+          rt.whenUserAction(`${name}()`, () => host.importData?.())
           return undefined
         })
       case 'dirty':

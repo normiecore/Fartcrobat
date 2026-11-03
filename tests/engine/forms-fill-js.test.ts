@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { setFlagsFromString } from 'node:v8'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FieldInfo } from '@engine/ops/forms'
 import { Interpreter, JsObject, NativeFunction, ScriptError, toStr, type JsValue } from '@features/forms-fill/js/interpreter'
 import { parse } from '@features/forms-fill/js/parser'
 import { formatNumber, guessDate, printd, printf, printx, scand } from '@features/forms-fill/js/util'
 import { makeNumber } from '@features/forms-fill/js/aform'
 import { FormRuntime, colorToHex, typedValue, valueToString, type RuntimeHost } from '@features/forms-fill/js/runtime'
+import { analysePattern, matchCost } from '@features/forms-fill/js/regex'
 
 function run(src: string, globals: Record<string, JsValue> = {}): JsValue {
   return new Interpreter(globals).run(src)
@@ -91,6 +93,43 @@ describe('JavaScript interpreter', () => {
     expect(run('var a = [3, 1, 2]; a.sort(); a.join("-")')).toBe('1-2-3')
     expect(run('[1, 2, 3].map(function (x) { return x * 2 }).reduce(function (s, x) { return s + x }, 0)')).toBe(12)
     expect(run('var keys = ""; var o = {x: 1, y: 2}; for (var k in o) keys += k; keys')).toBe('xy')
+  })
+
+  it('refuses regular expressions that can backtrack for ever, quickly', () => {
+    const start = Date.now()
+    const long = '"' + 'a'.repeat(5000) + '!"'
+    expect(() => run(`/(a+)+$/.test(${long})`)).toThrow(/nested repetition/)
+    expect(() => run(`new RegExp("(a|aa)*$").test(${long})`)).toThrow(/nested repetition/)
+    expect(() => run(`${long}.match("(\\\\w+\\\\s?)*$")`)).toThrow(/nested repetition/)
+    expect(() => run(`/(a)\\1*b/.test(${long})`)).toThrow(/backreference/)
+    // A document-level script runs as the document opens: it fails instead of hanging.
+    const rt = new FormRuntime({ fields: [], values: {}, calcOrder: [], docScripts: [`/(a+)+$/.test(${long})`] })
+    expect(rt.problems).toHaveLength(1)
+    expect(Date.now() - start).toBeLessThan(1000)
+  })
+
+  it('stops regular expressions whose work grows too fast with the text, even when caught', () => {
+    const start = Date.now()
+    const spaces = `var s = ""; for (var i = 0; i < 1000; i++) s += "          ";`
+    expect(() => run(`${spaces} /\\s*\\s*\\s*x/.test(s)`)).toThrow(/took too long/)
+    expect(() => run(`${spaces} s.replace(/\\s*\\s*x/g, "")`)).toThrow(/took too long/)
+    // Each call alone is allowed, but a loop around them (catching errors) runs out of budget.
+    const loop = `var s = ""; for (var i = 0; i < 50; i++) s += "          "; var re = /\\s*\\s*x/;
+      while (true) { try { re.test(s) } catch (e) {} }`
+    expect(() => run(loop)).toThrow(/took too long/)
+    expect(Date.now() - start).toBeLessThan(5000)
+  })
+
+  it('still runs everyday regular expressions', () => {
+    expect(run('"1234567".replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",")')).toBe('1,234,567')
+    expect(run('/^[\\w.+-]+@[\\w-]+\\.[\\w.-]+$/.test("someone@example.com")')).toBe(true)
+    expect(run('/^\\d{3}-\\d{2}-\\d{4}$/.test("123-45-6789")')).toBe(true)
+    expect(run('/^(\\d{1,3}\\.){3}\\d{1,3}$/.test("10.0.0.1")')).toBe(true)
+    expect(run('/^[+-]?\\d+(\\.\\d+)?$/.test("-3.25")')).toBe(true)
+    expect(run('"  x  ".replace(/^\\s+|\\s+$/g, "")')).toBe('x')
+    expect(run('"a, b,c".split(/\\s*,\\s*/).length')).toBe(3)
+    expect(run('"abc".search("c")')).toBe(2)
+    expect(run('"(555) 123".match(/\\d+/g).length')).toBe(2)
   })
 
   it('supports string, number and regex methods', () => {
@@ -493,6 +532,57 @@ describe('AForm functions through the form runtime', () => {
     expect(calls).toEqual(['print', 'reset:a', 'reset:all', 'submit:https://example.com/x', 'url:https://example.com', 'page:3', 'unsupported:Emailing forms'])
   })
 
+  it('only prints, saves, exports, imports, submits or opens links on a click or keystroke', () => {
+    const calls: string[] = []
+    const host: RuntimeHost = {
+      print: () => calls.push('print'),
+      save: () => calls.push('save'),
+      exportData: () => calls.push('export'),
+      importData: () => calls.push('import'),
+      submitForm: (url) => calls.push(`submit:${url}`),
+      launchURL: (url) => calls.push(`url:${url}`),
+      gotoPage: (p) => calls.push(`page:${p}`),
+      notSupported: (w) => calls.push(`unsupported:${w}`)
+    }
+    const everything =
+      'this.print(); print(); app.execMenuItem("Print"); app.execMenuItem("Save"); this.saveAs("/tmp/x.pdf"); ' +
+      'this.exportAsFDF(); this.importAnFDF(); this.submitForm("https://example.com/s"); app.launchURL("https://example.com/l");'
+    const rt = new FormRuntime(
+      {
+        fields: [
+          field('a', { scripts: { format: everything, calculate: everything } }),
+          field('b', { scripts: { keystroke: 'if (event.change == "p") this.print();', validate: 'app.launchURL("https://example.com/v");' } })
+        ],
+        values: { a: '1' },
+        calcOrder: ['a'],
+        docScripts: [everything + ' this.pageNum = 2;']
+      },
+      host
+    )
+    // Document-level scripts (on open), formatting (on render) and calculations do nothing.
+    rt.format('a')
+    rt.calculate()
+    expect(calls).toEqual(['page:2'])
+    // A button click may; a calculation it starts may not.
+    calls.length = 0
+    rt.runAction(everything + ' this.calculateNow();')
+    expect(calls).toEqual(['print', 'print', 'print', 'save', 'save', 'export', 'import', 'submit:https://example.com/s', 'url:https://example.com/l'])
+    // Typing and committing a value are the person's own actions too.
+    calls.length = 0
+    rt.keystroke('b', { value: '', change: 'p', selStart: 0, selEnd: 0 })
+    rt.commit('b', 'x', { userAction: true })
+    expect(calls).toEqual(['print', 'url:https://example.com/v'])
+    // A commit that is not the person's (an AI app filling the form) may not.
+    calls.length = 0
+    rt.commit('b', 'y')
+    rt.commit('b', 'z', { userAction: false })
+    expect(calls).toEqual([])
+    // After the click, functions defined by document scripts are blocked again.
+    calls.length = 0
+    rt.calculate()
+    expect(calls).toEqual([])
+  })
+
   it('records problems instead of failing on broken or unsupported scripts', () => {
     const rt = new FormRuntime({
       fields: [field('a', { scripts: { format: 'xfa.resolveNode("x")', keystroke: 'if (' } }), field('b', { scripts: { calculate: 'event.value = ;' } })],
@@ -524,5 +614,210 @@ describe('AForm functions through the form runtime', () => {
       calcOrder: ['out']
     })
     expect(rt.calculate().changes[0].value).toBe('Yes/pro/2/French/true')
+  })
+})
+
+/** Whether this V8 knows `(?i:)` groups (the app's does; older Node versions do not). */
+function modifiersSupported(): boolean {
+  try {
+    return new RegExp('(?i:a)').test('A')
+  } catch {
+    return false
+  }
+}
+
+/** Runs `src`; returns how long it took and the error it ended with, if any. */
+function timed(fn: () => unknown): { ms: number; error?: string } {
+  const start = performance.now()
+  try {
+    fn()
+    return { ms: performance.now() - start }
+  } catch (err) {
+    return { ms: performance.now() - start, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// The app's renderer has V8's linear-time regex engine turned on (src/main/index.ts); scripts must
+// be just as safe without it.
+describe.each([
+  ['the backtracking engine only', false],
+  ['the linear-time engine available', true]
+])('regular expressions in form scripts, with %s', (_name, linear) => {
+  beforeAll(() => setFlagsFromString(linear ? '--enable-experimental-regexp-engine' : '--no-enable-experimental-regexp-engine'))
+  afterAll(() => setFlagsFromString('--no-enable-experimental-regexp-engine'))
+
+  it('stops sticky and global matches that retry at every position, and long fixed sub-patterns', () => {
+    const attacks = [
+      'var s = " ".repeat(3000); s.split(/\\s*\\s*x/y)',
+      'var s = " ".repeat(4000); s.replace(/\\s*\\s*x|/gy, "")',
+      'var s = " ".repeat(3000); for (var j = 0; j < 10; j++) s.replace(/\\s*\\s*x|/gy, "")',
+      'var s = " ".repeat(3000); for (var j = 0; j < 10; j++) try { s.replace(/\\s*\\s*x|/gy, "") } catch (e) {}',
+      'var s = " ".repeat(4000); /^\\s*\\s*\\s{2000}x/.test(s)',
+      'var s = " ".repeat(4000); var re = new RegExp("\\\\s*\\\\s*x|", "g"); s.match(re)',
+      'var s = " ".repeat(4000); s.split(/(?=\\s*\\s*x)/)'
+    ]
+    for (const src of attacks) {
+      const r = timed(() => run(src))
+      expect(r.ms, src).toBeLessThan(1000)
+      if (r.error) expect(r.error, src).toMatch(/took too long/)
+    }
+  })
+
+  it('reads quantifiers the way V8 does, so none can hide from the checks', () => {
+    // Without the u flag, \\u{1,} is "u" repeated and {0001,} is {1,}; the i flag and (?i:)
+    // keep a pattern on the backtracking engine.
+    const zeros = '0'.repeat(40)
+    const attacks = [
+      String.raw`var s = "u".repeat(40) + "!"; /^(\u{1,})*$/i.test(s)`,
+      String.raw`var s = "p".repeat(40) + "!"; new RegExp("^(\\p{1,})*$", "i").test(s)`,
+      String.raw`var s = "P".repeat(40) + "!"; /^(\P{1,})*$/i.test(s)`,
+      String.raw`var s = "u".repeat(40) + "!"; /^(?i:\u{1,})*$/.test(s)`,
+      `var s = " ".repeat(40) + "!"; /^(\\s+){${zeros}1,}$/i.test(s)`,
+      `var s = " ".repeat(40) + "!"; /^(\\s+){0,${'9'.repeat(30)}}$/i.test(s)`,
+      String.raw`var s = "u".repeat(2900); /^.*.*\u{2000}x/i.test(s)`,
+      `var s = "u".repeat(2900); /^.*.*u{${zeros}2000}x/i.test(s)`,
+      String.raw`var s = "c".repeat(40) + "!"; /^(\c{1,})*$/i.test(s)`,
+      String.raw`var s = "x".repeat(40) + "!"; /^(\x{1,})*$/i.test(s)`
+    ]
+    for (const src of attacks) {
+      const r = timed(() => run(src))
+      expect(r.ms, src).toBeLessThan(500)
+      // ((?i:) groups are new in V8: older versions refuse the pattern itself.)
+      expect(r.error, src).toMatch(/took too long|nested repetition|not supported|Invalid regular expression \/\^\(\?i:/)
+    }
+    // A construct the analysis does not read exactly (here a legacy octal escape) is refused.
+    expect(timed(() => run(String.raw`/^\01+$/i.test("x")`)).error).toMatch(/not supported/)
+    // The same patterns still match what V8 matches when they are cheap.
+    expect(run(String.raw`/^\u{3}$/i.test("UUU")`)).toBe(true)
+    expect(run(String.raw`/^\p{2}\P$/i.test("ppP")`)).toBe(true)
+    expect(run(String.raw`/^\u{41}+$/u.test("AAA")`)).toBe(true)
+    expect(run(`/^a{${zeros}2}$/i.test("AA")`)).toBe(true)
+    if (modifiersSupported()) expect(run(String.raw`/^(?i:ab)c$/.test("ABc")`)).toBe(true)
+  })
+
+  it('never hands a pattern to the backtracking engine before checking it', () => {
+    // V8 compiles a pattern for its backtracking engine on the first match, and the compiling
+    // alone doubles in time with each empty alternation (no quantifier needed).
+    const chain = '(?:|)'.repeat(40) + 'x'
+    const scripts = [
+      `/${chain}/.test("y")`,
+      `new RegExp("${chain}").test("y")`,
+      `"y".match("${chain}")`,
+      `"y".search("${chain}")`,
+      `/${'(?:^|$)'.repeat(40)}x/.test("y")`
+    ]
+    for (const src of scripts) {
+      const r = timed(() => run(src))
+      expect(r.ms, src).toBeLessThan(500)
+      if (r.error) expect(r.error, src).toMatch(/took too long/)
+      else expect(linear, src).toBe(true)
+    }
+    // From a document-level script, as the document opens.
+    let rt: FormRuntime | undefined
+    const r = timed(() => (rt = new FormRuntime({ fields: [], values: {}, calcOrder: [], docScripts: [`/${chain}/.test("y")`] })))
+    expect(r.ms).toBeLessThan(500)
+    if (!linear) expect(rt!.problems.map((p) => p.message)).toContain('The script took too long to run')
+    // A short chain is cheap to compile and still runs on either engine.
+    expect(run(`/^${'(?:|)'.repeat(8)}x$/.test("x")`)).toBe(true)
+  })
+
+  it('shares one time budget between all the scripts of an event', () => {
+    // Each script alone may take a few hundred ms; ten of them as the document opens may not
+    // take ten times as long.
+    const script = 'var s = " ".repeat(2000); s.replace(/\\s*\\s*x|/gy, "")'
+    let rt: FormRuntime | undefined
+    const r = timed(() => (rt = new FormRuntime({ fields: [], values: {}, calcOrder: [], docScripts: Array(10).fill(script) })))
+    expect(r.ms).toBeLessThan(1500)
+    expect(rt!.problems.map((p) => p.message)).toContain('The script took too long to run')
+    // The next event (a click) starts with a full budget again.
+    rt!.beginEvent()
+    expect(rt!.runAction('event.rc = /^\\d+$/.test("123")').error).toBeUndefined()
+  })
+
+  it('still runs everyday regular expressions, with the same results', () => {
+    expect(run('"1234567".replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",")')).toBe('1,234,567')
+    expect(run('"a1b22c333".match(/\\d+/g).join("-")')).toBe('1-22-333')
+    expect(run('"a, b,c".split(/\\s*,\\s*/).join("|")')).toBe('a|b|c')
+    expect(run('"x-y".split(/(-)/).length')).toBe(3)
+    expect(run('"Hello World".replace(/o/g, function (m) { return m.toUpperCase() })')).toBe('HellO WOrld')
+    expect(run('"2024-01-31".replace(/(\\d+)-(\\d+)-(\\d+)/, "$3/$2/$1")')).toBe('31/01/2024')
+    expect(run('var re = /a/g; re.exec("aXa"); re.exec("aXa"); re.lastIndex')).toBe(3)
+    expect(run('String(/a+b/g)')).toBe('/a+b/g')
+    expect(run('/^YES$/i.test("yes")')).toBe(true)
+    // A long text is fine as long as the pattern cannot backtrack much.
+    expect(run('var s = "ab ".repeat(3000); s.split(/\\s+/).length')).toBe(3001)
+    expect(run('var s = "1,".repeat(3000); s.replace(/,/g, "").length')).toBe(3000)
+  })
+
+  it(linear ? 'runs patterns with nested repetition in linear time' : 'refuses patterns with nested repetition', () => {
+    // (split tries every position, each a match on the rest of the text: kept short.)
+    const scripts = [`/(a+)+$/.test("${'a'.repeat(5000)}!")`, `"${'a'.repeat(300)}!".split(/(?:a|aa)+$/).length`, `"${'a'.repeat(5000)}!".replace(/(a+)+$/g, "")`]
+    for (const [i, src] of scripts.entries()) {
+      const r = timed(() => run(src))
+      expect(r.ms, `script ${i}`).toBeLessThan(500)
+      if (linear) expect(r.error, `script ${i}`).toBeUndefined()
+      else expect(r.error, `script ${i}`).toMatch(/nested repetition/)
+    }
+  })
+})
+
+describe('regular expression analysis', () => {
+  it('reads the pattern structure the way V8 does, with no help from V8', () => {
+    // The analysis no longer asks V8 at run time, so check its reading here: it must number the
+    // capture groups as V8 does for every pattern it does not refuse.
+    const patterns = [
+      '(a)(b)', '(?:a)(b)', '(?<n>a)(b)', '(?<=a)(b)', '(?<!(a))b', '(?=(a))', '(?!a)(b)', '[(]()', '[^()](a)',
+      '\\(()', '\\[(a)]', '[\\]()]', '\\u{28}(a)', '\\u0028(a)', '\\x28(a)', '\\c(a)', '\\c((a))', '[\\c(]()',
+      '\\p{L}(a)', '((a)|(b))*', '(a){1,2}(b)', 'a{(b)}', '[]()', '[^](a)', '\\0(a)', '(?i:(a))', '(?-i:a)(b)'
+    ]
+    for (const src of patterns) {
+      for (const flags of ['', 'u', 'i']) {
+        let v8: number
+        try {
+          v8 = new RegExp(`(?:${src})|`, flags).exec('')!.length - 1
+        } catch {
+          continue
+        }
+        const info = analysePattern(src, flags)
+        if (!info.inexact && !info.exponential) expect(info.groups, `/${src}/${flags}`).toBe(v8)
+      }
+    }
+  })
+
+  it('counts the text before the match for a lookbehind', () => {
+    const text = 'a'.repeat(1000)
+    const behind = analysePattern('(?<=a*a*)b', 'y')
+    expect(behind.lookbehind).toBe(true)
+    expect(matchCost(behind, false, true, text, 1000)).toBe(matchCost(behind, false, true, text, 0))
+    const ahead = analysePattern('(?=a*a*)b', 'y')
+    expect(matchCost(ahead, false, true, text, 1000)).toBeLessThan(matchCost(ahead, false, true, text, 0))
+  })
+
+  it('counts the assertions V8 compiles as a choice, and limits the compile work', () => {
+    // Only Electron's V8 takes long on these (tests/engine/forms-fill-js-electron.test.ts runs
+    // them there); check the analysis here as well.
+    const chain = (unit: string, n: number) => `(?:${unit}|)`.repeat(n) + 'x'
+    const refused = (src: string, flags: string) => !(matchCost(analysePattern(src, flags), false, false, '', 0) < Infinity)
+    for (const [src, flags] of [
+      [chain('\\b', 14), 'iu'],
+      [chain('\\B', 14), 'iu'],
+      [chain('(?i:\\b)', 14), 'u'],
+      [chain('$', 14), 'imu'],
+      [chain('^', 14), 'mi'],
+      [chain('(?m:$)', 14), 'iu'],
+      [chain('(?i:(?m:^))', 14), 'u'],
+      [chain('', 20), '']
+    ])
+      expect(refused(src, flags), `/${src}/${flags}`).toBe(true)
+    // Short chains, and the same assertions where V8 compiles them plainly.
+    for (const [src, flags] of [
+      [chain('\\b', 8), 'iu'],
+      [chain('\\b', 14), 'i'],
+      [chain('$', 14), 'i'],
+      [chain('(?-m:$)', 14), 'mi'],
+      [`(?m:a)${chain('$', 14)}`, 'i'],
+      [chain('', 14), '']
+    ])
+      expect(refused(src, flags), `/${src}/${flags}`).toBe(false)
   })
 })
