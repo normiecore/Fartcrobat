@@ -93,6 +93,43 @@ describe('JavaScript interpreter', () => {
     expect(run('var keys = ""; var o = {x: 1, y: 2}; for (var k in o) keys += k; keys')).toBe('xy')
   })
 
+  it('refuses regular expressions that can backtrack for ever, quickly', () => {
+    const start = Date.now()
+    const long = '"' + 'a'.repeat(5000) + '!"'
+    expect(() => run(`/(a+)+$/.test(${long})`)).toThrow(/nested repetition/)
+    expect(() => run(`new RegExp("(a|aa)*$").test(${long})`)).toThrow(/nested repetition/)
+    expect(() => run(`${long}.match("(\\\\w+\\\\s?)*$")`)).toThrow(/nested repetition/)
+    expect(() => run(`/(a)\\1*b/.test(${long})`)).toThrow(/backreference/)
+    // A document-level script runs as the document opens: it fails instead of hanging.
+    const rt = new FormRuntime({ fields: [], values: {}, calcOrder: [], docScripts: [`/(a+)+$/.test(${long})`] })
+    expect(rt.problems).toHaveLength(1)
+    expect(Date.now() - start).toBeLessThan(1000)
+  })
+
+  it('stops regular expressions whose work grows too fast with the text, even when caught', () => {
+    const start = Date.now()
+    const spaces = `var s = ""; for (var i = 0; i < 1000; i++) s += "          ";`
+    expect(() => run(`${spaces} /\\s*\\s*\\s*x/.test(s)`)).toThrow(/took too long/)
+    expect(() => run(`${spaces} s.replace(/\\s*\\s*x/g, "")`)).toThrow(/took too long/)
+    // Each call alone is allowed, but a loop around them (catching errors) runs out of budget.
+    const loop = `var s = ""; for (var i = 0; i < 50; i++) s += "          "; var re = /\\s*\\s*x/;
+      while (true) { try { re.test(s) } catch (e) {} }`
+    expect(() => run(loop)).toThrow(/took too long/)
+    expect(Date.now() - start).toBeLessThan(5000)
+  })
+
+  it('still runs everyday regular expressions', () => {
+    expect(run('"1234567".replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",")')).toBe('1,234,567')
+    expect(run('/^[\\w.+-]+@[\\w-]+\\.[\\w.-]+$/.test("someone@example.com")')).toBe(true)
+    expect(run('/^\\d{3}-\\d{2}-\\d{4}$/.test("123-45-6789")')).toBe(true)
+    expect(run('/^(\\d{1,3}\\.){3}\\d{1,3}$/.test("10.0.0.1")')).toBe(true)
+    expect(run('/^[+-]?\\d+(\\.\\d+)?$/.test("-3.25")')).toBe(true)
+    expect(run('"  x  ".replace(/^\\s+|\\s+$/g, "")')).toBe('x')
+    expect(run('"a, b,c".split(/\\s*,\\s*/).length')).toBe(3)
+    expect(run('"abc".search("c")')).toBe(2)
+    expect(run('"(555) 123".match(/\\d+/g).length')).toBe(2)
+  })
+
   it('supports string, number and regex methods', () => {
     expect(run('"Hello".toUpperCase()')).toBe('HELLO')
     expect(run('"  pad ".trim().length')).toBe(3)

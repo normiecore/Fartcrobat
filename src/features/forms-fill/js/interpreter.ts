@@ -7,6 +7,7 @@
  * anything the host does not hand them, and every run has a step and call-depth budget.
  */
 import { parse, ScriptError, type Expr, type Program, type Stmt } from './parser'
+import { RegexBudget, scriptRegExp } from './regex'
 
 export { ScriptError }
 
@@ -252,19 +253,19 @@ function stringMember(s: string, key: string): JsValue {
     repeat: (_t, a) => s.repeat(Math.max(0, Math.min(10000, argNum(a, 0, 0)!))),
     padStart: (_t, a) => s.padStart(Math.min(10000, argNum(a, 0, 0)!), a[1] === undefined ? ' ' : toStr(a[1])),
     padEnd: (_t, a) => s.padEnd(Math.min(10000, argNum(a, 0, 0)!), a[1] === undefined ? ' ' : toStr(a[1])),
-    split: (_t, a) => {
+    split: (_t, a, interp) => {
       if (a[0] === undefined) return [s]
-      const sep = a[0] instanceof RegExp ? a[0] : toStr(a[0])
+      const sep = a[0] instanceof RegExp ? interp.checkRegex(a[0], s) : toStr(a[0])
       return s.split(sep as string, argNum(a, 1))
     },
-    search: (_t, a) => s.search(a[0] instanceof RegExp ? a[0] : toStr(a[0])),
-    match: (_t, a) => {
-      const re = a[0] instanceof RegExp ? a[0] : new RegExp(toStr(a[0]))
+    search: (_t, a, interp) => s.search(interp.checkRegex(a[0] instanceof RegExp ? a[0] : scriptRegExp(toStr(a[0]), ''), s)),
+    match: (_t, a, interp) => {
+      const re = interp.checkRegex(a[0] instanceof RegExp ? a[0] : scriptRegExp(toStr(a[0]), ''), s)
       const r = s.match(re)
       return r ? [...r] : null
     },
     replace: (_t, a, interp) => {
-      const pattern = a[0] instanceof RegExp ? a[0] : toStr(a[0])
+      const pattern = a[0] instanceof RegExp ? interp.checkRegex(a[0], s) : toStr(a[0])
       const rep = a[1]
       if (isCallable(rep)) {
         return s.replace(pattern as RegExp, (...m: unknown[]) => {
@@ -341,10 +342,14 @@ function arrayMember(arr: JsValue[], key: string): JsValue {
 function regexMember(re: RegExp, key: string): JsValue {
   switch (key) {
     case 'test':
-      return nativeMethod('test', (_t, a) => re.test(toStr(a[0])))
+      return nativeMethod('test', (_t, a, interp) => {
+        const s = toStr(a[0])
+        return interp.checkRegex(re, s).test(s)
+      })
     case 'exec':
-      return nativeMethod('exec', (_t, a) => {
-        const r = re.exec(toStr(a[0]))
+      return nativeMethod('exec', (_t, a, interp) => {
+        const s = toStr(a[0])
+        const r = interp.checkRegex(re, s).exec(s)
         return r ? [...r] : null
       })
     case 'source':
@@ -375,6 +380,9 @@ export class Interpreter {
   globalObject: HostObject | null = null
   private steps = 0
   private depth = 0
+  /** Nesting of run() (a script can run others, e.g. this.calculateNow()); budgets reset at 0. */
+  private runDepth = 0
+  private readonly regexBudget = new RegexBudget()
   private readonly maxSteps: number
   private readonly maxDepth: number
 
@@ -393,8 +401,13 @@ export class Interpreter {
     const prevGlobal = this.globalObject
     if (opts.thisValue !== undefined) this.thisValue = opts.thisValue
     if (opts.globalObject) this.globalObject = opts.globalObject
-    this.steps = 0
-    this.depth = 0
+    const prevDepth = this.depth
+    if (this.runDepth === 0) {
+      this.steps = 0
+      this.depth = 0
+      this.regexBudget.reset()
+    }
+    this.runDepth++
     try {
       this.hoist(program, scope)
       let last: JsValue = undefined
@@ -414,9 +427,17 @@ export class Interpreter {
       if (err instanceof RangeError) throw new ScriptError('The script is too complex')
       throw new ScriptError(err instanceof Error ? err.message : String(err))
     } finally {
+      this.runDepth--
+      this.depth = prevDepth
       this.thisValue = prevThis
       this.globalObject = prevGlobal
     }
+  }
+
+  /** Charges a native regex call on `input` to the run's budget (see regex.ts) and returns `re`. */
+  checkRegex(re: RegExp, input: string): RegExp {
+    this.regexBudget.charge(re, input)
+    return re
   }
 
   /** Calls a script or native function. */
@@ -586,11 +607,7 @@ export class Interpreter {
       case 'lit':
         return e.v
       case 'regex':
-        try {
-          return new RegExp(e.source, e.flags.replace(/[^gimsuy]/g, ''))
-        } catch {
-          throw new ScriptError(`Invalid regular expression /${e.source}/`)
-        }
+        return scriptRegExp(e.source, e.flags)
       case 'id': {
         const s = scope.lookup(e.name)
         if (s) return s.vars.get(e.name)
@@ -864,11 +881,7 @@ function makeArray(a: JsValue[]): JsValue[] {
 
 function makeRegExp(a: JsValue[]): RegExp {
   const src = a[0] instanceof RegExp ? a[0].source : toStr(a[0] ?? '')
-  try {
-    return new RegExp(src, toStr(a[1] ?? '').replace(/[^gimsuy]/g, ''))
-  } catch {
-    throw new ScriptError(`Invalid regular expression /${src}/`)
-  }
+  return scriptRegExp(src, toStr(a[1] ?? ''))
 }
 
 /** Math, Number, String, Array, Date, RegExp, parseInt... available to every script. */
