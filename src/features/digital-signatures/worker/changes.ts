@@ -21,10 +21,18 @@ interface AnnotRef {
 
 interface DocIndex {
   pages: Map<number, number>
+  /**
+   * Objects a page draws -> page: its content streams and everything reachable from its
+   * resources (fonts, images, form XObjects and their own resources, patterns, shadings...).
+   */
   contents: Map<number, number>
   annots: Map<number, AnnotRef>
-  /** Appearance streams -> owning annotation object. */
+  /** Objects reachable from an annotation (appearance streams and their resources) -> annotation. */
   ap: Map<number, number>
+  /** Objects reachable from the form's default resources (/DR). */
+  formResources: Set<number>
+  /** Every object reachable from the trailer: the objects the document actually uses. */
+  inUse: Set<number>
   /** Non-widget field dictionaries. */
   fields: Map<number, { name: string; ft: string }>
   sigDicts: Map<number, string>
@@ -40,12 +48,33 @@ function num(o: PDFObject): number {
   return o && !isNull(o) && o.isIndirect() ? o.asIndirect() : -1
 }
 
-function collectStreams(o: PDFObject, out: (n: number) => void, depth = 0) {
-  if (!o || isNull(o) || depth > 3) return
-  if (o.isIndirect()) out(o.asIndirect())
-  const r = o.resolve()
-  if (r.isDictionary() && !r.isStream()) r.forEach((v) => collectStreams(v, out, depth + 1))
-  else if (r.isArray()) for (let i = 0; i < r.length; i++) collectStreams(r.get(i), out, depth + 1)
+/** Thrown when a document is too large to classify its changes. */
+class TooManyObjectsError extends Error {}
+
+/**
+ * Visits every object reachable from `roots`. `claim` is called for each indirect object and
+ * returns false to not look inside it (already seen, or belongs elsewhere); dictionary entries
+ * whose key `skip` returns true for are not followed.
+ */
+function reach(roots: PDFObject[], claim: (n: number) => boolean, skip: (key: string) => boolean = () => false) {
+  const stack = roots.filter((o) => o && !isNull(o))
+  let budget = 4_000_000
+  while (stack.length) {
+    if (--budget < 0) throw new TooManyObjectsError('The document has too many objects to list its changes')
+    const o = stack.pop()!
+    if (o.isIndirect() && !claim(o.asIndirect())) continue
+    const r = o.resolve()
+    if (r.isDictionary()) {
+      r.forEach((v, k) => {
+        if (!skip(String(k)) && !isNull(v)) stack.push(v)
+      })
+    } else if (r.isArray()) {
+      for (let i = 0; i < r.length; i++) {
+        const v = r.get(i)
+        if (!isNull(v)) stack.push(v)
+      }
+    }
+  }
 }
 
 function buildIndex(pdf: PDFDocument): DocIndex {
@@ -55,6 +84,8 @@ function buildIndex(pdf: PDFDocument): DocIndex {
     contents: new Map(),
     annots: new Map(),
     ap: new Map(),
+    formResources: new Set(),
+    inUse: new Set(),
     fields: new Map(),
     sigDicts: new Map(),
     pageTree: new Set(),
@@ -77,15 +108,35 @@ function buildIndex(pdf: PDFDocument): DocIndex {
   }
   safe(() => walkTree(root.get('Pages'), 0), undefined)
   const count = pdf.countPages()
+  const pageObjs: PDFObject[] = []
   for (let p = 0; p < count; p++) {
     const pageObj = pdf.findPage(p)
+    pageObjs.push(pageObj)
     idx.pages.set(num(pageObj), p)
-    const contents = pageObj.get('Contents')
-    if (!isNull(contents)) {
-      if (contents.isIndirect()) idx.contents.set(contents.asIndirect(), p)
-      const cr = contents.resolve()
-      if (cr.isArray()) for (let i = 0; i < cr.length; i++) if (cr.get(i).isIndirect()) idx.contents.set(cr.get(i).asIndirect(), p)
-    }
+  }
+  const isPageNode = (n: number) => idx.pages.has(n) || idx.pageTree.has(n)
+  // What each page draws: everything reachable from the page dictionary (contents, resources,
+  // group, actions...) except its parent and its annotations, with inherited resources.
+  for (let p = 0; p < count; p++) {
+    const pageObj = pageObjs[p]
+    const page = pageObj.resolve()
+    const roots: PDFObject[] = []
+    page.forEach((v, k) => {
+      if (k !== 'Parent' && k !== 'Annots') roots.push(v)
+    })
+    if (isNull(page.get('Resources'))) roots.push(pageObj.getInheritable('Resources'))
+    reach(
+      roots,
+      (n) => {
+        if (isPageNode(n) || idx.contents.has(n)) return false
+        idx.contents.set(n, p)
+        return true
+      },
+      (k) => k === 'Parent' || k === 'P'
+    )
+  }
+  for (let p = 0; p < count; p++) {
+    const pageObj = pageObjs[p]
     const annots = pageObj.get('Annots')
     if (annots.isIndirect()) idx.pages.set(annots.asIndirect(), p)
     if (isNull(annots) || !annots.isArray()) continue
@@ -105,10 +156,26 @@ function buildIndex(pdf: PDFDocument): DocIndex {
       const ownerType = owner !== n ? (readName(parent.resolve().get('Subtype')) ?? 'Annot') : subtype
       const info: AnnotRef = { owner, page: p, subtype: ownerType, widget, fieldName: widget ? fullName(field) : '', ft, signed }
       if (n > 0) idx.annots.set(n, info)
-      if (n > 0) collectStreams(a.get('AP'), (s) => idx.ap.set(s, n))
       const popup = a.get('Popup')
       if (popup.isIndirect()) idx.annots.set(popup.asIndirect(), info)
     }
+  }
+  // Appearance streams, their resources and whatever else an annotation refers to belong to it
+  // (unless a page draws them too).
+  for (const [n] of idx.annots) {
+    const roots: PDFObject[] = []
+    pdf.newIndirect(n).resolve().forEach((v, k) => {
+      if (!ANNOT_LINKS.has(String(k))) roots.push(v)
+    })
+    reach(
+      roots,
+      (m) => {
+        if (isPageNode(m) || idx.annots.has(m) || idx.contents.has(m) || idx.ap.has(m)) return false
+        idx.ap.set(m, n)
+        return true
+      },
+      (k) => ANNOT_LINKS.has(k)
+    )
   }
   walkFields(pdf, (field, name, ft) => {
     let cur: PDFObject = field
@@ -123,12 +190,18 @@ function buildIndex(pdf: PDFDocument): DocIndex {
     }
   })
   const dss = root.get('DSS')
-  if (!isNull(dss)) {
-    if (dss.isIndirect()) idx.dss.add(dss.asIndirect())
-    collectStreams(dss, (s) => idx.dss.add(s))
-  }
+  if (!isNull(dss)) reach([dss], (n) => !idx.dss.has(n) && !!idx.dss.add(n))
+  const acro = root.get('AcroForm')
+  if (!isNull(acro)) reach([acro.get('DR')], (n) => !idx.formResources.has(n) && !!idx.formResources.add(n))
+  const trailer = pdf.getTrailer()
+  const trailerRoots: PDFObject[] = []
+  trailer.forEach((v) => trailerRoots.push(v))
+  reach(trailerRoots, (n) => !idx.inUse.has(n) && !!idx.inUse.add(n))
   return idx
 }
+
+/** Entries of an annotation that point to other annotations, fields or pages, not to its own parts. */
+const ANNOT_LINKS = new Set(['P', 'Parent', 'Popup', 'IRT', 'Kids', 'V', 'Dest', 'A', 'AA', 'Lock', 'SV'])
 
 interface Found {
   category: ChangeCategory
@@ -137,6 +210,8 @@ interface Found {
   added: boolean
   name?: string
   subtype?: string
+  /** Description of an 'other' change. */
+  description?: string
 }
 
 export interface ChangeContext {
@@ -144,6 +219,87 @@ export interface ChangeContext {
   permission: MdpPermission | null
   /** Fields locked by this signature's field lock ("*" for all). */
   lockedFields: string[] | '*' | null
+  /** The signed revision, opened on its own (null when it could not be opened). */
+  before: PDFDocument | null
+}
+
+const str = (o: PDFObject | null | undefined): string => (o && !isNull(o) ? o.toString() : '')
+
+function sameValue(a: PDFObject | null | undefined, b: PDFObject | null | undefined): boolean {
+  return str(a) === str(b)
+}
+
+function keysOf(...dicts: (PDFObject | null)[]): Set<string> {
+  const keys = new Set<string>()
+  for (const d of dicts) if (d && !isNull(d) && d.isDictionary()) d.forEach((_v, k) => keys.add(String(k)))
+  return keys
+}
+
+/** AcroForm entries that only matter for drawing new appearances or marking the form signed. */
+const FORM_HOUSEKEEPING = new Set(['SigFlags', 'NeedAppearances', 'DR', 'DA'])
+
+/** Changes to the interactive form dictionary itself (fields are classified on their own). */
+function compareAcroForm(before: PDFObject | null, now: PDFObject | null): Found[] {
+  const out: Found[] = []
+  const o = before && !isNull(before) ? before.resolve() : null
+  const n = now && !isNull(now) ? now.resolve() : null
+  for (const key of keysOf(o, n)) {
+    if (FORM_HOUSEKEEPING.has(key)) continue
+    const ov = o?.get(key) ?? null
+    const nv = n?.get(key) ?? null
+    if (key === 'Fields') {
+      // Fields may be added (each is classified on its own) but not removed.
+      const listed = new Set<string>()
+      const na = nv && !isNull(nv) ? nv.resolve() : null
+      if (na?.isArray()) for (let i = 0; i < na.length; i++) listed.add(str(na.get(i)))
+      const oa = ov && !isNull(ov) ? ov.resolve() : null
+      let missing = false
+      if (oa?.isArray()) for (let i = 0; i < oa.length; i++) if (!listed.has(str(oa.get(i)))) missing = true
+      if (missing) out.push({ category: 'other', key: 'other:fields', added: false, description: 'Form fields were removed' })
+      continue
+    }
+    if (!sameValue(ov, nv)) out.push({ category: 'other', key: 'other:form', added: false, description: 'The form settings were changed' })
+  }
+  return out
+}
+
+/** Changes to the document catalog, compared with the signed revision's. */
+function compareCatalog(before: PDFDocument | null, pdf: PDFDocument): Found[] {
+  if (!before) return [{ category: 'other', key: 'other:catalog', added: false, description: 'The document catalog was changed' }]
+  const o = catalog(before).resolve()
+  const n = catalog(pdf).resolve()
+  const out: Found[] = []
+  for (const key of keysOf(o, n)) {
+    if (key === 'DSS') continue
+    const ov = o.get(key)
+    const nv = n.get(key)
+    if (sameValue(ov, nv)) continue
+    if (key === 'AcroForm') out.push(...compareAcroForm(ov, nv))
+    else if (key === 'Metadata') out.push({ category: 'metadata', key: 'metadata', added: false })
+    else if (key === 'Pages') out.push({ category: 'pages', key: 'pages', added: false })
+    else out.push({ category: 'other', key: `other:catalog:${key}`, added: false, description: `The document catalog entry /${key} was changed` })
+  }
+  return out
+}
+
+/** Whether a page dictionary changed in more than its list of annotations. */
+function pageDictChanged(before: PDFDocument | null, pdf: PDFDocument, n: number): boolean {
+  if (!before) return true
+  const o = before.newIndirect(n).resolve()
+  const p = pdf.newIndirect(n).resolve()
+  if (!o.isDictionary()) return true
+  for (const key of keysOf(o, p)) if (key !== 'Annots' && !sameValue(o.get(key), p.get(key))) return true
+  return false
+}
+
+/** A change to an annotation (or to its popup or appearance when `n` is not the annotation itself). */
+function annotFinding(owner: AnnotRef, n: number, added: boolean): Found {
+  const isNew = added && owner.owner === n
+  if (owner.widget) {
+    if (owner.ft === 'Sig') return { category: 'signature', key: `sig:${owner.fieldName}`, added: isNew, name: owner.fieldName, page: owner.page }
+    return { category: 'form', key: `form:${owner.fieldName}`, added: isNew, name: owner.fieldName, page: owner.page }
+  }
+  return { category: 'annotation', key: `annot:${owner.owner}`, added: isNew, page: owner.page, subtype: owner.subtype }
 }
 
 /** Classifies the objects changed after a signature and says whether each change is allowed. */
@@ -151,11 +307,16 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
   const idx = buildIndex(pdf)
   const found: Found[] = []
   const touchedPages = new Set<number>()
+  const pageObjects = new Set<number>()
+  for (let p = 0; p < pdf.countPages(); p++) pageObjects.add(num(pdf.findPage(p)))
   let removed = 0
   for (const [n, type] of changed) {
     const added = oldSize > 0 && n >= oldSize
     if (type === 'f') {
-      if (!added) removed++
+      // Removing something a page still draws changes the page.
+      const drawnBy = idx.contents.get(n)
+      if (drawnBy !== undefined) found.push({ category: 'content', key: `content:${drawnBy}`, added: false, page: drawnBy })
+      else if (!added) removed++
       continue
     }
     const sig = idx.sigDicts.get(n)
@@ -163,16 +324,9 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
       found.push({ category: 'signature', key: `sig:${sig}`, added, name: sig })
       continue
     }
-    const owner = idx.annots.get(n) ?? (idx.ap.has(n) ? idx.annots.get(idx.ap.get(n)!) : undefined)
-    if (owner) {
-      // Popups and appearance streams belong to their annotation.
-      const isAppearance = owner.owner !== n
-      if (owner.widget) {
-        if (owner.ft === 'Sig') found.push({ category: 'signature', key: `sig:${owner.fieldName}`, added: added && !isAppearance, name: owner.fieldName, page: owner.page })
-        else found.push({ category: 'form', key: `form:${owner.fieldName}`, added: added && !isAppearance, name: owner.fieldName, page: owner.page })
-      } else {
-        found.push({ category: 'annotation', key: `annot:${owner.owner}`, added: added && !isAppearance, page: owner.page, subtype: owner.subtype })
-      }
+    const direct = idx.annots.get(n)
+    if (direct) {
+      found.push(annotFinding(direct, n, added))
       continue
     }
     const field = idx.fields.get(n)
@@ -185,9 +339,18 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
       found.push({ category: 'content', key: `content:${contentPage}`, added, page: contentPage })
       continue
     }
+    const apOwner = idx.ap.get(n)
+    const owner = apOwner !== undefined ? idx.annots.get(apOwner) : undefined
+    if (owner) {
+      found.push(annotFinding(owner, n, added))
+      continue
+    }
     const page = idx.pages.get(n)
     if (page !== undefined) {
-      touchedPages.add(page)
+      // A page whose dictionary changed in more than its annotations (resources, contents, boxes...)
+      // shows something else now.
+      if (pageObjects.has(n) && !added && pageDictChanged(ctx.before, pdf, n)) found.push({ category: 'content', key: `content:${page}`, added, page })
+      else touchedPages.add(page)
       continue
     }
     if (idx.pageTree.has(n)) {
@@ -202,8 +365,19 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
       found.push({ category: 'dss', key: 'dss', added })
       continue
     }
-    // Catalog, AcroForm and unattached resources (fonts, images of new appearances) are side
-    // effects of the changes above.
+    if (n === idx.catalog) {
+      found.push(...compareCatalog(ctx.before, pdf))
+      continue
+    }
+    if (n === idx.acroForm) {
+      found.push(...compareAcroForm(ctx.before ? catalog(ctx.before).get('AcroForm') : null, catalog(pdf).get('AcroForm')))
+      continue
+    }
+    // Fonts and other resources added to the form for drawing appearances are side effects.
+    if (idx.formResources.has(n)) continue
+    // Anything else the document uses (outlines, actions, optional content...) is a change that
+    // nothing above allows. Objects nothing refers to any more do not matter.
+    if (idx.inUse.has(n)) found.push({ category: 'other', key: 'other:objects', added, description: 'Other parts of the document were changed' })
   }
   for (const p of touchedPages) {
     if (!found.some((f) => f.page === p && f.category !== 'pages')) found.push({ category: 'page', key: `page:${p}`, added: false, page: p })
@@ -271,6 +445,9 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
         break
       case 'deleted':
         entries.push({ category: 'deleted', allowed: ok, description: `${removed} item${removed === 1 ? ' was' : 's were'} removed` })
+        break
+      case 'other':
+        entries.push({ category: 'other', allowed: ok, description: f.description ?? 'Other parts of the document were changed' })
         break
       default:
         void key

@@ -679,3 +679,123 @@ describe('together with other features', () => {
     expect(signatureStatus(r, new Set()).level).toBe('warning')
   })
 })
+
+describe('updates after signing', () => {
+  /** Text MuPDF shows on page 1 (what a reader of the file sees). */
+  function pageText(bytes: Uint8Array): string {
+    const doc = new mupdf.PDFDocument(bytes)
+    try {
+      const page = doc.loadPage(0)
+      const text = page.toStructuredText('').asText()
+      page.destroy()
+      return text
+    } finally {
+      doc.destroy()
+    }
+  }
+
+  const VALID = ['valid', 'unknown-identity']
+
+  it('validates the crafted base document as signed and intact', async () => {
+    const r = (await validateBytes(fixture('digital-signatures/update-base.pdf'))).signatures[0]
+    expect(r.integrity && r.signatureValid && r.coversWholeFile).toBe(true)
+    expect(r.problems).toEqual([])
+    expect(signatureStatus(r, new Set()).level).toBe('unknown-identity')
+  })
+
+  it('follows /Prev to an update that has no startxref of its own', async () => {
+    const bytes = fixture('digital-signatures/update-hidden-prev.pdf')
+    expect(pageText(bytes)).toContain('999 EUR')
+    const revs = await readRevisions(bytes)
+    expect(revs.chain).toHaveLength(3)
+    const r = (await validateBytes(bytes)).signatures[0]
+    expect(r.integrity).toBe(true)
+    expect(r.changes.some((c) => c.category === 'content' && c.page === 0 && !c.allowed)).toBe(true)
+    expect(VALID).not.toContain(signatureStatus(r, new Set()).level)
+  })
+
+  it('reads cross-reference streams with a chain of filters', async () => {
+    const bytes = fixture('digital-signatures/update-xref-filters.pdf')
+    expect(pageText(bytes)).toContain('999 EUR')
+    const revs = await readRevisions(bytes)
+    expect(revs.chain[0].entries?.get(7)).toBe('n')
+    const r = (await validateBytes(bytes)).signatures[0]
+    expect(r.changesUnknown).toBe(false)
+    expect(r.changes.some((c) => c.category === 'content' && !c.allowed)).toBe(true)
+    expect(VALID).not.toContain(signatureStatus(r, new Set()).level)
+  })
+
+  it('reports a replaced form XObject as a change of the page content', async () => {
+    const bytes = fixture('digital-signatures/update-xobject.pdf')
+    expect(pageText(bytes)).toContain('999 EUR')
+    const r = (await validateBytes(bytes)).signatures[0]
+    expect(r.changes).toEqual([{ category: 'content', page: 0, allowed: false, description: 'Page 1: the page content was changed' }])
+    expect(signatureStatus(r, new Set()).level).toBe('warning')
+  })
+
+  it('keeps the certification rules when an update removes /Perms', async () => {
+    const report = await validateBytes(fixture('digital-signatures/update-perms-removed.pdf'))
+    const r = report.signatures[0]
+    expect(report.certified).toBe(1)
+    expect(r.kind).toBe('certification')
+    expect(r.changes.some((c) => c.category === 'form' && !c.allowed)).toBe(true)
+    expect(r.changes.some((c) => c.category === 'other' && /Perms/.test(c.description) && !c.allowed)).toBe(true)
+    expect(signatureStatus(r, new Set()).level).toBe('invalid')
+  })
+
+  it('keeps the field lock of the signed revision when an update removes it', async () => {
+    const r = (await validateBytes(fixture('digital-signatures/update-lock-removed.pdf'))).signatures[0]
+    expect(r.lock).toMatchObject({ action: 'All' })
+    expect(r.changes.some((c) => c.category === 'form' && c.description.includes('Amount') && !c.allowed)).toBe(true)
+    expect(signatureStatus(r, new Set()).level).toBe('invalid')
+  })
+
+  it('treats bytes no cross-reference section accounts for as unknown changes', async () => {
+    const e = await openFixture('text.pdf')
+    const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+    const extra = new TextEncoder().encode('\n99 0 obj\n<< /Hidden true >>\nendobj\n')
+    const tampered = new Uint8Array(bytes.length + extra.length)
+    tampered.set(bytes)
+    tampered.set(extra, bytes.length)
+    const r = (await validateBytes(tampered)).signatures[0]
+    expect(r.coversWholeFile).toBe(false)
+    expect(r.changesUnknown).toBe(true)
+    const st = signatureStatus(r, new Set())
+    expect(st.level).toBe('warning')
+    expect(st.details.join(' ')).toMatch(/cannot be checked/)
+  })
+
+  it('treats a file MuPDF had to repair as having unknown changes', async () => {
+    const e = await openFixture('text.pdf')
+    const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+    const e2 = await openBytes(bytes)
+    await e2.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [100, 100, 120, 120], contents: 'later note' })
+    const later = await e2.doc.save({})
+    // Point the last startxref somewhere else: MuPDF repairs the file and reads every object it finds.
+    const text = Buffer.from(later).toString('latin1')
+    const sx = text.lastIndexOf('startxref')
+    const broken = Buffer.from(text.slice(0, sx) + text.slice(sx).replace(/startxref\s+\d+/, 'startxref\n12'), 'latin1')
+    const r = (await validateBytes(new Uint8Array(broken))).signatures[0]
+    expect(r.changesUnknown).toBe(true)
+    expect(signatureStatus(r, new Set()).level).toBe('warning')
+  })
+
+  it('fails closed on unknown changes when the signature restricts changes', () => {
+    const base = { changes: [], changesUnknown: true, permission: null, lock: null, problems: [], warnings: [], certificates: [], chainVerified: [] }
+    const r = {
+      ...base,
+      kind: 'approval',
+      integrity: true,
+      signatureValid: true,
+      coversWholeFile: false,
+      unknownReason: null,
+      timestamp: null,
+      signingTime: null,
+      certExpiredNow: false,
+      certValidAtSigning: true
+    } as unknown as Parameters<typeof signatureStatus>[0]
+    expect(signatureStatus(r, new Set()).level).toBe('warning')
+    expect(signatureStatus({ ...r, lock: { action: 'All', fields: [], permission: null } }, new Set()).level).toBe('invalid')
+    expect(signatureStatus({ ...r, kind: 'certification', permission: 2 }, new Set()).level).toBe('invalid')
+  })
+})

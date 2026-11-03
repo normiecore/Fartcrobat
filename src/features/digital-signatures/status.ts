@@ -58,6 +58,13 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
       )
     } else details.push('The document has been modified since this signature was applied.')
   }
+  if (r.changesUnknown) {
+    details.push(
+      restricted
+        ? 'The document was changed after this signature was applied, and the changes cannot be checked against what the signer allowed.'
+        : 'The document was changed after this signature was applied, and the changes cannot be checked.'
+    )
+  }
   details.push(...r.problems)
   if (r.unknownReason) details.push(r.unknownReason)
 
@@ -88,9 +95,11 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
   if (r.certExpiredNow && r.certValidAtSigning) details.push("The signer's certificate has expired since the document was signed.")
 
   let level: StatusLevel
-  if (r.problems.length || r.integrity === false || r.signatureValid === false || (restricted && disallowed.length)) level = 'invalid'
+  // Changes that cannot be checked count as changes that are not allowed.
+  const unchecked = r.changesUnknown
+  if (r.problems.length || r.integrity === false || r.signatureValid === false || (restricted && (disallowed.length || unchecked))) level = 'invalid'
   else if (r.unknownReason || r.integrity === null || r.signatureValid === null) level = 'unknown'
-  else if (r.warnings.length || disallowed.length || (r.timestamp && !r.timestamp.valid)) level = 'warning'
+  else if (r.warnings.length || disallowed.length || unchecked || (r.timestamp && !r.timestamp.valid)) level = 'warning'
   else level = identityKnown ? 'valid' : 'unknown-identity'
 
   const noun = isTimestamp ? 'Document timestamp' : r.kind === 'certification' ? 'Certification' : 'Signature'

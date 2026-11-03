@@ -154,10 +154,14 @@ export function certification(pdf: PDFDocument): { permission: MdpPermission; si
   return { permission: ref?.permission ?? 2, sigNum: docMdp.isIndirect() ? docMdp.asIndirect() : -1 }
 }
 
-/** Lock dictionary of a signature field (/Lock) merged with its FieldMDP reference. */
-export function lockInfo(f: SigField): { action: string; fields: string[]; permission: MdpPermission | null } | null {
+/**
+ * Lock dictionary of a signature field (/Lock) merged with its FieldMDP reference. `lockFrom` is
+ * the field as it was signed (validation reads the lock from the signed revision, so a later
+ * update cannot remove it); null when the field had no lock then.
+ */
+export function lockInfo(f: SigField, lockFrom: PDFObject | null = f.field): { action: string; fields: string[]; permission: MdpPermission | null } | null {
   const field = f.field.resolve()
-  const lock = field.get('Lock')
+  const lock = lockFrom ? safe(() => lockFrom.resolve().get('Lock'), null) : null
   const v = field.get('V')
   const fieldMdp = !isNull(v) ? readReferences(v).find((r) => r.method === 'FieldMDP') : undefined
   if (isNull(lock) && !fieldMdp) return null
@@ -165,7 +169,7 @@ export function lockInfo(f: SigField): { action: string; fields: string[]; permi
   const fields: string[] = [...(fieldMdp?.fields ?? [])]
   let lockAction: string | null = null
   if (!isNull(lock)) {
-    const l = lock.resolve()
+    const l = lock!.resolve()
     const lp = readNumber(l.get('P'), 0)
     if (lp >= 1 && lp <= 3) permission = lp as MdpPermission
     const lf = l.get('Fields')
