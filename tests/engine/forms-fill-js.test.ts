@@ -616,6 +616,15 @@ describe('AForm functions through the form runtime', () => {
   })
 })
 
+/** Whether this V8 knows `(?i:)` groups (the app's does; older Node versions do not). */
+function modifiersSupported(): boolean {
+  try {
+    return new RegExp('(?i:a)').test('A')
+  } catch {
+    return false
+  }
+}
+
 /** Runs `src`; returns how long it took and the error it ended with, if any. */
 function timed(fn: () => unknown): { ms: number; error?: string } {
   const start = performance.now()
@@ -651,6 +660,38 @@ describe.each([
       expect(r.ms, src).toBeLessThan(1000)
       if (r.error) expect(r.error, src).toMatch(/took too long/)
     }
+  })
+
+  it('reads quantifiers the way V8 does, so none can hide from the checks', () => {
+    // Without the u flag, \\u{1,} is "u" repeated and {0001,} is {1,}; the i flag and (?i:)
+    // keep a pattern on the backtracking engine.
+    const zeros = '0'.repeat(40)
+    const attacks = [
+      String.raw`var s = "u".repeat(40) + "!"; /^(\u{1,})*$/i.test(s)`,
+      String.raw`var s = "p".repeat(40) + "!"; new RegExp("^(\\p{1,})*$", "i").test(s)`,
+      String.raw`var s = "P".repeat(40) + "!"; /^(\P{1,})*$/i.test(s)`,
+      String.raw`var s = "u".repeat(40) + "!"; /^(?i:\u{1,})*$/.test(s)`,
+      `var s = " ".repeat(40) + "!"; /^(\\s+){${zeros}1,}$/i.test(s)`,
+      `var s = " ".repeat(40) + "!"; /^(\\s+){0,${'9'.repeat(30)}}$/i.test(s)`,
+      String.raw`var s = "u".repeat(2900); /^.*.*\u{2000}x/i.test(s)`,
+      `var s = "u".repeat(2900); /^.*.*u{${zeros}2000}x/i.test(s)`,
+      String.raw`var s = "c".repeat(40) + "!"; /^(\c{1,})*$/i.test(s)`,
+      String.raw`var s = "x".repeat(40) + "!"; /^(\x{1,})*$/i.test(s)`
+    ]
+    for (const src of attacks) {
+      const r = timed(() => run(src))
+      expect(r.ms, src).toBeLessThan(500)
+      // ((?i:) groups are new in V8: older versions refuse the pattern itself.)
+      expect(r.error, src).toMatch(/took too long|nested repetition|not supported|Invalid regular expression \/\^\(\?i:/)
+    }
+    // A construct the analysis does not read exactly (here a legacy octal escape) is refused.
+    expect(timed(() => run(String.raw`/^\01+$/i.test("x")`)).error).toMatch(/not supported/)
+    // The same patterns still match what V8 matches when they are cheap.
+    expect(run(String.raw`/^\u{3}$/i.test("UUU")`)).toBe(true)
+    expect(run(String.raw`/^\p{2}\P$/i.test("ppP")`)).toBe(true)
+    expect(run(String.raw`/^\u{41}+$/u.test("AAA")`)).toBe(true)
+    expect(run(`/^a{${zeros}2}$/i.test("AA")`)).toBe(true)
+    if (modifiersSupported()) expect(run(String.raw`/^(?i:ab)c$/.test("ABc")`)).toBe(true)
   })
 
   it('shares one time budget between all the scripts of an event', () => {

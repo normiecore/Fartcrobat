@@ -7,9 +7,13 @@
  *   with the `--enable-experimental-regexp-engine` js-flag, src/main/index.ts), every pattern it
  *   can run is compiled for it (the `l` flag). One match then costs at most about
  *   (text length) * (pattern size), whatever the pattern.
- * - Patterns it cannot run (the `i` and `u` flags, lookarounds, large counted repeats) use the
- *   backtracking engine. Those that can take exponential time are refused: backreferences, and a
- *   repeated group whose body can match in more than one way (`(a+)+`, `(a|ab)*`). For the rest,
+ * - Patterns it cannot run (the `i` and `u` flags, `(?i:)` groups, lookaheads, large counted
+ *   repeats) use the backtracking engine. (V8's fallback to the linear engine after too many
+ *   backtracks does not help: it only applies to patterns the linear engine can run.) The pattern
+ *   is read exactly as V8 reads it, including the web-compatibility rules without the `u` flag
+ *   (`\u{2}` is `u{2}` there); one it cannot read exactly is refused. So are those that can take
+ *   exponential time: backreferences, and a repeated group whose body can match in more than one
+ *   way (`(a+)+`, `(a|ab)*`). For the rest,
  *   one match attempt is bounded by a polynomial: size * c * (n + 1)^k, where k counts the
  *   unbounded quantifiers (plus one when the match can start at any position) and c the choices
  *   of counted quantifiers and alternations.
@@ -33,6 +37,8 @@ export interface PatternInfo {
   anchored: boolean
   /** Why the backtracking engine could take exponential time on it, if it could. */
   exponential?: string
+  /** The analysis may not match the pattern V8 runs: not trusted on the backtracking engine. */
+  inexact?: string
 }
 
 interface Cost {
@@ -60,10 +66,26 @@ function logSumExp(values: number[]): number {
   return max + Math.log(values.reduce((s, v) => s + Math.exp(v - max), 0))
 }
 
+/** Largest count V8 keeps in a {n,m} quantifier; larger ones mean "no limit". */
+const MAX_COUNT = 2 ** 31 - 1
+
+/**
+ * Reads a pattern the way V8 does (with the web-compatibility rules of Annex B unless the `u`
+ * flag is set), so no quantifier or counted repeat can hide from the analysis. A construct it does
+ * not read exactly is recorded in `inexact`, and such patterns are refused on the backtracking
+ * engine; the number of capture groups is checked against V8's own count.
+ */
 class PatternParser {
   private i = 0
   private exponential: string | undefined
-  constructor(private readonly src: string) {}
+  /** Why the analysis may not match what V8 runs (the pattern is then not trusted). */
+  inexact: string | undefined
+  /** Capture groups seen. */
+  groups = 0
+  constructor(
+    private readonly src: string,
+    private readonly unicode: boolean
+  ) {}
 
   parse(): PatternInfo {
     const r = this.alternation()
@@ -111,13 +133,18 @@ class PatternParser {
     const c = s[this.i]
     if (c === '(') {
       this.i++
-      if (s.startsWith('?:', this.i) || s.startsWith('?=', this.i) || s.startsWith('?!', this.i)) this.i += 2
-      else if (s.startsWith('?<=', this.i) || s.startsWith('?<!', this.i)) this.i += 3
-      else if (s.startsWith('?<', this.i)) {
-        const end = s.indexOf('>', this.i)
-        if (end < 0) throw this.unsupported()
-        this.i = end + 1
-      }
+      if (s[this.i] === '?') {
+        const head = /\?(?::|=|!|<=|<!|<([^>]*)>|[a-zA-Z]*(?:-[a-zA-Z]*)?:)/y
+        head.lastIndex = this.i
+        const m = head.exec(s)
+        if (!m) {
+          this.inexact ??= 'group'
+          this.i++
+        } else {
+          if (m[1] !== undefined) this.groups++
+          this.i += m[0].length
+        }
+      } else this.groups++
       const body = this.alternation().cost
       if (s[this.i] !== ')') throw this.unsupported()
       this.i++
@@ -127,21 +154,68 @@ class PatternParser {
       this.i++
       if (s[this.i] === '^') this.i++
       while (this.i < s.length && s[this.i] !== ']') this.i += s[this.i] === '\\' ? 2 : 1
+      if (this.i >= s.length) this.inexact ??= 'class'
       this.i++
       return ZERO
     }
     if (c === '\\') {
-      const d = s[this.i + 1] ?? ''
-      if (/[1-9]/.test(d) || (d === 'k' && s[this.i + 2] === '<')) this.exponential ??= 'uses a backreference, which is not supported'
-      if ((d === 'u' || d === 'p' || d === 'P') && s[this.i + 2] === '{') {
-        const end = s.indexOf('}', this.i)
-        this.i = end < 0 ? s.length : end + 1
-      } else this.i += 2
+      this.escape()
       return ZERO
     }
-    // ^ $ . and literal characters (including a { or } that is not a quantifier).
+    // Quantifier characters cannot start an atom (V8 refuses those patterns).
+    if (c === '*' || c === '+' || c === '?') this.inexact ??= 'quantifier'
+    // ^ $ . and literal characters (including a { } or ] that is not part of a quantifier or class).
     this.i++
     return ZERO
+  }
+
+  /** Steps over an escape outside a class (one character, class or assertion: never quantified). */
+  private escape() {
+    const s = this.src
+    const d = s[this.i + 1] ?? ''
+    const at = (re: RegExp) => {
+      re.lastIndex = this.i + 2
+      const m = re.exec(s)
+      return m ? m[0].length : -1
+    }
+    if (/[1-9]/.test(d) || d === 'k') {
+      // A backreference (or, without named groups, a literal k: refused all the same).
+      this.exponential ??= 'uses a backreference, which is not supported'
+      if (/[1-9]/.test(d)) this.inexact ??= 'backreference'
+      this.i += 2
+      return
+    }
+    if (d === 'c') {
+      // \cX with a letter; otherwise (Annex B) the backslash alone is a literal and c comes next.
+      this.i += /[a-zA-Z]/.test(s[this.i + 2] ?? '') ? 3 : this.unicode ? 2 : 1
+      return
+    }
+    if (d === '0') {
+      if (/[0-9]/.test(s[this.i + 2] ?? '')) this.inexact ??= 'octal escape'
+      this.i += 2
+      return
+    }
+    if (d === 'x') {
+      const n = at(/[0-9a-fA-F]{2}/y)
+      this.i += 2 + Math.max(0, n)
+      return
+    }
+    if (d === 'u') {
+      // \uXXXX; with the u flag also \u{X...}. Otherwise (Annex B) a literal u.
+      const n = this.unicode ? at(/[0-9a-fA-F]{4}|\{[0-9a-fA-F]+\}/y) : at(/[0-9a-fA-F]{4}/y)
+      this.i += 2 + Math.max(0, n)
+      return
+    }
+    if ((d === 'p' || d === 'P') && this.unicode) {
+      // A property class; without the u flag a literal p or P.
+      const n = at(/\{[^}]*\}/y)
+      if (n < 0) this.inexact ??= 'property'
+      this.i += 2 + Math.max(0, n)
+      return
+    }
+    if (!d) this.inexact ??= 'escape'
+    // \d \w \s \b \n ... or an identity escape: one character either way.
+    this.i += 2
   }
 
   private quantified(atom: Cost): Cost {
@@ -153,10 +227,17 @@ class PatternParser {
     else if (c === '+') [min, max] = [1, Infinity]
     else if (c === '?') [min, max] = [0, 1]
     else if (c === '{') {
-      const m = /^\{(\d+)(,(\d*))?\}/.exec(s.slice(this.i, this.i + 40))
+      // Any number of digits (V8 accepts leading zeros); counts too large for V8 mean no limit.
+      const braces = /\{(\d+)(,(\d*))?\}/y
+      braces.lastIndex = this.i
+      const m = braces.exec(s)
       if (!m) return atom
-      min = Number(m[1])
-      max = m[2] === undefined ? min : m[3] === '' ? Infinity : Number(m[3])
+      const count = (digits: string) => {
+        const n = Number(digits)
+        return n > MAX_COUNT ? Infinity : n
+      }
+      min = count(m[1])
+      max = m[2] === undefined ? min : m[3] === '' ? Infinity : count(m[3])
       this.i += m[0].length - 1
     } else return atom
     this.i++
@@ -172,6 +253,13 @@ class PatternParser {
   }
 }
 
+/** Capture groups V8 finds in a pattern (it has compiled already, so this cannot throw). */
+function v8GroupCount(source: string, flags: string): number {
+  // The empty alternative matches the empty text at once, after an attempt at the pattern itself
+  // on an empty text, which does no work worth counting.
+  return new RegExp(`(?:${source})|`, flags.replace(/[gyl]/g, '')).exec('')!.length - 1
+}
+
 /** Patterns analysed lately (a regex literal in a loop is created again on every pass). */
 const recent = new Map<string, PatternInfo>()
 
@@ -181,11 +269,21 @@ export function analysePattern(source: string, flags: string): PatternInfo {
   const key = `${flags}/${source}`
   const known = recent.get(key)
   if (known) return known
-  const info = new PatternParser(source).parse()
+  const parser = new PatternParser(source, flags.includes('u'))
+  const info = parser.parse()
+  if (!parser.inexact && parser.groups !== v8GroupCount(source, flags)) parser.inexact = 'groups'
+  if (parser.inexact) info.inexact = parser.inexact
+  // The work per position is at least the length of the pattern, whatever the analysis says.
+  info.size = Math.max(info.size, source.length)
   if (flags.includes('m')) info.anchored = false
   if (recent.size >= 500) recent.clear()
   recent.set(key, info)
   return info
+}
+
+/** Why the backtracking engine may not run a pattern (it could take too long), if so. */
+function backtrackingRefusal(info: PatternInfo): string | undefined {
+  return info.exponential ?? (info.inexact ? 'is not supported' : undefined)
 }
 
 /** Whether V8's linear-time engine can be asked for (the `l` flag). */
@@ -264,7 +362,8 @@ export class ScriptRegExp extends RegExp {
 
   override exec(input: string): RegExpExecArray | null {
     if (!this.budget || !this.info) throw new ScriptError(TOO_LONG)
-    if (!this.linearEngine && this.info.exponential) throw new ScriptError(`The regular expression /${this.source.slice(0, 60)}/ ${this.info.exponential}`, true)
+    const refusal = this.linearEngine ? undefined : backtrackingRefusal(this.info)
+    if (refusal) throw new ScriptError(`The regular expression /${this.source.slice(0, 60)}/ ${refusal}`, true)
     const s = String(input)
     const start = this.global || this.sticky ? Math.min(Math.max(0, Math.trunc(Number(this.lastIndex)) || 0), s.length + 1) : 0
     const cost = matchCost(this.info, this.linearEngine, this.sticky, s, start)
@@ -297,7 +396,8 @@ export function scriptRegExp(source: string, flags: string, budget: RegexBudget)
       // The linear engine cannot run this pattern: it stays with the backtracking engine.
     }
   }
-  if (!re.linear && info.exponential) throw new ScriptError(`The regular expression /${source.slice(0, 60)}/ ${info.exponential}`, true)
+  const refusal = re.linear ? undefined : backtrackingRefusal(info)
+  if (refusal) throw new ScriptError(`The regular expression /${source.slice(0, 60)}/ ${refusal}`, true)
   re.info = info
   re.budget = budget
   return re
