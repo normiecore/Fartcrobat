@@ -284,6 +284,7 @@ export class FormController {
   keystroke(field: FieldInfo, k: { value: string; change: string; selStart: number; selEnd: number }): { rc: boolean; change: string } {
     const rt = this.currentRuntime()
     if (!rt || !rt.has(field.name)) return { rc: true, change: k.change }
+    rt.beginEvent()
     const r = rt.keystroke(field.name, k)
     this.reportProblems(rt)
     if (r.alerts.length) void this.showAlerts(r.alerts, 'Invalid entry')
@@ -297,9 +298,10 @@ export class FormController {
   commitText(field: FieldInfo, raw: string): Promise<{ ok: boolean; display: string }> {
     return this.enqueue(async () => {
       const rt = await this.runtime()
+      rt.beginEvent()
       const before = rt.value(field.name)
       if (sameValue(before, raw)) return { ok: true, display: rt.format(field.name, raw).display }
-      const c = rt.commit(field.name, raw)
+      const c = rt.commit(field.name, raw, { userAction: true })
       this.reportProblems(rt)
       if (!c.rc) {
         await this.showAlerts(c.alerts.length ? c.alerts : [`The value entered does not match the format of the field [ ${field.name} ]`], 'Invalid entry')
@@ -323,6 +325,7 @@ export class FormController {
   toggle(field: FieldInfo, extra: WidgetExtra | undefined): Promise<void> {
     return this.enqueue(async () => {
       const rt = await this.runtime()
+      rt.beginEvent()
       // Use the runtime's value (not the rendered one) so quick double clicks toggle twice.
       const current = rt.value(field.name)
       const isOn = field.onState !== null && current === field.onState
@@ -353,12 +356,13 @@ export class FormController {
   setChoice(field: FieldInfo, value: string | string[]): Promise<boolean> {
     return this.enqueue(async () => {
       const rt = await this.runtime()
+      rt.beginEvent()
       if (sameValue(rt.value(field.name), value)) return true
       let v: FieldValue = value
       let display: string | undefined
       let textColor: string | undefined
       if (typeof value === 'string') {
-        const c = rt.commit(field.name, value)
+        const c = rt.commit(field.name, value, { userAction: true })
         if (!c.rc) {
           this.reportProblems(rt)
           await this.showAlerts(c.alerts.length ? c.alerts : [`The value entered does not match the format of the field [ ${field.name} ]`], 'Invalid entry')
@@ -393,6 +397,7 @@ export class FormController {
       const defaults = await this.fill.defaultValues(list)
       if (!defaults.length) return
       const rt = await this.runtime()
+      rt.beginEvent()
       const changes: FillChange[] = []
       for (const d of defaults) {
         rt.setValue(d.name, d.value)
@@ -415,6 +420,7 @@ export class FormController {
   calculateNow(): Promise<number> {
     return this.enqueue(async () => {
       const rt = await this.runtime()
+      rt.beginEvent()
       if (!rt.hasCalculations()) return 0
       const r = rt.calculate()
       this.reportProblems(rt)
@@ -429,6 +435,7 @@ export class FormController {
   importValues(entries: { name: string; value: FieldValue }[]): Promise<{ imported: number; unknown: string[] }> {
     return this.enqueue(async () => {
       const rt = await this.runtime()
+      rt.beginEvent()
       const unknown: string[] = []
       const changes: FillChange[] = []
       for (const e of entries) {
@@ -503,6 +510,7 @@ export class FormController {
         case 'js':
           await this.enqueue(async () => {
             const rt = await this.runtime()
+            rt.beginEvent()
             const r = rt.runAction(action.script, field.name)
             this.reportProblems(rt)
             const calc = r.changes.some((c) => c.value !== undefined) ? this.calculations(rt) : { changes: [], alerts: [] }

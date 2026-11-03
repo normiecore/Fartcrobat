@@ -7,6 +7,7 @@ import type ops from '@features/stamps-measure/engine'
 import {
   angleDegrees,
   convertReal,
+  csvCell,
   defaultScale,
   formatNumber,
   measureShape,
@@ -69,6 +70,26 @@ async function openBytes(bytes: Uint8Array, name = 'plan.pdf'): Promise<OpenedEn
 function isPng(b: Uint8Array) {
   return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
 }
+
+describe('measurement CSV cells', () => {
+  it('keeps spreadsheets from reading PDF text as formulas', () => {
+    expect(csvCell('=HYPERLINK("http://x","y")')).toBe(`"'=HYPERLINK(""http://x"",""y"")"`)
+    expect(csvCell('+1+cmd|calc')).toBe("'+1+cmd|calc")
+    expect(csvCell('-2+3')).toBe("'-2+3")
+    expect(csvCell('@SUM(A1)')).toBe("'@SUM(A1)")
+    expect(csvCell('\t=1')).toBe("'\t=1")
+    expect(csvCell('\r=1')).toBe(`"'\r=1"`)
+  })
+
+  it('leaves numbers and ordinary text alone', () => {
+    expect(csvCell(12.5)).toBe('12.5')
+    expect(csvCell('-3.25')).toBe('-3.25')
+    expect(csvCell('+4')).toBe('+4')
+    expect(csvCell('Kitchen wall')).toBe('Kitchen wall')
+    expect(csvCell('1 in = 10 ft')).toBe('1 in = 10 ft')
+    expect(csvCell('a, b')).toBe('"a, b"')
+  })
+})
 
 describe('measuring maths', () => {
   it('converts page distances to real units with a scale', () => {

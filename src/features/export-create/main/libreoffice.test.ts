@@ -3,11 +3,12 @@
  * because main-process files belong to the Node TypeScript project. Conversion tests are skipped
  * when LibreOffice is not installed.
  */
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { candidatePaths, convertWithLibreOffice, findLibreOffice, libreOfficeVersion } from './libreoffice'
+import { candidatePaths, convertWithLibreOffice, findLibreOffice, libreOfficeVersion, prepareProfile } from './libreoffice'
 
 const FIXTURES = resolve(__dirname, '../../../../tests/fixtures/export-create')
 
@@ -68,4 +69,45 @@ describe('LibreOffice conversion', async () => {
     await expect(convertWithLibreOffice(soffice!.path, join(dir, 'missing.docx'))).rejects.toThrow(/does not exist/)
     expect(readFileSync(csv, 'utf8')).toContain('Alpha')
   })
+
+  // linked-image.docx/.odt (make_linked_office.py) link one image from http://127.0.0.1:47613 and
+  // one from file:///tmp/fartcrobat-linked-image-test.png. Neither may be loaded.
+  const LINKED_FILE = '/tmp/fartcrobat-linked-image-test.png'
+  // A 1x1 PNG.
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
+  for (const ext of ['docx', 'odt']) {
+    it.skipIf(!soffice || process.platform === 'win32')(`does not load images a ${ext} file links to`, async () => {
+      const requests: string[] = []
+      const server = createServer((req, res) => {
+        requests.push(req.url ?? '')
+        res.setHeader('Content-Type', 'image/png')
+        res.end(PNG)
+      })
+      const listening = await new Promise<boolean>((resolve) => {
+        server.once('error', () => resolve(false))
+        server.listen(47613, '127.0.0.1', () => resolve(true))
+      })
+      if (!listening) return // the port is taken: nothing to check against
+      writeFileSync(LINKED_FILE, PNG)
+      // A profile LibreOffice already wrote its own settings into is fixed up too.
+      const profileDir = mkdtempSync(join(tmpdir(), 'fc-lo-profile-'))
+      prepareProfile(profileDir)
+      writeFileSync(join(profileDir, 'user', 'registrymodifications.xcu'), '<?xml version="1.0" encoding="UTF-8"?><oor:items xmlns:oor="http://openoffice.org/2001/registry"></oor:items>')
+      try {
+        const pdf = await convertWithLibreOffice(soffice!.path, join(FIXTURES, `linked-image.${ext}`), { profileDir })
+        const mupdf = await import('mupdf')
+        const doc = mupdf.Document.openDocument(pdf, 'application/pdf')
+        const page = doc.loadPage(0)
+        expect(page.toStructuredText('').asText()).toContain('Linked images document')
+        let images = 0
+        page.toStructuredText('preserve-images').walk({ onImageBlock: () => void images++ })
+        expect(images).toBe(0)
+        expect(requests).toEqual([])
+      } finally {
+        server.close()
+        rmSync(LINKED_FILE, { force: true })
+        rmSync(profileDir, { recursive: true, force: true })
+      }
+    })
+  }
 })

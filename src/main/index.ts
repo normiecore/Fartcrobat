@@ -43,6 +43,9 @@ if (process.platform === 'win32') app.setAppUserModelId('org.fartcrobat.app')
 // Before any session exists: on Linux Chromium would otherwise download spell-check dictionaries
 // from Google as each one starts (util/spellcheck.ts).
 app.on('session-created', (s) => keepSpellCheckOffline(s))
+// Lets form scripts' regular expressions run on V8's linear-time engine (the `l` flag), so a
+// pattern in a PDF cannot freeze the window by backtracking (forms-fill/js/regex.ts).
+app.commandLine.appendSwitch('js-flags', '--enable-experimental-regexp-engine')
 
 /**
  * argv entries to skip: the executable. When running unpackaged the app path follows it; it is

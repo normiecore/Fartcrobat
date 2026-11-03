@@ -12,6 +12,7 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import {
+  csvCell,
   KIND_LABELS,
   PAGE_UNITS,
   parseFraction,
@@ -228,11 +229,6 @@ function CalibrateDialog({
       </div>
     </Dialog>
   )
-}
-
-function csvCell(v: string | number): string {
-  const s = String(v)
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
 /** Exports every measurement in the document to a CSV file (opens in any spreadsheet). */
