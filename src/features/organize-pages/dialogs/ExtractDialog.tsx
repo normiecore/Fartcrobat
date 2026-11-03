@@ -63,7 +63,7 @@ export async function extractPages(
           const bytes = await orgOps(doc).extract([p])
           const label = labels[p] && labels[p] !== String(p + 1) ? labels[p] : String(p + 1)
           const name = await uniqueName(`${sanitizeFileName(`${base} - page ${label}`)}.pdf`, (n) =>
-            invoke('file:exists', joinPath(dir, n))
+            invoke('file:exists', joinPath(dir, n), { allowRemote: true })
           )
           await writeFile(joinPath(dir, name), bytes)
           written.push(name)

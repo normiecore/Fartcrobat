@@ -1,9 +1,10 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, shell, type SaveDialogOptions as ElectronSaveDialogOptions } from 'electron'
-import { existsSync, writeFileSync, type Stats } from 'node:fs'
+import { existsSync, type Stats } from 'node:fs'
 import { access, readFile, stat } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { basename, extname, join } from 'node:path'
 import { LEGACY, PRODUCT_NAME, userDataFolderName, userDataOverride } from '@shared/identity'
+import { isRemotePath } from '@shared/remotePath'
 import type { SaveDialogOptions } from '@shared/types'
 import type { MainContext, MainFeatureModule } from './context'
 import { appVersion } from './appVersion'
@@ -17,6 +18,8 @@ import { registerAppScheme, serveRenderer } from './protocol'
 import { store } from './store'
 import { sessionTemp } from './temp'
 import { atomicWrite } from './util/atomicWrite'
+import { externalUrlToOpen } from './util/externalUrl'
+import { markAsDownloaded } from './util/markOfTheWeb'
 import { filesFromArgv, openableFile } from './util/launchPaths'
 import { removeLegacyUpdaterCache } from './util/legacyUpdaterCache'
 import { keepSpellCheckOffline } from './util/spellcheck'
@@ -42,6 +45,9 @@ if (process.platform === 'win32') app.setAppUserModelId(LEGACY.appId)
 // Before any session exists: on Linux Chromium would otherwise download spell-check dictionaries
 // from Google as each one starts (util/spellcheck.ts).
 app.on('session-created', (s) => keepSpellCheckOffline(s))
+// Lets form scripts' regular expressions run on V8's linear-time engine (the `l` flag), so a
+// pattern in a PDF cannot freeze the window by backtracking (forms-fill/js/regex.ts).
+app.commandLine.appendSwitch('js-flags', '--enable-experimental-regexp-engine')
 
 /**
  * argv entries to skip: the executable. When running unpackaged the app path follows it; it is
@@ -194,14 +200,6 @@ async function showSaveDialog(win: BrowserWindow | null, opts: SaveDialogOptions
   }
 }
 
-/** Marks a file Inkmoor extracted from a PDF as coming from the Internet (Windows SmartScreen, Office Protected View). */
-function markOfTheWeb(path: string) {
-  if (process.platform !== 'win32') return
-  try {
-    writeFileSync(`${path}:Zone.Identifier`, '[ZoneTransfer]\r\nZoneId=3\r\n')
-  } catch {}
-}
-
 function registerCoreHandlers() {
   handle('file:openDialog', async (e, opts) => {
     const win = BrowserWindow.fromWebContents(e.sender)
@@ -214,11 +212,13 @@ function registerCoreHandlers() {
   })
   handle('file:saveDialog', (e, opts) => showSaveDialog(BrowserWindow.fromWebContents(e.sender), opts))
   handle('file:read', async (_e, path) => new Uint8Array(await readFile(path)))
-  handle('file:write', async (_e, path, data) => {
+  handle('file:write', async (_e, path, data, opts) => {
     await atomicWrite(path, data)
-    if (sessionTemp().contains(path)) markOfTheWeb(path)
+    // Attachments carry the Internet mark wherever they are written (opened or saved as).
+    if (opts?.fromDocument || sessionTemp().contains(path)) await markAsDownloaded(path)
   })
-  handle('file:exists', (_e, path) => existsWithin(path, 5000))
+  // Looking at a network path signs in to that computer: only once the person chose or confirmed it.
+  handle('file:exists', (_e, path, opts) => (isRemotePath(path, process.platform) && !opts?.allowRemote ? false : existsWithin(path, 5000)))
   handle('file:stat', async (_e, path) => {
     try {
       const s = await stat(path)
@@ -299,7 +299,8 @@ function registerCoreHandlers() {
   })
 
   handle('shell:openExternal', async (_e, url) => {
-    if (/^(https?|mailto):/i.test(url)) await shell.openExternal(url)
+    const target = externalUrlToOpen(url)
+    if (target) await shell.openExternal(target)
   })
   handle('shell:showItemInFolder', (_e, path) => shell.showItemInFolder(path))
   handle('shell:openPath', async (_e, path) => {

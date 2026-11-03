@@ -10,7 +10,7 @@ import type { Rect } from '@shared/geometry'
 import type { PageInfo } from '@shared/types'
 import { hitContext, rangeRects, type PageText, type SearchHit } from '@renderer/document/textModel'
 import { buildThreads, cleanDate, threadLabel } from '@features/comments/shared'
-import { signatureStatus } from '@features/digital-signatures/status'
+import { changedAfterSigning, displayedSigningTime, signatureStatus, signingTimeNote } from '@features/digital-signatures/status'
 import type { ValidationReport } from '@features/digital-signatures/types'
 
 // common.tsx has the same rounding, but importing it would pull in the whole renderer.
@@ -439,14 +439,19 @@ export function signaturesOut(report: ValidationReport, trusted: Set<string>) {
       ...(r.invisible ? { invisible: true } : { page: r.page + 1, rect: rect2(r.rect) }),
       kind: r.kind,
       signer: r.signerName,
-      signingTime: r.timestamp?.valid ? r.timestamp.time : r.signingTime,
-      ...(r.timestamp ? { timestamp: { time: r.timestamp.time, authority: r.timestamp.authority, valid: r.timestamp.valid } } : {}),
+      signingTime: displayedSigningTime(r, trusted),
+      ...(signingTimeNote(r, trusted) ? { signingTimeNote: signingTimeNote(r, trusted) } : {}),
+      ...(r.timestamp
+        ? { timestamp: { time: r.timestamp.time, authority: r.timestamp.authority, valid: r.timestamp.valid, trusted: st.timestampTrusted } }
+        : {}),
       ...(r.reason ? { reason: r.reason } : {}),
       ...(r.location ? { location: r.location } : {}),
       status: st.level,
       summary: st.title,
       details: st.details,
-      changedAfterSigning: !r.coversWholeFile,
+      // Changed by anything other than later signatures (what caps the status at a warning).
+      changedAfterSigning: changedAfterSigning(r),
+      ...(!r.coversWholeFile && r.laterUpdates === 'signing' ? { signedAgainLater: true } : {}),
       ...(r.changes.length ? { changes: r.changes.map((c) => ({ description: c.description, allowed: c.allowed })) } : {}),
       identityTrusted: st.identityKnown,
       ...(cert

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { isRemotePath } from '@shared/remotePath'
 import {
   ask,
   dirname,
@@ -31,17 +32,33 @@ export async function openFileLink(doc: DocumentModel, spec: string) {
     }
     path = joinPath(dirname(base), native)
   }
-  try {
-    if (!(await invoke('file:exists', path))) {
-      showError(new Error(`${path} does not exist`), 'Could not open the file')
-      return
-    }
-  } catch {}
+  // A file on another computer is not even looked for before the person agrees: Windows would
+  // connect to that computer and sign in to it.
+  const remote = [spec, native, path].some((p) => isRemotePath(p, platform))
+  if (!remote) {
+    try {
+      if (!(await invoke('file:exists', path))) {
+        showError(new Error(`${path} does not exist`), 'Could not open the file')
+        return
+      }
+    } catch {}
+  }
   const isPdf = /\.pdf$/i.test(path)
-  if (!trusted.has(path)) {
+  if (remote || !trusted.has(path)) {
     const r = await ask({
       title: 'Open file?',
-      message: (
+      message: remote ? (
+        <>
+          <p>
+            This document wants to open <b>{path}</b>
+            {isPdf ? '.' : ' with its default app.'}
+          </p>
+          <p>
+            This file is on another computer. Opening it connects to that computer and may send it your
+            Windows sign-in details. Only continue if you trust the document and that computer.
+          </p>
+        </>
+      ) : (
         <>
           This document wants to open <b>{path}</b>
           {isPdf ? '.' : ' with its default app.'} Only continue if you trust the document and the file.
@@ -53,7 +70,7 @@ export async function openFileLink(doc: DocumentModel, spec: string) {
       ]
     })
     if (r !== 'open') return
-    trusted.add(path)
+    if (!remote) trusted.add(path)
   }
   if (isPdf) {
     await openPaths([path])

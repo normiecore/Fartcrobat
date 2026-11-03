@@ -377,7 +377,7 @@ export async function saveDocument(
     if (!chosen) return false
     path = chosen.toLowerCase().endsWith('.pdf') ? chosen : chosen + '.pdf'
     // The save dialog only checked the name that was typed; ask before replacing another file.
-    if (path !== chosen && path !== doc.state.filePath && (await invoke('file:exists', path))) {
+    if (path !== chosen && path !== doc.state.filePath && (await invoke('file:exists', path, { allowRemote: true }))) {
       const replace = await confirm({
         title: 'Replace file?',
         message: `“${basename(path)}” already exists. Do you want to replace it?`,

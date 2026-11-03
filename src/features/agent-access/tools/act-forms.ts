@@ -234,11 +234,14 @@ export function planFill(rt: FormRuntime, entries: ValueEntry[], opts: { calcula
   }
   const changes: FillChange[] = []
   const messages: string[] = []
+  // One request is one event for the scripts' time budget.
+  rt.beginEvent()
   try {
     for (const { field, value } of entries) {
       const name = field.name
       if (typeof value === 'string' && (field.type === 'text' || field.type === 'combo')) {
-        const c = rt.commit(name, value)
+        // Not the person's own action: the scripts may not print, save, submit or open links.
+        const c = rt.commit(name, value, { userAction: false })
         if (!c.rc) {
           const why = c.alerts.length ? c.alerts.join(' ') : 'The value does not match the format of the field.'
           throw new InvalidArgs(`The form rejected the value for "${name}": ${why}`)
