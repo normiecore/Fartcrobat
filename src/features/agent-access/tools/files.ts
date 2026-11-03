@@ -162,7 +162,7 @@ export async function confirmNetworkPaths(ctx: ToolContext, doc: DocumentModel |
       {
         title: one ? 'Use a network location?' : 'Use network locations?',
         message: paragraphs(
-          `${what} uses ${one ? `files on \\\\${hosts[0]}, another computer` : `files on ${hosts.length} other computers`} on your network. Windows signs in to ${one ? 'it' : 'them'} with your account as soon as Fartcrobat looks for a file there.`,
+          `${what} uses ${one ? `files on \\\\${hosts[0]}, another computer` : `files on ${hosts.length} other computers`} on your network. Windows signs in to ${one ? 'it' : 'them'} with your account as soon as Inkmoor looks for a file there.`,
           `If you allow it, ${clientLabel(ctx)} can use files there without asking again until it disconnects or you close this window.`
         ),
         confirmLabel: 'Allow',
@@ -219,7 +219,7 @@ const openDocument: ToolHandler = async (args, ctx) => {
     // saved password: silently, except a smart card's PIN, which the person types in Windows' dialog.
     const [opened] = await handoff(ctx, () => openPaths([path], { onError: (_p, err) => (failure = err), actor: 'agent' }))
     if (failure !== null) throw openFailure(path, failure)
-    if (!opened) throw cancelled(ctx, null, `did not open ${path}`, `${basename(path)} was not opened: the person cancelled unlocking it in Fartcrobat.`)
+    if (!opened) throw cancelled(ctx, null, `did not open ${path}`, `${basename(path)} was not opened: the person cancelled unlocking it in Inkmoor.`)
     doc = opened
     await initialViewApplied(doc)
   }
@@ -316,11 +316,11 @@ const exportDocument: ToolHandler = async (args, ctx) => {
   const pages = parsePages(args.pages, doc.pageCount)
   const imageFormat = checked(() => imageFormatFor(raw, args.image_format))
   const dpi = checked(() => optInteger(args.dpi, 'dpi', 36, 600)) ?? DEFAULT_EXPORT_OPTIONS.image.dpi
-  // Like Fartcrobat's own Export. Reading the text (get_page_text) stays possible, as on screen.
+  // Like Inkmoor's own Export. Reading the text (get_page_text) stays possible, as on screen.
   if (!doc.state.info.permissions.copy)
     throw new ToolError(
       'failed',
-      `The security settings of “${doc.state.title}” don't allow copying or exporting its content, so Fartcrobat does not export it. You can still read it with get_page_text. ${
+      `The security settings of “${doc.state.title}” don't allow copying or exporting its content, so Inkmoor does not export it. You can still read it with get_page_text. ${
         isCertificateEncrypted(doc)
           ? 'The restriction comes from the certificate the person opened it with: only someone whose certificate may change its security can lift it.'
           : 'If the person wants it exported and knows its permissions password, remove_security can lift the restriction.'
@@ -428,7 +428,7 @@ const extractPages: ToolHandler = async (args, ctx) => {
   const opened = await withAttention(() =>
     openExtractedPages(doc, bytes, `Pages from ${stripExtension(doc.state.title)}.pdf`, { actor: 'agent' })
   )
-  if (!opened) throw new ToolError('failed', 'The extracted pages could not be opened in a new tab (the password prompt was cancelled, or Fartcrobat showed the person why).')
+  if (!opened) throw new ToolError('failed', 'The extracted pages could not be opened in a new tab (the password prompt was cancelled, or Inkmoor showed the person why).')
   ctx.audit({ document: auditName(doc), summary: `extracted ${what} to a new tab` })
   return { data: { ...describeDoc(ctx, opened), source: describeDoc(ctx, doc).handle } }
 }
@@ -466,7 +466,7 @@ const combineFiles: ToolHandler = async (args, ctx) => {
         if (err instanceof ToolError) throw err
         throw openFailure(path, err)
       }
-      if (!probe) throw cancelled(ctx, null, `unlocking ${path} cancelled`, `Nothing was combined: the person cancelled unlocking ${file.name} in Fartcrobat.`)
+      if (!probe) throw cancelled(ctx, null, `unlocking ${path} cancelled`, `Nothing was combined: the person cancelled unlocking ${file.name} in Inkmoor.`)
       sources.push({ data: file.bytes, fileName: file.engineName, password: probe.password, title: stripExtension(file.name) })
       unlocks.push(probe.unlock)
     }
@@ -495,7 +495,7 @@ const combineFiles: ToolHandler = async (args, ctx) => {
     const password = protection ? sources[protection.index]?.password : undefined
     // A certificate-encrypted source's key opens the result, which keeps its certificate security.
     const opened = await withAttention(() => openAsNewDocument(bytes, name, { password, derivedFrom, actor: 'agent' }))
-    if (!opened) throw new ToolError('failed', 'The combined file could not be opened in a new tab (Fartcrobat showed the person why).')
+    if (!opened) throw new ToolError('failed', 'The combined file could not be opened in a new tab (Inkmoor showed the person why).')
     ctx.audit({ document: auditName(opened), summary: `combined ${paths.length} files into a new tab${how}` })
     return { data: { ...describeDoc(ctx, opened), files: paths.length, protectedLike: protection?.fileName ?? null } }
   } finally {

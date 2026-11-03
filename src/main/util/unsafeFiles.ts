@@ -43,15 +43,15 @@ export function unsafeToOpenReason(path: string, stats: Pick<Stats, 'isFile' | '
   const exts = extensionsOf(name)
   const last = exts[exts.length - 1]
   if (last && UNSAFE_EXTENSIONS.has(last)) {
-    return `For your safety, Fartcrobat does not open “${name}”: files of this type can run programs on your computer.`
+    return `For your safety, Inkmoor does not open “${name}”: files of this type can run programs on your computer.`
   }
   // Alternate data streams and similar tricks ("file.pdf:evil.exe", trailing dots) on Windows.
   if (platform === 'win32' && /:[^\\/]*$/.test(path.slice(2))) {
-    return `For your safety, Fartcrobat does not open “${name}”.`
+    return `For your safety, Inkmoor does not open “${name}”.`
   }
   // Without an extension the desktop picks a handler from the content, and may run a program.
   if (stats && stats.isFile() && platform !== 'win32' && !exts.length && (stats.mode & 0o111) !== 0) {
-    return `For your safety, Fartcrobat does not open “${name}”: it is a program (marked as executable).`
+    return `For your safety, Inkmoor does not open “${name}”: it is a program (marked as executable).`
   }
   return null
 }

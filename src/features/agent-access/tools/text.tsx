@@ -32,7 +32,7 @@ let reviewing = false
  */
 function refuseWhileReviewing() {
   if (useInlineReview.getState().review || reviewing)
-    throw new ToolError('busy', 'Another edit review is open in Fartcrobat. Wait until the person has finished it.')
+    throw new ToolError('busy', 'Another edit review is open in Inkmoor. Wait until the person has finished it.')
 }
 /** Proposes and reviews while no other review can start. */
 async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
@@ -51,7 +51,7 @@ function issuesForAgent(issues: TextPreview['issues'], numbering?: number[]) {
   )
 }
 
-/** The report as the AI app sees it: the review's page geometry stays in Fartcrobat. */
+/** The report as the AI app sees it: the review's page geometry stays in Inkmoor. */
 function forAgent(report: TextPreview) {
   const { previews: _previews, proposal: _proposal, pages: _pages, margins: _margins, changes, ...rest } = report
   return {
@@ -200,7 +200,7 @@ const edit: ToolHandler = async (args, ctx) => {
       applied: true,
       saved: false,
       undoLabel: await undoLabel(doc),
-      note: 'Changes are visible in Fartcrobat. Inspect with render_page; save_document writes a local PDF.'
+      note: 'Changes are visible in Inkmoor. Inspect with render_page; save_document writes a local PDF.'
     }
   }
 }
@@ -355,7 +355,7 @@ async function reviewAndApply(
       applied: true,
       saved: false,
       undoLabel: await undoLabel(doc),
-      note: 'The updated PDF is visible in Fartcrobat. Render the affected pages to inspect the result. Save as a new local PDF with save_document.'
+      note: 'The updated PDF is visible in Inkmoor. Render the affected pages to inspect the result. Save as a new local PDF with save_document.'
     }
   }
 }

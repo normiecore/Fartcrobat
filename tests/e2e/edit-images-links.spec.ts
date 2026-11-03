@@ -40,26 +40,26 @@ async function answerSaveDialog(app: ElectronApplication, path: string) {
 /** Starts a command without waiting for it (commands that open dialogs only finish when they close). */
 async function startCommand(page: Page, id: string) {
   await page.evaluate((c) => {
-    void (window as any).__fartcrobat.runCommand(c)
+    void (window as any).__inkmoor.runCommand(c)
   }, id)
 }
 
 const images = (page: Page, p = 0): Promise<Img[]> =>
-  page.evaluate((pg) => (window as any).__fartcrobat.getActiveDoc().ops('edit-images-links').images(pg), p)
+  page.evaluate((pg) => (window as any).__inkmoor.getActiveDoc().ops('edit-images-links').images(pg), p)
 
 const navLinks = (page: Page, p = 0): Promise<NavLink[]> =>
-  page.evaluate((pg) => (window as any).__fartcrobat.getActiveDoc().core.nav.links(pg), p)
+  page.evaluate((pg) => (window as any).__inkmoor.getActiveDoc().core.nav.links(pg), p)
 
-const toolId = (page: Page): Promise<string> => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)
+const toolId = (page: Page): Promise<string> => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)
 
 async function setTool(page: Page, id: string) {
-  await page.evaluate((t) => (window as any).__fartcrobat.useApp.setState({ toolId: t }), id)
+  await page.evaluate((t) => (window as any).__inkmoor.useApp.setState({ toolId: t }), id)
 }
 
 /** "Edit text & images" belongs to edit-text; register a stand-in tool when that feature is not built in. */
 async function enterEditMode(page: Page) {
   await page.evaluate(() => {
-    const reg = (window as any).__fartcrobat.registry
+    const reg = (window as any).__inkmoor.registry
     if (!reg.tools.has('edit.content'))
       reg.tools.set('edit.content', { id: 'edit.content', label: 'Edit text & images', icon: () => null, layer: () => null })
   })
@@ -70,7 +70,7 @@ async function enterEditMode(page: Page) {
 async function clientRect(page: Page, r: Rect, p = 0) {
   return page.evaluate(
     ({ r, p }) => {
-      const doc = (window as any).__fartcrobat.getActiveDoc()
+      const doc = (window as any).__inkmoor.getActiveDoc()
       const el = document.querySelector(`.viewer-page[data-page-index="${p}"]`)!.getBoundingClientRect()
       const s = (doc.state.zoom * 96) / 72
       return { x: el.left + r[0] * s, y: el.top + r[1] * s, w: (r[2] - r[0]) * s, h: (r[3] - r[1]) * s, scale: s }
@@ -84,7 +84,7 @@ const center = (c: { x: number; y: number; w: number; h: number }) => ({ x: c.x 
 async function textRect(page: Page, needle: string, p = 0): Promise<Rect> {
   return page.evaluate(
     ({ needle, p }) =>
-      (window as any).__fartcrobat
+      (window as any).__inkmoor
         .getActiveDoc()
         .pageText(p)
         .then((t: any) => {
@@ -288,11 +288,11 @@ test('edit images: select, move, resize, rotate, nudge, replace, crop, arrange, 
     await expect(frame).toHaveCount(0)
 
     // ---- the selection frame stays aligned at another zoom ----------------------------------------
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.5))
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
     await waitForRender(page)
     const z = (await images(page))[0]
-    await page.evaluate((v) => (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(0, v, { center: true }), z.visible)
+    await page.evaluate((v) => (window as any).__inkmoor.getActiveDoc().view.scrollToRect(0, v, { center: true }), z.visible)
     await page.waitForTimeout(300)
     const zc = await clientRect(page, z.visible)
     await page.mouse.click(center(zc).x, center(zc).y)
@@ -309,7 +309,7 @@ test('edit images: select, move, resize, rotate, nudge, replace, crop, arrange, 
     await expect(frame).toHaveCount(0)
     await runCommand(page, 'view.fitPage')
     await runCommand(page, 'view.rotateCW')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(0))
     await page.waitForTimeout(500)
     await waitForRender(page)
     const before = (await images(page))[0]
@@ -317,7 +317,7 @@ test('edit images: select, move, resize, rotate, nudge, replace, crop, arrange, 
     await expect(frame).toBeVisible()
     const rb = (await frame.boundingBox())!
     // the frame is turned with the page: the image's width is now vertical on screen
-    const scale = await page.evaluate(() => ((window as any).__fartcrobat.getActiveDoc().state.zoom * 96) / 72)
+    const scale = await page.evaluate(() => ((window as any).__inkmoor.getActiveDoc().state.zoom * 96) / 72)
     expect(rb.height).toBeCloseTo((before.visible[2] - before.visible[0]) * scale, 0)
     await drag(page, { x: rb.x + rb.width / 2, y: rb.y + rb.height / 2 }, { x: rb.x + rb.width / 2, y: rb.y + rb.height / 2 + 40 })
     await expect.poll(async () => (await images(page))[0].bbox[0]).toBeCloseTo(before.bbox[0] + 40 / scale, 0)
@@ -327,9 +327,9 @@ test('edit images: select, move, resize, rotate, nudge, replace, crop, arrange, 
 
     // ---- strong zoom out: the toolbar wraps to stay on the page ------------------------------------
     await runCommand(page, 'view.rotateCCW')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(0.3))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(0.3))
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(0.3, 2)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(0))
     await page.waitForTimeout(400)
     const small = page.getByRole('toolbar', { name: 'Image tools' })
     await expect(small).toBeVisible()
@@ -464,7 +464,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await shot(page, '18-go-to-view')
     await bar.getByRole('button', { name: 'Set Link' }).click()
     await expect(bar).toHaveCount(0)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(0))
     await expect.poll(async () => (await navLinks(page)).filter((l) => l.dest?.page === 1).length).toBe(1)
     const toPage2 = (await navLinks(page)).find((l) => l.dest?.page === 1)!
     expect(toPage2.dest?.zoom).toBeGreaterThan(0)
@@ -514,12 +514,12 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     const props = dialogNamed(page, 'Link Properties')
     await expect(props).toBeVisible()
     await expect(props.getByLabel('Line style')).toHaveValue('dashed')
-    await props.getByLabel('Web address').fill('fartcrobat.org/help')
+    await props.getByLabel('Web address').fill('inkmoor.org/help')
     await props.getByRole('button', { name: 'Save' }).click()
-    await expect.poll(async () => (await navLinks(page)).map((l) => l.uri)).toContain('https://fartcrobat.org/help')
+    await expect.poll(async () => (await navLinks(page)).map((l) => l.uri)).toContain('https://inkmoor.org/help')
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Edit Link')
     await page.keyboard.press('Delete')
-    await expect.poll(async () => (await navLinks(page)).map((l) => l.uri)).not.toContain('https://fartcrobat.org/help')
+    await expect.poll(async () => (await navLinks(page)).map((l) => l.uri)).not.toContain('https://inkmoor.org/help')
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Delete Link')
 
     // ---- Escape deselects first, then leaves the link tool --------------------------------------------
@@ -573,7 +573,7 @@ test('links: create, go to view, move, resize, edit, delete, create from URLs', 
     await page.keyboard.press('Control+z')
     await expect.poll(async () => (await navLinks(page)).length).toBeGreaterThan(0)
     await page.evaluate(() => {
-      const useApp = (window as any).__fartcrobat.useApp
+      const useApp = (window as any).__inkmoor.useApp
       useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
     })
     await runCommand(page, 'edit.link.tool')
@@ -603,10 +603,10 @@ test('page marks: a header added with page marks survives image edits and can st
     await openFixture(page)
     const marks = (fn: string, ...args: unknown[]) =>
       page.evaluate(
-        ({ fn, args }) => (window as any).__fartcrobat.getActiveDoc().ops('page-marks')[fn](...args),
+        ({ fn, args }) => (window as any).__inkmoor.getActiveDoc().ops('page-marks')[fn](...args),
         { fn, args }
       )
-    const hasMarks = await page.evaluate(() => (window as any).__fartcrobat.registry.commands.has('marks.headerFooter.add'))
+    const hasMarks = await page.evaluate(() => (window as any).__inkmoor.registry.commands.has('marks.headerFooter.add'))
     test.skip(!hasMarks, 'page-marks is not part of this build')
     // a header that shrinks the page content to make room for it
     await marks('apply', { type: 'HeaderFooter', shrink: true, text: { headerCenter: 'CONFIDENTIAL DRAFT' } }, { mode: 'add' })
@@ -631,7 +631,7 @@ test('page marks: a header added with page marks survives image edits and can st
     const listing = await marks('list')
     expect(listing.groups.find((g: any) => g.type === 'HeaderFooter').pages).toContain(0)
     await marks('remove', 'HeaderFooter')
-    const text = await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.text.plain(0))
+    const text = await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().core.text.plain(0))
     expect(text).not.toContain('CONFIDENTIAL DRAFT')
     expect((await images(page)).length).toBe(2)
   } finally {

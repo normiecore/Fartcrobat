@@ -90,8 +90,8 @@ export class TempFiles {
   }
 
   /**
-   * Removes temporary files and folders left by Fartcrobat sessions that are no longer running
-   * (this naming scheme and the older fartcrobat-<pid>-<name> / fartcrobat-print-<pid>-<n>).
+   * Removes temporary files and folders left by Inkmoor sessions that are no longer running
+   * (this naming scheme and the older inkmoor-<pid>-<name> / inkmoor-print-<pid>-<n>).
    * Only entries owned by the current user are touched. Returns the removed paths.
    */
   static sweepStale(base: string, isAlive: (pid: number) => boolean = pidAlive): string[] {

@@ -54,7 +54,7 @@ export async function createWith(doc: DocumentModel, tool: MarkupTool, items: Cr
 
 /** Asks the comments feature to open its editor (popup note or inline text editor). */
 export function editAnnotation(doc: DocumentModel, id: number, page: number) {
-  window.dispatchEvent(new CustomEvent('fartcrobat:edit-annotation', { detail: { docId: doc.id, id, page } }))
+  window.dispatchEvent(new CustomEvent('inkmoor:edit-annotation', { detail: { docId: doc.id, id, page } }))
 }
 
 /**

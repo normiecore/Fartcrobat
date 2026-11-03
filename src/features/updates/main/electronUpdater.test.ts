@@ -153,8 +153,8 @@ describe('electron-updater settings', () => {
     const moved: [string, string][] = []
     const updater = electronUpdater('linux', { appImageMoved: (from, to) => moved.push([from, to]) })
     await updater.findUpdate('0.2.0')
-    process.env.APPIMAGE = '/home/me/Apps/Fartcrobat-0.2.0.AppImage'
-    made[0].emit('appimage-filename-updated', '/home/me/Apps/Fartcrobat-0.2.1.AppImage')
-    expect(moved).toEqual([['/home/me/Apps/Fartcrobat-0.2.0.AppImage', '/home/me/Apps/Fartcrobat-0.2.1.AppImage']])
+    process.env.APPIMAGE = '/home/me/Apps/Inkmoor-0.2.0.AppImage'
+    made[0].emit('appimage-filename-updated', '/home/me/Apps/Inkmoor-0.2.1.AppImage')
+    expect(moved).toEqual([['/home/me/Apps/Inkmoor-0.2.0.AppImage', '/home/me/Apps/Inkmoor-0.2.1.AppImage']])
   })
 })

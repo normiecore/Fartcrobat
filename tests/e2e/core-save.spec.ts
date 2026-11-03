@@ -44,7 +44,7 @@ function signedPdf(): Uint8Array {
 async function addAnnotation(page: import('@playwright/test').Page, type: string, rect: number[]) {
   await page.evaluate(
     async ([t, r]) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       await d.ops('annots').create(0, { type: t, rect: r })
     },
     [type, rect] as const
@@ -53,7 +53,7 @@ async function addAnnotation(page: import('@playwright/test').Page, type: string
 
 test('saving a signed file twice appends two valid incremental updates', async () => {
   mupdf.setLog({ warning: () => {}, error: () => {} } as any)
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-save-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-save-'))
   const file = join(dir, 'signed.pdf')
   const original = signedPdf()
   writeFileSync(file, original)

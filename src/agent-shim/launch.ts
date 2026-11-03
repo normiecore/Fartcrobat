@@ -268,13 +268,13 @@ export function windowsCommandLine(target: LaunchTarget): string {
 }
 
 /**
- * Starts the command line in FARTCROBAT_LAUNCH_COMMAND, in the folder in FARTCROBAT_LAUNCH_DIR,
+ * Starts the command line in INKMOOR_LAUNCH_COMMAND, in the folder in INKMOOR_LAUNCH_DIR,
  * through WMI, and exits with WMI's answer (0: started). Both come from the environment and are
  * never pasted into the script, so nothing in a path can change what PowerShell runs.
  */
 export const WMI_LAUNCH_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
-  '$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $env:FARTCROBAT_LAUNCH_COMMAND; CurrentDirectory = $env:FARTCROBAT_LAUNCH_DIR }',
+  '$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $env:INKMOOR_LAUNCH_COMMAND; CurrentDirectory = $env:INKMOOR_LAUNCH_DIR }',
   'exit [int]$r.ReturnValue'
 ].join('; ')
 
@@ -295,8 +295,8 @@ export function wmiLauncher(target: LaunchTarget, env: NodeJS.ProcessEnv): Launc
       windowsHide: true,
       env: {
         ...env,
-        FARTCROBAT_LAUNCH_COMMAND: windowsCommandLine(target),
-        FARTCROBAT_LAUNCH_DIR: win32.dirname(target.executable)
+        INKMOOR_LAUNCH_COMMAND: windowsCommandLine(target),
+        INKMOOR_LAUNCH_DIR: win32.dirname(target.executable)
       }
     }
   }
@@ -335,7 +335,7 @@ function spawnDirect(
   platform: NodeJS.Platform
 ): Promise<LaunchedApp> {
   const appEnv = { ...env }
-  // Set when the AI app runs this helper with its own Electron as Node: Fartcrobat would start as
+  // Set when the AI app runs this helper with its own Electron as Node: Inkmoor would start as
   // plain Node too, and exit at once.
   delete appEnv.ELECTRON_RUN_AS_NODE
   return new Promise((resolve, reject) => {
@@ -366,7 +366,7 @@ function spawnDirect(
  *   package, and Windows redirects its descendants' writes to AppData into a private copy, which
  *   would split the app's settings (agent access among them), endpoint.json and audit log from the
  *   real ones. Being outside the AI app's job object, the app does not close with it either.
- * - On macOS through LaunchServices (`open -a`), so macOS asks for file access in Fartcrobat's own
+ * - On macOS through LaunchServices (`open -a`), so macOS asks for file access in Inkmoor's own
  *   name rather than the AI app's, and brings the app to the front.
  * Otherwise, or when that fails, as a detached child.
  */

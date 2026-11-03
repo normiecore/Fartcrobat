@@ -1,7 +1,7 @@
 # Native document editing through MCP
 
-The agent works in the PDF open in Fartcrobat. There is no embedded model or new network service.
-The MCP client supplies the language/vision understanding; Fartcrobat supplies structured layout,
+The agent works in the PDF open in Inkmoor. There is no embedded model or new network service.
+The MCP client supplies the language/vision understanding; Inkmoor supplies structured layout,
 exact native font metrics, page previews, validated edits and an undoable document engine.
 
 ## Tools and workflow
@@ -24,7 +24,7 @@ exact native font metrics, page previews, validated edits and an undoable docume
    It replaces the pages and removes the old images, page annotations/forms and bookmarks.
    Attachments and document security stay. Digitally signed documents are refused.
 5. preview_only returns proposed page images and reports without changing the live document.
-   Otherwise Fartcrobat shows the proposal on the document with a Review edits panel (see "Live
+   Otherwise Inkmoor shows the proposal on the document with a Review edits panel (see "Live
    review" below). The person accepts or rejects each edit (edit_text), paragraph (reflow_text) or
    section (rebuild_document). Cancelling the MCP call discards it. The accepted changes make one
    Agent-labelled undo step.
@@ -90,7 +90,7 @@ recomputed the preview; since 0.3 it only hides it, see below.) Decisions remain
 subset is then applied as a single native, undoable edit. Saving during review cannot save
 unaccepted proposal images or annotations, and does not end the review; any edit of the source
 document does. One review is open at a time: a second proposal is refused (`busy`) before it
-switches the person's tab. The review brings Fartcrobat forward, or flashes it on Windows.
+switches the person's tab. The review brings Inkmoor forward, or flashes it on Windows.
 
 The agent is instructed to submit small meaningful batches so proposals arrive progressively;
 MCP does not stream unfinished tool arguments or model tokens. In 0.2.1 linked text flow and full

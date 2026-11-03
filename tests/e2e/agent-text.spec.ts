@@ -70,7 +70,7 @@ test('Claude edits native PDF text after review; Decline and Undo preserve the o
   }
 })
 
-test('Claude inspects the layout and flows text through columns and new pages inside Fartcrobat', async () => {
+test('Claude inspects the layout and flows text through columns and new pages inside Inkmoor', async () => {
   const s = await startSession([fixturePath('text.pdf')])
   try {
     const { agent, page } = s
@@ -130,7 +130,7 @@ test('a person edit during review makes the proposal stale instead of overwritin
     const dialog = page.getByRole('region', { name: 'Review text changes' })
     await expect(dialog).toBeVisible()
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       await d.ops('annots').create(0, { type: 'Text', contents: 'Person edit', rect: [20, 20, 40, 40] })
     })
     expect(errorOf(await pending)).toContain('document changed')
@@ -321,7 +321,7 @@ test('the proposal is rendered sharp at the zoom of the page, not stretched', as
     const pending = agent.start('edit_text', await threeEdits(agent))
     const review = page.getByRole('region', { name: 'Review text changes' })
     await expect(page.getByRole('img', { name: 'Page 1 proposed edits' })).toBeVisible()
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(3))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(3))
     const sizes = () =>
       page.evaluate(() => {
         const pageEl = document.querySelector('.viewer-page[data-page-index="0"]')!
@@ -337,7 +337,7 @@ test('the proposal is rendered sharp at the zoom of the page, not stretched', as
     expect(proposed[0]).toBe(Math.round(612 * 3 * (96 / 72) * dpr))
     expect(Math.round(css)).toBe(Math.round(612 * 3 * (96 / 72)))
     // Higher up the whole page is too big for one bitmap: a sharp detail tile covers the view.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(12))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(12))
     const tile = page.locator('.fc-agent-access-review-proposal canvas.viewer-page-detail').first()
     await expect(tile).toBeVisible({ timeout: 15_000 })
     const scale = await tile.evaluate((c: HTMLCanvasElement) => c.width / c.getBoundingClientRect().width)

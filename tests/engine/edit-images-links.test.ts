@@ -464,7 +464,7 @@ describe('links', () => {
     const { e, o } = await setup()
     const nav = e.ops<typeof navOps>('nav')
     const web = await o.createLink(0, [72, 100, 300, 120], {
-      action: { type: 'uri', uri: 'https://fartcrobat.org/docs' },
+      action: { type: 'uri', uri: 'https://inkmoor.org/docs' },
       appearance: { visible: true, width: 2, style: 'dashed', color: '#ff0000', highlight: 'outline' }
     })
     expect(e.lastChanges?.journal.undoLabel).toBe('Create Link')
@@ -473,7 +473,7 @@ describe('links', () => {
     expect(web.rect[1]).toBeCloseTo(100, 1)
     expect(web.appearance).toEqual({ visible: true, width: 2, style: 'dashed', color: '#ff0000', highlight: 'outline' })
     let links = await nav.links(0)
-    expect(links.map((l) => l.uri)).toContain('https://fartcrobat.org/docs')
+    expect(links.map((l) => l.uri)).toContain('https://inkmoor.org/docs')
     const toPage = await o.createLink(0, [72, 130, 300, 150], {
       action: { type: 'page', page: 1, x: 72, y: 100, zoom: 150, fit: 'XYZ' },
       appearance: { visible: false, width: 1, style: 'solid', color: '#000000', highlight: 'invert' }

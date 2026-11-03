@@ -14,7 +14,7 @@ const FIELD_TARGET_MS = 60_000
 let lastSignField: (SignFieldTarget & { at: number }) | null = null
 
 /**
- * forms-fill dispatches 'fartcrobat:sign-field' when an unsigned signature field is clicked. When
+ * forms-fill dispatches 'inkmoor:sign-field' when an unsigned signature field is clicked. When
  * certificate signing (digital-signatures) is not available, it offers "Fill & Sign instead",
  * which opens this menu: the signature chosen then goes into that field.
  */
@@ -142,8 +142,8 @@ export function SignMenuHost() {
 
   useEffect(() => {
     void loadSaved()
-    window.addEventListener('fartcrobat:sign-field', onSignField)
-    return () => window.removeEventListener('fartcrobat:sign-field', onSignField)
+    window.addEventListener('inkmoor:sign-field', onSignField)
+    return () => window.removeEventListener('inkmoor:sign-field', onSignField)
   }, [])
 
   // Esc closes the menu, or cancels placing a signature and goes back to the previous tool. Caught

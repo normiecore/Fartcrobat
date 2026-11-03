@@ -65,7 +65,7 @@ function lengthBytes(v: PdfValue): number | null {
 /** A file whose /Recipients are over PUBSEC_RECIPIENT_LIMITS (the main process would refuse them). */
 export function tooManyRecipients(): EngineError {
   return new EngineError(
-    'This certificate-encrypted document has more recipients than Fartcrobat can read ' +
+    'This certificate-encrypted document has more recipients than Inkmoor can read ' +
       `(at most ${PUBSEC_RECIPIENT_LIMITS.envelopes} envelopes and ${PUBSEC_RECIPIENT_LIMITS.totalBytes / 1024 / 1024} MB).`,
     'CERTIFICATE_UNSUPPORTED'
   )

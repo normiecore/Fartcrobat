@@ -131,10 +131,10 @@ export function imageExportPaths(path: string, pages: number[], imageFormat: Exc
 }
 
 /**
- * Why a file could not be opened, for the agent: "unsupported" for protection Fartcrobat cannot
+ * Why a file could not be opened, for the agent: "unsupported" for protection Inkmoor cannot
  * open (Microsoft Purview / RMS, kinds of certificate encryption it does not read: MuPDF's
  * "unknown encryption handler: 'Adobe.PubSec'"), else "file_error". Certificate-encrypted files
- * Fartcrobat reads fail with the codes certificateFailure handles.
+ * Inkmoor reads fail with the codes certificateFailure handles.
  */
 export function openErrorCode(message: string): 'unsupported' | 'file_error' {
   return /unknown encryption handler|unsupported encryption|Adobe\.PubSec|MicrosoftIRMServices/i.test(message) ? 'unsupported' : 'file_error'
@@ -149,9 +149,9 @@ function windowsStoreReason(state: unknown): string | null {
 
 /**
  * Why a certificate-encrypted file was not opened although the person did not cancel (they were
- * told why in Fartcrobat): what the agent is told, or null for other errors.
+ * told why in Inkmoor): what the agent is told, or null for other errors.
  * - NO_CERTIFICATE (CertificateUnavailableError): none of the person's keys opens it;
- *   "unsupported" when only keys Fartcrobat cannot use yet (elliptic-curve) match.
+ *   "unsupported" when only keys Inkmoor cannot use yet (elliptic-curve) match.
  * - CERTIFICATE_FAILED (CertificateKeyFailedError): a key that matches could not be used.
  * - CERTIFICATE_OPEN_FAILED (engine): a key opened it, but the file is damaged.
  */
@@ -169,7 +169,7 @@ export function certificateFailure(name: string, err: unknown): { code: 'unsuppo
   if (e.code === 'CERTIFICATE_FAILED')
     return {
       code: 'failed',
-      message: `${name} was not opened: the person's key “${String(e.label ?? '')}” could not be used. Fartcrobat told them: ${message} Never ask for keys, PINs or passwords in chat.`
+      message: `${name} was not opened: the person's key “${String(e.label ?? '')}” could not be used. Inkmoor told them: ${message} Never ask for keys, PINs or passwords in chat.`
     }
   if (e.code !== 'NO_CERTIFICATE') return null
   const busy = e.windowsStore === 'busy'
@@ -177,25 +177,25 @@ export function certificateFailure(name: string, err: unknown): { code: 'unsuppo
   const storeNote = busy
     ? ' The Windows certificate store did not answer in time (it may have been waiting for a smart card PIN), so a certificate there may open it: try again later.'
     : store
-      ? ` Fartcrobat could not search the Windows certificate store on this computer (${store}), so a certificate there may open it but cannot be used.`
+      ? ` Inkmoor could not search the Windows certificate store on this computer (${store}), so a certificate there may open it but cannot be used.`
       : ''
   if (e.unsupportedKey)
     return {
       code: 'unsupported',
-      message: `${name} is encrypted for an elliptic-curve certificate, which Fartcrobat cannot open yet.${storeNote} Ask the sender for a copy encrypted for an RSA certificate or protected with a password.`
+      message: `${name} is encrypted for an elliptic-curve certificate, which Inkmoor cannot open yet.${storeNote} Ask the sender for a copy encrypted for an RSA certificate or protected with a password.`
     }
   return {
     code: 'failed',
-    message: `${name} is encrypted with certificates, and none of the person's ${store || busy ? 'Digital IDs' : 'certificates or Digital IDs'} opens it.${storeNote} Fartcrobat showed them who it is encrypted for; they can add the Digital ID it needs in Fartcrobat (Preferences > Digital IDs) and try again. Never ask for keys or passwords in chat.`
+    message: `${name} is encrypted with certificates, and none of the person's ${store || busy ? 'Digital IDs' : 'certificates or Digital IDs'} opens it.${storeNote} Inkmoor showed them who it is encrypted for; they can add the Digital ID it needs in Inkmoor (Preferences > Digital IDs) and try again. Never ask for keys or passwords in chat.`
   }
 }
 
-/** Message for a file whose protection Fartcrobat cannot open. */
+/** Message for a file whose protection Inkmoor cannot open. */
 export function unsupportedMessage(name: string, detail: string): string {
   const kind = /IRM|Purview/i.test(detail)
     ? 'Microsoft Purview (Rights Management) protection'
     : /PubSec|certificate/i.test(detail)
       ? 'certificate encryption'
       : 'a kind of encryption'
-  return `${name} uses ${kind} that Fartcrobat cannot open. Ask the sender for a copy protected with a password, or open it in the app it was protected with.`
+  return `${name} uses ${kind} that Inkmoor cannot open. Ask the sender for a copy protected with a password, or open it in the app it was protected with.`
 }

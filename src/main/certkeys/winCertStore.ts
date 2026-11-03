@@ -9,7 +9,7 @@
 // One helper process serves the whole app session (owner decision: a smart card PIN is asked once per
 // session, and Windows keeps it per process). It starts on first use and stays until stop() ("Lock
 // smart card", quitting), a timeout or a cancel; the next request then starts a new one, and Windows
-// asks for the PIN again. It also ends by itself when Fartcrobat goes away, because its stdin closes.
+// asks for the PIN again. It also ends by itself when Inkmoor goes away, because its stdin closes.
 //
 // Nothing the helper prints is logged: its answers are parsed, its stderr is drained and dropped.
 import { spawn, type ChildProcess } from 'node:child_process'

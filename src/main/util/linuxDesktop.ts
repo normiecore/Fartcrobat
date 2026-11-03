@@ -8,14 +8,16 @@ import { LEGACY, PRODUCT_NAME, productNames } from '@shared/identity'
  * name for good (src/shared/identity.ts): xdg-mime defaults point at it.
  */
 export const DESKTOP_FILE = LEGACY.desktopFile
+const markerFor = (name: string) => `X-${name.replace(/[^A-Za-z0-9-]/g, '')}-Generated=true`
 /**
  * Marks desktop entries the app wrote itself (AppImage / tar.gz installs), so it may update them.
  * The key carries the product name; entries written before a rename carry the old one.
  */
-export const GENERATED_MARKER = 'X-Fartcrobat-Generated=true'
-const markerFor = (name: string) => `X-${name.replace(/[^A-Za-z0-9-]/g, '')}-Generated=true`
+export const GENERATED_MARKER = markerFor(PRODUCT_NAME)
+/** The marker of entries written before the rename (src/shared/identity.ts). */
+export const LEGACY_GENERATED_MARKER = markerFor(LEGACY.productName)
 /** Every marker an entry this app wrote may carry, current first. */
-export const GENERATED_MARKERS: readonly string[] = [...new Set([markerFor(productNames()[0]), GENERATED_MARKER])]
+export const GENERATED_MARKERS: readonly string[] = [...new Set(productNames().map(markerFor))]
 
 /** Whether desktop entry text was written by this app (under any of its names). */
 export const hasGeneratedMarker = (content: string): boolean =>
@@ -44,7 +46,7 @@ export function findDesktopFile(env: Env = process.env, home = homedir()): strin
   return null
 }
 
-/** Whether the desktop entry at `path` was written by Fartcrobat (not by a package). */
+/** Whether the desktop entry at `path` was written by Inkmoor (not by a package). */
 export function isGeneratedDesktopFile(path: string): boolean {
   try {
     return hasGeneratedMarker(readFileSync(path, 'utf8'))
@@ -62,7 +64,7 @@ export function desktopExecQuote(path: string): string {
   return quoted.replace(/\\/g, '\\\\')
 }
 
-/** A desktop entry that opens PDFs (and the other types Fartcrobat reads) with `executable`. */
+/** A desktop entry that opens PDFs (and the other types Inkmoor reads) with `executable`. */
 export function desktopEntry(executable: string, icon: string): string {
   return [
     '[Desktop Entry]',
@@ -77,7 +79,7 @@ export function desktopEntry(executable: string, icon: string): string {
     'MimeType=application/pdf;',
     'Keywords=pdf;acrobat;reader;editor;sign;forms;',
     `StartupWMClass=${PRODUCT_NAME}`,
-    GENERATED_MARKERS[0],
+    GENERATED_MARKER,
     ''
   ].join('\n')
 }
@@ -96,7 +98,7 @@ export function refreshedDesktopEntry(content: string, executable: string, icon:
 
 /**
  * A generated entry that starts `from`, changed to start `to` instead; null when `content` is not
- * a generated entry or starts something else (another Fartcrobat install the person chose).
+ * a generated entry or starts something else (another Inkmoor install the person chose).
  */
 export function retargetDesktopEntry(content: string, from: string, to: string): string | null {
   if (!hasGeneratedMarker(content)) return null

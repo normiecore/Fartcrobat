@@ -25,7 +25,7 @@ export interface DigitalIdRecord {
   /** Base64 DER certificate (public), for exporting without the password. */
   certificate: string
   selfSigned: boolean
-  /** Created by Fartcrobat in the user data folder (removing it deletes the file). */
+  /** Created by Inkmoor in the user data folder (removing it deletes the file). */
   createdByApp: boolean
   addedAt: number
 }

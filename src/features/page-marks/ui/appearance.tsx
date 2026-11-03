@@ -231,7 +231,7 @@ export function VisibilityFields({
       {(!value.showOnPrint || !value.showOnScreen) && (
         <div className="fc-page-marks-hint">
           Saved as a layer that PDF apps show or hide when printing and on screen, like Acrobat does. In
-          Fartcrobat it takes effect once the file is saved and opened again.
+          Inkmoor it takes effect once the file is saved and opened again.
         </div>
       )}
       {!value.showOnPrint && !value.showOnScreen && (

@@ -1,7 +1,7 @@
 /**
- * Passwords remembered on this device. Most tests run with FARTCROBAT_TEST_SECRET_CIPHER=1, which
+ * Passwords remembered on this device. Most tests run with INKMOOR_TEST_SECRET_CIPHER=1, which
  * unpackaged builds honour by using a reversible test cipher (CI runners have no keyring); a
- * packaged build ignores it, so the file is skipped with FARTCROBAT_EXECUTABLE. One test uses the
+ * packaged build ignores it, so the file is skipped with INKMOOR_EXECUTABLE. One test uses the
  * real safeStorage without a keyring, where the checkbox is replaced by a note.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -12,9 +12,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { ROOT, activeDocState, fixturePath, launch, runCommand, waitForRender } from './helpers'
 
-test.skip(!!process.env.FARTCROBAT_EXECUTABLE, 'packaged builds have no test cipher')
+test.skip(!!process.env.INKMOOR_EXECUTABLE, 'packaged builds have no test cipher')
 
-const TEST_CIPHER = { FARTCROBAT_TEST_SECRET_CIPHER: '1' }
+const TEST_CIPHER = { INKMOOR_TEST_SECRET_CIPHER: '1' }
 /** launch() turns remembering off for every other spec. */
 const REMEMBER_ON = { rememberPasswords: true }
 const REMEMBER = 'Remember password on this device'
@@ -26,12 +26,12 @@ function dialogTitled(page: Page, title: string) {
 }
 
 async function openPath(page: Page, path: string) {
-  await page.evaluate((p) => void (window as any).__fartcrobat.openPaths([p]), path)
+  await page.evaluate((p) => void (window as any).__inkmoor.openPaths([p]), path)
 }
 
 /** A copy of a fixture in a new folder (the folder and file names never contain the password). */
 function tempCopy(fixture: string, name = 'contract.pdf'): string {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-pw-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-pw-'))
   const path = join(dir, name)
   copyFileSync(fixturePath(fixture), path)
   return path
@@ -158,13 +158,13 @@ test('unticking the checkbox stores nothing, even after a wrong password, and is
 test('Protect remembers the new password; the panel shows it saved; Forget brings the prompt back', async () => {
   const { app, page } = await launch([], TEST_CIPHER, REMEMBER_ON)
   try {
-    const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-pw-'))
+    const dir = mkdtempSync(join(tmpdir(), 'inkmoor-pw-'))
     const src = join(dir, 'report.pdf')
     copyFileSync(fixturePath('text.pdf'), src)
     const protectedPath = join(dir, 'report-protected.pdf')
     await openPath(page, src)
     await waitForRender(page)
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('protect.encrypt'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('protect.encrypt'))
     const dialog = dialogTitled(page, 'Protect using password')
     await expect(dialog.getByRole('checkbox', { name: REMEMBER })).toBeChecked()
     await page.getByTestId('protect-open-password').fill('open-me')
@@ -175,7 +175,7 @@ test('Protect remembers the new password; the panel shows it saved; Forget bring
     await expect(done).toContainText('It is saved on this device, so the file opens here without asking.')
     await done.getByRole('button', { name: 'OK', exact: true }).click()
 
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('protect.open'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('protect.open'))
     const saved = page.getByTestId('saved-password')
     await expect(saved).toContainText('Password saved on this device')
     await shot(page, 'protect-panel')
@@ -183,7 +183,7 @@ test('Protect remembers the new password; the panel shows it saved; Forget bring
     await openPath(page, protectedPath)
     await expectOpenedWithoutPrompt(page, 'report-protected.pdf')
 
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('protect.open'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('protect.open'))
     await saved.getByRole('button', { name: 'Forget' }).click()
     await expect(saved).toHaveCount(0)
     await closeAll(page)
@@ -198,7 +198,7 @@ test('a Digital ID password is remembered when signing and filled in next time; 
   const PASSWORD = 'Signing-Pass-42'
   const { app, page } = await launch([], TEST_CIPHER, REMEMBER_ON)
   try {
-    const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-pw-'))
+    const dir = mkdtempSync(join(tmpdir(), 'inkmoor-pw-'))
     for (const name of ['one.pdf', 'two.pdf']) copyFileSync(fixturePath('text.pdf'), join(dir, name))
     await openPath(page, join(dir, 'one.pdf'))
     await expect.poll(async () => (await activeDocState(page))?.title).toBe('one.pdf')
@@ -227,7 +227,7 @@ test('a Digital ID password is remembered when signing and filled in next time; 
       })
     }, join(dir, 'one-certified.pdf'))
     const saveDialogCalls = () => app.evaluate(() => (globalThis as { __saveDialogCalls?: number }).__saveDialogCalls ?? 0)
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('sign.certifyInvisible'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('sign.certifyInvisible'))
     const sign = dialogTitled(page, 'Certify with a Digital ID (invisible)')
     await expect(sign.getByRole('checkbox', { name: REMEMBER })).toBeChecked()
     await expect(sign.getByLabel('Digital ID password')).toHaveValue('')
@@ -240,7 +240,7 @@ test('a Digital ID password is remembered when signing and filled in next time; 
     await openPath(page, join(dir, 'two.pdf'))
     await expect.poll(async () => (await activeDocState(page))?.title).toBe('two.pdf')
     await waitForRender(page)
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('sign.certifyInvisible'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('sign.certifyInvisible'))
     await expect(sign.getByLabel('Digital ID password')).toHaveValue(PASSWORD)
     await expect(sign).toContainText('Filled in with the password saved on this device.')
     await shot(page, 'sign-dialog')
@@ -263,12 +263,12 @@ test('a Digital ID password is remembered when signing and filled in next time; 
 })
 
 test('machine policy turns remembering off: no checkbox, and saved passwords are removed at start-up', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-policy-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-policy-'))
   const policy = join(dir, 'policy.json')
   writeFileSync(policy, JSON.stringify({ rememberPasswords: { enabled: false } }))
-  const userData = mkdtempSync(join(tmpdir(), 'fartcrobat-e2e-'))
+  const userData = mkdtempSync(join(tmpdir(), 'inkmoor-e2e-'))
   writeFileSync(join(userData, 'saved-passwords.json'), JSON.stringify({ version: 1, records: [] }))
-  const { app, page } = await launch([], { ...TEST_CIPHER, FARTCROBAT_POLICY_FILE: policy, FARTCROBAT_USER_DATA: userData }, REMEMBER_ON)
+  const { app, page } = await launch([], { ...TEST_CIPHER, INKMOOR_POLICY_FILE: policy, INKMOOR_USER_DATA: userData }, REMEMBER_ON)
   try {
     await expect.poll(() => existsSync(join(userData, 'saved-passwords.json'))).toBe(false)
     await openPath(page, tempCopy('encrypted.pdf'))
@@ -285,15 +285,15 @@ test('machine policy turns remembering off: no checkbox, and saved passwords are
 })
 
 test('a policy file that cannot be understood turns remembering off but keeps saved passwords', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-policy-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-policy-'))
   const policy = join(dir, 'policy.json')
   // Meant to turn agent access off only; the trailing comma makes it invalid JSON.
   writeFileSync(policy, '{"agentAccess":{"enabled":false},}')
-  const userData = mkdtempSync(join(tmpdir(), 'fartcrobat-e2e-'))
+  const userData = mkdtempSync(join(tmpdir(), 'inkmoor-e2e-'))
   const storeFile = join(userData, 'saved-passwords.json')
   const stored = JSON.stringify({ version: 1, records: [] })
   writeFileSync(storeFile, stored)
-  const { app, page } = await launch([], { ...TEST_CIPHER, FARTCROBAT_POLICY_FILE: policy, FARTCROBAT_USER_DATA: userData }, REMEMBER_ON)
+  const { app, page } = await launch([], { ...TEST_CIPHER, INKMOOR_POLICY_FILE: policy, INKMOOR_USER_DATA: userData }, REMEMBER_ON)
   try {
     await openPath(page, tempCopy('encrypted.pdf'))
     const prompt = dialogTitled(page, 'Password required')
@@ -350,7 +350,7 @@ test('an AI app opens a file whose password is saved, without a dialog; the audi
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [join(ROOT, 'out/agent/shim.mjs')],
-      env: { ...getDefaultEnvironment(), FARTCROBAT_USER_DATA: userData },
+      env: { ...getDefaultEnvironment(), INKMOOR_USER_DATA: userData },
       stderr: 'pipe'
     })
     client = new Client({ name: 'saved-passwords-e2e', version: '1.0.0' })

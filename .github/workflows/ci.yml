@@ -27,7 +27,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # Independent tools the tests use to check the files Fartcrobat writes: pypdf and poppler's
+      # Independent tools the tests use to check the files Inkmoor writes: pypdf and poppler's
       # pdfsig read signed PDFs, pyHanko reads certificate-encrypted ones, LibreOffice opens
       # exported Word/Excel/PowerPoint files and converts Office files. Without them those checks
       # are skipped, so CI installs them.
@@ -47,7 +47,7 @@ jobs:
       - run: npm test
         env:
           # The pyHanko checks of certificate encryption fail instead of skipping (tests/engine/pyhanko.ts).
-          FARTCROBAT_REQUIRE_PYHANKO: '1'
+          INKMOOR_REQUIRE_PYHANKO: '1'
       - run: npm run build
       - name: End-to-end tests
         run: xvfb-run -a npx playwright test

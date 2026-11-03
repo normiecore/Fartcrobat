@@ -66,7 +66,7 @@ function ChatGPTSetup({
       footer={<Button onClick={close}>Done</Button>}
     >
       <p>
-        In ChatGPT Desktop, open <b>Settings → MCP servers → Add server</b>. Name it Fartcrobat and choose
+        In ChatGPT Desktop, open <b>Settings → MCP servers → Add server</b>. Name it Inkmoor and choose
         STDIO. This requires Node.js 22 or newer installed on this computer.
       </p>
       <p>Command</p>
@@ -74,7 +74,7 @@ function ChatGPTSetup({
       <p>Argument (one entry, including spaces)</p>
       <pre className={`${P}-chatgpt-config`}>{config.args[0]}</pre>
       <p>Environment variable</p>
-      <pre className={`${P}-chatgpt-config`}>FARTCROBAT_USER_DATA={config.env.FARTCROBAT_USER_DATA}</pre>
+      <pre className={`${P}-chatgpt-config`}>INKMOOR_USER_DATA={config.env.INKMOOR_USER_DATA}</pre>
       <p>
         Save and restart the MCP server. In a local computer chat, use /mcp to check the connection, then ask
         which PDF is open. Workspace policies may restrict setup.
@@ -93,7 +93,7 @@ function ChatGPTSetup({
           {copied ? 'Copied' : 'Copy configuration'}
         </Button>
         <p>
-          Add this entry to your Codex host config.toml only if no fartcrobat entry exists. Update an existing
+          Add this entry to your Codex host config.toml only if no inkmoor entry exists. Update an existing
           entry rather than duplicating it.
         </p>
       </details>
@@ -125,7 +125,7 @@ export function AgentSettings() {
     try {
       setInstallMessage(await invoke('feature:agent-access:installExtension'))
     } catch (err) {
-      showError(err, 'Could not add Fartcrobat to Claude Desktop')
+      showError(err, 'Could not add Inkmoor to Claude Desktop')
     } finally {
       setInstalling(false)
     }
@@ -145,7 +145,7 @@ export function AgentSettings() {
         </p>
       )}
       <p className={`${P}-settings-about`}>
-        AI apps on this computer, such as Claude Desktop, can read the documents open in Fartcrobat and any
+        AI apps on this computer, such as Claude Desktop, can read the documents open in Inkmoor and any
         file you can open, make changes you can undo, and ask you here before anything that cannot be undone.
         Text they read is sent to that AI app&apos;s service. Passwords never reach the AI app, but a file
         whose password is saved on this device opens for it without asking.

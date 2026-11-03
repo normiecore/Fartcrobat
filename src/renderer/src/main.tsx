@@ -70,7 +70,7 @@ async function boot() {
   const refreshChrome = () => {
     const doc = getActiveDoc()
     const s = doc?.state
-    void invoke('window:setTitle', s ? `${s.dirty ? '• ' : ''}${s.title} - Fartcrobat` : 'Fartcrobat')
+    void invoke('window:setTitle', s ? `${s.dirty ? '• ' : ''}${s.title} - Inkmoor` : 'Inkmoor')
     scheduleMenuUpdate()
   }
   useApp.subscribe((s, prev) => {
@@ -105,7 +105,7 @@ async function boot() {
   void refreshRecent()
   const launch = await invoke('app:launchFiles').catch(() => [] as string[])
   if (launch.length) await openPaths(launch)
-  ;(window as any).__fartcrobat = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes }
+  ;(window as any).__inkmoor = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes }
 }
 
 void boot()

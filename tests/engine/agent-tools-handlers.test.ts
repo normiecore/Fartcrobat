@@ -293,7 +293,7 @@ describe('copy-restricted documents', () => {
 
     const err = await errorOf(call('export_document', { handle, format: 'text', path: 'C:\\out\\restricted.txt' }))
     expect(err.code).toBe('failed')
-    expect(err.message).toMatch(/don't allow copying or exporting its content, so Fartcrobat does not export it. You can still read it with get_page_text/)
+    expect(err.message).toMatch(/don't allow copying or exporting its content, so Inkmoor does not export it. You can still read it with get_page_text/)
     expect(invoked).toEqual([])
 
     const plain = modelFor(await openFixture('text.pdf'), 'text.pdf')

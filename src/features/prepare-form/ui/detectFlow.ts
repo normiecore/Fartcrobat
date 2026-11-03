@@ -88,7 +88,7 @@ export async function offerDetection(doc: DocumentModel) {
   const answer = await ask({
     title: 'Detect form fields automatically?',
     message:
-      'This document has no form fields yet. Fartcrobat can look for blanks, lines, boxes and signature lines and turn them into fillable fields. You can review, rename, move or undo them afterwards.',
+      'This document has no form fields yet. Inkmoor can look for blanks, lines, boxes and signature lines and turn them into fillable fields. You can review, rename, move or undo them afterwards.',
     buttons: [
       { id: 'no', label: 'Not now' },
       { id: 'yes', label: 'Detect fields', variant: 'primary' }

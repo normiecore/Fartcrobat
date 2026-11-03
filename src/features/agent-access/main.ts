@@ -140,13 +140,13 @@ function helperForApps(): string {
 
 function extensionPath(): string {
   return app.isPackaged
-    ? join(process.resourcesPath, 'agent', 'fartcrobat.mcpb')
-    : join(__dirname, '..', 'agent', 'fartcrobat.mcpb')
+    ? join(process.resourcesPath, 'agent', 'inkmoor.mcpb')
+    : join(__dirname, '..', 'agent', 'inkmoor.mcpb')
 }
 
 /** A shorter wait before calls answer still_running, for tests of unpackaged builds only. */
 function testWaitMs(): number | undefined {
-  const ms = Number(process.env.FARTCROBAT_AGENT_WAIT_MS)
+  const ms = Number(process.env.INKMOOR_AGENT_WAIT_MS)
   return !app.isPackaged && Number.isFinite(ms) && ms > 0 ? ms : undefined
 }
 
@@ -211,7 +211,7 @@ export function register(ctx: MainContext) {
   if (app.isPackaged) void refreshHelperCopy(bundledHelper(), helperForApps(), false).catch(() => {})
   ctx.handle('feature:agent-access:chatgptConfig', async () => {
     const shim = helperForApps()
-    if (!existsSync(bundledHelper())) throw new Error('The MCP helper is missing. Build or reinstall Fartcrobat first.')
+    if (!existsSync(bundledHelper())) throw new Error('The MCP helper is missing. Build or reinstall Inkmoor first.')
     if (app.isPackaged) await refreshHelperCopy(bundledHelper(), shim, true)
     const command = 'node'
     const args = [shim]
@@ -224,7 +224,7 @@ export function register(ctx: MainContext) {
   })
   ctx.handle('feature:agent-access:installExtension', async () => {
     const path = extensionPath()
-    if (!existsSync(path)) return 'The Claude Desktop extension is not included in this copy of Fartcrobat.'
+    if (!existsSync(path)) return 'The Claude Desktop extension is not included in this copy of Inkmoor.'
     return shell.openPath(path)
   })
 

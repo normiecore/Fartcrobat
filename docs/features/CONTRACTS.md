@@ -48,9 +48,9 @@ Commands other features call or list (register exactly these ids if you own them
   redact: redact.apply, redact.findText
 
 Window events (CustomEvent on window, detail shown):
-  'fartcrobat:edit-annotation' {docId, id, page} — markup-tools/fill-sign dispatch after creating a sticky note or text box so
+  'inkmoor:edit-annotation' {docId, id, page} — markup-tools/fill-sign dispatch after creating a sticky note or text box so
      comments opens its popup note / inline editor for it. comments listens.
-  'fartcrobat:sign-field' {docId, fieldId, fieldName, page, rect} — forms-fill dispatches when the user clicks an unsigned
+  'inkmoor:sign-field' {docId, fieldId, fieldName, page, rect} — forms-fill dispatches when the user clicks an unsigned
      signature field; digital-signatures listens and starts certificate signing for that field.
 
 Selections: comments owns {kind:'annotations', page, ids}. Other features use {kind:'custom', type:'<feature-id>:<what>', page, data}.

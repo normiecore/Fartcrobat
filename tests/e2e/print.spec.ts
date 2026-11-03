@@ -92,7 +92,7 @@ async function capturedJobs(app: ElectronApplication): Promise<CapturedJob[]> {
 /** Runs a command without waiting for it to finish (file.print resolves only when its dialog closes). */
 async function startCommand(page: Page, id: string) {
   await page.evaluate((c) => {
-    void (window as any).__fartcrobat.runCommand(c)
+    void (window as any).__inkmoor.runCommand(c)
   }, id)
 }
 
@@ -141,7 +141,7 @@ test('print dialog: page range, 2-up, booklet, poster, comments, grayscale, perm
 
     // A comment on page 2, to check the Comments & Forms choice.
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       await d.ops('annots').create(1, { type: 'Square', rect: [380, 560, 540, 700], color: '#ff0000', interiorColor: '#ff0000' })
     })
 
@@ -288,7 +288,7 @@ test('print dialog: page range, 2-up, booklet, poster, comments, grayscale, perm
     await dialog(page).locator('label.fc-print-mode', { hasText: 'Size' }).click()
     await dialog(page).getByRole('checkbox', { name: 'Save ink/toner' }).uncheck()
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
     })
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
@@ -316,7 +316,7 @@ test('print dialog: page range, 2-up, booklet, poster, comments, grayscale, perm
     expect((await capturedJobs(app)).length).toBe(2)
 
     // Right-click a page > Print This Page…
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(2))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(2))
     await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
     await page.locator('.viewer-page[data-page-index="2"]').click({ button: 'right', position: { x: 250, y: 320 } })
     await page.getByRole('menuitem', { name: 'Print This Page…' }).click()
@@ -374,7 +374,7 @@ test('print: Properties uses the system dialog, cancel stops a large job, restri
     expect((await capturedJobs(app)).length).toBe(1)
 
     // A document whose security forbids printing explains why instead of opening the dialog.
-    await page.evaluate((p) => (window as any).__fartcrobat.openPaths([p]), fixturePath('print/no-print.pdf'))
+    await page.evaluate((p) => (window as any).__inkmoor.openPaths([p]), fixturePath('print/no-print.pdf'))
     await expect.poll(async () => (await activeDocState(page))?.title).toBe('no-print.pdf')
     await page.keyboard.press(`${MOD}+KeyP`)
     const notice = page.getByRole('dialog').filter({ hasText: 'Printing isn’t allowed' })

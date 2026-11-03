@@ -74,7 +74,7 @@ export async function loadImageBytes(
   try {
     bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>]))
   } catch {
-    throw new Error('This file is not an image Fartcrobat can read. Use a PNG, JPEG, GIF, BMP, TIFF or WebP image.')
+    throw new Error('This file is not an image Inkmoor can read. Use a PNG, JPEG, GIF, BMP, TIFF or WebP image.')
   }
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
   canvas.getContext('2d')!.drawImage(bitmap, 0, 0)

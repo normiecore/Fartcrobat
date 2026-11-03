@@ -3,7 +3,7 @@
  * it downloads a Hunspell dictionary from Google (redirector.gvt1.com) for every language on a
  * session's list, as soon as the session starts and whether or not checking is turned on:
  * setSpellCheckerEnabled(false) does not stop the download, an empty language list does.
- * Fartcrobat makes no network request of its own besides the update check, so every session on
+ * Inkmoor makes no network request of its own besides the update check, so every session on
  * Linux starts with no spell-check languages (main/index.ts, on 'session-created'). Windows and
  * macOS use the system's checker, which downloads nothing (the update rehearsal saw no request from
  * 0.2.0 on either); on Windows, Chromium would still fetch Hunspell dictionaries for a language

@@ -783,7 +783,7 @@ function ActionsTab({ draft, set, pageCount }: { draft: Draft; set: SetFn; pageC
       )}
       {a.kind === 'other' && (
         <p className="fc-prepare-form-hint">
-          This button runs an action Fartcrobat cannot edit ({a.description}). It is kept unless you choose
+          This button runs an action Inkmoor cannot edit ({a.description}). It is kept unless you choose
           another action.
         </p>
       )}

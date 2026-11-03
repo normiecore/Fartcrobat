@@ -139,7 +139,7 @@ describeUnix('agent access pipe', () => {
   let statuses: AgentStatus[]
   let service: AgentAccess
   const clients: TestClient[] = []
-  const launch: AgentAppInfo = { executable: '/opt/Fartcrobat/fartcrobat', args: [], appVersion: '9.8.7' }
+  const launch: AgentAppInfo = { executable: '/opt/Inkmoor/inkmoor', args: [], appVersion: '9.8.7' }
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), 'fc-agent-'))
@@ -581,7 +581,7 @@ describeUnix('agent access pipe', () => {
   it('lets a policy file decide over the preference', async () => {
     const policyFile = join(tmp, 'policy.json')
     writeFileSync(policyFile, JSON.stringify({ agentAccess: { enabled: false } }))
-    await start({ env: { FARTCROBAT_POLICY_FILE: policyFile } }, true)
+    await start({ env: { INKMOOR_POLICY_FILE: policyFile } }, true)
     expect(service.status()).toMatchObject({ enabled: false, policy: 'disabled', listening: false })
     expect(existsSync(endpointPath())).toBe(false)
 

@@ -31,7 +31,7 @@ function supportsSimd(): boolean {
 }
 
 /** Where the worker believes the language files are (served by the bootstrap script). */
-const LANG_BASE = new URL('fartcrobat-ocr://languages').href.replace(/\/$/, '')
+const LANG_BASE = new URL('inkmoor-ocr://languages').href.replace(/\/$/, '')
 
 function bootstrapSource(files: Record<string, string>, script: string): string {
   return `"use strict";

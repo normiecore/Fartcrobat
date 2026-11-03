@@ -65,7 +65,7 @@ function pinUserData() {
 
 // One running instance: a second launch (e.g. double-clicking another PDF) opens a tab here and
 // the second process exits straight away without starting anything.
-const primaryInstance = !!process.env.FARTCROBAT_MULTI_INSTANCE || app.requestSingleInstanceLock()
+const primaryInstance = !!process.env.INKMOOR_MULTI_INSTANCE || app.requestSingleInstanceLock()
 if (!primaryInstance) app.quit()
 else start()
 
@@ -191,7 +191,7 @@ async function showSaveDialog(win: BrowserWindow | null, opts: SaveDialogOptions
   }
 }
 
-/** Marks a file Fartcrobat extracted from a PDF as coming from the Internet (Windows SmartScreen, Office Protected View). */
+/** Marks a file Inkmoor extracted from a PDF as coming from the Internet (Windows SmartScreen, Office Protected View). */
 function markOfTheWeb(path: string) {
   if (process.platform !== 'win32') return
   try {

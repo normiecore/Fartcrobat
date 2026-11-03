@@ -218,7 +218,7 @@ function SecurityTab({ doc, close }: { doc: DocumentModel; close: () => void }) 
       </div>
       {encrypted && (
         <p className="fc-navigation-hint">
-          These restrictions are set by the document's author. Fartcrobat respects them where the PDF format
+          These restrictions are set by the document's author. Inkmoor respects them where the PDF format
           requires it.
         </p>
       )}

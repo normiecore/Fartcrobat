@@ -41,7 +41,7 @@ function opensslDigitalId(dir: string, cn: string, password: string): string | n
 
 async function docInfo(page: Page) {
   return page.evaluate((k) => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     if (!d) return null
     const s = d.state
     // `scale`: CSS pixels per page point at the current zoom.
@@ -56,7 +56,7 @@ function dialog(page: Page, title: string) {
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {
   await page.evaluate((t) => {
-    const { useApp } = (window as any).__fartcrobat
+    const { useApp } = (window as any).__inkmoor
     useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: t } }))
   }, theme)
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
@@ -68,7 +68,7 @@ async function fillCreateIdDialog(page: Page, name: string, email: string) {
   await expect(dlg).toBeVisible()
   await dlg.getByLabel('Name', { exact: true }).fill(name)
   await dlg.getByLabel('Email address').fill(email)
-  await dlg.getByLabel('Organisation', { exact: true }).fill('Fartcrobat QA')
+  await dlg.getByLabel('Organisation', { exact: true }).fill('Inkmoor QA')
   await dlg.getByLabel('Country/Region').selectOption('US')
   await dlg.getByLabel('Password', { exact: true }).fill(PASSWORD)
   await dlg.getByLabel('Confirm password').fill(PASSWORD)
@@ -120,7 +120,7 @@ test('create a Digital ID in Preferences, sign by dragging a box, validate and t
     await expect(page.locator('.fc-digital-signatures-toolbar')).toBeVisible()
     await page.screenshot({ path: `${SHOTS}/digital-signatures-tool.png` })
     const pageEl = page.locator('.viewer-page[data-page-index="0"]')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(0, [320, 620, 560, 700], { center: true }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.scrollToRect(0, [320, 620, 560, 700], { center: true }))
     await page.waitForTimeout(300)
     const box = (await pageEl.boundingBox())!
     const zoom = (await docInfo(page))!.scale
@@ -230,7 +230,7 @@ test('create a Digital ID in Preferences, sign by dragging a box, validate and t
     await runCommand(page, 'sign.useCertificate')
     await page.locator('.ui-panel', { hasText: 'Use a certificate' }).getByRole('button', { name: /Digitally sign/ }).click()
     // A click (no drag) makes a standard-size (180 x 54 pt) box on page 2, top-left at the click.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(1, [300, 600, 560, 720], { center: true }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.scrollToRect(1, [300, 600, 560, 720], { center: true }))
     await page.waitForTimeout(300)
     const page2 = page.locator('.viewer-page[data-page-index="1"]')
     const b2 = (await page2.boundingBox())!
@@ -289,7 +289,7 @@ test('sign an existing signature field, creating the Digital ID from the sign di
       'data:image/svg+xml;base64,' + Buffer.from(svg).toString('base64')
     )
     // Unsigned field: the panel lists it, the page shows a clickable field. With forms-fill in the
-    // app, its field control handles the click and sends 'fartcrobat:sign-field'; without it, this
+    // app, its field control handles the click and sends 'inkmoor:sign-field'; without it, this
     // feature draws the clickable field itself.
     await runCommand(page, 'sign.showSignaturesPanel')
     const rightPanel = page.locator('aside.shell-rightpanel[aria-label="Signatures"]')
@@ -303,20 +303,20 @@ test('sign an existing signature field, creating the Digital ID from the sign di
     await page.screenshot({ path: `${SHOTS}/digital-signatures-unsigned-field.png` })
     const events: unknown[] = []
     await page.exposeFunction('__dsigEvent', (d: unknown) => events.push(d))
-    await page.evaluate(() => window.addEventListener('fartcrobat:sign-field', (e) => (window as any).__dsigEvent((e as CustomEvent).detail)))
+    await page.evaluate(() => window.addEventListener('inkmoor:sign-field', (e) => (window as any).__dsigEvent((e as CustomEvent).detail)))
     await fieldEl.click()
     const dlg = dialog(page, 'Sign with a Digital ID')
     await expect(dlg).toBeVisible()
-    const formsFill = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'forms-fill'))
+    const formsFill = await page.evaluate(() => (window as any).__inkmoor.registry.features.some((f: any) => f.id === 'forms-fill'))
     if (formsFill) await expect.poll(() => events).toEqual([expect.objectContaining({ fieldName: 'Approver', page: 0 })])
     await page.keyboard.press('Escape')
     await expect(dlg).toBeHidden()
 
     // The event may name the field only by its widget id; the same dialog opens.
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const [f] = await d.ops('digital-signatures').fields()
-      window.dispatchEvent(new CustomEvent('fartcrobat:sign-field', { detail: { docId: d.id, fieldId: f.widgetId, page: 0 } }))
+      window.dispatchEvent(new CustomEvent('inkmoor:sign-field', { detail: { docId: d.id, fieldId: f.widgetId, page: 0 } }))
     })
     await expect(dlg).toBeVisible()
     await expect(dlg.getByText("You don't have a Digital ID yet.")).toBeVisible()
@@ -431,7 +431,7 @@ test('certify a form with an invisible signature that allows form filling', asyn
     await page.screenshot({ path: `${SHOTS}/digital-signatures-certified.png` })
 
     // Filling in the form is allowed: fill a field (forms-fill) and save (an incremental update).
-    const hasFormsFill = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'forms-fill'))
+    const hasFormsFill = await page.evaluate(() => (window as any).__inkmoor.registry.features.some((f: any) => f.id === 'forms-fill'))
     if (hasFormsFill) {
       const name = page.locator('.fc-forms-fill-layer [data-field-name="fullName"]').first()
       await name.click()
@@ -455,7 +455,7 @@ test('certify a form with an invisible signature that allows form filling', asyn
     }
 
     // Commenting is not allowed by this certification: add a sticky note (markup-tools) and save.
-    const hasNote = await page.evaluate(() => (window as any).__fartcrobat.registry.tools.has('comment.note'))
+    const hasNote = await page.evaluate(() => (window as any).__inkmoor.registry.tools.has('comment.note'))
     if (hasNote) {
       await runCommand(page, 'comment.note')
       const pageEl = page.locator('.viewer-page[data-page-index="0"]')

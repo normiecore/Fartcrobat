@@ -78,8 +78,8 @@ export async function executeCall(
   const handler = def ? deps.handlers[def.name] : undefined
   if (!def || !handler) {
     const message = def
-      ? `${request.tool} is not available in this version of Fartcrobat.`
-      : `Fartcrobat has no tool named "${request.tool}".`
+      ? `${request.tool} is not available in this version of Inkmoor.`
+      : `Inkmoor has no tool named "${request.tool}".`
     return { result: { error: { code: 'unknown_tool', message } }, audit: { outcome: 'error' } }
   }
   const ctx: ToolContext = {

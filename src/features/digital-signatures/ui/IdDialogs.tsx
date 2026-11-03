@@ -201,7 +201,7 @@ function ImportPasswordDialog({ path, onDone }: { path: string; onDone: (r?: IdR
         <TextInput data-autofocus type="password" value={password} onChange={(e) => setPassword(e.target.value)} aria-label="Digital ID password" />
       </Field>
       <p className="shell-muted fc-digital-signatures-small">
-        Fartcrobat keeps a copy of the file in its settings folder. It only keeps the password if you choose to remember it on this device when you sign.
+        Inkmoor keeps a copy of the file in its settings folder. It only keeps the password if you choose to remember it on this device when you sign.
       </p>
       {error && (
         <div className="fc-digital-signatures-error" role="alert">

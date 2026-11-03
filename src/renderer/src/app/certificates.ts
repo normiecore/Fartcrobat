@@ -70,7 +70,7 @@ export class CertificateUnavailableError extends Error {
   readonly code = 'NO_CERTIFICATE'
   constructor(
     message: string,
-    /** Only keys Fartcrobat cannot use yet (elliptic-curve) match. */
+    /** Only keys Inkmoor cannot use yet (elliptic-curve) match. */
     readonly unsupportedKey: boolean,
     /** The Windows certificate store could not be searched, and why. */
     readonly windowsStore?: BlockedWindowsStore
@@ -155,7 +155,7 @@ function showWaits() {
   useApp.setState({
     progress:
       newest.candidate.hardware === false
-        ? { title: 'Waiting for Windows…', message: 'If Windows asks, allow Fartcrobat to use your certificate.', fraction: null, cancel: cancelWaits }
+        ? { title: 'Waiting for Windows…', message: 'If Windows asks, allow Inkmoor to use your certificate.', fraction: null, cancel: cancelWaits }
         : { title: 'Waiting for your smart card…', message: 'Enter your PIN in the Windows dialog.', fraction: null, cancel: cancelWaits }
   })
 }

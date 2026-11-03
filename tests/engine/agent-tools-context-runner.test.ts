@@ -59,7 +59,7 @@ describe('executeCall', () => {
   it('answers unknown tools without running anything', async () => {
     const { d } = deps({})
     const unknown = await runner.executeCall(request('format_disk'), new AbortController().signal, d)
-    expect(unknown.result.error).toEqual({ code: 'unknown_tool', message: 'Fartcrobat has no tool named "format_disk".' })
+    expect(unknown.result.error).toEqual({ code: 'unknown_tool', message: 'Inkmoor has no tool named "format_disk".' })
     expect(unknown.audit.outcome).toBe('error')
     // a catalogue tool this build has no handler for
     const missing = await runner.executeCall(request('get_context'), new AbortController().signal, d)

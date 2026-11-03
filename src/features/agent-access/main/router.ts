@@ -132,7 +132,7 @@ export class AgentRouter {
         p,
         fail(
           'unknown_tool',
-          `Fartcrobat has no tool named "${clip(call.tool)}". Update Fartcrobat or its Claude Desktop extension.`
+          `Inkmoor has no tool named "${clip(call.tool)}". Update Inkmoor or its Claude Desktop extension.`
         )
       )
       return
@@ -240,7 +240,7 @@ export class AgentRouter {
       else
         this.finish(
           p,
-          fail('stale_handle', 'The Fartcrobat window closed before the call finished. Call list_documents.')
+          fail('stale_handle', 'The Inkmoor window closed before the call finished. Call list_documents.')
         )
     }
   }
@@ -269,7 +269,7 @@ export class AgentRouter {
   }
 
   /**
-   * Stops a call nobody will collect, through a wait_for_result of Fartcrobat's own: the window
+   * Stops a call nobody will collect, through a wait_for_result of Inkmoor's own: the window
    * then answers it, and the audit log records how the call really ended.
    */
   private stopTicket(ticket: string, t: Ticket) {
@@ -299,7 +299,7 @@ export class AgentRouter {
       if (!m || !this.host.windows().includes(m[1]))
         return fail(
           'invalid_args',
-          `No call has the ticket "${clip(ticket)}": it is not a current ticket, or its Fartcrobat window closed.`
+          `No call has the ticket "${clip(ticket)}": it is not a current ticket, or its Inkmoor window closed.`
         )
       return { windowId: m[1] }
     }
@@ -329,13 +329,13 @@ export class AgentRouter {
       t.state = 'done'
       if (p.fanOut) this.settle(p)
       else if (ready === 'timeout')
-        this.finish(p, fail('failed', 'The Fartcrobat window is not responding. Try again in a moment.'))
+        this.finish(p, fail('failed', 'The Inkmoor window is not responding. Try again in a moment.'))
       else
         this.finish(
           p,
           fail(
             'stale_handle',
-            'The Fartcrobat window closed before the call could start. Call list_documents.'
+            'The Inkmoor window closed before the call could start. Call list_documents.'
           )
         )
       return
@@ -359,7 +359,7 @@ export class AgentRouter {
     } catch (err) {
       t.state = 'done'
       if (p.fanOut) this.settle(p)
-      else this.finish(p, fail('failed', `Could not reach the Fartcrobat window: ${(err as Error).message}`))
+      else this.finish(p, fail('failed', `Could not reach the Inkmoor window: ${(err as Error).message}`))
     }
   }
 

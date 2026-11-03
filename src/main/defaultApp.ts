@@ -14,7 +14,7 @@ import {
   retargetDesktopEntry,
   userApplicationsDir
 } from './util/linuxDesktop'
-import { isFartcrobatProgId, regValue } from './util/systemDefaults'
+import { isInkmoorProgId, regValue } from './util/systemDefaults'
 
 function run(cmd: string, args: string[]): Promise<string> {
   return new Promise((resolve) => {
@@ -33,7 +33,7 @@ function linuxExecutable(): string | null {
 }
 
 /** The icon theme name of the app icon desktop entries the app writes use. */
-const LINUX_ICON = 'fartcrobat'
+const LINUX_ICON = 'inkmoor'
 
 /** Copies the app icon to the user's icon theme folder so the desktop entry has an icon. */
 function installLinuxIcon(): string {
@@ -92,7 +92,7 @@ export function refreshLinuxDesktopFile() {
 /**
  * An update installed the AppImage at `from` under a new name, `to` (electron-updater does that
  * when the old name has a version in it, and deletes the old file). Points the desktop entry
- * Fartcrobat wrote for itself at the new file, so PDFs and launchers still open it. Synchronous,
+ * Inkmoor wrote for itself at the new file, so PDFs and launchers still open it. Synchronous,
  * because it runs while the app quits.
  */
 export function linuxAppImageMoved(from: string, to: string) {
@@ -105,7 +105,7 @@ export function linuxAppImageMoved(from: string, to: string) {
   }
 }
 
-/** Whether Fartcrobat is the default app for .pdf files, and how the user can change it. */
+/** Whether Inkmoor is the default app for .pdf files, and how the user can change it. */
 export async function defaultAppStatus(): Promise<DefaultAppStatus> {
   switch (process.platform) {
     case 'linux': {
@@ -115,8 +115,8 @@ export async function defaultAppStatus(): Promise<DefaultAppStatus> {
         isDefault: out ? out === DESKTOP_FILE : null,
         canSetDirectly: installed,
         instructions: installed
-          ? 'Fartcrobat can make itself the default PDF app for your account.'
-          : 'Install Fartcrobat (for example the .deb package) to make it your default PDF app, or choose it under "Open with" in your file manager.'
+          ? 'Inkmoor can make itself the default PDF app for your account.'
+          : 'Install Inkmoor (for example the .deb package) to make it your default PDF app, or choose it under "Open with" in your file manager.'
       }
     }
     case 'win32': {
@@ -128,10 +128,10 @@ export async function defaultAppStatus(): Promise<DefaultAppStatus> {
       ])
       const progId = regValue(out, 'ProgId')
       return {
-        isDefault: progId ? isFartcrobatProgId(progId, basename(process.execPath)) : null,
+        isDefault: progId ? isInkmoorProgId(progId, basename(process.execPath)) : null,
         canSetDirectly: false,
         instructions:
-          'Windows asks you to confirm this yourself. In the Settings window that opens, find ".pdf" and choose Fartcrobat.'
+          'Windows asks you to confirm this yourself. In the Settings window that opens, find ".pdf" and choose Inkmoor.'
       }
     }
     case 'darwin':
@@ -139,10 +139,10 @@ export async function defaultAppStatus(): Promise<DefaultAppStatus> {
         isDefault: null,
         canSetDirectly: false,
         instructions:
-          'In Finder, select any PDF, press Cmd+I (Get Info), choose Fartcrobat under "Open with", then click "Change All…".'
+          'In Finder, select any PDF, press Cmd+I (Get Info), choose Inkmoor under "Open with", then click "Change All…".'
       }
     default:
-      return { isDefault: null, canSetDirectly: false, instructions: 'Set Fartcrobat as default in your system settings.' }
+      return { isDefault: null, canSetDirectly: false, instructions: 'Set Inkmoor as default in your system settings.' }
   }
 }
 
@@ -153,8 +153,8 @@ export async function setDefaultApp(): Promise<DefaultAppStatus> {
       await run('xdg-mime', ['default', DESKTOP_FILE, 'application/pdf'])
     }
   } else if (process.platform === 'win32') {
-    // Opens Fartcrobat's page in Settings > Default apps (the installer registers the app's
-    // capabilities under RegisteredApplications as "Fartcrobat").
+    // Opens Inkmoor's page in Settings > Default apps (the installer registers the app's
+    // capabilities under RegisteredApplications as "Inkmoor").
     await shell.openExternal(`ms-settings:defaultapps?registeredAppUser=${encodeURIComponent(PRODUCT_NAME)}`)
   }
   return defaultAppStatus()

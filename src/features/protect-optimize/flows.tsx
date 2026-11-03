@@ -545,7 +545,7 @@ export function describeReport(r: CompressResult): string[] {
 export async function forgetDocumentPassword(doc: DocumentModel): Promise<boolean> {
   try {
     await forgetSavedPassword(doc)
-    toast(`Fartcrobat will ask for the password of “${doc.state.title}” the next time it is opened.`)
+    toast(`Inkmoor will ask for the password of “${doc.state.title}” the next time it is opened.`)
     return true
   } catch (err) {
     showError(err, 'Could not forget the saved password')

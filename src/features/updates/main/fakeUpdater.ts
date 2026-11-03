@@ -1,4 +1,4 @@
-// A stand-in for electron-updater in unpackaged test builds (FARTCROBAT_FAKE_UPDATER names its
+// A stand-in for electron-updater in unpackaged test builds (INKMOOR_FAKE_UPDATER names its
 // settings file): it reports download progress, can fail, and writes what it would install to a
 // log instead of installing anything.
 import { appendFileSync, readFileSync } from 'node:fs'

@@ -152,7 +152,7 @@ export class FormController {
       console.warn(`[forms-fill] ${p.event} script of “${p.field || 'document'}”: ${p.message}`)
     }
     if (this.reportedProblems === 0) {
-      toast("Some scripts in this form use features Fartcrobat can't run. You can still fill it in; some automatic formatting or calculations may be skipped.", {
+      toast("Some scripts in this form use features Inkmoor can't run. You can still fill it in; some automatic formatting or calculations may be skipped.", {
         kind: 'warning',
         timeout: 8000
       })
@@ -198,12 +198,12 @@ export class FormController {
   notSupported(what: string) {
     if (this.notified.has(what)) return
     this.notified.add(what)
-    toast(`${what} is not supported by this form's scripts in Fartcrobat.`, { kind: 'warning', timeout: 6000 })
+    toast(`${what} is not supported by this form's scripts in Inkmoor.`, { kind: 'warning', timeout: 6000 })
   }
 
   explainSubmit(url: string) {
     toast(
-      `This form is set up to send its data${url ? ` to ${url}` : ''}. Fartcrobat works offline and never sends forms over the internet: save the PDF or export the form data and send it yourself.`,
+      `This form is set up to send its data${url ? ` to ${url}` : ''}. Inkmoor works offline and never sends forms over the internet: save the PDF or export the form data and send it yourself.`,
       { kind: 'info', timeout: 12000, action: { label: 'Export data…', run: () => void runCommand('forms.exportData') } }
     )
   }

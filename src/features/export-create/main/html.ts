@@ -30,7 +30,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> 
 export async function convertHtmlToPdf(path: string, opts: HtmlConvertOptions): Promise<Uint8Array> {
   if (!existsSync(path)) throw new Error(`${basename(path)} does not exist`)
   // A private in-memory session per conversion: no cookies, no cache, no network.
-  const ses = session.fromPartition(`fartcrobat-html-${process.pid}-${++counter}`, { cache: false })
+  const ses = session.fromPartition(`inkmoor-html-${process.pid}-${++counter}`, { cache: false })
   let blocked = 0
   ses.webRequest.onBeforeRequest((details, callback) => {
     const local = LOCAL.test(details.url)

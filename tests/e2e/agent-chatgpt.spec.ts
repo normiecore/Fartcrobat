@@ -10,7 +10,7 @@ test('Connect ChatGPT Desktop names a helper that runs; installed copies keep it
   let gpt: Agent | undefined
   try {
     const { page } = s
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('app.preferences'))
     const prefs = page.getByRole('dialog', { name: 'Preferences' })
     await prefs.getByRole('button', { name: 'AI apps', exact: true }).click()
     await prefs.getByRole('button', { name: 'Connect ChatGPT Desktop', exact: true }).click()
@@ -20,8 +20,8 @@ test('Connect ChatGPT Desktop names a helper that runs; installed copies keep it
     await expect(fields.nth(0)).toHaveText('node')
     const helper = (await fields.nth(1).textContent())!
     // An AppImage's resources move on every launch: the path must not point into them.
-    if (process.env.FARTCROBAT_EXECUTABLE) expect(helper).toBe(join(s.userData, 'agent-helper', 'shim.mjs'))
-    await expect(fields.nth(2)).toHaveText(`FARTCROBAT_USER_DATA=${s.userData}`)
+    if (process.env.INKMOOR_EXECUTABLE) expect(helper).toBe(join(s.userData, 'agent-helper', 'shim.mjs'))
+    await expect(fields.nth(2)).toHaveText(`INKMOOR_USER_DATA=${s.userData}`)
     gpt = await startShim(s.userData, { name: 'codex', version: '1.0' }, helper)
     expect(dataOf(await gpt.call('list_documents'))).toEqual({ documents: [] })
   } finally {

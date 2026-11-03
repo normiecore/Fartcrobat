@@ -19,18 +19,18 @@ interface Annot {
 }
 
 async function annots(page: Page, pageIndex = 0): Promise<Annot[]> {
-  return page.evaluate((i) => (window as any).__fartcrobat.getActiveDoc().ops('annots').list(i), pageIndex)
+  return page.evaluate((i) => (window as any).__inkmoor.getActiveDoc().ops('annots').list(i), pageIndex)
 }
 
 async function toolId(page: Page): Promise<string> {
-  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)
+  return page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)
 }
 
 /** Sets an exact zoom and scrolls page `index` to the top so it is fully laid out. */
 async function setZoom(page: Page, zoom: number) {
-  await page.evaluate((z) => (window as any).__fartcrobat.getActiveDoc().view.setZoom(z), zoom)
-  await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.zoom)).toBeCloseTo(zoom, 3)
-  await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+  await page.evaluate((z) => (window as any).__inkmoor.getActiveDoc().view.setZoom(z), zoom)
+  await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.zoom)).toBeCloseTo(zoom, 3)
+  await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(0))
   await page.waitForTimeout(300)
 }
 
@@ -38,7 +38,7 @@ async function setZoom(page: Page, zoom: number) {
 async function at(page: Page, x: number, y: number, index = 0): Promise<{ x: number; y: number }> {
   const box = await page.locator(`.viewer-page[data-page-index="${index}"]`).boundingBox()
   if (!box) throw new Error('page not visible')
-  const zoom: number = await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.zoom)
+  const zoom: number = await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.zoom)
   const s = (zoom * 96) / 72
   return { x: box.x + x * s, y: box.y + y * s }
 }
@@ -55,7 +55,7 @@ async function atRotated90(page: Page, x: number, y: number): Promise<{ x: numbe
   const box = await page.locator('.viewer-page[data-page-index="0"]').boundingBox()
   if (!box) throw new Error('page not visible')
   const { zoom, height } = await page.evaluate(() => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     return { zoom: d.state.zoom as number, height: d.state.info.pages[0].height as number }
   })
   const s = (zoom * 96) / 72
@@ -64,7 +64,7 @@ async function atRotated90(page: Page, x: number, y: number): Promise<{ x: numbe
 
 async function setViewRotation(page: Page, rotation: 0 | 90) {
   await page.evaluate((r) => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     d.set({ viewRotation: r })
     d.view.goToPage(0)
   }, rotation)
@@ -73,7 +73,7 @@ async function setViewRotation(page: Page, rotation: 0 | 90) {
 
 /** Scrolls so a page-space rectangle of page 0 is in view. */
 async function reveal(page: Page, rect: [number, number, number, number]) {
-  await page.evaluate((r) => (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(0, r, { center: true }), rect)
+  await page.evaluate((r) => (window as any).__inkmoor.getActiveDoc().view.scrollToRect(0, r, { center: true }), rect)
   await page.waitForTimeout(300)
 }
 
@@ -128,7 +128,7 @@ test('stamps: palette, click and drag placement, dynamic and custom stamps', asy
     expect(approved.rect[2] - approved.rect[0]).toBeCloseTo(150, 0)
     // back to the Select tool with the new stamp selected (Acrobat behaviour)
     expect(await toolId(page)).toBe('select')
-    const sel = await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.selection)
+    const sel = await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.selection)
     expect(sel).toEqual({ kind: 'annotations', page: 0, ids: [approved.id] })
 
     // Dynamic "Reviewed" stamp placed by dragging: size follows the drag, with author and time.
@@ -264,7 +264,7 @@ test('stamps: palette, click and drag placement, dynamic and custom stamps', asy
 
     // Dark theme
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
     })
     await page.waitForTimeout(400)
@@ -303,7 +303,7 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
     // Scale 1 in = 1 ft
     await page.getByLabel('Real unit').first().selectOption('ft')
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().ops('stamps-measure').getScale()))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().ops('stamps-measure').getScale()))
       .toMatchObject({ pageValue: 1, pageUnit: 'in', realValue: 1, realUnit: 'ft' })
     await expect(page.getByRole('button', { name: 'Scale: 1 in = 1 ft' })).toBeVisible()
 
@@ -430,7 +430,7 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
 
     // Tools > Measure > Set Scale Ratio… opens the same scale settings in a dialog
     // not awaited: the command resolves when its dialog closes
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('measure.setScale'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('measure.setScale'))
     const scaleDialog = page.locator('.fc-stamps-measure-scale-dialog')
     await expect(scaleDialog).toBeVisible()
     await expect(scaleDialog).toContainText('Now: 1 in = 1 ft')
@@ -515,7 +515,7 @@ test('measuring: scale, distance, area and perimeter with live readout', async (
 
     // Dark theme panel
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
     })
     await page.waitForTimeout(400)

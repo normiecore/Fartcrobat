@@ -140,7 +140,7 @@ const updateAnnotations: ToolHandler = async (args, ctx) => {
     if (NOT_COMMENTS.has(a.type)) throw new ToolError('invalid_args', `${id} is a ${a.type === 'Widget' ? 'form field' : a.type.toLowerCase()}, not a comment`)
   }
   for (const id of ids) {
-    if (found.get(id)?.locked) throw new ToolError('invalid_args', `Comment ${id} is locked. Ask the person to unlock it in Fartcrobat first.`)
+    if (found.get(id)?.locked) throw new ToolError('invalid_args', `Comment ${id} is locked. Ask the person to unlock it in Inkmoor first.`)
   }
   const ops = annots(doc)
   await engineTask('Could not change the comments', () =>
@@ -289,7 +289,7 @@ const markRedactions: ToolHandler = async (args, ctx) => {
       ids: marks.map((m) => m.id),
       pages: pages.map((p) => p + 1),
       undoLabel: await undoLabel(doc),
-      next: 'Marks remove nothing until apply_redactions; the person can review them in Fartcrobat.'
+      next: 'Marks remove nothing until apply_redactions; the person can review them in Inkmoor.'
     }
   }
 }
@@ -345,7 +345,7 @@ const organizePages: ToolHandler = async (args, ctx) => {
         const message = String(err?.message ?? err)
         throw new ToolError(openErrorCode(message), `Could not open ${plan.path}: ${message}`)
       })
-      if (!probe) throw cancelled(ctx, doc, `unlocking ${plan.path} cancelled`, `Nothing was inserted: the person cancelled unlocking ${file.name} in Fartcrobat.`)
+      if (!probe) throw cancelled(ctx, doc, `unlocking ${plan.path} cancelled`, `Nothing was inserted: the person cancelled unlocking ${file.name} in Inkmoor.`)
       changed = await engineTask('Could not insert the pages', () =>
         runAsAgent(doc, () =>
           orgOps(doc).insertFiles(plan.gap, [{ data: file.bytes, fileName: file.engineName, password: probe.password }])

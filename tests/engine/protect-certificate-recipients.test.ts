@@ -205,7 +205,7 @@ describe('protect-optimize: certificate recipients', () => {
     const bits = certificatePermissionBits(g.permissions, g.changeSecurity)
     expect(bits & PUBSEC_PERMISSION.annotate).not.toBe(0)
     expect(bits & PUBSEC_PERMISSION.fillForms).not.toBe(0)
-    // Fartcrobat reads it back the same way.
+    // Inkmoor reads it back the same way.
     expect(certificatePermissions(bits).permissions).toMatchObject({ annotate: true, form: true })
     // Form filling alone is still possible.
     expect(groupPermissions({ ...commentOnly, annotate: false, form: true })).toMatchObject({ annotate: false, form: true })

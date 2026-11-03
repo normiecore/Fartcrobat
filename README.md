@@ -1,4 +1,7 @@
-# Fartcrobat
+# Inkmoor
+
+Formerly Fartcrobat: versions up to 0.3 had that name. Installed copies update to Inkmoor by
+themselves and keep their settings (see [docs/features/rename.md](docs/features/rename.md)).
 
 A free, open-source PDF reader, editor and signer for Windows, macOS and Linux. The layout follows
 current Adobe Acrobat Pro (All tools on the left, panels on the right rail), so people switching
@@ -52,15 +55,15 @@ the app makes by itself is a check for a new release on GitHub (see Updates belo
 
 ## Coming from Acrobat
 
-| In Acrobat | In Fartcrobat |
+| In Acrobat | In Inkmoor |
 | --- | --- |
 | All tools pane on the left | Same place. Every tool is also a tile on Home |
 | Right-hand panels (Bookmarks, Comments, Thumbnails...) | Right rail |
 | Hamburger menu (File, Edit, View...) | Same menu. On macOS it is also the system menu bar |
 | Search for a tool | Find text or tools (Ctrl+Shift+K) searches commands and the document |
 | Keyboard shortcuts | Acrobat's, including single-key tool keys (V, H, Z, U, S...) |
-| Preferences (Ctrl+K) | Menu > File > Preferences, Ctrl+K (Fartcrobat > Preferences, Cmd+, on macOS) |
-| Set as default PDF app | Home page banner, or Help > Make Fartcrobat the Default PDF App |
+| Preferences (Ctrl+K) | Menu > File > Preferences, Ctrl+K (Inkmoor > Preferences, Cmd+, on macOS) |
+| Set as default PDF app | Home page banner, or Help > Make Inkmoor the Default PDF App |
 
 ## Install
 
@@ -69,50 +72,50 @@ computer. Download the one for yours and open it:
 
 | Your computer | File |
 | --- | --- |
-| Windows (most PCs) | `Fartcrobat-Setup-<version>-x64.exe` |
-| Windows on Arm (Snapdragon, Surface Pro X) | `Fartcrobat-Setup-<version>-arm64.exe` |
-| Mac with Apple silicon (M1 or later) | `Fartcrobat-<version>-arm64.dmg` |
-| Mac with an Intel processor | `Fartcrobat-<version>-x64.dmg` |
-| Ubuntu, Debian, Linux Mint, Pop!_OS | `fartcrobat_<version>_amd64.deb` |
-| Other Linux (Fedora, Arch, openSUSE...) | `Fartcrobat-x86_64.AppImage` |
+| Windows (most PCs) | `Inkmoor-Setup-<version>-x64.exe` |
+| Windows on Arm (Snapdragon, Surface Pro X) | `Inkmoor-Setup-<version>-arm64.exe` |
+| Mac with Apple silicon (M1 or later) | `Inkmoor-<version>-arm64.dmg` |
+| Mac with an Intel processor | `Inkmoor-<version>-x64.dmg` |
+| Ubuntu, Debian, Linux Mint, Pop!_OS | `inkmoor_<version>_amd64.deb` |
+| Other Linux (Fedora, Arch, openSUSE...) | `Inkmoor-x86_64.AppImage` |
 
 - Not sure which? On Windows, Settings > System > About says "x64-based processor" or "ARM-based
   processor". On a Mac, Apple menu > About This Mac says "Chip Apple M..." or "Processor ... Intel".
 - Windows: open the `.exe`. The installers are not code signed yet: if the browser says the file
   isn't commonly downloaded, choose Keep; if Windows says "Windows protected your PC", choose More
   info, then Run anyway. The arm64 installer stops on an x64 PC and says which file to get.
-- Mac: open the `.dmg` and drag Fartcrobat to Applications. If macOS says it could not verify
-  Fartcrobat, open System Settings > Privacy & Security and choose Open Anyway.
+- Mac: open the `.dmg` and drag Inkmoor to Applications. If macOS says it could not verify
+  Inkmoor, open System Settings > Privacy & Security and choose Open Anyway.
 - Ubuntu: open the `.deb` with App Center (Debian, Mint, Pop!_OS: with your software installer), or
   run `sudo apt install ./<file>` in the folder you downloaded it to. Take the `.deb` on Ubuntu:
   on 24.04 the AppImage starts without Chromium's sandbox (Ubuntu limits the user namespaces it
   needs, and the `.deb` installs the AppArmor profile that allows them).
 - AppImage: make it executable first (right-click > Properties > Executable as Program, or
-  `chmod +x Fartcrobat-x86_64.AppImage`), then open it. It updates itself, and it needs FUSE 2:
+  `chmod +x Inkmoor-x86_64.AppImage`), then open it. It updates itself, and it needs FUSE 2:
   `sudo apt install libfuse2t64` on Ubuntu 24.04 and later, `libfuse2` on 22.04.
-- 0.2.0, the release before this table, names its Intel Mac file `Fartcrobat-0.2.0.dmg` and also
-  has `Fartcrobat-Setup-0.2.0.exe`, one Windows installer for both processors.
+- 0.2.0, the release before this table, names its Intel Mac file `Inkmoor-0.2.0.dmg` and also
+  has `Inkmoor-Setup-0.2.0.exe`, one Windows installer for both processors.
 - The other files of a release are for in-app updates (`.zip`, `.blockmap`, `latest*.yml`) and for
   unpacking by hand (`.tar.gz`).
 
-Every install registers Fartcrobat as a handler for `.pdf` files. The table is kept in
+Every install registers Inkmoor as a handler for `.pdf` files. The table is kept in
 `scripts/release-downloads.mjs`, which checks each release build against it and puts it at the top
 of the release notes.
 
 ## Updates
 
-Fartcrobat checks GitHub for a new release 30 seconds after it starts and then every 6 hours, and
+Inkmoor checks GitHub for a new release 30 seconds after it starts and then every 6 hours, and
 shows a notification when there is one. The check is one HTTPS request for the latest release
 page; nothing about you or your documents is sent. On Windows and with the AppImage, Download
-installs the update when you restart Fartcrobat (or the next time you quit). On a Mac (until the
+installs the update when you restart Inkmoor (or the next time you quit). On a Mac (until the
 app is signed) and with the `.deb`, Download opens the release page: download the new file for your
 computer from the table above and open it, as for the first install. Help > Check for Updates...
 checks at once.
 
 To turn automatic checks off, use Preferences > Updates. Organizations can turn checks off (or
-on) for a computer: the `AutoUpdate` REG_DWORD under `HKLM\SOFTWARE\Policies\Fartcrobat` on
+on) for a computer: the `AutoUpdate` REG_DWORD under `HKLM\SOFTWARE\Policies\Inkmoor` on
 Windows (0 off, 1 on), or `{"autoUpdate":{"enabled":false}}` in
-`/Library/Application Support/Fartcrobat/policy.json` (macOS) or `/etc/fartcrobat/policy.json`
+`/Library/Application Support/Inkmoor/policy.json` (macOS) or `/etc/inkmoor/policy.json`
 (Linux).
 See [docs/features/updates.md](docs/features/updates.md).
 
@@ -121,7 +124,7 @@ See [docs/features/updates.md](docs/features/updates.md).
 
 Preferences > AI apps > Add to Claude Desktop installs the bundled local MCP extension. With
 agent access enabled, Claude can inspect open PDFs, edit real page text, and show proposed changes
-in Fartcrobat before you apply them. Changes appear in the open document and can be undone.
+in Inkmoor before you apply them. Changes appear in the open document and can be undone.
 
 For larger rewrites, Claude can inspect fonts, headings, tables, artwork and margins, then flow
 text through connected columns and continuation pages while keeping the existing design. A new
@@ -142,7 +145,7 @@ npm run e2e        # build and run end-to-end tests (Linux: prefix with xvfb-run
 npm run dist       # build installers for the current platform
 ```
 
-Some tests also check Fartcrobat's output with independent tools: `pip install -r
+Some tests also check Inkmoor's output with independent tools: `pip install -r
 tests/requirements.txt`, poppler-utils (`pdfsig`) and LibreOffice. Without them those checks are
 skipped; CI installs all of them.
 
@@ -151,6 +154,6 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the app is built and
 
 ## License
 
-Fartcrobat is licensed under the GNU Affero General Public License v3.0 or later. It uses
+Inkmoor is licensed under the GNU Affero General Public License v3.0 or later. It uses
 [MuPDF](https://mupdf.com) by Artifex Software, also under the AGPL, and
 [Tesseract](https://github.com/tesseract-ocr/tesseract) for OCR under the Apache License 2.0.

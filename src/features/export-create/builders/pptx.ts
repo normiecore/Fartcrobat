@@ -99,7 +99,7 @@ export async function buildPptx(
   pptx.layout = 'PDF'
   pptx.title = meta.title
   pptx.company = ''
-  pptx.author = 'Fartcrobat'
+  pptx.author = 'Inkmoor'
   layout.pages.forEach((page: LPage, k) => {
     const slide = pptx.addSlide()
     // Pages of another size are scaled to fit the slides and centred.

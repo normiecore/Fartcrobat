@@ -14,12 +14,12 @@ const REPO = 'normiecore/Fartcrobat'
 /** Who downloads which file, in the order the table lists them. */
 export function releaseDownloads(version) {
   return [
-    { platform: 'win', computer: 'Windows (most PCs)', file: `Fartcrobat-Setup-${version}-x64.exe` },
-    { platform: 'win', computer: 'Windows on Arm (Snapdragon, Surface Pro X)', file: `Fartcrobat-Setup-${version}-arm64.exe` },
-    { platform: 'mac', computer: 'Mac with Apple silicon (M1 or later)', file: `Fartcrobat-${version}-arm64.dmg` },
-    { platform: 'mac', computer: 'Mac with an Intel processor', file: `Fartcrobat-${version}-x64.dmg` },
-    { platform: 'linux', computer: 'Ubuntu, Debian, Linux Mint, Pop!_OS', file: `fartcrobat_${version}_amd64.deb` },
-    { platform: 'linux', computer: 'Other Linux (Fedora, Arch, openSUSE...)', file: 'Fartcrobat-x86_64.AppImage' }
+    { platform: 'win', computer: 'Windows (most PCs)', file: `Inkmoor-Setup-${version}-x64.exe` },
+    { platform: 'win', computer: 'Windows on Arm (Snapdragon, Surface Pro X)', file: `Inkmoor-Setup-${version}-arm64.exe` },
+    { platform: 'mac', computer: 'Mac with Apple silicon (M1 or later)', file: `Inkmoor-${version}-arm64.dmg` },
+    { platform: 'mac', computer: 'Mac with an Intel processor', file: `Inkmoor-${version}-x64.dmg` },
+    { platform: 'linux', computer: 'Ubuntu, Debian, Linux Mint, Pop!_OS', file: `inkmoor_${version}_amd64.deb` },
+    { platform: 'linux', computer: 'Other Linux (Fedora, Arch, openSUSE...)', file: 'Inkmoor-x86_64.AppImage' }
   ]
 }
 
@@ -58,14 +58,14 @@ export function releaseNotes(version) {
     '',
     'The installers are not code signed yet. Windows: if the browser says the file isn\'t commonly downloaded, choose Keep; ' +
       'if Windows says "Windows protected your PC", choose More info, then Run anyway. ' +
-      'Mac: open the .dmg and drag Fartcrobat to Applications; if macOS says it could not verify Fartcrobat, ' +
+      'Mac: open the .dmg and drag Inkmoor to Applications; if macOS says it could not verify Inkmoor, ' +
       'open System Settings > Privacy & Security and choose Open Anyway.',
     '',
     'Ubuntu: open the .deb with App Center (Debian, Mint, Pop!_OS: with your software installer), or run ' +
-      `\`sudo apt install ./fartcrobat_${version}_amd64.deb\` in the folder you downloaded it to. ` +
+      `\`sudo apt install ./inkmoor_${version}_amd64.deb\` in the folder you downloaded it to. ` +
       "On Ubuntu take the .deb: on 24.04 the AppImage starts without Chromium's sandbox.",
     '',
-    'AppImage: make it executable first (right-click > Properties > Executable as Program, or `chmod +x Fartcrobat-x86_64.AppImage`). ' +
+    'AppImage: make it executable first (right-click > Properties > Executable as Program, or `chmod +x Inkmoor-x86_64.AppImage`). ' +
       'It updates itself and needs FUSE 2: `sudo apt install libfuse2t64` on Ubuntu 24.04 and later, `libfuse2` on 22.04.',
     '',
     'The other files are for in-app updates (.zip, .blockmap, latest*.yml) and for unpacking by hand (.tar.gz).',

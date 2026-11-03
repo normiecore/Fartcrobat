@@ -1,22 +1,39 @@
-# Feature: rename (a new product name for 0.4.0)
+# Feature: rename (Fartcrobat becomes Inkmoor in 0.4.0)
 
-The app is getting a new name for 0.4.0 (owner's choice pending; NEWNAME below). Releases 0.2.0 to
-0.3.0 shipped the in-app updater, so installed copies update straight into the renamed build. That
-only works if the ids those copies, the files they saved and administrators' setups depend on stay
-as they are. `src/shared/identity.ts` holds the product name (`PRODUCT_NAME`) and those ids
-(`LEGACY`); it explains each one.
+The app was called Fartcrobat up to 0.3 and is called Inkmoor from 0.4.0 (owner's choice, 3 Nov
+2026, from a screened shortlist). Releases 0.2.0 to 0.3.0 shipped the in-app updater, so installed
+copies update straight into the renamed build. That only works if the ids those copies, the files
+they saved and administrators' setups depend on stay as they are. `src/shared/identity.ts` holds
+the product name (`PRODUCT_NAME`) and those ids (`LEGACY`); it explains each one. NEWNAME below
+means Inkmoor.
+
+## Rules for later changes
+
+- Never change anything in `LEGACY`, never rename the GitHub repository, and keep writing the PDF
+  keys (`/FartcrobatData` and its `fartcrobat` entry, `/FartcrobatMark`, `/FartcrobatOCR`, ...),
+  the XFDF `<fartcrobat-data>` element, the `fartcrobat-form-data` format, the settings file name
+  `fartcrobat-settings.json` and the saved-password key domain as they are.
+- Test fixtures were generated under the old name (text such as "Hello Fartcrobat page 1",
+  "Fartcrobat Tests", certificate names "Fartcrobat Test CA"); tests that read them keep those
+  strings.
 
 ## Status
 
-- Done (this branch): the legacy ids are pinned (`nsis.guid`, `deb.packageName` in
-  electron-builder.yml, the `.mcpb` manifest name, the MCP server name, the ChatGPT config table),
-  and the migration plumbing is in place while the name is still Fartcrobat: the userData folder
-  from before a rename is kept (`pinUserData` in src/main/index.ts, `defaultUserDataDir` in the MCP
-  helper), machine policies are read from both locations, the helper finds the app under either
-  name, "Open with" choices of either executable count as the default app, desktop entries written
-  under the old name are rewritten at start, and stale temp folders of either prefix are swept.
-  `tests/engine/rename-identity.test.ts` runs all of it with a made-up new name.
-- Next: the rename itself (PR 3 below), docs, then the release after the update rehearsal.
+- Done: the legacy ids are pinned (`nsis.guid`, `deb.packageName` in electron-builder.yml, the
+  `.mcpb` manifest name, the MCP server name, the ChatGPT config table) and the migration
+  plumbing is in place: the userData folder from before the rename is kept (`pinUserData` in
+  src/main/index.ts, `defaultUserDataDir` in the MCP helper), machine policies are read from both
+  locations, the helper finds the app under either name, "Open with" choices of either executable
+  count as the default app, desktop entries written under the old name are rewritten at start,
+  stale temp folders of either prefix are swept, and the Windows installer removes the old
+  "Default apps" registration. `tests/engine/rename-identity.test.ts` covers it.
+- Done: the rename itself (UI, installers, artifact names, environment variables, docs) and the
+  release notes (`docs/releases/v0.4.0.md`). The update rehearsal knows both names.
+- Not done: the macOS card offering to move the old Fartcrobat.app to the Bin (the release notes
+  tell people instead), and a notice when remembered passwords could not be read after the rename
+  on macOS or Linux (they are skipped silently, as before; the release notes mention it).
+- Before publishing 0.4.0: run the update rehearsal from 0.3.0 on every platform (see Test changes
+  and Order of PRs below); check whether a remembered password survives on macOS and Linux.
 
 The analysis this plan came from (14 Oct to 3 Nov 2026 sessions) follows.
 

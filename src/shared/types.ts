@@ -187,7 +187,7 @@ export interface Preferences {
   /** Use the GPU for drawing (needs a restart). Turn off if pages look blank or flicker. */
   hardwareAcceleration: boolean
   /**
-   * Let AI apps on this computer (Claude Desktop through the Fartcrobat extension) work with open
+   * Let AI apps on this computer (Claude Desktop through the Inkmoor extension) work with open
    * documents. A machine policy file can force it on or off.
    */
   agentAccess: boolean

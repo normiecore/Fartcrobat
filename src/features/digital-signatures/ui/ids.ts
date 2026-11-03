@@ -8,7 +8,7 @@ import { displayName, dnGet, describeCertificate, isSelfIssued, type Certificate
 import type { DigitalIdRecord, TrustedCertificate } from '../types'
 import { loadIds, saveIds, setTrusted, useSigStore } from './store'
 
-/** Folder for Digital IDs created or imported by Fartcrobat (created on demand by main). */
+/** Folder for Digital IDs created or imported by Inkmoor (created on demand by main). */
 export async function idsFolder(): Promise<string> {
   return invoke('feature:digital-signatures:idsDir')
 }
@@ -65,7 +65,7 @@ export async function importDigitalId(sourcePath: string, password: string): Pro
   return addRecord(await recordFor(parsed.signer, path, true))
 }
 
-/** Removes an ID from the list (and deletes Fartcrobat's copy of the file and its saved password). */
+/** Removes an ID from the list (and deletes Inkmoor's copy of the file and its saved password). */
 export async function removeDigitalId(rec: DigitalIdRecord) {
   if (rec.createdByApp) await invoke('feature:digital-signatures:deleteId', rec.path)
   await saveIds(useSigStore.getState().ids.filter((x) => x.id !== rec.id))

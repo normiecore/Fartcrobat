@@ -82,7 +82,7 @@ async function waitFor(d: ReturnType<typeof deps>, ticket: string, more: Record<
 }
 
 describe('the companion chat and calls that cannot carry its token', () => {
-  // The person opened the chat: the next conversation that uses Fartcrobat may join.
+  // The person opened the chat: the next conversation that uses Inkmoor may join.
   const armed = () =>
     companion.useCompanion.setState({ owner: null, messages: [], listening: false, autoJoin: true, ended: false })
 
@@ -178,7 +178,7 @@ describe('calls that run long', () => {
       save_document: async (_args, ctx) => {
         await hold.promise
         ctx.audit({ document: '/docs/a.pdf', outcome: 'declined', summary: 'save over /docs/a.pdf' })
-        throw new common.ToolError('declined', 'The person declined in Fartcrobat: save over /docs/a.pdf. Do not retry unless they ask.')
+        throw new common.ToolError('declined', 'The person declined in Inkmoor: save over /docs/a.pdf. Do not retry unless they ask.')
       }
     })
     const req = request('save_document')

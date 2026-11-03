@@ -10,7 +10,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `test-results
 async function pageRectToScreen(page: Page, pageIndex: number, r: [number, number, number, number]) {
   const box = await page.locator(`.viewer-page[data-page-index="${pageIndex}"]`).boundingBox()
   if (!box) throw new Error('page not visible')
-  const info = await page.evaluate((i) => (window as any).__fartcrobat.getActiveDoc().state.info.pages[i], pageIndex)
+  const info = await page.evaluate((i) => (window as any).__inkmoor.getActiveDoc().state.info.pages[i], pageIndex)
   const s = box.width / info.width
   return { x: box.x + r[0] * s, y: box.y + r[1] * s, width: (r[2] - r[0]) * s, height: (r[3] - r[1]) * s }
 }
@@ -40,10 +40,10 @@ test('scanned document: message bar, recognize text, search, select and copy', a
     await shot(page, 'bar')
 
     // Nothing to find yet.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().search('searchable'))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().search('searchable'))
     await expect.poll(async () => (await activeDocState(page))?.search.query).toBe('searchable')
     expect((await activeDocState(page))?.search.hits).toBe(0)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().cancelSearch())
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().cancelSearch())
 
     // The bar's Options… opens the Scan & OCR panel; its Recognize text runs with one click.
     await bar.getByRole('button', { name: 'Options…' }).click()
@@ -78,8 +78,8 @@ test('scanned document: message bar, recognize text, search, select and copy', a
     await shot(page, 'search-hit')
 
     // Zoomed in, the highlight still covers the word.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(2))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().revealHit(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(2))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().revealHit(0))
     await page.waitForTimeout(500)
     const hitBox2 = (await page.locator('.viewer-search-hit').first().boundingBox())!
     const wordBox2 = await pageRectToScreen(page, 0, SEARCHABLE_PT)
@@ -87,7 +87,7 @@ test('scanned document: message bar, recognize text, search, select and copy', a
     await shot(page, 'search-hit-zoomed')
     await page.getByRole('button', { name: 'Close find' }).first().click()
     await page.evaluate(() => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       d.view.setZoom('fit-width')
       d.view.goToPage(0)
     })
@@ -111,7 +111,7 @@ test('scanned document: message bar, recognize text, search, select and copy', a
 
 /** Runs a command without waiting for it (commands that open dialogs wait for them). */
 async function fire(page: Page, id: string) {
-  await page.evaluate((c) => void (window as any).__fartcrobat.runCommand(c), id)
+  await page.evaluate((c) => void (window as any).__inkmoor.runCommand(c), id)
 }
 
 function dialogTitled(page: Page, title: string) {
@@ -131,7 +131,7 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
   try {
     await page.evaluate(async () => {
       const prefs = await (window as any).api.invoke('prefs:set', { theme: 'dark' })
-      ;(window as any).__fartcrobat.useApp.setState({ prefs })
+      ;(window as any).__inkmoor.useApp.setState({ prefs })
     })
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
     await openFile(page, fixturePath('ocr/scanned-pages.pdf'))
@@ -177,11 +177,11 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Recognize Text')
 
     // The rotated page (page 2, /Rotate 90) is searchable where its words are.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().search('sideways'))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().search('sideways'))
     await expect.poll(async () => (await activeDocState(page))?.search.hits).toBe(1)
-    const hit = await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.search.hits[0])
+    const hit = await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.search.hits[0])
     expect(hit.page).toBe(1)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().revealHit(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().revealHit(0))
     await expect(page.locator('.viewer-page[data-page-index="1"] .viewer-search-hit')).toBeVisible()
     const hitBox = (await page.locator('.viewer-page[data-page-index="1"] .viewer-search-hit').boundingBox())!
     const word = expected.words['1'].find((w) => w.text === 'sideways.')!.rect
@@ -189,13 +189,13 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     expect(overlap(hitBox, wordBox)).toBeGreaterThan(0.6)
     await page.waitForTimeout(300)
     await shot(page, 'dark-rotated-hit')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().cancelSearch())
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().cancelSearch())
 
     // Undo removes the text in one step.
     await page.locator('.viewer-scroll').focus()
     await page.keyboard.press('Control+Z')
     await expect.poll(async () => (await activeDocState(page))?.journal.undoLabel ?? null).toBeNull()
-    const pageText = (i: number) => page.evaluate(async (k) => (await (window as any).__fartcrobat.getActiveDoc().pageText(k)).text.trim(), i)
+    const pageText = (i: number) => page.evaluate(async (k) => (await (window as any).__inkmoor.getActiveDoc().pageText(k)).text.trim(), i)
     expect(await pageText(1)).toBe('')
 
     // Cancel: nothing changes.
@@ -215,7 +215,7 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     // all of them before the test sees exactly one done.
     await page.evaluate(() => {
       const w = window as any
-      const engine = w.__fartcrobat.getActiveDoc().engine
+      const engine = w.__inkmoor.getActiveDoc().engine
       const call = engine.call.bind(engine)
       let renders = 0
       const gate = new Promise<void>((resolve) => (w.__releaseOcr = resolve))
@@ -241,7 +241,7 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     await expect(page.locator('.toast').filter({ hasText: /^Stopped\. Recognized \d+ words on [12] pages?\./ })).toBeVisible()
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Recognize Text')
     const recognizedPages = await page.evaluate(async () =>
-      (await (window as any).__fartcrobat.getActiveDoc().ops('ocr').status()).filter((s: any) => s.hasOcrLayer).length
+      (await (window as any).__inkmoor.getActiveDoc().ops('ocr').status()).filter((s: any) => s.hasOcrLayer).length
     )
     expect(recognizedPages).toBeGreaterThanOrEqual(1)
     expect(recognizedPages).toBeLessThan(4)
@@ -264,7 +264,7 @@ test('multi-page scan: Recognize Text dialog, skipped pages, rotated page, undo,
     await expect(prefs.getByRole('list', { name: 'Recognition languages' })).toContainText('French')
     await expect(page.locator('.toast').filter({ hasText: 'French can now be used for text recognition.' })).toBeVisible()
     await prefs.getByRole('combobox', { name: 'Document language' }).selectOption('fra')
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().prefs.ocrLanguage)).toBe('fra')
+    await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().prefs.ocrLanguage)).toBe('fra')
     await shot(page, 'dark-preferences')
     await prefs.getByRole('button', { name: 'Done' }).click()
 

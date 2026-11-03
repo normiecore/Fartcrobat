@@ -2,7 +2,7 @@
 // (Windows only). Keys stay in Windows: the PowerShell helper (winCertStore.ts) unwraps the envelope
 // with .NET EnvelopedCms, and only the envelope's content (seed and permission bytes) comes back.
 // Windows shows its own smart card PIN dialog; the PIN stays entered in the helper process until
-// stop() ("Lock smart card", quitting Fartcrobat).
+// stop() ("Lock smart card", quitting Inkmoor).
 import type {
   CertKeyCandidate,
   CertKeysErrorCode,
@@ -50,17 +50,17 @@ export interface WindowsStore extends RecipientKeySource {
 
 /**
  * Options for createWindowsStore from the environment, for tests of unpackaged builds:
- * FARTCROBAT_TEST_POWERSHELL runs that PowerShell (pwsh on Linux) instead of Windows PowerShell 5.1, and
- * FARTCROBAT_TEST_POWERSHELL_HOME sets its HOME, so .NET on Linux reads an isolated certificate store
+ * INKMOOR_TEST_POWERSHELL runs that PowerShell (pwsh on Linux) instead of Windows PowerShell 5.1, and
+ * INKMOOR_TEST_POWERSHELL_HOME sets its HOME, so .NET on Linux reads an isolated certificate store
  * (~/.dotnet/corefx/cryptography/x509stores) instead of the person's own. Packaged builds ignore both.
  */
 export function testPowerShellOptions(
   env: NodeJS.ProcessEnv,
   packaged: boolean
 ): Pick<WindowsStoreOptions, 'powershellPath' | 'env'> {
-  const powershellPath = env.FARTCROBAT_TEST_POWERSHELL
+  const powershellPath = env.INKMOOR_TEST_POWERSHELL
   if (packaged || !powershellPath) return {}
-  const home = env.FARTCROBAT_TEST_POWERSHELL_HOME
+  const home = env.INKMOOR_TEST_POWERSHELL_HOME
   return { powershellPath, env: home ? { ...env, HOME: home } : env }
 }
 
@@ -78,12 +78,12 @@ const ERRORS: Record<WinStoreCode, { code: CertKeysErrorCode; message: string; h
   POWERSHELL_UNAVAILABLE: {
     code: 'POWERSHELL_UNAVAILABLE',
     message:
-      'Windows PowerShell could not be started, so Fartcrobat cannot use the Windows certificate store. Use a Digital ID instead.'
+      'Windows PowerShell could not be started, so Inkmoor cannot use the Windows certificate store. Use a Digital ID instead.'
   },
   CONSTRAINED_LANGUAGE: {
     code: 'CONSTRAINED_LANGUAGE',
     message:
-      'PowerShell runs in Constrained Language Mode on this computer, so Fartcrobat cannot use the Windows certificate store. Use a Digital ID instead.'
+      'PowerShell runs in Constrained Language Mode on this computer, so Inkmoor cannot use the Windows certificate store. Use a Digital ID instead.'
   },
   HELPER_FAILED: { code: 'ERROR', message: 'The Windows certificate store could not be used. Try again.' },
   TIMEOUT: { code: 'TIMEOUT', message: 'Windows did not answer in time. Try again.' },
@@ -129,7 +129,7 @@ const ERRORS: Record<WinStoreCode, { code: CertKeysErrorCode; message: string; h
   UNSUPPORTED: {
     code: 'UNSUPPORTED',
     message:
-      'This document is encrypted for a kind of certificate Fartcrobat cannot use yet. Only RSA certificates are supported.'
+      'This document is encrypted for a kind of certificate Inkmoor cannot use yet. Only RSA certificates are supported.'
   },
   ERROR: { code: 'ERROR', message: 'The Windows certificate store could not be used.', hresult: true }
 }

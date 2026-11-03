@@ -114,7 +114,7 @@ const commands: CommandDefinition[] = [
   },
   // Acrobat has no shortcut for New Window; Shift+Ctrl/Cmd+N is Go to Page.
   { id: 'file.newWindow', label: 'New Window', requiresDocument: false, run: () => void invoke('window:new') },
-  { id: 'app.quit', label: isMac ? 'Quit Fartcrobat' : 'Exit', shortcut: 'Mod+Q', requiresDocument: false, run: () => quitApp() },
+  { id: 'app.quit', label: isMac ? 'Quit Inkmoor' : 'Exit', shortcut: 'Mod+Q', requiresDocument: false, run: () => quitApp() },
   { id: 'app.preferences', label: 'Preferences…', icon: Settings, shortcut: 'Mod+K', requiresDocument: false, run: () => openPreferences(), keywords: ['settings', 'options'] },
 
   // ---- Edit
@@ -198,7 +198,7 @@ const commands: CommandDefinition[] = [
       useApp.setState({ findBarOpen: true, readMode: false })
       const text = await doc(ctx).selectedText()
       if (text && text.length < 80 && !text.includes('\n')) void doc(ctx).search(text)
-      window.dispatchEvent(new Event('fartcrobat:focus-find'))
+      window.dispatchEvent(new Event('inkmoor:focus-find'))
     }
   },
   { id: 'edit.findNext', label: 'Find Next', shortcut: ['F3', 'Mod+G'], enabled: (ctx) => !!ctx.doc?.state.search.hits.length, run: (ctx) => doc(ctx).nextHit(1) },
@@ -364,11 +364,11 @@ const commands: CommandDefinition[] = [
 
   // ---- Help
   { id: 'help.shortcuts', label: 'Keyboard Shortcuts', icon: Keyboard, shortcut: 'Mod+/', requiresDocument: false, run: () => openShortcuts() },
-  { id: 'help.defaultApp', label: 'Make Fartcrobat the Default PDF App…', requiresDocument: false, run: () => openPreferences('general') },
-  { id: 'help.about', label: 'About Fartcrobat', icon: Info, requiresDocument: false, run: () => openAbout() },
+  { id: 'help.defaultApp', label: 'Make Inkmoor the Default PDF App…', requiresDocument: false, run: () => openPreferences('general') },
+  { id: 'help.about', label: 'About Inkmoor', icon: Info, requiresDocument: false, run: () => openAbout() },
   {
     id: 'help.website',
-    label: 'Fartcrobat on GitHub',
+    label: 'Inkmoor on GitHub',
     icon: FileText,
     requiresDocument: false,
     run: () => void invoke('shell:openExternal', 'https://github.com/normiecore/fartcrobat')

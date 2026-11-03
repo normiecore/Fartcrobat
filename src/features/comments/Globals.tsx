@@ -1,6 +1,6 @@
 /**
  * Always-mounted parts of the comments feature: the floating overlay, the hover pop-up, keyboard
- * nudging, the 'fartcrobat:edit-annotation' listener and preference loading.
+ * nudging, the 'inkmoor:edit-annotation' listener and preference loading.
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { authorName, getActiveDoc, useActiveDoc, useApp, type DocumentModel } from '@renderer/sdk'
@@ -119,8 +119,8 @@ export function CommentsGlobal() {
       const doc = (detail.docId ? activeDocOf(detail.docId) : null) ?? getActiveDoc()
       if (doc) void editNewAnnotation(doc, detail.id, detail.page ?? doc.state.currentPage)
     }
-    window.addEventListener('fartcrobat:edit-annotation', onEdit)
-    return () => window.removeEventListener('fartcrobat:edit-annotation', onEdit)
+    window.addEventListener('inkmoor:edit-annotation', onEdit)
+    return () => window.removeEventListener('inkmoor:edit-annotation', onEdit)
   }, [])
 
   // Arrow keys nudge selected comments (before the page-turning shortcuts see them).

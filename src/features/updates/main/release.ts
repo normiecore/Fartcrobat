@@ -4,7 +4,7 @@
 import { gt, parse } from 'semver'
 import { UPDATE_REPO, type AvailableUpdate } from '@shared/updates'
 
-/** Where releases live. Unpackaged test builds may replace it (FARTCROBAT_UPDATE_URL, see ./settings.ts). */
+/** Where releases live. Unpackaged test builds may replace it (INKMOOR_UPDATE_URL, see ./settings.ts). */
 export const RELEASES_BASE = `https://github.com/${UPDATE_REPO.owner}/${UPDATE_REPO.repo}`
 
 /** How long a check may take before it counts as failed. */
@@ -12,7 +12,7 @@ export const CHECK_TIMEOUT_MS = 20_000
 
 export const CHECK_OFFLINE = "Couldn't check for updates. Check your internet connection and try again."
 export const CHECK_UNEXPECTED =
-  "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
+  "Couldn't check for updates. GitHub sent an answer Inkmoor doesn't understand. Try again later."
 
 /** A failed check; the message is what the person sees. */
 export class ReleaseCheckError extends Error {}
@@ -99,7 +99,7 @@ export async function latestRelease(
 }
 
 /**
- * Whether the app may open `url` as a release page: only pages of the Fartcrobat repository on
+ * Whether the app may open `url` as a release page: only pages of the Inkmoor repository on
  * github.com, or under the test base of an unpackaged build.
  */
 export function releasePageAllowed(url: string, testBase: string | null = null): boolean {

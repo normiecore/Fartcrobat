@@ -19,16 +19,16 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-const leftovers = (d: string) => readdirSync(d).filter((n) => n.includes('fartcrobat-tmp'))
+const leftovers = (d: string) => readdirSync(d).filter((n) => n.includes('inkmoor-tmp'))
 const bytes = (s: string) => new TextEncoder().encode(s)
 
 describe('launch paths', () => {
   it('resolves relative paths against the launching process folder', () => {
     writeFileSync(join(dir, 'report.pdf'), 'x')
     expect(normalizeLaunchArg('report.pdf', dir)).toBe(join(dir, 'report.pdf'))
-    expect(filesFromArgv(['/usr/bin/fartcrobat', 'report.pdf'], dir)).toEqual([join(dir, 'report.pdf')])
+    expect(filesFromArgv(['/usr/bin/inkmoor', 'report.pdf'], dir)).toEqual([join(dir, 'report.pdf')])
     // The same argument from another folder names another (missing) file.
-    expect(filesFromArgv(['/usr/bin/fartcrobat', 'report.pdf'], tmpdir())).toEqual([])
+    expect(filesFromArgv(['/usr/bin/inkmoor', 'report.pdf'], tmpdir())).toEqual([])
   })
 
   it('accepts file:// URIs and ignores flags, other URLs and the app script', () => {
@@ -204,7 +204,7 @@ describe('session temporary files', () => {
     const b = t.pathFor('Invoice.pdf')
     expect(a).not.toBe(b)
     expect(a.endsWith('Invoice.pdf')).toBe(true)
-    expect(a.startsWith(join(dir, `fartcrobat-${process.pid}-`))).toBe(true)
+    expect(a.startsWith(join(dir, `inkmoor-${process.pid}-`))).toBe(true)
     if (posix) expect(statSync(t.root()).mode & 0o777).toBe(0o700)
     expect(t.contains(a)).toBe(true)
     expect(t.contains(join(dir, 'other.pdf'))).toBe(false)
@@ -229,11 +229,11 @@ describe('session temporary files', () => {
   })
 
   it('sweeps folders of sessions that are no longer running, and only those', () => {
-    const dead = join(dir, 'fartcrobat-999999-abc')
-    const deadOld = join(dir, 'fartcrobat-print-999998-1')
-    const deadFile = join(dir, 'fartcrobat-999997-attachment.pdf')
-    const alive = join(dir, `fartcrobat-${process.pid}-xyz`)
-    const other = join(dir, 'fartcrobat-e2e-123')
+    const dead = join(dir, 'inkmoor-999999-abc')
+    const deadOld = join(dir, 'inkmoor-print-999998-1')
+    const deadFile = join(dir, 'inkmoor-999997-attachment.pdf')
+    const alive = join(dir, `inkmoor-${process.pid}-xyz`)
+    const other = join(dir, 'inkmoor-e2e-123')
     for (const d of [dead, deadOld, alive, other]) mkdirSync(d)
     writeFileSync(deadFile, 'x')
     writeFileSync(join(dead, 'p0.png'), 'x')
@@ -245,9 +245,9 @@ describe('session temporary files', () => {
 })
 
 describe('unpackaged version', () => {
-  it("reads Fartcrobat's package.json from the app folder or a level or two up", () => {
+  it("reads Inkmoor's package.json from the app folder or a level or two up", () => {
     const files: Record<string, string> = {
-      [join('/repo', 'package.json')]: JSON.stringify({ name: 'fartcrobat', version: '0.1.0' }),
+      [join('/repo', 'package.json')]: JSON.stringify({ name: 'inkmoor', version: '0.1.0' }),
       [join('/repo', 'out', 'package.json')]: JSON.stringify({ name: 'something-else', version: '9.9.9' })
     }
     const read = (path: string) => {

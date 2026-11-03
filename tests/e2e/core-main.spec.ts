@@ -9,15 +9,15 @@ import { activeDocState, FIXTURES, fixturePath, launch, openFile, ROOT, runComma
 // ---- helpers -------------------------------------------------------------------------------------
 
 /** Lets windows ask about unsaved changes (the other specs close windows without asking). */
-const ASK_ON_CLOSE = { FARTCROBAT_FORCE_CLOSE: '' }
+const ASK_ON_CLOSE = { INKMOOR_FORCE_CLOSE: '' }
 
 async function docTitles(page: Page): Promise<string[]> {
-  // window.__fartcrobat appears once the window has booted (after its launch files opened).
-  return page.evaluate(() => (window as any).__fartcrobat?.useApp.getState().docs.map((d: any) => d.state.title) ?? [])
+  // window.__inkmoor appears once the window has booted (after its launch files opened).
+  return page.evaluate(() => (window as any).__inkmoor?.useApp.getState().docs.map((d: any) => d.state.title) ?? [])
 }
 
 async function markDirty(page: Page) {
-  await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.markDirty())
+  await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().core.doc.markDirty())
   await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
 }
 
@@ -159,7 +159,7 @@ test('a window whose renderer crashed or hangs can always be closed, and a crash
     expect((await boxes(app))[0].message).toBe('This window stopped working.')
     expect((await boxes(app))[0].buttons).toEqual(['Reload', 'Close Window'])
     await expect
-      .poll(() => inWindow<string[] | null>(app, id1, 'window.__fartcrobat ? window.__fartcrobat.useApp.getState().docs.map(d => d.state.title) : null'), { timeout: 30000 })
+      .poll(() => inWindow<string[] | null>(app, id1, 'window.__inkmoor ? window.__inkmoor.useApp.getState().docs.map(d => d.state.title) : null'), { timeout: 30000 })
       .toEqual(['text.pdf', 'form.pdf'])
     await new Promise((r) => setTimeout(r, 1000))
     await app.evaluate(async ({ BrowserWindow }, id) => {
@@ -190,7 +190,7 @@ test('a window whose renderer crashed or hangs can always be closed, and a crash
     }, id2)
     await expect.poll(() => windowCount(app), { timeout: 25000 }).toBe(1)
     const asked = await boxes(app)
-    expect(asked.map((b) => b.title)).toEqual(['Fartcrobat is not responding'])
+    expect(asked.map((b) => b.title)).toEqual(['Inkmoor is not responding'])
     expect(asked[0].buttons).toEqual(['Close Anyway', 'Wait'])
   } finally {
     await closeQuietly(app)
@@ -222,10 +222,10 @@ test('a second launch opens relative paths and file:// URIs, and brings the wind
 })
 
 test('files handed over while the window is still loading are all opened', async () => {
-  const userData = mkdtempSync(join(tmpdir(), 'fartcrobat-e2e-'))
+  const userData = mkdtempSync(join(tmpdir(), 'inkmoor-e2e-'))
   const app = await electron.launch({
     args: [join(ROOT, 'out/main/index.js'), '--no-sandbox', '--disable-gpu'],
-    env: { ...process.env, FARTCROBAT_USER_DATA: userData, FARTCROBAT_MULTI_INSTANCE: '1', FARTCROBAT_FORCE_CLOSE: '1' } as Record<string, string>
+    env: { ...process.env, INKMOOR_USER_DATA: userData, INKMOOR_MULTI_INSTANCE: '1', INKMOOR_FORCE_CLOSE: '1' } as Record<string, string>
   })
   try {
     const names = ['text.pdf', 'form.pdf', 'compare-a.pdf', 'compare-b.pdf', 'mixed-sizes.pdf', 'scanned.pdf']
@@ -240,7 +240,7 @@ test('files handed over while the window is still loading are all opened', async
         await new Promise((r) => setTimeout(r, 2))
       } while (!BrowserWindow.getAllWindows().length)
       for (const f of list) {
-        app.emit('second-instance', {}, ['/opt/Fartcrobat/fartcrobat', f], '/', {})
+        app.emit('second-instance', {}, ['/opt/Inkmoor/inkmoor', f], '/', {})
         await new Promise((r) => setTimeout(r, 60))
       }
     }, names.map(fixturePath))
@@ -339,7 +339,7 @@ test('attachments are written to a private folder and programs are never opened'
       return out
     })
     const [exePath, exeResult] = result['Invoice.pdf.exe'].split('\n')
-    expect(exeResult).toMatch(/For your safety, Fartcrobat does not open “Invoice\.pdf\.exe”/)
+    expect(exeResult).toMatch(/For your safety, Inkmoor does not open “Invoice\.pdf\.exe”/)
     expect(result['run.sh'].split('\n')[1]).toMatch(/For your safety/)
     const [txtPath, txtResult] = result['notes.txt'].split('\n')
     expect(txtResult).toBe('')
@@ -371,7 +371,7 @@ test('printing removes its hidden window and page images as soon as the job is h
       return api.invoke('print:images', {
         pages: [{ data: new Uint8Array(data), mime: 'image/png', widthPt: 612, heightPt: 792 }],
         silent: true,
-        deviceName: 'no-such-printer-fartcrobat',
+        deviceName: 'no-such-printer-inkmoor',
         jobName: 'test'
       })
     }, [...png])
@@ -383,7 +383,7 @@ test('printing removes its hidden window and page images as soon as the job is h
       const tmp = app.getPath('temp')
       return fs
         .readdirSync(tmp)
-        .filter((n: string) => n.startsWith(`fartcrobat-${process.pid}-`))
+        .filter((n: string) => n.startsWith(`inkmoor-${process.pid}-`))
         .map((n: string) => ({ root: n, entries: fs.readdirSync(path.join(tmp, n)) }))
     })
     for (const r of tempRoots) expect(r.entries.filter((e: string) => e.startsWith('print-'))).toEqual([])
@@ -445,7 +445,7 @@ test('Edit menu commands act on the focused text field, and on the document othe
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain('quick brown fox')
 
     // The in-app Menu shows the same Edit menu (dark theme).
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
     await page.getByRole('button', { name: 'Menu' }).click()
     await page.getByRole('menuitem', { name: 'Edit' }).hover()
     await expect(page.getByRole('menuitem', { name: 'Paste' })).toBeVisible()
@@ -482,7 +482,7 @@ test('no spell-check dictionary downloads on Linux, and every app:// response ca
     expect(worker).toBeTruthy()
     const csp = await app.evaluate(async ({ session }, w) => {
       const out: (string | null)[] = []
-      for (const u of ['app://fartcrobat/index.html', `app://fartcrobat/assets/${w}`]) {
+      for (const u of ['app://inkmoor/index.html', `app://inkmoor/assets/${w}`]) {
         const res = await session.defaultSession.fetch(u)
         out.push(res.headers.get('content-security-policy'))
       }
@@ -519,10 +519,10 @@ test('Linux "Make default" registers a desktop entry for AppImage installs', asy
   test.skip(process.platform !== 'linux', 'Linux only')
   const data = mkdtempSync(join(tmpdir(), 'core-main-xdg-'))
   mkdirSync(join(data, 'apps'))
-  const appImage = join(data, 'apps', 'Fartcrobat 0.1.0.AppImage')
+  const appImage = join(data, 'apps', 'Inkmoor 0.1.0.AppImage')
   writeFileSync(appImage, '')
   // An AppImage runs its executable from inside its mount folder (APPDIR).
-  const packaged = process.env.FARTCROBAT_EXECUTABLE
+  const packaged = process.env.INKMOOR_EXECUTABLE
   const executable = packaged ? resolve(ROOT, packaged) : (createRequire(import.meta.url)('electron') as string)
   const mount = dirname(executable)
   const xdg = { XDG_DATA_HOME: data, XDG_DATA_DIRS: join(data, 'none') }

@@ -12,7 +12,7 @@ import { useApp } from './store'
 import { toast } from './ui-services'
 import { promptMessage, unlock, type DocUnlock, type RememberOffer } from './unlock'
 
-export const NO_KEYRING_NOTE = 'To remember passwords on this computer, Fartcrobat needs GNOME Keyring or KWallet.'
+export const NO_KEYRING_NOTE = 'To remember passwords on this computer, Inkmoor needs GNOME Keyring or KWallet.'
 
 /** The prompt's "Remember password on this device" checkbox, or why it is missing. */
 export async function rememberOffer(): Promise<RememberOffer> {

@@ -138,7 +138,7 @@ const flush = async () => {
 
 describe('quitForUpdate', { timeout: 5000 }, () => {
   beforeEach(() => {
-    delete process.env.FARTCROBAT_FORCE_CLOSE
+    delete process.env.INKMOOR_FORCE_CLOSE
   })
 
   it('installs only after every window agreed to close, then quits without relaunching', async () => {
@@ -232,14 +232,14 @@ describe('quitForUpdate', { timeout: 5000 }, () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const execPath = process.execPath
     const mount = '/tmp/.mount_FartcrAb12'
-    process.env.APPIMAGE = '/home/me/Apps/Fartcrobat.AppImage'
+    process.env.APPIMAGE = '/home/me/Apps/Inkmoor.AppImage'
     process.env.APPDIR = mount
-    process.execPath = `${mount}/fartcrobat`
+    process.execPath = `${mount}/inkmoor`
     try {
       await windows.quitForUpdate(() => {
         throw new Error('EACCES')
       })
-      expect(relaunched.options).toEqual({ execPath: '/home/me/Apps/Fartcrobat.AppImage', args: process.argv.slice(1) })
+      expect(relaunched.options).toEqual({ execPath: '/home/me/Apps/Inkmoor.AppImage', args: process.argv.slice(1) })
     } finally {
       process.execPath = execPath
       delete process.env.APPIMAGE

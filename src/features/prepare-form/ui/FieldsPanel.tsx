@@ -192,7 +192,7 @@ export function FieldsPanel({ doc }: { doc: DocumentModel }) {
                         onDragStart={(e) => {
                           setDragId(f.id)
                           e.dataTransfer.effectAllowed = 'move'
-                          e.dataTransfer.setData('application/x-fartcrobat-field', String(f.id))
+                          e.dataTransfer.setData('application/x-inkmoor-field', String(f.id))
                         }}
                         onDragEnd={() => {
                           setDragId(null)

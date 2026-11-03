@@ -80,7 +80,7 @@ export async function openPrintDialog(
 ) {
   if (!doc) return
   if (busy) {
-    toast('Fartcrobat is still preparing the previous print job.')
+    toast('Inkmoor is still preparing the previous print job.')
     return
   }
   if (doc.info.permissions.print === false) {

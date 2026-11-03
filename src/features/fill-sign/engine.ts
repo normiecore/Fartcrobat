@@ -33,7 +33,7 @@ import {
 /**
  * Fill & Sign engine operations (namespace 'fill-sign'). Every item is an ordinary PDF annotation
  * (FreeText for text, Ink/Circle for marks, Stamp with an image for signatures) tagged with
- * FartcrobatData { fartcrobat: 'fillsign', kind, size } so it opens in any PDF viewer and Fartcrobat
+ * FartcrobatData { fartcrobat: 'fillsign', kind, size } so it opens in any PDF viewer and Inkmoor
  * can still recognise and edit it.
  */
 

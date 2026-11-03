@@ -344,7 +344,7 @@ export function signatureLossMessage(doc: DocumentModel, count: number): string 
   const one = count === 1
   return (
     `Saving will invalidate ${count} signature${one ? '' : 's'}. “${doc.state.title}” is encrypted with certificates, so ` +
-    `Fartcrobat rewrites the whole file to keep its certificate security, and ${one ? 'its signature' : 'its signatures'} will no longer validate.`
+    `Inkmoor rewrites the whole file to keep its certificate security, and ${one ? 'its signature' : 'its signatures'} will no longer validate.`
   )
 }
 

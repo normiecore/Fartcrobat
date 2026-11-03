@@ -182,12 +182,12 @@ export async function machineReadings(opts: PolicyOptions = {}): Promise<Machine
 }
 
 /**
- * Fills in what the machine policy leaves unset from FARTCROBAT_POLICY_FILE, setting by setting.
+ * Fills in what the machine policy leaves unset from INKMOOR_POLICY_FILE, setting by setting.
  * The machine comes first so that a person cannot override their administrator with that
  * variable, which only exists for tests.
  */
 export function withTestPolicy(machine: MachinePolicy, env: NodeJS.ProcessEnv = process.env): MachinePolicy {
-  const test = env.FARTCROBAT_POLICY_FILE ? readPolicyFile(env.FARTCROBAT_POLICY_FILE) : allOf(null)
+  const test = env.INKMOOR_POLICY_FILE ? readPolicyFile(env.INKMOOR_POLICY_FILE) : allOf(null)
   return bySection((section) => machine[section] ?? test[section])
 }
 

@@ -7,7 +7,7 @@ import { openSignatureProperties } from './Properties'
 import { signatureMenuItems } from './SignaturesPanel'
 import { useDocSignatures, useTrustedSet } from './store'
 
-/** forms-fill handles clicks on unsigned signature fields (it dispatches 'fartcrobat:sign-field'). */
+/** forms-fill handles clicks on unsigned signature fields (it dispatches 'inkmoor:sign-field'). */
 function formsFillHandlesFields(): boolean {
   return registry.features.some((f) => f.id === 'forms-fill')
 }

@@ -1,24 +1,25 @@
 // What keeps installs from before a rename working (src/shared/identity.ts): the same userData
 // folder, machine policies at the old locations, the MCP helper finding the app under either name,
-// and desktop entries written under the old name. The product is not renamed yet, so the tests
-// pass a renamed product ("Newname") to the functions that take one.
+// and desktop entries written under the old name. Most tests pass a made-up product ("Newname")
+// so they do not depend on the current name.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { LEGACY, PRODUCT_NAME, productNames, userDataEnvFor, userDataFolderName, userDataOverride, type Names } from '@shared/identity'
 import { firstSaying, machinePolicyFiles, machineReadings, windowsPolicyKeys, type MachinePolicy, type RunFile } from '@main/policy'
-import { GENERATED_MARKER, desktopEntry, hasGeneratedMarker, refreshedDesktopEntry } from '@main/util/linuxDesktop'
-import { isFartcrobatProgId } from '@main/util/systemDefaults'
+import { GENERATED_MARKER, LEGACY_GENERATED_MARKER, desktopEntry, hasGeneratedMarker, refreshedDesktopEntry } from '@main/util/linuxDesktop'
+import { isInkmoorProgId } from '@main/util/systemDefaults'
 import { TempFiles } from '@main/util/tempFiles'
 import { defaultUserDataDir, installCandidates, separateProfile } from '../../src/agent-shim/launch'
 
 const renamed: Names = { current: 'Newname', legacy: LEGACY.productName }
 
 describe('identity', () => {
-  it('has not been renamed yet, and its legacy ids match the build configuration', () => {
-    expect(PRODUCT_NAME).toBe(LEGACY.productName)
-    expect(productNames()).toEqual([PRODUCT_NAME])
+  it('is Inkmoor, was Fartcrobat, and its legacy ids match the build configuration', () => {
+    expect(PRODUCT_NAME).toBe('Inkmoor')
+    expect(LEGACY.productName).toBe('Fartcrobat')
+    expect(productNames()).toEqual(['Inkmoor', 'Fartcrobat'])
     expect(LEGACY.appId).toBe('org.fartcrobat.app')
     expect(LEGACY.nsisGuid).toBe('bd977413-7ee9-5f76-80a8-7e980aa59bd1')
   })
@@ -30,7 +31,10 @@ describe('identity', () => {
     // A folder under the new name exists (a fresh install that later found an old folder, or a
     // person who copied it): the new one wins.
     expect(userDataFolderName(has('Fartcrobat', 'Newname'), renamed)).toBe('Newname')
-    expect(userDataFolderName(has('Fartcrobat'))).toBe(PRODUCT_NAME)
+    // The current names.
+    expect(userDataFolderName(has('Fartcrobat'))).toBe('Fartcrobat')
+    expect(userDataFolderName(has())).toBe('Inkmoor')
+    expect(userDataFolderName(has('Fartcrobat'), { current: 'Fartcrobat', legacy: 'Fartcrobat' })).toBe('Fartcrobat')
   })
 
   it('reads the userData variable under the new name, then the legacy one', () => {
@@ -50,7 +54,7 @@ describe('machine policy across a rename', () => {
       '/Library/Application Support/Fartcrobat/policy.json'
     ])
     expect(machinePolicyFiles('win32', renamed)).toEqual([])
-    expect(machinePolicyFiles('linux')).toEqual(['/etc/fartcrobat/policy.json'])
+    expect(machinePolicyFiles('linux')).toEqual(['/etc/inkmoor/policy.json', '/etc/fartcrobat/policy.json'])
     expect(windowsPolicyKeys(renamed)).toEqual(['HKLM\\SOFTWARE\\Policies\\Newname', 'HKLM\\SOFTWARE\\Policies\\Fartcrobat'])
   })
 
@@ -127,10 +131,10 @@ describe('MCP helper across a rename', () => {
 
 describe('desktop integration across a rename', () => {
   it('recognises "Open with" choices of either executable on Windows', () => {
-    expect(isFartcrobatProgId('Applications\\Fartcrobat.exe', 'Newname.exe')).toBe(true)
-    expect(isFartcrobatProgId('Applications\\Newname.exe', 'Newname.exe')).toBe(true)
-    expect(isFartcrobatProgId(LEGACY.windowsProgId, 'Newname.exe')).toBe(true)
-    expect(isFartcrobatProgId('Applications\\Other.exe', 'Newname.exe')).toBe(false)
+    expect(isInkmoorProgId('Applications\\Fartcrobat.exe', 'Newname.exe')).toBe(true)
+    expect(isInkmoorProgId('Applications\\Newname.exe', 'Newname.exe')).toBe(true)
+    expect(isInkmoorProgId(LEGACY.windowsProgId, 'Newname.exe')).toBe(true)
+    expect(isInkmoorProgId('Applications\\Other.exe', 'Newname.exe')).toBe(false)
   })
 
   it('updates a desktop entry it wrote earlier for this executable, and nothing else', () => {
@@ -138,12 +142,17 @@ describe('desktop integration across a rename', () => {
     const fresh = desktopEntry(exe, 'fartcrobat')
     expect(hasGeneratedMarker(fresh)).toBe(true)
     expect(refreshedDesktopEntry(fresh, exe, 'fartcrobat')).toBeNull()
-    // Written under an older name.
-    const old = fresh.replace(/^Name=.*$/m, 'Name=Oldname').replace(/^StartupWMClass=.*$/m, 'StartupWMClass=Oldname')
+    // Written under the old name, with the old marker.
+    const old = fresh
+      .replace(/^Name=.*$/m, 'Name=Fartcrobat')
+      .replace(/^StartupWMClass=.*$/m, 'StartupWMClass=Fartcrobat')
+      .replace(GENERATED_MARKER, LEGACY_GENERATED_MARKER)
+    expect(GENERATED_MARKER).toBe('X-Inkmoor-Generated=true')
+    expect(LEGACY_GENERATED_MARKER).toBe('X-Fartcrobat-Generated=true')
     expect(refreshedDesktopEntry(old, exe, 'fartcrobat')).toBe(fresh)
     // Another install's entry, or one the person or a package wrote.
     expect(refreshedDesktopEntry(old, '/opt/other/app', 'fartcrobat')).toBeNull()
-    expect(refreshedDesktopEntry(old.replace(GENERATED_MARKER, ''), exe, 'fartcrobat')).toBeNull()
+    expect(refreshedDesktopEntry(old.replace(LEGACY_GENERATED_MARKER, ''), exe, 'fartcrobat')).toBeNull()
     // The marker only counts on a line of its own.
     expect(hasGeneratedMarker(`Comment=${GENERATED_MARKER}\n`)).toBe(false)
   })

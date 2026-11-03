@@ -40,7 +40,7 @@ export interface PlacingState {
 }
 
 /**
- * An unsigned signature field the user clicked ('fartcrobat:sign-field' from forms-fill) when no
+ * An unsigned signature field the user clicked ('inkmoor:sign-field' from forms-fill) when no
  * certificate signing is available: the signature or initials chosen next go into that field.
  */
 export interface SignFieldTarget {

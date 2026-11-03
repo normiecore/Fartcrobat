@@ -26,7 +26,7 @@ interface Annot {
 }
 
 async function annots(page: Page, pageIndex = 0): Promise<Annot[]> {
-  return page.evaluate(async (i) => (window as any).__fartcrobat.getActiveDoc().ops('annots').list(i), pageIndex)
+  return page.evaluate(async (i) => (window as any).__inkmoor.getActiveDoc().ops('annots').list(i), pageIndex)
 }
 
 async function ofType(page: Page, type: string, pageIndex = 0) {
@@ -37,7 +37,7 @@ async function ofType(page: Page, type: string, pageIndex = 0) {
 async function toScreen(page: Page, pageIndex: number, x: number, y: number): Promise<Pt> {
   return page.evaluate(
     ({ pageIndex, x, y }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const el = document.querySelector(`.viewer-page[data-page-index="${pageIndex}"]`)!
       const r = el.getBoundingClientRect()
       const s = (d.state.zoom * 96) / 72
@@ -55,7 +55,7 @@ async function toScreen(page: Page, pageIndex: number, x: number, y: number): Pr
 async function textQuads(page: Page, pageIndex: number, needle: string) {
   return page.evaluate(
     async ({ pageIndex, needle }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const t = await d.pageText(pageIndex)
       const i = t.text.indexOf(needle)
       const q = (k: number) => Array.from(t.quads.slice(k * 8, k * 8 + 8)) as number[]
@@ -75,7 +75,7 @@ async function drag(page: Page, a: Pt, b: Pt, opts: { steps?: number; shift?: bo
 }
 
 async function toolId(page: Page): Promise<string> {
-  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)
+  return page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)
 }
 
 async function undoRedo(page: Page, type: string, count: number) {
@@ -86,7 +86,7 @@ async function undoRedo(page: Page, type: string, count: number) {
 }
 
 /**
- * Records 'fartcrobat:edit-annotation' events (sent so the comments feature opens its popup or inline
+ * Records 'inkmoor:edit-annotation' events (sent so the comments feature opens its popup or inline
  * editor) and stops them, so an editor opened by the comments feature cannot take keyboard focus in
  * the middle of these tests.
  */
@@ -95,7 +95,7 @@ async function captureEditEvents(page: Page) {
     const w = window as any
     w.__editEvents = []
     window.addEventListener(
-      'fartcrobat:edit-annotation',
+      'inkmoor:edit-annotation',
       (e) => {
         w.__editEvents.push((e as CustomEvent).detail)
         e.stopImmediatePropagation()
@@ -118,7 +118,7 @@ async function settle(page: Page) {
   for (let i = 0; i < 50; i++) {
     const now = await page.evaluate(() => {
       const r = document.querySelector('.viewer-page[data-page-index="0"]')?.getBoundingClientRect()
-      return JSON.stringify([r?.left, r?.top, r?.width, r?.height, (window as any).__fartcrobat.getActiveDoc()?.state.zoom])
+      return JSON.stringify([r?.left, r?.top, r?.width, r?.height, (window as any).__inkmoor.getActiveDoc()?.state.zoom])
     })
     if (now === last) return
     last = now
@@ -192,7 +192,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     await undoRedo(page, 'Underline', 1)
 
     // ---- 3. Rectangle with Shift (square) at 150% zoom, from the "Add comments" panel
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.5))
     await page.waitForTimeout(400)
     await page.locator('.shell-alltools-item', { hasText: 'Add comments' }).click()
     await expect(page.locator('.ui-panel-header h3', { hasText: 'Add comments' })).toBeVisible()
@@ -272,7 +272,7 @@ test('comment tools: highlight, underline, shapes, pencil, note, eraser with und
     const n = await toScreen(page, 0, 500, 120)
     await page.mouse.click(n.x, n.y)
     const dialog = page.locator('.ui-dialog', { hasText: 'Add sticky note' })
-    const hasComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
+    const hasComments = await page.evaluate(() => (window as any).__inkmoor.registry.features.some((f: any) => f.id === 'comments'))
     if (!hasComments) {
       await expect(dialog).toBeVisible()
       await page.keyboard.type('Please check this paragraph.')
@@ -355,11 +355,11 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
     expect(await toolId(page)).toBe('select')
 
     // keyboard only: with the sticky note tool, Enter puts a note in the middle of the view
-    const hasComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
+    const hasComments = await page.evaluate(() => (window as any).__inkmoor.registry.features.some((f: any) => f.id === 'comments'))
     await page.keyboard.press('s')
     await settle(page)
     const centre = await page.evaluate(() => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const r = d.view.getViewportElement().getBoundingClientRect()
       return d.view.hitTest(r.left + r.width / 2, r.top + r.height / 2)
     })
@@ -480,7 +480,7 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
       await page.keyboard.press('Control+Enter')
     }
     await expect.poll(async () => (await ofType(page, 'FreeText')).length).toBe(2)
-    const callout = (await page.evaluate(async () => (window as any).__fartcrobat.getActiveDoc().ops('annots').list(0))).find(
+    const callout = (await page.evaluate(async () => (window as any).__inkmoor.getActiveDoc().ops('annots').list(0))).find(
       (x: any) => x.intent === 'FreeTextCallout'
     )
     expect(callout.calloutLine[0][0]).toBeCloseTo(150, 0)
@@ -502,8 +502,8 @@ test('keyboard shortcuts, tool options, text tools and dark theme', async () => 
 
     // dark theme: options bar and panel
     await page.evaluate(() => {
-      const s = (window as any).__fartcrobat.useApp.getState()
-      ;(window as any).__fartcrobat.useApp.setState({ prefs: { ...s.prefs, theme: 'dark' } })
+      const s = (window as any).__inkmoor.useApp.getState()
+      ;(window as any).__inkmoor.useApp.setState({ prefs: { ...s.prefs, theme: 'dark' } })
     })
     await page.locator('.shell-alltools-item', { hasText: 'Add comments' }).click()
     await page.locator('.ui-tool-row', { hasText: 'Draw oval' }).click()
@@ -544,21 +544,21 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     await captureEditEvents(page)
     await runCommand(page, 'view.fitPage')
     await page.waitForTimeout(300)
-    const hasComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
+    const hasComments = await page.evaluate(() => (window as any).__inkmoor.registry.features.some((f: any) => f.id === 'comments'))
 
     // the "Add comments" tile is on the Home screen too
-    expect(await page.evaluate(() => (window as any).__fartcrobat.registry.toolGroups.find((g: any) => g.id === 'comment')?.homeTile)).toBe(true)
+    expect(await page.evaluate(() => (window as any).__inkmoor.registry.toolGroups.find((g: any) => g.id === 'comment')?.homeTile)).toBe(true)
 
     // defaults saved by the comments feature ("Make current properties default") are picked up
     await page.evaluate(() => (window as any).api.invoke('store:set', 'comments:defaults:Square', { color: '#4caf50', borderWidth: 4, dashes: [3, 3] }))
 
     // comments hidden (View > Show/Hide > Comments): picking a comment tool shows them again
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().set({ showAnnotations: false }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().set({ showAnnotations: false }))
 
     // ---- rectangle in a view rotated 90° clockwise lands where it was drawn
     await runCommand(page, 'view.rotateCW')
     await activate(page, 'comment.rectangle')
-    expect(await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.showAnnotations)).toBe(true)
+    expect(await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.showAnnotations)).toBe(true)
     await expect(page.locator('.toast-message', { hasText: 'Comments were hidden' })).toBeVisible()
     await expect(page.locator('.fc-markup-tools-color', { hasText: 'Colour' }).locator('.fc-markup-tools-color-swatch')).toHaveCSS('background-color', 'rgb(76, 175, 80)')
     await expect(page.locator('select[aria-label="Line width"]')).toHaveValue('4')
@@ -660,7 +660,7 @@ test('rotated view, scanned pages, typewriter, connected lines, squiggly, note o
     const att = (await ofType(page, 'FileAttachment'))[0] as any
     expect(att.fileName).toBe('scan.png')
     expect(att.icon).toBe('PushPin')
-    const size = await page.evaluate(async (id) => (await (window as any).__fartcrobat.getActiveDoc().ops('annots').attachment(id))?.data.length, att.id)
+    const size = await page.evaluate(async (id) => (await (window as any).__inkmoor.getActiveDoc().ops('annots').attachment(id))?.data.length, att.id)
     expect(size).toBeGreaterThan(1000)
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Add File Attachment')
     await undoRedo(page, 'FileAttachment', 1)
@@ -698,10 +698,10 @@ test('with the comments feature installed, new comments open its editor instead 
     await captureEditEvents(page)
     // stand-in for the comments feature when it is not part of this build
     await page.evaluate(() => {
-      const reg = (window as any).__fartcrobat.registry
+      const reg = (window as any).__inkmoor.registry
       if (!reg.features.some((f: any) => f.id === 'comments')) reg.register({ id: 'comments' })
     })
-    const docId = await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().id)
+    const docId = await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().id)
 
     await activate(page, 'comment.note')
     const n = await toScreen(page, 0, 520, 140)
@@ -744,7 +744,7 @@ test('the Add comments panel lists stamp, measure and comment commands when thos
     // stand-ins for the stamps-measure and comments features when they are not part of this build
     await page.evaluate(() => {
       const w = window as any
-      const reg = w.__fartcrobat.registry
+      const reg = w.__inkmoor.registry
       const icon = reg.tools.get('select').icon
       w.__ran = []
       const fakeTools = [
@@ -767,7 +767,7 @@ test('the Add comments panel lists stamp, measure and comment commands when thos
     const panel = page.locator('.fc-markup-tools-panel')
     await expect(panel.locator('.ui-section', { hasText: 'Stamps & measure' }).locator('.ui-tool-row')).toHaveCount(4)
     const stamp = await page.evaluate(() => {
-      const t = (window as any).__fartcrobat.registry.tools.get('stamps.stamp')
+      const t = (window as any).__inkmoor.registry.tools.get('stamps.stamp')
       return { label: t.label as string, shortcut: (t.shortcut ?? null) as string | null }
     })
     const stampRow = panel.locator('.ui-tool-row', { hasText: stamp.label })
@@ -775,7 +775,7 @@ test('the Add comments panel lists stamp, measure and comment commands when thos
     await expect(panel.locator('.ui-section', { hasText: 'Manage comments' }).locator('.ui-tool-row')).toHaveCount(4)
     await stampRow.click()
     expect(await toolId(page)).toBe('stamps.stamp')
-    const realComments = await page.evaluate(() => (window as any).__fartcrobat.registry.features.some((f: any) => f.id === 'comments'))
+    const realComments = await page.evaluate(() => (window as any).__inkmoor.registry.features.some((f: any) => f.id === 'comments'))
     if (!realComments) {
       await panel.locator('.ui-tool-row', { hasText: 'Export comments' }).click()
       await expect.poll(() => page.evaluate(() => (window as any).__ran)).toEqual(['comments.export'])

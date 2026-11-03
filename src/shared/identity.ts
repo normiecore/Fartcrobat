@@ -1,16 +1,20 @@
 // The app's names. PRODUCT_NAME is the one people see; the rest are ids that copies installed
-// before a rename, files they saved and administrators' setups depend on.
+// before a rename, files they saved and administrators' setups depend on. The app was called
+// Fartcrobat up to 0.3 and Inkmoor from 0.4.
 //
 // To rename the app: change PRODUCT_NAME (and productName in package.json and electron-builder.yml).
 // Leave everything in LEGACY alone: changing any of it breaks updates from installed copies, files
 // people saved, or machine policies already deployed. docs/features/rename.md explains each one.
 
 /** The name people see: windows, menus, installers, the userData folder of new installs. */
-export const PRODUCT_NAME = 'Fartcrobat'
+export const PRODUCT_NAME = 'Inkmoor'
 
 /**
  * Ids that keep their first value for good. Nothing a person reads uses them, apart from the
- * GitHub repository name in links.
+ * GitHub repository name in links. The same goes for the keys the app writes into PDFs
+ * (/FartcrobatData and its `fartcrobat` entry, /FartcrobatMark, /FartcrobatOCR, ...), the XFDF
+ * and form-data formats, the settings file name and the saved-password key domain: they are file
+ * formats, so they are written unchanged rather than listed here.
  */
 export const LEGACY = {
   /** The name 0.1 to 0.3 shipped under: their userData folder, policy locations and executables. */

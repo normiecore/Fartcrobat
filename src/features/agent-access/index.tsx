@@ -13,7 +13,7 @@ import './ipc'
 import './agent-access.css'
 
 // Listen for calls as soon as the window loads, before the first render: an AI app that started
-// Fartcrobat sends its first call as soon as the window exists.
+// Inkmoor sends its first call as soon as the window exists.
 if (typeof window !== 'undefined' && (window as { api?: unknown }).api) startAgentRunner()
 
 /** Always mounted: keeps the connection status current and shows the top bar indicator. */

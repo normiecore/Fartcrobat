@@ -111,7 +111,7 @@ export async function reviewInDocument(options: {
   const listen = typeof window.addEventListener === 'function'
   if (listen) for (const type of INTERACTIONS) window.addEventListener(type, interacted, { capture: true, passive: true })
   openRightPanel('agent-review')
-  // Fartcrobat may be behind the AI app or minimized: bring it forward, or flash it on Windows.
+  // Inkmoor may be behind the AI app or minimized: bring it forward, or flash it on Windows.
   void invoke('feature:agent-access:attention').catch(() => {})
   try { return await pending } finally {
     offApp(); offChange(); offStore()

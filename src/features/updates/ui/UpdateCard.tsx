@@ -179,7 +179,7 @@ function Downloading({ status }: { status: UpdateStatus }) {
       <div
         className={`${P}-bar`}
         role="progressbar"
-        aria-label={`Downloading Fartcrobat ${version}`}
+        aria-label={`Downloading Inkmoor ${version}`}
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={percent}
@@ -205,7 +205,7 @@ function Ready({ status }: { status: UpdateStatus }) {
         icon={CheckCircle2}
         tone="success"
         title={cardTitle('ready', status.update!.version)}
-        sub="Restart Fartcrobat to finish."
+        sub="Restart Inkmoor to finish."
       />
       <div className={`${P}-actions`}>
         <Button variant="primary" size="sm" onClick={() => updateAction('feature:updates:restart')}>

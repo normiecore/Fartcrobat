@@ -1,4 +1,4 @@
-// Packs the Claude Desktop extension, an MCP Bundle: <outDir>/fartcrobat.mcpb holding manifest.json,
+// Packs the Claude Desktop extension, an MCP Bundle: <outDir>/inkmoor.mcpb holding manifest.json,
 // icon.png and server/shim.mjs (built first by scripts/build-agent-shim.mjs). The installers ship it
 // in resources/agent (electron-builder.yml); Preferences > AI apps > Add to Claude Desktop opens it.
 //   node scripts/build-agent-extension.mjs [outDir]     (default out/agent)
@@ -12,7 +12,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = resolve(process.argv[2] ?? resolve(root, 'out/agent'))
 const shim = join(outDir, 'shim.mjs')
 const staging = join(outDir, 'extension')
-const bundle = join(outDir, 'fartcrobat.mcpb')
+const bundle = join(outDir, 'inkmoor.mcpb')
 const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'))
 
 if (!existsSync(shim)) {
@@ -39,11 +39,11 @@ const manifest = {
   display_name: identity.PRODUCT_NAME,
   version: pkg.version,
   description:
-    'Work with the PDF documents open in Fartcrobat: read, comment, fill forms, redact, organize pages and more.',
+    'Work with the PDF documents open in Inkmoor: read, comment, fill forms, redact, organize pages and more.',
   long_description: [
-    'Lets Claude work with the documents open in Fartcrobat on this computer, as you would: read text and pages, see what you selected, add comments, fill forms, mark redactions, organize pages and save.',
-    'Changes appear live in Fartcrobat and can be undone there (Edit > Undo shows "Agent: ..."). Irreversible actions, such as overwriting a file, applying redactions, signing or removing security, wait for you to confirm in Fartcrobat. Passwords are always typed in Fartcrobat, never in chat.',
-    'Fartcrobat must be installed. It starts when Claude first uses it. To stop AI apps from working with your documents, turn off Preferences > AI apps in Fartcrobat. Text that Claude reads from a document is sent to Claude like anything else in the conversation.'
+    'Lets Claude work with the documents open in Inkmoor on this computer, as you would: read text and pages, see what you selected, add comments, fill forms, mark redactions, organize pages and save.',
+    'Changes appear live in Inkmoor and can be undone there (Edit > Undo shows "Agent: ..."). Irreversible actions, such as overwriting a file, applying redactions, signing or removing security, wait for you to confirm in Inkmoor. Passwords are always typed in Inkmoor, never in chat.',
+    'Inkmoor must be installed. It starts when Claude first uses it. To stop AI apps from working with your documents, turn off Preferences > AI apps in Inkmoor. Text that Claude reads from a document is sent to Claude like anything else in the conversation.'
   ].join('\n\n'),
   author: { name: pkg.author.name, url: pkg.homepage },
   homepage: pkg.homepage,

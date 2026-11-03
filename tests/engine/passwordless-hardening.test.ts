@@ -388,7 +388,7 @@ describe('/Recipients over the limits', () => {
   ]) {
     it(`${what}: the file does not open, and the message says why`, async () => {
       const { doc, open, check } = await opened(withRecipients(recipients))
-      const refused = { code: 'CERTIFICATE_UNSUPPORTED', message: expect.stringMatching(/more recipients than Fartcrobat can read/) }
+      const refused = { code: 'CERTIFICATE_UNSUPPORTED', message: expect.stringMatching(/more recipients than Inkmoor can read/) }
       await expect(open).rejects.toMatchObject(refused)
       await expect(check).rejects.toMatchObject(refused)
       // Nothing is left waiting for a certificate.
@@ -404,7 +404,7 @@ describe('/Recipients over the limits', () => {
     it(`${refs} references to one large object are refused at once`, async () => {
       const bytes = withRecipients(`<3082010a0201> ${'5 0 R '.repeat(refs)}`, `[${'0 '.repeat(20000)}]`)
       const read = await inWorker('readPubSec', bytes)
-      expect(read.result).toEqual({ error: expect.stringMatching(/more recipients than Fartcrobat can read/) })
+      expect(read.result).toEqual({ error: expect.stringMatching(/more recipients than Inkmoor can read/) })
       expect(read.elapsed).toBeLessThan(1000)
     })
   }

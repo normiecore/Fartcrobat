@@ -2,8 +2,8 @@
 
 This feature lets people and AI agents open encrypted PDFs without typing anything after the first time:
 
-1. **Remembered passwords.** The person types a document password once and ticks "Remember password on this device". From then on, Fartcrobat opens that file, its copies and its saved versions without asking. The password is stored with Electron `safeStorage`: DPAPI on Windows, Keychain on macOS, libsecret or KWallet on Linux.
-2. **Certificate encryption** (PDF public-key security, `/Filter /Adobe.PubSec`). Fartcrobat opens files encrypted to a person's certificate, using their private key. The key can come from the Windows certificate store, a smart card, or a Fartcrobat Digital ID (.p12). Files are saved back still certificate-encrypted, and people can create new certificate-encrypted files for one or more recipients.
+1. **Remembered passwords.** The person types a document password once and ticks "Remember password on this device". From then on, Inkmoor opens that file, its copies and its saved versions without asking. The password is stored with Electron `safeStorage`: DPAPI on Windows, Keychain on macOS, libsecret or KWallet on Linux.
+2. **Certificate encryption** (PDF public-key security, `/Filter /Adobe.PubSec`). Inkmoor opens files encrypted to a person's certificate, using their private key. The key can come from the Windows certificate store, a smart card, or an Inkmoor Digital ID (.p12). Files are saved back still certificate-encrypted, and people can create new certificate-encrypted files for one or more recipients.
 
 An AI agent that opens a file through agent access gets the same silent access as the person. Every such open is written to the agent audit log, without secrets.
 
@@ -19,7 +19,7 @@ An AI agent that opens a file through agent access gets the same silent access a
 
 - Scope: remembered passwords and certificate encryption (open, save back, create). Purview and company password vaults are out of scope.
 - Agents unlock remembered and certificate-encrypted files **silently**, like the person; every agent open is in the agent audit log.
-- Smart cards: **PIN once per session**. A long-lived helper keeps the card unlocked while Fartcrobat runs (this changes D9 and D11 below: the helper is one process per app session, not per call, and while it holds an unlocked card an agent can open more card-protected files without the person). Stopping the helper (quit, or "Lock smart card" in the app) ends that.
+- Smart cards: **PIN once per session**. A long-lived helper keeps the card unlocked while Inkmoor runs (this changes D9 and D11 below: the helper is one process per app session, not per call, and while it holds an unlocked card an agent can open more card-protected files without the person). Stopping the helper (quit, or "Lock smart card" in the app) ends that.
 - Saving a certificate-encrypted file that already has signatures: **warn, then allow** ("Saving will invalidate N signatures"); agents get the usual confirm prompt.
 - Older AES-128 (V4) certificate-encrypted files are **upgraded to AES-256** when saved.
 - Which Acrobat setting the team uses is unknown: support both V4 and V5 for opening; the Windows checklist will tell.
@@ -232,7 +232,7 @@ Save --------------------------------------------------------------------- -> sa
   - Files:
     - `keys.ts`, `store.ts`, `electronCipher.ts`;
     - `index.ts`, with `registerPasswordHandlers()`, called from `registerCoreHandlers`;
-    - `testCipher.ts`, used only when `!app.isPackaged && FARTCROBAT_TEST_SECRET_CIPHER === '1'`.
+    - `testCipher.ts`, used only when `!app.isPackaged && INKMOOR_TEST_SECRET_CIPHER === '1'`.
   - The store is built lazily after the app is `ready` and never logs arguments.
   - Records it cannot decrypt are kept and flagged `unreadable`, not deleted.
 - **`src/main/certkeys/`** (core, because opening a file is core):
@@ -382,7 +382,7 @@ Only public certificates are needed. After writing, the app reloads from the new
 - A smart card shows the Windows PIN dialog to the human, and the agent call waits, up to the decrypt timeout.
 - In every other case, the person is prompted, as today.
 
-**Tool description.** The description of `open_document` changes to: "A protected file opens without a prompt when its password is saved on this device or it is encrypted to one of the person's certificates; otherwise it waits for the person in Fartcrobat. You never see passwords or keys."
+**Tool description.** The description of `open_document` changes to: "A protected file opens without a prompt when its password is saved on this device or it is encrypted to one of the person's certificates; otherwise it waits for the person in Inkmoor. You never see passwords or keys."
 
 **Audit log.** The `summary` of an `open_document` entry is one of:
 
@@ -393,9 +393,9 @@ Only public certificates are needed. After writing, the app reloads from the new
 
 **Never logged anywhere:** passwords, PINs, seeds, file keys, envelope contents and the one-time password. The helper's stderr is kept only as an error code.
 
-**What agents cannot do.** Agents cannot create certificate encryption or change saved passwords. `protect_document` still opens Fartcrobat's own dialog.
+**What agents cannot do.** Agents cannot create certificate encryption or change saved passwords. `protect_document` still opens Inkmoor's own dialog.
 
-**Machine policy.** The setting goes in the same place as agent access's. On Windows that is the REG_DWORD `RememberPasswords` under `HKLM\SOFTWARE\Policies\Fartcrobat` (Group Policy or Intune), 0 for off. On macOS and Linux it is `policy.json`, `{"rememberPasswords":{"enabled":false}}`. Off:
+**Machine policy.** The setting goes in the same place as agent access's. On Windows that is the REG_DWORD `RememberPasswords` under `HKLM\SOFTWARE\Policies\Inkmoor` (Group Policy or Intune), 0 for off. On macOS and Linux it is `policy.json`, `{"rememberPasswords":{"enabled":false}}`. Off:
 
 - hides the checkbox;
 - makes `find` return nothing;
@@ -425,14 +425,14 @@ A policy that exists but cannot be read or understood (a JSON typo, a file only 
 - When a saved password fails, only this file's keys are unlinked from it, so the prompt says it "no longer opens it and won't be tried for it again": the record still opens older copies.
 - After a wrong typed password, the next prompt keeps the Remember choice the person made in the last one.
 - A store file that exists but cannot be read (EACCES, EBUSY) is not treated as empty: the call fails and the next one reads it again. Only content that is not a valid store starts empty.
-- The test cipher (`FARTCROBAT_TEST_SECRET_CIPHER=1`, unpackaged builds only) is reversible and marked "Test cipher (not protected)" in Preferences.
+- The test cipher (`INKMOOR_TEST_SECRET_CIPHER=1`, unpackaged builds only) is reversible and marked "Test cipher (not protected)" in Preferences.
 - Sender check: `URL.origin` is "null" for `app://` URLs, so the handlers compare scheme and host.
 - Not wired to saved passwords: Compress still asks for the open password of a protected document, as before, even when a saved password opened it. The engine session already has that password, so a later change can drop the prompt.
 
 **Tests**
 
 - Unit: `tests/engine/core-saved-passwords-{keys,store,unlock,flow,main}.test.ts` (the 32 prototype tests, adapted, plus the engine's `lock` and `access`, `checkFile`, path folding, `electronCipher` with a mocked safeStorage, the test cipher's gate, the handlers: other senders refused, plain errors, nothing logged, and which policy readings turn remembering off or wipe the store).
-- End to end: `tests/e2e/saved-passwords.spec.ts` (skipped with `FARTCROBAT_EXECUTABLE`; the only spec that launches with remembering on, see `launch` in `tests/e2e/helpers.ts`), with the fixture `tests/fixtures/saved-passwords/encrypted-changed.pdf` (`make_saved_passwords.py`, pypdf). It covers the prompt, Remove and Remove All, a changed password, unticking (also before a wrong password), Protect and Forget, a Digital ID (Enter does not sign with its saved password), the machine policy, a policy file that cannot be understood, Linux without a keyring (real safeStorage, skipped when a D-Bus session exists) and an agent opening a remembered file, extracting pages, inserting it and combining it through the built MCP shim.
+- End to end: `tests/e2e/saved-passwords.spec.ts` (skipped with `INKMOOR_EXECUTABLE`; the only spec that launches with remembering on, see `launch` in `tests/e2e/helpers.ts`), with the fixture `tests/fixtures/saved-passwords/encrypted-changed.pdf` (`make_saved_passwords.py`, pypdf). It covers the prompt, Remove and Remove All, a changed password, unticking (also before a wrong password), Protect and Forget, a Digital ID (Enter does not sign with its saved password), the machine policy, a policy file that cannot be understood, Linux without a keyring (real safeStorage, skipped when a D-Bus session exists) and an agent opening a remembered file, extracting pages, inserting it and combining it through the built MCP shim.
 
 ## Certificate encryption as built (phases 2 to 6)
 
@@ -467,7 +467,7 @@ Built on 14 October 2026 by parallel builders on shared contracts, then reviewed
 - **EncryptMetadata false**: such files open through the decrypt pass (V5 too, with K for every object, leaving the XMP stream alone). Saving back always writes EncryptMetadata true (D7), so the XMP stream becomes encrypted.
 - **Restricted recipients.** A recipient whose envelope lacks the change-security bit can edit and save (as their permissions allow) but cannot Remove Security, Protect with a password or Encrypt with Certificate (PERMISSION_DENIED). Recipients with every other permission but not that bit do not get full access either: the Protect panel shows "Changing the security: Not allowed" and explains why those actions are disabled, and the agent's `remove_security` refuses before asking the person.
 - **Replacing certificate security with a password** asks first, worded by what the result will be: Restrict Editing without an open password leaves a file anyone can open, and the dialog and the summary say so.
-- **Permission groups** in Encrypt with Certificate tie form filling to commenting (bit 6 also allows filling forms, ISO 32000-2 table 24), so what Fartcrobat writes reads back the same way in Acrobat. Opening reads it the same way: an envelope with bit 6 set and bit 9 clear allows filling in forms. Removing a group moves its recipients to the first group, and the dialog says where they went and what that group allows.
+- **Permission groups** in Encrypt with Certificate tie form filling to commenting (bit 6 also allows filling forms, ISO 32000-2 table 24), so what Inkmoor writes reads back the same way in Acrobat. Opening reads it the same way: an envelope with bit 6 set and bit 9 clear allows filling in forms. Removing a group moves its recipients to the first group, and the dialog says where they went and what that group allows.
 - **When the Windows store cannot be searched** (Constrained Language Mode, a blocked or missing PowerShell, or a helper too busy to answer within 60 s, for example while another window waits for a smart card PIN: `windowsStore: 'busy'` in the probe result, TIMEOUT from a decrypt), the no-key message says so ("None of your Digital IDs can open it" and why the store was not used), and the recipient picker says why its Windows store list is empty.
 - **Agents are told why** a certificate-encrypted file did not open: no key matches ("failed", or "unsupported" for elliptic-curve keys), a key problem the person could only acknowledge ("failed"), a damaged file ("file_error"); only the person's own Cancel is reported as "cancelled".
 - **Outputs that are plain on purpose**, as for password-protected documents: a comment summary, and a new PDF made with Create from protected files.
@@ -480,7 +480,7 @@ Built on 14 October 2026 by parallel builders on shared contracts, then reviewed
 **Tests**
 
 - Unit (vitest): `passwordless-lex` (the parser and xref reader), `passwordless-open` (every fixture and recipient, by seed), `passwordless-save` (save back, V4 to V5, no bridge or plaintext in any output, incremental refused, Remove Security, Protect with a password, revert, a pyHanko cross-check), `passwordless-outputs` (Extract, Split, Combine, Compare, Optimize, side inputs, signing refused), `passwordless-create` (Encrypt with Certificate: one and two groups, permission bits, exact issuer bytes, EC refused, a pyHanko cross-check), `passwordless-hardening` (hostile files that must not hang or exhaust memory, a direct `/Info`, what the tab reports after a save), `passwordless-guard` (no new `saveToBuffer` outside an allow-list), `certkeys-envelope`, `certkeys-digitalid`, `certkeys-handlers` (senders, argument bounds, hostile `/Recipients`, cancel, nothing logged), `certkeys-winstore` (script rules, the process model, and the store through pwsh on Linux against a private test store; on Windows, the stock PowerShell 5.1 in the `windows-helper` CI job), `core-certificate-unlock` (the unlock logic), `protect-certificate-files` and `protect-certificate-recipients`, and `main-bundle`.
-- End to end: `tests/e2e/certificate-encryption.spec.ts` (skipped with `FARTCROBAT_EXECUTABLE`, like the saved-passwords spec): a Digital ID opens a file and its password is remembered, an edit saves back encrypted, Revert, a file for someone else, a restricted recipient with signing disabled, the signatures warning, Encrypt with Certificate for two recipients reopened by each, an agent opening silently (with the audit line and no secret) and saving a signed file, and the Windows store through the PowerShell helper on Linux (skipped without pwsh).
+- End to end: `tests/e2e/certificate-encryption.spec.ts` (skipped with `INKMOOR_EXECUTABLE`, like the saved-passwords spec): a Digital ID opens a file and its password is remembered, an edit saves back encrypted, Revert, a file for someone else, a restricted recipient with signing disabled, the signatures warning, Encrypt with Certificate for two recipients reopened by each, an agent opening silently (with the audit line and no secret) and saving a signed file, and the Windows store through the PowerShell helper on Linux (skipped without pwsh).
 - Fixtures: `tests/fixtures/passwordless/make_pubsec.py` (pyHanko, cryptography, asn1crypto), deterministic, outputs committed, keys for tests only; see its README.
 - CI: pyHanko is in `tests/requirements.txt`, so the cross-checks run there. The `windows-helper` job runs `certkeys-winstore.test.ts` on `windows-latest` against the stock Windows PowerShell 5.1.
 
@@ -693,7 +693,7 @@ The keys are for tests only and are labelled as such. The outputs are committed,
 
 **`saved-passwords.spec.ts`**
 
-This is the spike's draft. It uses the test cipher and is skipped when `FARTCROBAT_EXECUTABLE` is set. It checks that:
+This is the spike's draft. It uses the test cipher and is skipped when `INKMOOR_EXECUTABLE` is set. It checks that:
 
 - Remember is ticked by default;
 - reopening shows no prompt;
@@ -730,45 +730,45 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 
 1. Open `encrypted.pdf` and leave Remember ticked. Quit, start again and reopen: there is no prompt.
 2. Copy and rename the file, then reopen: no prompt. Protect it again with a new password: exactly one prompt.
-3. Sign in as a second Windows user and copy `%APPDATA%\Fartcrobat\saved-passwords.json` over. Nothing opens silently, and nothing crashes.
-4. Delete `%APPDATA%\Fartcrobat\Local State`. The records show as unreadable, and typing the password again replaces them.
-5. Set the REG_DWORD `HKLM\SOFTWARE\Policies\Fartcrobat\RememberPasswords` to 0. The checkbox is gone, and the store is wiped at start-up. Set it to 2: the checkbox is gone, and saved passwords are kept.
+3. Sign in as a second Windows user and copy `%APPDATA%\Inkmoor\saved-passwords.json` over. Nothing opens silently, and nothing crashes.
+4. Delete `%APPDATA%\Inkmoor\Local State`. The records show as unreadable, and typing the password again replaces them.
+5. Set the REG_DWORD `HKLM\SOFTWARE\Policies\Inkmoor\RememberPasswords` to 0. The checkbox is gone, and the store is wiped at start-up. Set it to 2: the checkbox is gone, and saved passwords are kept.
 
 **Certificate store**
 
-6. Put a software key in CurrentUser\My (made with `New-SelfSignedCertificate`, default KSP). Encrypt a file to it from Acrobat and open it in Fartcrobat: there is no prompt. Repeat on a machine whose execution policy is the client default, Restricted (`Get-ExecutionPolicy -List`): the helper only uses built-in cmdlets on stdin, which Restricted is expected to allow.
+6. Put a software key in CurrentUser\My (made with `New-SelfSignedCertificate`, default KSP). Encrypt a file to it from Acrobat and open it in Inkmoor: there is no prompt. Repeat on a machine whose execution policy is the client default, Restricted (`Get-ExecutionPolicy -List`): the helper only uses built-in cmdlets on stdin, which Restricted is expected to allow.
 7. Repeat with a legacy CSP key, a key marked non-exportable, and a TPM key (Microsoft Platform Crypto Provider). The `windows-helper` CI job already decrypts with non-exportable software keys made by `New-SelfSignedCertificate` in the Microsoft Software Key Storage Provider (CNG) and in the Enhanced RSA and AES CSP (CAPI), through Windows PowerShell 5.1 and .NET Framework `EnvelopedCms`, and reports both as software. TPM keys are the remaining unknown.
 8. Renew a certificate. A file encrypted to the old one still opens (archived certificates).
-9. With strong private key protection, the consent dialog appears in front of Fartcrobat.
+9. With strong private key protection, the consent dialog appears in front of Inkmoor.
 10. Turn off "Use certificates from the Windows certificate store". The file now asks for a Digital ID.
 
 **Smart card** (a PIV or Key Management key, with its certificate propagated to the store)
 
 11. Encrypt a file from Acrobat with 128-bit AES, and another with 256-bit AES.
-12. Remove the card and open a file. Fartcrobat says which card is needed, and there is no PIN prompt.
-13. Insert the card and open the file: the Windows PIN dialog appears in front of Fartcrobat. Then try Cancel, a wrong PIN, and pulling the card out during the prompt. Each one shows a clear message, with the Windows error code (HRESULT) in it. If no PIN dialog appears at all and Fartcrobat keeps saying "Waiting for your smart card...", suspect the hidden window flag: Node starts the helper with `windowsHide`, which also asks Windows to hide the helper's first window. The modern PIN prompt runs in its own process (CredentialUIBroker.exe) and should not be affected, but an older card driver's own dialog could be.
-14. Close and reopen the file: there is no second PIN prompt, because one helper process keeps the card unlocked while Fartcrobat runs. Then click "Lock smart card" (Preferences > Digital IDs) and reopen: the PIN is asked again. Quit, start Fartcrobat again and reopen: the PIN is asked again.
+12. Remove the card and open a file. Inkmoor says which card is needed, and there is no PIN prompt.
+13. Insert the card and open the file: the Windows PIN dialog appears in front of Inkmoor. Then try Cancel, a wrong PIN, and pulling the card out during the prompt. Each one shows a clear message, with the Windows error code (HRESULT) in it. If no PIN dialog appears at all and Inkmoor keeps saying "Waiting for your smart card...", suspect the hidden window flag: Node starts the helper with `windowsHide`, which also asks Windows to hide the helper's first window. The modern PIN prompt runs in its own process (CredentialUIBroker.exe) and should not be affected, but an older card driver's own dialog could be.
+14. Close and reopen the file: there is no second PIN prompt, because one helper process keeps the card unlocked while Inkmoor runs. Then click "Lock smart card" (Preferences > Digital IDs) and reopen: the PIN is asked again. Quit, start Inkmoor again and reopen: the PIN is asked again.
 15. Have an agent open the file through Claude Desktop. The PIN dialog appears for the human, and the agent call finishes after the PIN is entered.
 
 **Files made by Acrobat**
 
 16. One recipient, with AES-128 and with AES-256, each with and without "encrypt all document contents except metadata". Note the key-transport and content-cipher OIDs that the helper reports.
-17. Two recipients with different permissions, one restricted to printing. The restricted one cannot edit in Fartcrobat.
+17. Two recipients with different permissions, one restricted to printing. The restricted one cannot edit in Inkmoor.
 18. A file with attachments, form fields, layers and a tagged structure: everything shows. A file that was signed before it was encrypted: it opens, and Save warns about the signatures.
 
-**Acrobat opening files made by Fartcrobat**
+**Acrobat opening files made by Inkmoor**
 
 19. Create a file for yourself and a colleague, then open both copies in Acrobat on each machine.
-20. Save back an AES-128 file made by Acrobat in Fartcrobat, which upgrades it to AES-256. The colleague opens it in Acrobat.
+20. Save back an AES-128 file made by Acrobat in Inkmoor, which upgrades it to AES-256. The colleague opens it in Acrobat.
 21. Use a permission group restricted to printing. Acrobat enforces it.
 22. Acrobat's Document Properties > Security shows "Certificate Security" and the recipients.
 
 **Locked-down machines**
 
-23. Set `__PSLockdownPolicy=4` (machine scope), or use a real AppLocker or WDAC policy. Fartcrobat says the Windows store cannot be used here and offers Digital IDs.
-24. Block `powershell.exe` with AppLocker. Fartcrobat shows the same message and does not crash.
-    Also start Fartcrobat from a PowerShell 7 window (so it inherits PowerShell 7's `PSModulePath`): the store still works, because the helper drops that variable before starting Windows PowerShell 5.1.
-25. Watch Microsoft Defender, or the company's EDR, for alerts about Fartcrobat starting PowerShell.
+23. Set `__PSLockdownPolicy=4` (machine scope), or use a real AppLocker or WDAC policy. Inkmoor says the Windows store cannot be used here and offers Digital IDs.
+24. Block `powershell.exe` with AppLocker. Inkmoor shows the same message and does not crash.
+    Also start Inkmoor from a PowerShell 7 window (so it inherits PowerShell 7's `PSModulePath`): the store still works, because the helper drops that variable before starting Windows PowerShell 5.1.
+25. Watch Microsoft Defender, or the company's EDR, for alerts about Inkmoor starting PowerShell.
 
 ## Known limits
 
@@ -801,7 +801,7 @@ Use a throwaway VM or a test machine where you can, because the store tests add 
 
 **Smart cards and locked-down machines**
 
-- **The PIN is asked once per session.** Windows keeps a smart card's PIN per process (inferred from Microsoft's documentation), and the helper is one long-lived process per app session (owner decision). While it runs, an agent can open more files protected by that card without the person; "Lock smart card" in Preferences > Digital IDs, or quitting Fartcrobat, stops it. A helper that times out (5 minutes waiting for a PIN) is stopped too, so the next open asks again.
+- **The PIN is asked once per session.** Windows keeps a smart card's PIN per process (inferred from Microsoft's documentation), and the helper is one long-lived process per app session (owner decision). While it runs, an agent can open more files protected by that card without the person; "Lock smart card" in Preferences > Digital IDs, or quitting Inkmoor, stops it. A helper that times out (5 minutes waiting for a PIN) is stopped too, so the next open asks again.
 - **Machines in Constrained Language Mode cannot run the helper.** The fix is an Authenticode-signed `.ps1` run with `-File`, which needs the code-signing certificate from backlog item 1.
 
 **Saved secrets and other programs running as the same user**

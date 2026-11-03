@@ -1,6 +1,6 @@
-// pyHanko reads the certificate-encrypted files Fartcrobat writes, as an independent /Adobe.PubSec
+// pyHanko reads the certificate-encrypted files Inkmoor writes, as an independent /Adobe.PubSec
 // implementation (passwordless-create and passwordless-save). CI installs it from
-// tests/requirements.txt and sets FARTCROBAT_REQUIRE_PYHANKO=1, so those checks cannot quietly go
+// tests/requirements.txt and sets INKMOOR_REQUIRE_PYHANKO=1, so those checks cannot quietly go
 // back to being skipped there; elsewhere they skip when it is missing.
 import { spawnSync } from 'node:child_process'
 
@@ -28,9 +28,9 @@ export function hasPyHanko(): boolean {
       available = false
     }
   }
-  if (!available && process.env.FARTCROBAT_REQUIRE_PYHANKO === '1')
+  if (!available && process.env.INKMOOR_REQUIRE_PYHANKO === '1')
     throw new Error(
-      'FARTCROBAT_REQUIRE_PYHANKO is set but `python3 -I` cannot import pyHanko (pip install -r tests/requirements.txt)'
+      'INKMOOR_REQUIRE_PYHANKO is set but `python3 -I` cannot import pyHanko (pip install -r tests/requirements.txt)'
     )
   return available
 }

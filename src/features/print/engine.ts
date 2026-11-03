@@ -31,7 +31,7 @@ export type AnnotPrintKind = 'document' | 'stamp' | 'markup' | 'none'
 const DOCUMENT_TYPES = new Set(['Widget', 'Watermark', 'PrinterMark', 'TrapNet'])
 /** Never drawn by MuPDF anyway. */
 const INVISIBLE_TYPES = new Set(['Popup', 'Link'])
-/** Fartcrobat features whose annotations are document content (Fill & Sign text and signatures). */
+/** Inkmoor features whose annotations are document content (Fill & Sign text and signatures). */
 const DOCUMENT_FEATURES = new Set(['fillsign'])
 
 function featureOf(annot: PDFAnnotation): string {
