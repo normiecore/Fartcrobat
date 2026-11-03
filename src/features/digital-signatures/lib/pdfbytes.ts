@@ -198,6 +198,8 @@ export interface XrefSection {
   entries: Map<number, XrefEntryType> | null
   /** [object number, file offset] of every object the section says is stored in the file. */
   offsets: [number, number][] | null
+  /** Object number -> number of the object stream that holds it, for compressed ('c') entries. */
+  containers: Map<number, number> | null
   size: number
   prev: number | null
   /** Offset of the cross-reference stream of a hybrid-reference file (/XRefStm). */
@@ -347,6 +349,7 @@ function dictValue(v: string | undefined): Map<string, string> | null {
 interface ParsedXref {
   entries: Map<number, XrefEntryType>
   offsets: [number, number][]
+  containers: Map<number, number>
   trailer: Map<string, string>
 }
 
@@ -376,7 +379,7 @@ function parseClassicXref(bytes: Uint8Array, offset: number): ParsedXref & { end
     }
   }
   const dict = parseDict(bytes, skipWs(bytes, trailerPos + 7))
-  return { entries, offsets, trailer: dict.entries, end: dict.end }
+  return { entries, offsets, containers: new Map(), trailer: dict.entries, end: dict.end }
 }
 
 async function inflate(data: Uint8Array): Promise<Uint8Array> {
@@ -614,6 +617,7 @@ async function parseXrefStream(bytes: Uint8Array, offset: number): Promise<Parse
   const entryLen = w0 + w1 + w2
   const entries = new Map<number, XrefEntryType>()
   const offsets: [number, number][] = []
+  const containers = new Map<number, number>()
   let p = 0
   const field = (n: number) => {
     let v = 0
@@ -628,19 +632,21 @@ async function parseXrefStream(bytes: Uint8Array, offset: number): Promise<Parse
       field(w2)
       const num = index[i] + k
       if (type === 0) entries.set(num, 'f')
-      else if (type === 2) entries.set(num, 'c')
-      else if (type === 1) {
+      else if (type === 2) {
+        entries.set(num, 'c')
+        containers.set(num, f2)
+      } else if (type === 1) {
         entries.set(num, 'n')
         if (f2 > 0) offsets.push([num, f2])
       }
     }
   }
-  return { entries, offsets, trailer: dict }
+  return { entries, offsets, containers, trailer: dict }
 }
 
 /** Reads the cross-reference section at `offset`; its entries are null when it cannot be read. */
 async function readSection(bytes: Uint8Array, offset: number): Promise<XrefSection> {
-  const sec: XrefSection = { offset, eofEnd: bytes.length, entries: null, offsets: null, size: 0, prev: null, xrefStm: null }
+  const sec: XrefSection = { offset, eofEnd: bytes.length, entries: null, offsets: null, containers: null, size: 0, prev: null, xrefStm: null }
   const eof = indexOfBytes(bytes, '%%EOF', offset)
   if (eof >= 0) {
     let eofEnd = eof + 5
@@ -652,7 +658,7 @@ async function readSection(bytes: Uint8Array, offset: number): Promise<XrefSecti
     const p = skipWs(bytes, offset)
     const isTable = startsWith(bytes, p, 'xref')
     const parsed = isTable ? parseClassicXref(bytes, p) : await parseXrefStream(bytes, p)
-    const { entries, offsets } = parsed
+    const { entries, offsets, containers } = parsed
     sec.size = intValue(parsed.trailer.get('Size')) ?? 0
     sec.prev = intValue(parsed.trailer.get('Prev'))
     if (parsed.trailer.has('Prev') && sec.prev === null) throw new Error('bad /Prev')
@@ -660,15 +666,22 @@ async function readSection(bytes: Uint8Array, offset: number): Promise<XrefSecti
       const xrefStm = intValue(parsed.trailer.get('XRefStm'))
       if (xrefStm === null || xrefStm <= 0 || xrefStm >= bytes.length) throw new Error('bad /XRefStm')
       const hybrid = await parseXrefStream(bytes, xrefStm)
-      for (const [k, v] of hybrid.entries) if (!entries.has(k) || entries.get(k) === 'f') entries.set(k, v)
+      for (const [k, v] of hybrid.entries) {
+        if (entries.has(k) && entries.get(k) !== 'f') continue
+        entries.set(k, v)
+        const c = hybrid.containers.get(k)
+        if (c !== undefined) containers.set(k, c)
+      }
       offsets.push(...hybrid.offsets)
       sec.xrefStm = xrefStm
     }
     sec.entries = entries
     sec.offsets = offsets
+    sec.containers = containers
   } catch {
     sec.entries = null
     sec.offsets = null
+    sec.containers = null
   }
   return sec
 }
@@ -679,11 +692,15 @@ function revisionsFromSections(bytes: Uint8Array, list: XrefSection[]): XrefSect
   for (const s of [...list].sort((a, b) => a.offset - b.offset)) {
     const rev = byEnd.get(s.eofEnd)
     if (!rev) {
-      byEnd.set(s.eofEnd, { ...s, entries: s.entries && new Map(s.entries), offsets: s.offsets && [...s.offsets] })
+      byEnd.set(s.eofEnd, { ...s, entries: s.entries && new Map(s.entries), offsets: s.offsets && [...s.offsets], containers: s.containers && new Map(s.containers) })
       continue
     }
     if (rev.entries && s.entries) for (const [k, v] of s.entries) rev.entries.set(k, v)
     else rev.entries = null
+    if (rev.containers && s.containers) {
+      for (const [k, v] of s.entries ?? []) if (v !== 'c') rev.containers.delete(k)
+      for (const [k, v] of s.containers) rev.containers.set(k, v)
+    } else rev.containers = null
     if (rev.offsets && s.offsets) rev.offsets.push(...s.offsets)
     else rev.offsets = null
     rev.size = Math.max(rev.size, s.size)
@@ -842,7 +859,8 @@ function startxrefBefore(bytes: Uint8Array, end: number): number | null {
 
 /**
  * Objects defined by the updates written after `end` (the end of a signed revision), with their
- * newest type. Null when they cannot be determined reliably: the file's cross-reference
+ * newest type. An object stored in an object stream the updates define again, or free, counts as
+ * changed too: a reader takes it from the newest stream even though no newer entry names it. Null when they cannot be determined reliably: the file's cross-reference
  * information is damaged, the updates do not lead back to the signed revision's own
  * cross-reference section, a section cannot be read, or the updates hold bytes their
  * cross-reference sections do not account for.
@@ -861,6 +879,21 @@ export function objectsChangedAfter(bytes: Uint8Array, info: RevisionInfo, end: 
   // The oldest update must chain to the signed revision's own cross-reference section.
   if (i >= info.chain.length || info.chain[i].offset !== signedXref) return null
   if (!tailAccounted(bytes, end, info.chain.slice(0, i))) return null
+  // Where a reader finds each object: the newest entry for it in the whole chain.
+  const seen = new Set<number>()
+  const compressed: [number, number][] = []
+  for (const s of info.chain) {
+    if (!s.entries || !s.containers) return null
+    for (const [k, v] of s.entries) {
+      if (seen.has(k)) continue
+      seen.add(k)
+      if (v !== 'c') continue
+      const container = s.containers.get(k)
+      if (container === undefined) return null
+      compressed.push([k, container])
+    }
+  }
+  for (const [k, container] of compressed) if (k !== 0 && !out.has(k) && out.has(container)) out.set(k, 'c')
   return out
 }
 

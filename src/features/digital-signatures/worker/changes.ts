@@ -52,8 +52,8 @@ interface DocIndex {
   annots: Map<number, AnnotRef>
   /** Objects reachable from an annotation (appearance streams and their resources) -> annotation. */
   ap: Map<number, number>
-  /** Non-widget field dictionaries. */
-  fields: Map<number, { name: string; ft: string }>
+  /** Non-widget field dictionaries; `signed` for (the parents of) signature fields that hold a value. */
+  fields: Map<number, { name: string; ft: string; signed: boolean }>
   sigDicts: Map<number, string>
   pageTree: Set<number>
   roles: Map<number, number>
@@ -99,13 +99,22 @@ function reach(roots: PDFObject[], claim: (n: number) => boolean, skip: (key: st
   }
 }
 
-/** A dictionary (not a stream) with a /Subtype: what an annotation looks like. */
-function isAnnotDict(o: PDFObject): boolean {
-  return o.isDictionary() && !o.isStream() && readName(o.get('Subtype')) !== null
+/**
+ * Whether `o` (as found in a dictionary or array, before resolving) is a stream. MuPDF only knows
+ * that from the reference: a resolved stream object looks like a plain dictionary.
+ */
+function isStreamRef(o: PDFObject): boolean {
+  return !isNull(o) && o.isIndirect() && o.isStream()
 }
 
+/** A dictionary (not a stream) with a /Subtype: what an annotation looks like. Takes the reference. */
+function isAnnotDict(o: PDFObject): boolean {
+  return isPlainDict(o) && readName(o.resolve().get('Subtype')) !== null
+}
+
+/** A dictionary that is not a stream. Takes the reference. */
 function isPlainDict(o: PDFObject): boolean {
-  return o.isDictionary() && !o.isStream()
+  return !isNull(o) && o.resolve().isDictionary() && !isStreamRef(o)
 }
 
 function buildIndex(pdf: PDFDocument): DocIndex {
@@ -175,7 +184,7 @@ function buildIndex(pdf: PDFDocument): DocIndex {
     for (let k = 0; k < annots.length; k++) {
       const ref = annots.get(k)
       const a = ref.resolve()
-      if (!isAnnotDict(a)) continue
+      if (!isAnnotDict(ref)) continue
       const subtype = readName(a.get('Subtype')) ?? 'Annot'
       const widget = subtype === 'Widget'
       const field = widget ? fieldOf(ref) : ref
@@ -184,31 +193,33 @@ function buildIndex(pdf: PDFDocument): DocIndex {
       const n = num(ref)
       const parent = a.get('Parent')
       // A popup belongs to the annotation it pops up from.
-      const popupOf = subtype === 'Popup' && parent.isIndirect() && isAnnotDict(parent.resolve())
+      const popupOf = subtype === 'Popup' && parent.isIndirect() && isAnnotDict(parent)
       const owner = popupOf ? parent.asIndirect() : n
       const ownerType = popupOf ? (readName(parent.resolve().get('Subtype')) ?? 'Annot') : subtype
       const info: AnnotRef = { owner, page: p, subtype: ownerType, widget, fieldName: widget ? fullName(field) : '', ft, signed }
       if (n > 0 && !idx.annots.has(n)) idx.annots.set(n, info)
       const popup = a.get('Popup')
-      if (popup.isIndirect() && readName(popup.resolve().get('Subtype')) === 'Popup' && isAnnotDict(popup.resolve()) && !idx.annots.has(popup.asIndirect())) {
+      if (popup.isIndirect() && readName(popup.resolve().get('Subtype')) === 'Popup' && isAnnotDict(popup) && !idx.annots.has(popup.asIndirect())) {
         idx.annots.set(popup.asIndirect(), info)
       }
     }
   }
   for (const n of idx.annots.keys()) addRole(n, ROLE.annot)
   walkFields(pdf, (field, name, ft) => {
+    const signedSig = ft === 'Sig' && !isNull(field.resolve().get('V'))
     let cur: PDFObject = field
     for (let d = 0; d < 32 && !isNull(cur); d++) {
       const n = num(cur)
-      if (n > 0 && !idx.annots.has(n) && isPlainDict(cur.resolve())) {
-        idx.fields.set(n, { name: d === 0 ? name : fullName(cur), ft: ft ?? '' })
+      if (n > 0 && !idx.annots.has(n) && isPlainDict(cur)) {
+        const prev = idx.fields.get(n)
+        idx.fields.set(n, { name: d === 0 ? name : fullName(cur), ft: ft ?? '', signed: signedSig || !!prev?.signed })
         addRole(n, ROLE.field)
       }
       cur = cur.resolve().get('Parent')
     }
     if (ft === 'Sig') {
       const v = field.resolve().get('V')
-      if (v.isIndirect() && isPlainDict(v.resolve())) {
+      if (v.isIndirect() && isPlainDict(v)) {
         idx.sigDicts.set(v.asIndirect(), name)
         addRole(v.asIndirect(), ROLE.sig)
       }
@@ -278,6 +289,12 @@ interface Found {
   page?: number
   key: string
   added: boolean
+  /** An annotation or field taken off its page. */
+  removed?: boolean
+  /** A part of a signature field that was already signed in the signed revision. */
+  frozen?: boolean
+  /** A widget or field changed in more than its value and appearance (moved, hidden, restyled...). */
+  layout?: boolean
   name?: string
   subtype?: string
   /** Description of an 'other' change. */
@@ -307,15 +324,20 @@ function keysOf(...dicts: (PDFObject | null)[]): Set<string> {
 
 /**
  * Whether `now` only adds entries to `before`: every entry `before` has is still there with the
- * same value (direct dictionaries are compared the same way, entry by entry). Streams never are.
+ * same value (direct dictionaries are compared the same way, entry by entry; references inside
+ * must stay the same). Streams never only add. `before` and `now` may be references themselves:
+ * those are followed at the top level only.
  */
-function onlyAdds(before: PDFObject | null, now: PDFObject | null): boolean {
-  const o = before && !isNull(before) ? before : null
-  if (!o) return true
+function onlyAdds(before: PDFObject | null, now: PDFObject | null, top = true): boolean {
+  const ref = before && !isNull(before) ? before : null
+  if (!ref) return true
   if (!now || isNull(now)) return false
-  if (o.isIndirect() || now.isIndirect()) return sameValue(o, now)
-  if (o.isStream() || now.isStream() || !o.isDictionary() || !now.isDictionary()) return sameValue(o, now)
-  for (const key of keysOf(o)) if (!onlyAdds(o.get(key), now.get(key))) return false
+  if (!top && (ref.isIndirect() || now.isIndirect())) return sameValue(ref, now)
+  if (isStreamRef(ref) || isStreamRef(now)) return false
+  const o = ref.resolve()
+  const n = now.resolve()
+  if (!o.isDictionary() || !n.isDictionary()) return sameValue(o, n)
+  for (const key of keysOf(o)) if (!onlyAdds(o.get(key), n.get(key), false)) return false
   return true
 }
 
@@ -355,7 +377,7 @@ function compareAcroForm(before: PDFObject | null, now: PDFObject | null, permis
     if (sameValue(ov, nv)) continue
     if (permission === null && (key === 'SigFlags' || key === 'NeedAppearances' || key === 'DA')) continue
     if (key === 'DR') {
-      if (permission === null || (permission !== 1 && onlyAdds(ov ? ov.resolve() : null, nv ? nv.resolve() : null))) continue
+      if (permission === null || (permission !== 1 && onlyAdds(ov, nv))) continue
       out.push(formResources)
       continue
     }
@@ -407,6 +429,91 @@ function annotFinding(owner: AnnotRef, n: number, added: boolean): Found {
   return { category: 'annotation', key: `annot:${owner.owner}`, added: isNew, page: owner.page, subtype: owner.subtype }
 }
 
+/**
+ * The name of the signature field `n` belongs to (its value, widget, field dictionary or
+ * appearance) when that field already held a signature in the signed revision, else null.
+ */
+function frozenField(signed: DocIndex, n: number): string | null {
+  const sig = signed.sigDicts.get(n)
+  if (sig !== undefined) return sig
+  const a = signed.annots.get(n)
+  if (a?.widget && a.signed) return a.fieldName
+  const f = signed.fields.get(n)
+  if (f?.signed) return f.name
+  const apOwner = signed.ap.get(n)
+  const owner = apOwner !== undefined ? signed.annots.get(apOwner) : undefined
+  if (owner?.widget && owner.signed) return owner.fieldName
+  return null
+}
+
+/** Whether `a` (from either revision) is the widget of a field that was signed in the signed revision. */
+function signedWidget(signed: DocIndex, a: AnnotRef): boolean {
+  const then = signed.annots.get(a.owner)
+  return !!then?.widget && then.signed
+}
+
+/** A change to a signature field that already held a signature in the signed revision. */
+function frozenFinding(name: string, page?: number): Found {
+  return { category: 'signature', key: `sig-frozen:${name}`, added: false, frozen: true, name, page }
+}
+
+/**
+ * Entries filling in a field or signing an empty signature field changes: the value and the
+ * appearance. Signing may also add a lock and annotation flags the field did not have.
+ */
+const VALUE_KEYS = new Set(['V', 'AS', 'AP', 'I'])
+const ADDED_BY_SIGNING = new Set(['Lock', 'F'])
+
+/**
+ * Whether a widget or field dictionary changed in more than filling in (or signing) changes:
+ * its rectangle, flags, border and colours, actions, parent, kids...
+ */
+function layoutChanged(before: PDFDocument, pdf: PDFDocument, n: number, sig: boolean): boolean {
+  try {
+    const o = before.newIndirect(n).resolve()
+    const p = pdf.newIndirect(n).resolve()
+    if (!o.isDictionary() || !p.isDictionary()) return true
+    for (const key of keysOf(o, p)) {
+      if (VALUE_KEYS.has(key) || sameValue(o.get(key), p.get(key))) continue
+      if (sig && ADDED_BY_SIGNING.has(key) && isNull(o.get(key))) continue
+      return true
+    }
+    return false
+  } catch {
+    return true
+  }
+}
+
+/** The annotations a page lists, by object number (direct ones by their text). */
+function annotList(page: PDFObject): Map<string, PDFObject> {
+  const out = new Map<string, PDFObject>()
+  const annots = page.get('Annots')
+  if (isNull(annots)) return out
+  const a = annots.resolve()
+  if (!a.isArray()) return out
+  for (let i = 0; i < a.length; i++) {
+    const ref = a.get(i)
+    if (isNull(ref)) continue
+    out.set(ref.isIndirect() ? `#${ref.asIndirect()}` : ref.toString(), ref)
+  }
+  return out
+}
+
+/** Whether object `n` is the same non-stream value in the signed revision and now. */
+function unchangedValue(before: PDFDocument, pdf: PDFDocument, n: number): boolean {
+  try {
+    const oRef = before.newIndirect(n)
+    const pRef = pdf.newIndirect(n)
+    if (isStreamRef(oRef) || isStreamRef(pRef)) return false
+    const o = oRef.resolve()
+    const p = pRef.resolve()
+    if (isNull(o) || isNull(p)) return false
+    return o.toString() === p.toString()
+  } catch {
+    return false
+  }
+}
+
 const otherObjects = (added: boolean): Found => ({ category: 'other', key: 'other:objects', added, description: 'Other parts of the document were changed' })
 
 /** Classifies the objects changed after a signature and says whether each change is allowed. */
@@ -421,6 +528,9 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
   let removed = 0
   for (const [n, type] of changed) {
     const added = oldSize > 0 && n >= oldSize
+    // Written again with the same value (an object stream rewritten around a changed object):
+    // not a change. Streams are not compared here.
+    if (!added && type !== 'f' && unchangedValue(ctx.before, pdf, n)) continue
     // What the object is used for now and, unless it is new, what it was used for when signed.
     const roles = (idx.roles.get(n) ?? 0) | (added ? 0 : (signed.roles.get(n) ?? 0))
     // Whatever a page draws, now or in the signed revision, is page content, whatever else
@@ -466,46 +576,93 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
       found.push(roles & ~ROLE.struct ? otherObjects(added) : { category: 'metadata', key: 'metadata', added })
       continue
     }
+    // A part of a signature field that was already signed must not change at all: not its
+    // widget, its field dictionary, its value or its appearance.
+    const frozen = added ? null : frozenField(signed, n)
+    if (frozen !== null) {
+      found.push(frozenFinding(frozen, idx.annots.get(n)?.page))
+      continue
+    }
     // Used for something else (outlines, actions, names...), or a part of the catalog, the page
     // tree or a page in the signed revision.
     if (roles & (ROLE.other | ROLE.struct)) {
       found.push(otherObjects(added))
       continue
     }
-    if (roles & ROLE.formRes) {
+    // An object that is also part of a comment, a field or a signature (now or when signed) is
+    // judged as that, whatever else lists it.
+    const annotPart = roles & ANNOT_PARTS
+    if (roles & ROLE.formRes && !annotPart) {
       // Fonts and other resources added for drawing field appearances are side effects.
-      const grew = added || onlyAdds(ctx.before.newIndirect(n).resolve(), pdf.newIndirect(n).resolve())
+      const grew = added || onlyAdds(ctx.before.newIndirect(n), pdf.newIndirect(n))
       if (permission === null || (permission !== 1 && grew)) continue
       found.push(formResources)
       continue
     }
     if (roles & ROLE.dss) {
-      found.push(roles & ANNOT_PARTS ? otherObjects(added) : { category: 'dss', key: 'dss', added })
+      found.push(annotPart ? otherObjects(added) : { category: 'dss', key: 'dss', added })
       continue
     }
-    const sig = idx.sigDicts.get(n)
+    const sig = idx.sigDicts.get(n) ?? (added ? undefined : signed.sigDicts.get(n))
     if (sig !== undefined) {
       found.push({ category: 'signature', key: `sig:${sig}`, added, name: sig })
       continue
     }
-    const direct = idx.annots.get(n)
-    if (direct) {
-      found.push(annotFinding(direct, n, added))
+    const direct = idx.annots.get(n) ?? (added ? undefined : signed.annots.get(n))
+    if (direct && signedWidget(signed, direct)) {
+      found.push(frozenFinding(direct.fieldName, direct.page))
       continue
     }
-    const field = idx.fields.get(n)
+    if (direct) {
+      const f = annotFinding(direct, n, added)
+      // Under restrictions, filling in may change a widget's value and appearance, not where
+      // and how it is shown.
+      if (direct.widget && !added && permission !== null && layoutChanged(ctx.before, pdf, n, direct.ft === 'Sig')) f.layout = true
+      found.push(f)
+      continue
+    }
+    const field = idx.fields.get(n) ?? (added ? undefined : signed.fields.get(n))
     if (field) {
-      found.push({ category: field.ft === 'Sig' ? 'signature' : 'form', key: `${field.ft === 'Sig' ? 'sig' : 'form'}:${field.name}`, added, name: field.name })
+      const isSig = field.ft === 'Sig'
+      const f: Found = { category: isSig ? 'signature' : 'form', key: `${isSig ? 'sig' : 'form'}:${field.name}`, added, name: field.name }
+      if (!added && permission !== null && layoutChanged(ctx.before, pdf, n, isSig)) f.layout = true
+      found.push(f)
       continue
     }
     const apOwner = idx.ap.get(n)
-    const owner = apOwner !== undefined ? idx.annots.get(apOwner) : undefined
+    const signedApOwner = added ? undefined : signed.ap.get(n)
+    const owner = apOwner !== undefined ? idx.annots.get(apOwner) : signedApOwner !== undefined ? signed.annots.get(signedApOwner) : undefined
+    if (owner && signedWidget(signed, owner)) {
+      found.push(frozenFinding(owner.fieldName, owner.page))
+      continue
+    }
     if (owner) {
       found.push(annotFinding(owner, n, added))
       continue
     }
     // Anything else the document uses is a change that nothing above allows.
     found.push(otherObjects(added))
+  }
+  // Annotations and fields taken off a page: compare each page's list with the signed revision's.
+  for (let p = 0; p < ctx.before.countPages(); p++) {
+    const beforePage = ctx.before.findPage(p)
+    const m = num(beforePage)
+    const nowIndex = m > 0 && pageObjects.has(m) ? idx.pages.get(m) : undefined
+    if (nowIndex === undefined) continue
+    const nowList = annotList(pdf.newIndirect(m))
+    const beforeList = annotList(beforePage)
+    for (const [k, ref] of beforeList) {
+      if (nowList.has(k)) continue
+      const a = ref.resolve()
+      const subtype = (a.isDictionary() ? readName(a.get('Subtype')) : null) ?? 'Annot'
+      const info = ref.isIndirect() ? signed.annots.get(ref.asIndirect()) : undefined
+      // A popup taken off with the comment it belongs to is part of that removal.
+      if (subtype === 'Popup' && info && info.owner !== ref.asIndirect() && !nowList.has(`#${info.owner}`) && beforeList.has(`#${info.owner}`)) continue
+      if (info?.widget) {
+        const category = info.ft === 'Sig' ? 'signature' : 'form'
+        found.push({ category, key: `removed:${category}:${info.fieldName}`, added: false, removed: true, frozen: info.signed, name: info.fieldName, page: nowIndex })
+      } else found.push({ category: 'annotation', key: `annot-removed:${p}:${k}`, added: false, removed: true, page: nowIndex, subtype })
+    }
   }
   for (const p of touchedPages) {
     if (!found.some((f) => f.page === p && f.category !== 'pages')) found.push({ category: 'page', key: `page:${p}`, added: false, page: p })
@@ -515,9 +672,17 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
   const allowed = (f: Found): boolean => {
     const p = ctx.permission
     if (f.category === 'dss') return true
-    if (ctx.lockedFields && (f.category === 'form' || (f.category === 'signature' && f.added))) {
+    // A signature already in place when this one was made stays as it was.
+    if (f.frozen) return false
+    if (ctx.lockedFields && (f.category === 'form' || (f.category === 'signature' && (f.added || f.removed)))) {
       if (ctx.lockedFields === '*' || (f.name && ctx.lockedFields.includes(f.name))) return false
     }
+    if (f.removed) {
+      // Comments may be removed where comments may be changed; fields only without restrictions.
+      if (p === null) return true
+      return p === 3 && f.category === 'annotation'
+    }
+    if (f.layout) return false
     if (p === null) return f.category !== 'content' && f.category !== 'pages' && f.category !== 'page' && f.category !== 'other'
     if (p === 1) return false
     if (f.category === 'signature') return !f.added || p === 3
@@ -534,22 +699,39 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
     byKey.set(f.key, list)
   }
   // Group comments per page.
-  const annotGroups = new Map<string, { page: number; added: number; changed: number; ok: boolean; types: Set<string> }>()
+  const annotGroups = new Map<string, { page: number; added: number; changed: number; removed: number; ok: boolean; types: Set<string> }>()
   for (const [key, list] of byKey) {
     const f = list[0]
     const added = list.some((x) => x.added)
     const ok = list.every(allowed)
     switch (f.category) {
-      case 'signature':
-        entries.push({ category: 'signature', page: f.page, allowed: ok, description: added ? `Signature field “${f.name}” was added and signed` : `Signature field “${f.name}” was signed` })
+      case 'signature': {
+        const description = f.removed
+          ? `Signature field “${f.name}” was removed from page ${f.page! + 1}`
+          : list.some((x) => x.frozen)
+            ? `Signature field “${f.name}” was changed after it was signed`
+            : added
+              ? `Signature field “${f.name}” was added and signed`
+              : `Signature field “${f.name}” was signed`
+        entries.push({ category: 'signature', page: f.page, allowed: ok, description })
         break
-      case 'form':
-        entries.push({ category: 'form', page: f.page, allowed: ok, description: added ? `Form field “${f.name}” was added` : `Form field “${f.name}” was filled in or changed` })
+      }
+      case 'form': {
+        const description = f.removed
+          ? `Form field “${f.name}” was removed from page ${f.page! + 1}`
+          : added
+            ? `Form field “${f.name}” was added`
+            : list.some((x) => x.layout)
+              ? `Form field “${f.name}” was moved or its properties were changed`
+              : `Form field “${f.name}” was filled in or changed`
+        entries.push({ category: 'form', page: f.page, allowed: ok, description })
         break
+      }
       case 'annotation': {
         const gk = `${f.page}`
-        const g = annotGroups.get(gk) ?? { page: f.page!, added: 0, changed: 0, ok: true, types: new Set<string>() }
-        if (added) g.added++
+        const g = annotGroups.get(gk) ?? { page: f.page!, added: 0, changed: 0, removed: 0, ok: true, types: new Set<string>() }
+        if (f.removed) g.removed++
+        else if (added) g.added++
         else g.changed++
         g.ok &&= ok
         if (f.subtype && f.subtype !== 'Popup') g.types.add(f.subtype)
@@ -586,6 +768,7 @@ export function describeChanges(pdf: PDFDocument, changed: Map<number, XrefEntry
     const parts: string[] = []
     if (g.added) parts.push(`${g.added} comment${g.added === 1 ? '' : 's'} added`)
     if (g.changed) parts.push(`${g.changed} comment${g.changed === 1 ? '' : 's'} changed`)
+    if (g.removed) parts.push(`${g.removed} comment${g.removed === 1 ? '' : 's'} removed`)
     entries.push({ category: 'annotation', page: g.page, allowed: g.ok, description: `Page ${g.page + 1}: ${parts.join(', ')}${kinds}` })
   }
   const order: ChangeCategory[] = ['signature', 'form', 'annotation', 'deleted', 'content', 'page', 'pages', 'metadata', 'dss', 'other']

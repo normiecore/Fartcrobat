@@ -880,4 +880,80 @@ describe('updates after signing', () => {
       expect(st.details.join(' ')).toMatch(/cannot be checked against what the signer allowed/)
     })
   })
+
+  describe('judges each change against the signed revision, not the current one', () => {
+    async function check(name: string) {
+      const bytes = fixture(`digital-signatures/${name}`)
+      const report = await validateBytes(bytes)
+      const r = report.signatures[0]
+      return { bytes, r, level: signatureStatus(r, new Set()).level }
+    }
+    const blocked = (r: ValidationReport['signatures'][number], category: string, text: RegExp) =>
+      r.changes.some((c) => c.category === category && text.test(c.description) && !c.allowed)
+
+    it('reports objects an update takes from a rewritten object stream', async () => {
+      const { bytes, r, level } = await check('update-objstm.pdf')
+      // The signed revision draws the amount; the update rewrites only the object stream.
+      expect(pageText(bytes.slice(0, r.revisionEnd))).toContain('Amount due: 100 EUR')
+      expect(pageText(bytes)).not.toContain('Amount due')
+      expect(r.integrity).toBe(true)
+      expect(r.changesUnknown).toBe(false)
+      expect(r.changes).toEqual([{ category: 'content', page: 0, allowed: false, description: 'Page 1: the page content was changed' }])
+      expect(level).toBe('warning')
+      // The signed revision on its own is intact and unchanged.
+      const own = (await validateBytes(bytes.slice(0, r.revisionEnd))).signatures[0]
+      expect(own.coversWholeFile).toBe(true)
+      expect(VALID).toContain(signatureStatus(own, new Set()).level)
+    })
+
+    it('reports a field value changed inside a rewritten object stream under a certification', async () => {
+      const { r, level } = await check('update-objstm-p1-field.pdf')
+      expect(r.kind).toBe('certification')
+      expect(blocked(r, 'form', /Amount/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('keeps the field lock when an update moves the signature value to a new parent field', async () => {
+      const { r, level } = await check('update-lock-reparent.pdf')
+      expect(r.lock).toMatchObject({ action: 'All' })
+      expect(r.restrictionsUnknown).toBe(false)
+      expect(blocked(r, 'form', /Amount/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('keeps the field lock when an update puts a copy of the signature widget on the page', async () => {
+      const { r, level } = await check('update-lock-copy.pdf')
+      expect(r.lock).toMatchObject({ action: 'All' })
+      expect(blocked(r, 'form', /Amount/)).toBe(true)
+      expect(blocked(r, 'signature', /removed/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('judges a locked field appearance as the field even when the form resources list it', async () => {
+      const { r, level } = await check('update-dr-locked-ap.pdf')
+      expect(r.lock).toMatchObject({ action: 'All' })
+      expect(blocked(r, 'form', /Amount/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('does not let a signature field that was already signed change', async () => {
+      const { r, level } = await check('update-sig-widget-p2.pdf')
+      expect(r.permission).toBe(2)
+      expect(blocked(r, 'signature', /changed after it was signed/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('does not let filling in move a field under a certification', async () => {
+      const { r, level } = await check('update-field-moved-p2.pdf')
+      expect(blocked(r, 'form', /Amount.*moved/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('reports a removed comment even when a field on the same page was filled in', async () => {
+      const { r, level } = await check('update-comment-removed-p2.pdf')
+      expect(r.changes).toContainEqual({ category: 'annotation', page: 0, allowed: false, description: 'Page 1: 1 comment removed (FreeText)' })
+      expect(r.changes).toContainEqual(expect.objectContaining({ category: 'form', allowed: true }))
+      expect(level).toBe('invalid')
+    })
+  })
 })

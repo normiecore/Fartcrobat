@@ -155,13 +155,35 @@ export function certification(pdf: PDFDocument): { permission: MdpPermission; si
 }
 
 /**
- * Lock dictionary of a signature field (/Lock) merged with its FieldMDP reference. `lockFrom` is
- * the field as it was signed (validation reads the lock from the signed revision, so a later
- * update cannot remove it); null when the field had no lock then.
+ * The signature field whose value is the signature dictionary `vNum` in `pdf` (the signed
+ * revision, opened on its own), looked up from the signature value rather than from the field the
+ * current document names: a later update can move the value to another field. Null when no field
+ * of `pdf` holds it.
  */
-export function lockInfo(f: SigField, lockFrom: PDFObject | null = f.field): { action: string; fields: string[]; permission: MdpPermission | null } | null {
-  const field = f.field.resolve()
-  const lock = lockFrom ? safe(() => lockFrom.resolve().get('Lock'), null) : null
+export function signedFieldIn(pdf: PDFDocument, vNum: number): PDFObject | null {
+  if (vNum <= 0) return null
+  const holds = (field: PDFObject) => {
+    const v = safe(() => field.resolve().get('V'), null)
+    return !!v && !isNull(v) && v.isIndirect() && v.asIndirect() === vNum
+  }
+  let found: PDFObject | null = null
+  const consider = (field: PDFObject) => {
+    // Several fields claiming one value: keep one that carries a lock.
+    if (holds(field) && (!found || isNull(found.resolve().get('Lock')))) found = field
+  }
+  safe(() => walkFields(pdf, (field, _name, ft) => ft === 'Sig' && consider(field)), undefined)
+  safe(() => listSignatureFields(pdf).forEach((f) => consider(f.field)), undefined)
+  return found
+}
+
+/**
+ * Lock dictionary of a signature field (/Lock) merged with its FieldMDP reference. `from` is the
+ * field to read them from: validation passes the field as it was signed (see signedFieldIn), so a
+ * later update cannot remove the lock.
+ */
+export function lockInfo(f: SigField, from: PDFObject = f.field): { action: string; fields: string[]; permission: MdpPermission | null } | null {
+  const field = from.resolve()
+  const lock = safe(() => field.get('Lock'), null)
   const v = field.get('V')
   const fieldMdp = !isNull(v) ? readReferences(v).find((r) => r.method === 'FieldMDP') : undefined
   if (isNull(lock) && !fieldMdp) return null

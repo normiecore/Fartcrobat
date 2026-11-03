@@ -18,7 +18,7 @@ import {
 import { buildChain, describeCertificate, displayName, parseCertificate, type Certificate } from '../lib/x509'
 import type { MdpPermission, SignatureReport, ValidationReport } from '../types'
 import { describeChanges } from './changes'
-import { certification, listSignatureFields, lockInfo, readReferences, safe, type SigField } from './fields'
+import { certification, listSignatureFields, lockInfo, readReferences, safe, signedFieldIn, type SigField } from './fields'
 
 function readByteRange(v: PDFObject): number[] {
   const raw = v.get('ByteRange')
@@ -169,8 +169,11 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
       r.restrictionsUnknown = true
       return r
     }
-    // The field lock as signed: a later update cannot remove it.
-    r.lock = lockInfo(f, f.fieldNum > 0 ? before.newIndirect(f.fieldNum) : null)
+    // The field lock as signed, read from the field that held this signature value in the signed
+    // revision: a later update can neither remove the lock nor move the value to another field.
+    const signedField = vRef.isIndirect() ? signedFieldIn(before, vNum) : null
+    if (signedField) r.lock = lockInfo(f, signedField)
+    else r.restrictionsUnknown = true
     if (changed === null) {
       r.changesUnknown = true
       return r
