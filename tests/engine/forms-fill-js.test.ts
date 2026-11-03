@@ -6,6 +6,7 @@ import { parse } from '@features/forms-fill/js/parser'
 import { formatNumber, guessDate, printd, printf, printx, scand } from '@features/forms-fill/js/util'
 import { makeNumber } from '@features/forms-fill/js/aform'
 import { FormRuntime, colorToHex, typedValue, valueToString, type RuntimeHost } from '@features/forms-fill/js/runtime'
+import { analysePattern, matchCost } from '@features/forms-fill/js/regex'
 
 function run(src: string, globals: Record<string, JsValue> = {}): JsValue {
   return new Interpreter(globals).run(src)
@@ -694,6 +695,32 @@ describe.each([
     if (modifiersSupported()) expect(run(String.raw`/^(?i:ab)c$/.test("ABc")`)).toBe(true)
   })
 
+  it('never hands a pattern to the backtracking engine before checking it', () => {
+    // V8 compiles a pattern for its backtracking engine on the first match, and the compiling
+    // alone doubles in time with each empty alternation (no quantifier needed).
+    const chain = '(?:|)'.repeat(40) + 'x'
+    const scripts = [
+      `/${chain}/.test("y")`,
+      `new RegExp("${chain}").test("y")`,
+      `"y".match("${chain}")`,
+      `"y".search("${chain}")`,
+      `/${'(?:^|$)'.repeat(40)}x/.test("y")`
+    ]
+    for (const src of scripts) {
+      const r = timed(() => run(src))
+      expect(r.ms, src).toBeLessThan(500)
+      if (r.error) expect(r.error, src).toMatch(/took too long/)
+      else expect(linear, src).toBe(true)
+    }
+    // From a document-level script, as the document opens.
+    let rt: FormRuntime | undefined
+    const r = timed(() => (rt = new FormRuntime({ fields: [], values: {}, calcOrder: [], docScripts: [`/${chain}/.test("y")`] })))
+    expect(r.ms).toBeLessThan(500)
+    if (!linear) expect(rt!.problems.map((p) => p.message)).toContain('The script took too long to run')
+    // A short chain is cheap to compile and still runs on either engine.
+    expect(run(`/^${'(?:|)'.repeat(8)}x$/.test("x")`)).toBe(true)
+  })
+
   it('shares one time budget between all the scripts of an event', () => {
     // Each script alone may take a few hundred ms; ten of them as the document opens may not
     // take ten times as long.
@@ -731,5 +758,38 @@ describe.each([
       if (linear) expect(r.error, `script ${i}`).toBeUndefined()
       else expect(r.error, `script ${i}`).toMatch(/nested repetition/)
     }
+  })
+})
+
+describe('regular expression analysis', () => {
+  it('reads the pattern structure the way V8 does, with no help from V8', () => {
+    // The analysis no longer asks V8 at run time, so check its reading here: it must number the
+    // capture groups as V8 does for every pattern it does not refuse.
+    const patterns = [
+      '(a)(b)', '(?:a)(b)', '(?<n>a)(b)', '(?<=a)(b)', '(?<!(a))b', '(?=(a))', '(?!a)(b)', '[(]()', '[^()](a)',
+      '\\(()', '\\[(a)]', '[\\]()]', '\\u{28}(a)', '\\u0028(a)', '\\x28(a)', '\\c(a)', '\\c((a))', '[\\c(]()',
+      '\\p{L}(a)', '((a)|(b))*', '(a){1,2}(b)', 'a{(b)}', '[]()', '[^](a)', '\\0(a)', '(?i:(a))', '(?-i:a)(b)'
+    ]
+    for (const src of patterns) {
+      for (const flags of ['', 'u', 'i']) {
+        let v8: number
+        try {
+          v8 = new RegExp(`(?:${src})|`, flags).exec('')!.length - 1
+        } catch {
+          continue
+        }
+        const info = analysePattern(src, flags)
+        if (!info.inexact && !info.exponential) expect(info.groups, `/${src}/${flags}`).toBe(v8)
+      }
+    }
+  })
+
+  it('counts the text before the match for a lookbehind', () => {
+    const text = 'a'.repeat(1000)
+    const behind = analysePattern('(?<=a*a*)b', 'y')
+    expect(behind.lookbehind).toBe(true)
+    expect(matchCost(behind, false, true, text, 1000)).toBe(matchCost(behind, false, true, text, 0))
+    const ahead = analysePattern('(?=a*a*)b', 'y')
+    expect(matchCost(ahead, false, true, text, 1000)).toBeLessThan(matchCost(ahead, false, true, text, 0))
   })
 })

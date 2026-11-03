@@ -11,7 +11,10 @@
  *   repeats) use the backtracking engine. (V8's fallback to the linear engine after too many
  *   backtracks does not help: it only applies to patterns the linear engine can run.) The pattern
  *   is read exactly as V8 reads it, including the web-compatibility rules without the `u` flag
- *   (`\u{2}` is `u{2}` there); one it cannot read exactly is refused. So are those that can take
+ *   (`\u{2}` is `u{2}` there), by a parser of its own: a pattern is never handed to V8's
+ *   backtracking engine (which compiles it on its first match, in time that can itself grow
+ *   exponentially with the pattern) before these checks pass. One it cannot read exactly is
+ *   refused. So are those that can take
  *   exponential time: backreferences, and a repeated group whose body can match in more than one
  *   way (`(a+)+`, `(a|ab)*`). For the rest,
  *   one match attempt is bounded by a polynomial: size * c * (n + 1)^k, where k counts the
@@ -35,6 +38,10 @@ export interface PatternInfo {
   size: number
   /** Starts with ^ (outside multiline mode): an attempt at any later position fails at once. */
   anchored: boolean
+  /** Has a lookbehind, which reads the text before the position a match starts at. */
+  lookbehind: boolean
+  /** Capture groups, as V8 numbers them (the tests check this against V8's own count). */
+  groups: number
   /** Why the backtracking engine could take exponential time on it, if it could. */
   exponential?: string
   /** The analysis may not match the pattern V8 runs: not trusted on the backtracking engine. */
@@ -66,14 +73,14 @@ function logSumExp(values: number[]): number {
   return max + Math.log(values.reduce((s, v) => s + Math.exp(v - max), 0))
 }
 
-/** Largest count V8 keeps in a {n,m} quantifier; larger ones mean "no limit". */
+/** V8 keeps counts in a {n,m} quantifier below this; this one and larger ones mean "no limit". */
 const MAX_COUNT = 2 ** 31 - 1
 
 /**
  * Reads a pattern the way V8 does (with the web-compatibility rules of Annex B unless the `u`
  * flag is set), so no quantifier or counted repeat can hide from the analysis. A construct it does
  * not read exactly is recorded in `inexact`, and such patterns are refused on the backtracking
- * engine; the number of capture groups is checked against V8's own count.
+ * engine. It never asks V8 itself about the pattern (see the comment at the top).
  */
 class PatternParser {
   private i = 0
@@ -82,6 +89,8 @@ class PatternParser {
   inexact: string | undefined
   /** Capture groups seen. */
   groups = 0
+  /** A lookbehind was seen. */
+  lookbehind = false
   constructor(
     private readonly src: string,
     private readonly unicode: boolean
@@ -90,7 +99,15 @@ class PatternParser {
   parse(): PatternInfo {
     const r = this.alternation()
     if (this.i < this.src.length) throw this.unsupported()
-    return { k: r.cost.k, logC: r.cost.logC, size: r.cost.size, anchored: r.anchored, exponential: this.exponential }
+    return {
+      k: r.cost.k,
+      logC: r.cost.logC,
+      size: r.cost.size,
+      anchored: r.anchored,
+      lookbehind: this.lookbehind,
+      groups: this.groups,
+      exponential: this.exponential
+    }
   }
 
   private unsupported(why = 'is not supported') {
@@ -142,6 +159,7 @@ class PatternParser {
           this.i++
         } else {
           if (m[1] !== undefined) this.groups++
+          if (m[0].startsWith('?<=') || m[0].startsWith('?<!')) this.lookbehind = true
           this.i += m[0].length
         }
       } else this.groups++
@@ -234,7 +252,7 @@ class PatternParser {
       if (!m) return atom
       const count = (digits: string) => {
         const n = Number(digits)
-        return n > MAX_COUNT ? Infinity : n
+        return n >= MAX_COUNT ? Infinity : n
       }
       min = count(m[1])
       max = m[2] === undefined ? min : m[3] === '' ? Infinity : count(m[3])
@@ -253,13 +271,6 @@ class PatternParser {
   }
 }
 
-/** Capture groups V8 finds in a pattern (it has compiled already, so this cannot throw). */
-function v8GroupCount(source: string, flags: string): number {
-  // The empty alternative matches the empty text at once, after an attempt at the pattern itself
-  // on an empty text, which does no work worth counting.
-  return new RegExp(`(?:${source})|`, flags.replace(/[gyl]/g, '')).exec('')!.length - 1
-}
-
 /** Patterns analysed lately (a regex literal in a loop is created again on every pass). */
 const recent = new Map<string, PatternInfo>()
 
@@ -271,7 +282,6 @@ export function analysePattern(source: string, flags: string): PatternInfo {
   if (known) return known
   const parser = new PatternParser(source, flags.includes('u'))
   const info = parser.parse()
-  if (!parser.inexact && parser.groups !== v8GroupCount(source, flags)) parser.inexact = 'groups'
   if (parser.inexact) info.inexact = parser.inexact
   // The work per position is at least the length of the pattern, whatever the analysis says.
   info.size = Math.max(info.size, source.length)
@@ -302,7 +312,8 @@ export function linearEngineAvailable(): boolean {
  * position the attempt starts at (lastIndex for global and sticky patterns).
  */
 export function matchCost(info: PatternInfo, linear: boolean, sticky: boolean, input: string, start: number): number {
-  const rest = Math.max(0, input.length - start) + 1
+  // A lookbehind can read the text before `start` as well.
+  const rest = (info.lookbehind ? input.length : Math.max(0, input.length - start)) + 1
   if (linear) return rest * (info.size + 1)
   // A search tries every position from `start`; ^ fails at once at all but the first.
   const fixed = sticky || info.anchored
