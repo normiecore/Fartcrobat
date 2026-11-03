@@ -2,6 +2,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inflateSync } from 'node:zlib'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createLocalEngine } from '@engine/local'
 import { collectOpModules } from '@engine/registry'
@@ -9,6 +10,7 @@ import type annotOps from '@engine/ops/annots'
 import type docOps from '@engine/ops/doc'
 import type formOps from '@engine/ops/forms'
 import type pageOps from '@engine/ops/pages'
+import type redactOps from '@features/redact/engine'
 import type sigOps from '@features/digital-signatures/engine'
 import { createSelfSignedId, validateNewId } from '@features/digital-signatures/lib/digitalId'
 import { parseDigitalId, WrongPasswordError, type ParsedDigitalId } from '@features/digital-signatures/lib/pkcs12'
@@ -346,6 +348,72 @@ describe('signing and validation', () => {
     expect(revs.sections[1].entries?.size).toBeGreaterThan(2)
     const orig = await readRevisions(fixture('text.pdf'))
     expect(orig.sections).toHaveLength(1)
+  })
+})
+
+describe('after Remove Hidden Information', () => {
+  /** Whether the raw bytes or any Flate-decoded stream of `bytes` contain `needle`. */
+  function contains(bytes: Uint8Array, needle: string): boolean {
+    const s = Buffer.from(bytes).toString('latin1')
+    if (s.includes(needle)) return true
+    const re = /stream\r?\n/g
+    let m: RegExpExecArray | null
+    while ((m = re.exec(s))) {
+      const start = m.index + m[0].length
+      const end = s.indexOf('endstream', start)
+      if (end < 0) break
+      try {
+        if (inflateSync(Buffer.from(s.slice(start, end), 'latin1')).toString('latin1').includes(needle)) return true
+      } catch {}
+    }
+    return false
+  }
+
+  it('signs a full, clean rewrite that no longer holds the removed data', async () => {
+    const original = fixture('redact/hidden-info.pdf')
+    for (const secret of ['Secret project plan', 'attached secret notes', 'annotation attachment secret', 'app.alert']) {
+      expect([secret, contains(original, secret)]).toEqual([secret, true])
+    }
+    const e = await openFixture('redact/hidden-info.pdf')
+    await e.ops<typeof redactOps>('redact').sanitize({ items: ['metadata', 'attachments', 'comments', 'javascript'] })
+    const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+    for (const secret of ['Secret project plan', 'attached secret notes', 'annotation attachment secret', 'app.alert']) {
+      expect([secret, contains(bytes, secret)]).toEqual([secret, false])
+    }
+    // One clean revision plus the signature, not an update appended to the original file.
+    expect((await readRevisions(bytes)).sections).toHaveLength(2)
+    const report = await validateBytes(bytes)
+    expect(report.signatures).toHaveLength(1)
+    expect(report.signatures[0].integrity && report.signatures[0].signatureValid).toBe(true)
+  })
+
+  it('signs a sanitized password-protected document', async () => {
+    const e = await openFixture('encrypted.pdf', 'secret')
+    expect(e.info.metadata.producer).not.toBe('')
+    await e.ops<typeof redactOps>('redact').sanitize({ items: ['metadata'] })
+    const { bytes } = await e.ops<typeof sigOps>('digital-signatures').sign(request(ecId))
+    expect((await readRevisions(bytes)).sections).toHaveLength(2)
+    const e2 = await openBytes(bytes, 'signed.pdf', 'secret')
+    expect(e2.info.security).toBe('password')
+    expect(e2.info.metadata.producer).toBe('')
+    const report = await e2.sig.validate()
+    expect(report.signatures[0].integrity && report.signatures[0].signatureValid).toBe(true)
+  })
+
+  it('refuses to sign a signed document once content was removed', async () => {
+    const e = await openFixture('text.pdf')
+    const first = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+    const e2 = await openBytes(first.bytes)
+    expect((await e2.sig.capability()).canSign).toBe(true)
+    await e2.ops<typeof redactOps>('redact').sanitize({ items: ['metadata'] })
+    const cap = await e2.sig.capability()
+    expect(cap.canSign).toBe(false)
+    expect(cap.reason).toMatch(/redacted or removed/)
+    await expect(e2.sig.sign(request(ecId, { target: { kind: 'new', page: 0, rect: [300, 650, 540, 720] } }))).rejects.toThrow(
+      /redacted or removed/
+    )
+    // A save keeps refusing to append to the original file.
+    await expect(e2.doc.save({ mode: 'incremental' })).rejects.toThrow(/saved in full/)
   })
 })
 
