@@ -568,7 +568,8 @@ describe('malformed document timestamps', () => {
 })
 
 describe('timestamps that claim to certify the document', () => {
-  // ../doctimestamp-docmdp.pdf, ../doctimestamp-perms.pdf and ../sig-rfc3161-docmdp.pdf from make_chain.py.
+  // ../doctimestamp-docmdp.pdf, ../doctimestamp-docmdp-only.pdf, ../doctimestamp-perms.pdf and
+  // ../sig-rfc3161-docmdp.pdf from make_chain.py.
   const sha = async (name: string) => (await describeCertificate(cert(name))).sha256
 
   async function validate(name: string) {
@@ -589,8 +590,9 @@ describe('timestamps that claim to certify the document', () => {
     expect(r.problems.join(' ')).toMatch(/certification \(DocMDP\) reference/)
     expect(report.certified).toBeNull()
     expect(report.certifiedBy).toBeNull()
-    // Its P 1 still keeps the document locked.
-    expect(report.locked).toBe(true)
+    // A timestamp certifies nothing, so its P 1 locks nothing either, whether or not /Perms names it
+    // (doctimestamp-docmdp-only.pdf below).
+    expect(report.locked).toBe(false)
     for (const names of [[], ['tsa'], ['tsa-root']]) {
       const trusted = new Set(await Promise.all(names.map(sha)))
       const st = signatureStatus(r, trusted)
@@ -636,6 +638,58 @@ describe('timestamps that claim to certify the document', () => {
     expect(st.level).toBe('warning')
     expect(st.details.join(' ')).not.toMatch(/document is certified/)
   })
+
+  it('does not lock the document for a timestamp DocMDP reference that /Perms does not name', async () => {
+    const { report, r } = await validate('doctimestamp-docmdp-only.pdf')
+    expect(r.kind).toBe('timestamp')
+    expect(r.problems.join(' ')).toMatch(/certification \(DocMDP\) reference/)
+    expect(report.certified).toBeNull()
+    expect(report.locked).toBe(false)
+  })
+})
+
+describe('certification claims no signature makes', () => {
+  // ../doctimestamp-perms-direct.pdf and ../sig-perms-*.pdf from make_chain.py: the catalog's
+  // /Perms /DocMDP claims a certification, but no signature dictionary carries a DocMDP reference.
+  const sha = async (name: string) => (await describeCertificate(cert(name))).sha256
+
+  async function validate(name: string) {
+    const engine = await createLocalEngine()
+    const res = await engine.ops<typeof docOps>('doc').open(new Uint8Array(readFileSync(join(DIR, '..', name))), { fileName: name })
+    expect(res.ok).toBe(true)
+    const report = await engine.ops<typeof sigOps>('digital-signatures').validate()
+    expect(report.signatures).toHaveLength(1)
+    return { report, r: report.signatures[0] }
+  }
+
+  for (const [file, kind, root, warning] of [
+    ['doctimestamp-perms-direct.pdf', 'timestamp', 'tsa-root', /claims to be certified, but no signature in it certifies it/],
+    ['sig-perms-direct.pdf', 'approval', 'root', /claims to be certified, but no signature in it certifies it/],
+    ['sig-perms-other.pdf', 'approval', 'root', /claims to be certified, but no signature in it certifies it/],
+    ['sig-perms-named.pdf', 'approval', 'root', /names this signature as its certification, but the signature carries no certification/]
+  ] as const) {
+    it(`does not report ${file} as certified`, async () => {
+      const { report, r } = await validate(file)
+      expect(r.kind).toBe(kind)
+      expect(r.permission).toBeNull()
+      expect(r.integrity).toBe(true)
+      expect(r.problems).toEqual([])
+      expect(r.warnings.join(' ')).toMatch(warning)
+      expect(report.certified).toBeNull()
+      expect(report.certifiedBy).toBeNull()
+      expect(report.locked).toBe(false)
+      const trusted = new Set([await sha(root)])
+      const st = signatureStatus(r, trusted)
+      expect(st.level).toBe('warning')
+      expect(st.details.join(' ')).not.toMatch(/document is certified/)
+      const overall = overallStatus(report, trusted)!
+      expect(overall.level).toBe('warning')
+      expect(overall.message).not.toMatch(/Certified/)
+      const out = signaturesOut(report, trusted)
+      expect(out).not.toHaveProperty('certified')
+      expect(out.signatures[0]).toMatchObject({ kind })
+    })
+  }
 })
 
 describe('RFC 3161 token content type', () => {

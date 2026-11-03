@@ -59,4 +59,11 @@ Its status is decided like this (`status.ts`, `worker/validate.ts`, `worker/late
   the token's signer, never a timestamp nested in the token. The token must be marked as
   id-ct-TSTInfo. Any other combination (a /DocTimeStamp in CMS format, an RFC 3161 token as a /Sig)
   is malformed and invalid. A timestamp never certifies a document: a DocMDP /Reference in its
-  dictionary is a problem, and /Perms /DocMDP naming it is ignored (with a warning).
+  dictionary is a problem, and /Perms /DocMDP naming it is ignored (with a warning). Its P never
+  locks the document either, whether or not /Perms names it.
+- A document is certified only by a signature whose own (signed) dictionary carries a DocMDP
+  /Reference. The catalog's /Perms /DocMDP is not covered by any signature, so it never certifies
+  on its own: when no signature makes a certification, a /Perms /DocMDP that is a direct
+  dictionary, points at some other object, or names a signature without a DocMDP reference leaves
+  `certified` null and adds a warning ("The document claims to be certified, but no signature in
+  it certifies it", or on the signature it names).

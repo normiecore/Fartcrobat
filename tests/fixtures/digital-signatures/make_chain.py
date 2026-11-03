@@ -65,6 +65,15 @@ Malformed document timestamps (one directory up, the same one-page layout):
   sig-rfc3161-docmdp.pdf        sig-rfc3161.pdf with a DocMDP /Reference (P 1) and /Perms /DocMDP
   doctimestamp-econtent.pdf     a /DocTimeStamp whose token holds a genuine TSTInfo from tsa, signed
                                 by tsa, but with eContentType id-data instead of id-ct-TSTInfo
+  doctimestamp-docmdp-only.pdf  doctimestamp-docmdp.pdf without /Perms: only the DocMDP /Reference (P 1)
+
+Certification claims no signature makes (one directory up, the same one-page layout):
+  doctimestamp-perms-direct.pdf doctimestamp-good.pdf's timestamp, and a /Perms /DocMDP that is a
+                                direct dictionary with its own DocMDP /Reference (P 2), naming no field
+  sig-perms-direct.pdf          the same /Perms with an approval signature by leaf (adbe.pkcs7.detached,
+                                inter and root embedded) instead of the timestamp
+  sig-perms-named.pdf           that approval signature (no /Reference) named by /Perms /DocMDP
+  sig-perms-other.pdf           that approval signature, and /Perms /DocMDP pointing at the page object
 """
 import datetime
 import hashlib
@@ -282,6 +291,45 @@ def main() -> None:
                 work, lambda b: cms_sign(work, encapsulated_content(work, timestamp(work, b, "tsa")), "tsa", ID_DATA_OID)
             ),
         )
+        write(
+            HERE / "doctimestamp-docmdp-only.pdf",
+            lambda: one_page_signed_pdf(
+                b"Document timestamp with a certification reference - TEST KEYS ONLY",
+                b"Timestamp1",
+                b"/Type /DocTimeStamp /Filter /Adobe.PPKLite /SubFilter /ETSI.RFC3161" + docmdp_ref,
+                lambda b: timestamp(work, b, "tsa"),
+            ),
+        )
+        direct_perms = (
+            b" /Perms << /DocMDP << /Type /Sig /Reference [<< /Type /SigRef /TransformMethod /DocMDP"
+            b" /TransformParams << /Type /TransformParams /P 2 /V /1.2 >> >>] >> >>"
+        )
+        write(
+            HERE / "doctimestamp-perms-direct.pdf",
+            lambda: one_page_signed_pdf(
+                b"Document timestamp and a certification claim - TEST KEYS ONLY",
+                b"Timestamp1",
+                b"/Type /DocTimeStamp /Filter /Adobe.PPKLite /SubFilter /ETSI.RFC3161",
+                lambda b: timestamp(work, b, "tsa"),
+                direct_perms,
+            ),
+        )
+        approval = b"/Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /Name (leaf) /M (D:20250601000000Z)"
+        for name, extra in (
+            ("sig-perms-direct.pdf", direct_perms),
+            ("sig-perms-named.pdf", perms),
+            ("sig-perms-other.pdf", b" /Perms << /DocMDP 3 0 R >>"),
+        ):
+            write(
+                HERE / name,
+                lambda extra=extra: one_page_signed_pdf(
+                    b"Approval signature and a certification claim - TEST KEYS ONLY",
+                    b"Signature1",
+                    approval,
+                    lambda b: cms_sign(work, b, "leaf", chain="signer-chain.pem"),
+                    extra,
+                ),
+            )
 
 
 def write(path: Path, make_bytes) -> bytes:

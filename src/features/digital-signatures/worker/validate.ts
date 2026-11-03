@@ -491,20 +491,24 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
   const signedValue = (sigNum: number) =>
     fields.find((f) => {
       const v = f.field.resolve().get('V')
-      return v.isIndirect() && v.asIndirect() === sigNum
+      return f.signed && v.isIndirect() && v.asIndirect() === sigNum
     })
-  // /Perms /DocMDP naming a timestamp does not make it a certification either.
-  let rejected: Context['certified'] = null
+  // The catalog's /Perms /DocMDP is only a pointer to the certification signature and is not
+  // covered by any signature itself, so it never makes a certification on its own: a
+  // certification needs a signed signature dictionary with its own DocMDP reference (found
+  // above). When no signature makes one, a /Perms /DocMDP is a claim nothing backs: a timestamp it
+  // names gets a warning in validateOne (and its P never locks the document), anything else (a
+  // direct dictionary, another object, a signature without a DocMDP reference) a warning below.
+  let rejectedCertification = -1
+  let unbackedClaim: { sigNum: number } | null = null
   if (!certified) {
-    certified = certification(pdf)
-    const named = certified ? signedValue(certified.sigNum) : undefined
-    if (certified && named && timestampLike(named.field.resolve().get('V').resolve())) {
-      rejected = certified
-      certified = null
-    }
+    const claim = certification(pdf)
+    const named = claim && claim.sigNum > 0 ? signedValue(claim.sigNum) : undefined
+    if (claim && named && timestampLike(named.field.resolve().get('V').resolve())) rejectedCertification = claim.sigNum
+    else if (claim) unbackedClaim = { sigNum: named ? claim.sigNum : -1 }
   }
   const repaired = !!src && wasRepaired(pdf)
-  const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired, later: [], vNums: new Map(), rejectedCertification: rejected?.sigNum ?? -1 }
+  const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired, later: [], vNums: new Map(), rejectedCertification }
   if (certified && src) {
     const certField = signedValue(certified.sigNum)
     if (certField) {
@@ -521,6 +525,16 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
       const r = emptyReport(f, v)
       r.problems.push(`The signature could not be checked: ${(err as Error).message}`)
       signatures.push(r)
+    }
+  }
+  if (unbackedClaim) {
+    for (const r of signatures) {
+      if (unbackedClaim.sigNum > 0 && ctx.vNums.get(r) !== unbackedClaim.sigNum) continue
+      r.warnings.push(
+        unbackedClaim.sigNum > 0
+          ? 'The document names this signature as its certification, but the signature carries no certification (DocMDP) reference. The document is not treated as certified.'
+          : 'The document claims to be certified, but no signature in it certifies it. The document is not treated as certified.'
+      )
     }
   }
   // A repair while checking one signature also affects the ones checked before it.
@@ -543,8 +557,8 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
     revisionCount: revs?.sections.length ?? 0,
     certified: certified?.permission ?? null,
     certifiedBy: certSig?.signerName ?? null,
-    // A rejected certification that allows no changes still keeps the document locked.
-    locked: locked || certified?.permission === 1 || rejected?.permission === 1,
+    // A DocMDP reference or /Perms entry that certifies nothing (a timestamp's) locks nothing either.
+    locked: locked || certified?.permission === 1,
     validatedAt: Date.now()
   }
 }
