@@ -580,3 +580,21 @@ test('dynamic XFA forms and signed signature fields', async () => {
     await app.close()
   }
 })
+
+test("form scripts' regular expressions can use the linear-time engine", async () => {
+  const { app, page } = await launch()
+  try {
+    // src/main/index.ts turns it on for the renderer (forms-fill/js/regex.ts relies on it).
+    const r = await page.evaluate(() => {
+      const start = performance.now()
+      const linearFlag = 'l'
+      const re = new RegExp('(a+)+$', linearFlag)
+      const matched = re.test('a'.repeat(100000) + '!')
+      return { matched, ms: performance.now() - start }
+    })
+    expect(r.matched).toBe(false)
+    expect(r.ms).toBeLessThan(1000)
+  } finally {
+    await app.close()
+  }
+})

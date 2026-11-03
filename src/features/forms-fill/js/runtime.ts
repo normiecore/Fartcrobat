@@ -203,6 +203,8 @@ export class FormRuntime {
       alert: (m) => this.alerts.push(m)
     }
     this.interp = new Interpreter({ ...createAFLibrary(afHost), ...this.globals() })
+    // Opening the document is one event: all its document-level scripts share one time budget.
+    this.interp.beginEvent()
     for (const src of snapshot.docScripts ?? []) {
       try {
         this.interp.run(src, { scope: this.interp.global, thisValue: this.docObject, globalObject: this.docObject })
@@ -261,6 +263,15 @@ export class FormRuntime {
     const unsupported = err instanceof ScriptError && err.unsupported
     if (!this.problems.some((p) => p.field === field && p.event === event && p.message === message))
       this.problems.push({ field, event, message, unsupported })
+  }
+
+  /**
+   * Starts an event: the scripts that run until the next one (for example a commit, then the
+   * formatting and calculations it causes) share one time budget. Call it as each click,
+   * keystroke or agent request starts handling.
+   */
+  beginEvent() {
+    this.interp.beginEvent()
   }
 
   /** Runs `fn` only when the running script was started by the person (see `userAction`). */
@@ -329,10 +340,13 @@ export class FormRuntime {
   }
 
   /**
-   * Final keystroke check and validation when the user commits a value. Returns the value to
-   * store (scripts may normalise it) or rc=false with Acrobat's message.
+   * Final keystroke check and validation when a value is committed. Returns the value to store
+   * (scripts may normalise it) or rc=false with Acrobat's message. `userAction` says whether the
+   * person typed or chose the value (not an AI app over agent access): only then may the scripts
+   * print, save, submit or open links.
    */
-  commit(name: string, value: string): { rc: boolean; value: string; alerts: string[] } {
+  commit(name: string, value: string, opts: { userAction?: boolean } = {}): { rc: boolean; value: string; alerts: string[] } {
+    const userAction = opts.userAction ?? false
     const f = this.fields.get(name)
     if (!f) return { rc: true, value, alerts: [] }
     let v = value
@@ -346,12 +360,12 @@ export class FormRuntime {
         willCommit: true,
         fieldFull: false,
         commitKey: 2
-      }, true)
+      }, userAction)
       if (ev && !ev.rc) return { rc: false, value, alerts: this.takeAlerts() }
       if (ev) v = valueToString(ev.value)
     }
     if (f.scripts.validate) {
-      const ev = this.run(name, 'Validate', f.scripts.validate, { value: v, willCommit: true, change: '' }, true)
+      const ev = this.run(name, 'Validate', f.scripts.validate, { value: v, willCommit: true, change: '' }, userAction)
       if (ev && !ev.rc) return { rc: false, value, alerts: this.takeAlerts() }
       if (ev) v = valueToString(ev.value)
     }

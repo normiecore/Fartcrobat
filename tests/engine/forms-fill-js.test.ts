@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { setFlagsFromString } from 'node:v8'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { FieldInfo } from '@engine/ops/forms'
 import { Interpreter, JsObject, NativeFunction, ScriptError, toStr, type JsValue } from '@features/forms-fill/js/interpreter'
 import { parse } from '@features/forms-fill/js/parser'
@@ -568,8 +569,13 @@ describe('AForm functions through the form runtime', () => {
     // Typing and committing a value are the person's own actions too.
     calls.length = 0
     rt.keystroke('b', { value: '', change: 'p', selStart: 0, selEnd: 0 })
-    rt.commit('b', 'x')
+    rt.commit('b', 'x', { userAction: true })
     expect(calls).toEqual(['print', 'url:https://example.com/v'])
+    // A commit that is not the person's (an AI app filling the form) may not.
+    calls.length = 0
+    rt.commit('b', 'y')
+    rt.commit('b', 'z', { userAction: false })
+    expect(calls).toEqual([])
     // After the click, functions defined by document scripts are blocked again.
     calls.length = 0
     rt.calculate()
@@ -607,5 +613,82 @@ describe('AForm functions through the form runtime', () => {
       calcOrder: ['out']
     })
     expect(rt.calculate().changes[0].value).toBe('Yes/pro/2/French/true')
+  })
+})
+
+/** Runs `src`; returns how long it took and the error it ended with, if any. */
+function timed(fn: () => unknown): { ms: number; error?: string } {
+  const start = performance.now()
+  try {
+    fn()
+    return { ms: performance.now() - start }
+  } catch (err) {
+    return { ms: performance.now() - start, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// The app's renderer has V8's linear-time regex engine turned on (src/main/index.ts); scripts must
+// be just as safe without it.
+describe.each([
+  ['the backtracking engine only', false],
+  ['the linear-time engine available', true]
+])('regular expressions in form scripts, with %s', (_name, linear) => {
+  beforeAll(() => setFlagsFromString(linear ? '--enable-experimental-regexp-engine' : '--no-enable-experimental-regexp-engine'))
+  afterAll(() => setFlagsFromString('--no-enable-experimental-regexp-engine'))
+
+  it('stops sticky and global matches that retry at every position, and long fixed sub-patterns', () => {
+    const attacks = [
+      'var s = " ".repeat(3000); s.split(/\\s*\\s*x/y)',
+      'var s = " ".repeat(4000); s.replace(/\\s*\\s*x|/gy, "")',
+      'var s = " ".repeat(3000); for (var j = 0; j < 10; j++) s.replace(/\\s*\\s*x|/gy, "")',
+      'var s = " ".repeat(3000); for (var j = 0; j < 10; j++) try { s.replace(/\\s*\\s*x|/gy, "") } catch (e) {}',
+      'var s = " ".repeat(4000); /^\\s*\\s*\\s{2000}x/.test(s)',
+      'var s = " ".repeat(4000); var re = new RegExp("\\\\s*\\\\s*x|", "g"); s.match(re)',
+      'var s = " ".repeat(4000); s.split(/(?=\\s*\\s*x)/)'
+    ]
+    for (const src of attacks) {
+      const r = timed(() => run(src))
+      expect(r.ms, src).toBeLessThan(1000)
+      if (r.error) expect(r.error, src).toMatch(/took too long/)
+    }
+  })
+
+  it('shares one time budget between all the scripts of an event', () => {
+    // Each script alone may take a few hundred ms; ten of them as the document opens may not
+    // take ten times as long.
+    const script = 'var s = " ".repeat(2000); s.replace(/\\s*\\s*x|/gy, "")'
+    let rt: FormRuntime | undefined
+    const r = timed(() => (rt = new FormRuntime({ fields: [], values: {}, calcOrder: [], docScripts: Array(10).fill(script) })))
+    expect(r.ms).toBeLessThan(1500)
+    expect(rt!.problems.map((p) => p.message)).toContain('The script took too long to run')
+    // The next event (a click) starts with a full budget again.
+    rt!.beginEvent()
+    expect(rt!.runAction('event.rc = /^\\d+$/.test("123")').error).toBeUndefined()
+  })
+
+  it('still runs everyday regular expressions, with the same results', () => {
+    expect(run('"1234567".replace(/\\B(?=(\\d{3})+(?!\\d))/g, ",")')).toBe('1,234,567')
+    expect(run('"a1b22c333".match(/\\d+/g).join("-")')).toBe('1-22-333')
+    expect(run('"a, b,c".split(/\\s*,\\s*/).join("|")')).toBe('a|b|c')
+    expect(run('"x-y".split(/(-)/).length')).toBe(3)
+    expect(run('"Hello World".replace(/o/g, function (m) { return m.toUpperCase() })')).toBe('HellO WOrld')
+    expect(run('"2024-01-31".replace(/(\\d+)-(\\d+)-(\\d+)/, "$3/$2/$1")')).toBe('31/01/2024')
+    expect(run('var re = /a/g; re.exec("aXa"); re.exec("aXa"); re.lastIndex')).toBe(3)
+    expect(run('String(/a+b/g)')).toBe('/a+b/g')
+    expect(run('/^YES$/i.test("yes")')).toBe(true)
+    // A long text is fine as long as the pattern cannot backtrack much.
+    expect(run('var s = "ab ".repeat(3000); s.split(/\\s+/).length')).toBe(3001)
+    expect(run('var s = "1,".repeat(3000); s.replace(/,/g, "").length')).toBe(3000)
+  })
+
+  it(linear ? 'runs patterns with nested repetition in linear time' : 'refuses patterns with nested repetition', () => {
+    // (split tries every position, each a match on the rest of the text: kept short.)
+    const scripts = [`/(a+)+$/.test("${'a'.repeat(5000)}!")`, `"${'a'.repeat(300)}!".split(/(?:a|aa)+$/).length`, `"${'a'.repeat(5000)}!".replace(/(a+)+$/g, "")`]
+    for (const [i, src] of scripts.entries()) {
+      const r = timed(() => run(src))
+      expect(r.ms, `script ${i}`).toBeLessThan(500)
+      if (linear) expect(r.error, `script ${i}`).toBeUndefined()
+      else expect(r.error, `script ${i}`).toMatch(/nested repetition/)
+    }
   })
 })
