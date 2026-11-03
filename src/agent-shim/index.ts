@@ -1,6 +1,7 @@
 // The MCP server AI apps (Claude Desktop, through the Fartcrobat extension) start over stdio. It
 // advertises the agent tools and passes each call to the running Fartcrobat, starting it if needed.
 // stdout carries MCP only: everything else is logged to stderr.
+import { LEGACY, PRODUCT_NAME } from '@shared/identity'
 import { CLIENT_INFO_META_KEY, Server, type ServerContext } from '@modelcontextprotocol/server'
 import { serveStdio } from '@modelcontextprotocol/server/stdio'
 import { SERVER_INSTRUCTIONS, type AgentClientInfo } from '@shared/agent/protocol'
@@ -22,7 +23,7 @@ function clientOf(server: Server, ctx: ServerContext): AgentClientInfo {
 
 function createServer(link: AppLink): Server {
   const server = new Server(
-    { name: 'fartcrobat', title: 'Fartcrobat', version: VERSION },
+    { name: LEGACY.mcpServer, title: PRODUCT_NAME, version: VERSION },
     { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
   )
   server.setRequestHandler('tools/list', () => ({ tools: TOOLS }))

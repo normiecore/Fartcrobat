@@ -24,6 +24,7 @@ import {
   type ShimToApp
 } from '@shared/agent/protocol'
 import { defaultUserDataDir, findApp, startApp, type LaunchedApp } from './launch'
+import { userDataOverride } from '@shared/identity'
 import { errorResult } from './result'
 
 /** How long the app may take to appear after the shim starts it. */
@@ -75,13 +76,13 @@ export const logToStderr: Log = (message) => {
   process.stderr.write(`[fartcrobat] ${message}\n`)
 }
 
-/** Electron's userData folder for Fartcrobat (the app may be pointed elsewhere with FARTCROBAT_USER_DATA). */
+/** The app's userData folder (the app may be pointed elsewhere with <NAME>_USER_DATA). */
 export function userDataDir(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   home: string = homedir()
 ): string {
-  return env.FARTCROBAT_USER_DATA || defaultUserDataDir(env, platform, home)
+  return userDataOverride(env) || defaultUserDataDir(env, platform, home)
 }
 
 export function endpointPath(userData: string, platform: NodeJS.Platform = process.platform): string {

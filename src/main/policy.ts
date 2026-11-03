@@ -3,6 +3,7 @@
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { posix, win32 } from 'node:path'
+import { NAMES, productNames, type Names } from '@shared/identity'
 
 export type PolicyDecision = 'enabled' | 'disabled'
 
@@ -30,15 +31,35 @@ const bySection = (read: (section: PolicySection) => PolicyReading | null): Mach
 
 const allOf = (reading: PolicyReading | null): MachinePolicy => bySection(() => reading)
 
+/** The policy file for one product name (see machinePolicyFiles). */
+function policyFileFor(name: string, platform: NodeJS.Platform): string {
+  if (platform === 'darwin') return posix.join('/Library/Application Support', name, 'policy.json')
+  return posix.join('/etc', name.toLowerCase(), 'policy.json')
+}
+
 /**
  * Where an administrator puts the machine policy file on macOS and Linux, folders only an
- * administrator can write. Null on Windows, which uses the registry (see windowsPolicy): any user
- * may create folders in ProgramData, and %ProgramData% can be redirected per account.
+ * administrator can write: the location under the current name first, then the one from before a
+ * rename (src/shared/identity.ts), which is still read so deployed policies keep applying. Empty
+ * on Windows, which uses the registry (see windowsPolicy): any user may create folders in
+ * ProgramData, and %ProgramData% can be redirected per account.
  */
+export function machinePolicyFiles(platform: NodeJS.Platform = process.platform, names: Names = NAMES): string[] {
+  if (platform === 'win32') return []
+  return [...new Set(productNames(names).map((name) => policyFileFor(name, platform)))]
+}
+
+/** The policy file under the current name (the one to document), or null on Windows. */
 export function machinePolicyFile(platform: NodeJS.Platform = process.platform): string | null {
-  if (platform === 'win32') return null
-  if (platform === 'darwin') return '/Library/Application Support/Fartcrobat/policy.json'
-  return posix.join('/etc', 'fartcrobat', 'policy.json')
+  return machinePolicyFiles(platform)[0] ?? null
+}
+
+/**
+ * Policies from several locations, most important first: for each setting the first location that
+ * says anything about it decides (an unreadable one included, which fails closed).
+ */
+export function firstSaying(readings: MachinePolicy[]): MachinePolicy {
+  return bySection((section) => readings.map((r) => r[section]).find((r) => r !== null) ?? null)
 }
 
 /**
@@ -81,8 +102,14 @@ export function readPolicy(file: string, section: PolicySection = 'agentAccess')
 
 // ---- Windows ------------------------------------------------------------------------------
 
+/** The registry key for one product name. */
+export const windowsPolicyKey = (name: string): string => `HKLM\\SOFTWARE\\Policies\\${name}`
+
 /** Written by Group Policy or Intune; only administrators can change it. */
-export const WINDOWS_POLICY_KEY = 'HKLM\\SOFTWARE\\Policies\\Fartcrobat'
+export const WINDOWS_POLICY_KEY = windowsPolicyKey(NAMES.current)
+
+/** The key under the current name, then the one from before a rename (still read). */
+export const windowsPolicyKeys = (names: Names = NAMES): string[] => productNames(names).map(windowsPolicyKey)
 
 /** A REG_DWORD per setting: 1 is on, 0 is off. */
 export const WINDOWS_POLICY_VALUES: Record<PolicySection, string> = {
@@ -115,10 +142,14 @@ const runFile: RunFile = (file, args, done) =>
  * Reads the policy from HKLM with reg.exe. Null for every setting when the key does not exist or
  * reg.exe cannot be started. Any other failure reads as 'invalid', as an unreadable file does.
  */
-export function windowsPolicy(env: NodeJS.ProcessEnv = process.env, run: RunFile = runFile): Promise<MachinePolicy> {
+export function windowsPolicy(
+  env: NodeJS.ProcessEnv = process.env,
+  run: RunFile = runFile,
+  key: string = WINDOWS_POLICY_KEY
+): Promise<MachinePolicy> {
   const reg = win32.join(env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe')
   return new Promise((resolve) => {
-    run(reg, ['query', WINDOWS_POLICY_KEY], (err, stdout) => {
+    run(reg, ['query', key], (err, stdout) => {
       if (!err) return resolve(bySection((section) => parseRegQuery(stdout, section)))
       // reg.exe exits with 1 when the key does not exist.
       resolve(allOf(err.code === 1 || err.code === 'ENOENT' ? null : 'invalid'))
@@ -134,13 +165,20 @@ export interface PolicyOptions {
   /** Replaces the machine policy with this file (tests). */
   file?: string
   run?: RunFile
+  /** The product names whose locations are read (tests try a rename with them). */
+  names?: Names
 }
 
-/** The machine's own policy: the registry on Windows, else the policy file. */
+/**
+ * The machine's own policy: the registry on Windows, else the policy file; under the current name
+ * and the one from before a rename, the current one deciding each setting it mentions.
+ */
 export async function machineReadings(opts: PolicyOptions = {}): Promise<MachinePolicy> {
   if (opts.file !== undefined) return readPolicyFile(opts.file)
-  const file = machinePolicyFile(opts.platform)
-  return file ? readPolicyFile(file) : windowsPolicy(opts.env, opts.run)
+  const platform = opts.platform ?? process.platform
+  if (platform !== 'win32') return firstSaying(machinePolicyFiles(platform, opts.names).map(readPolicyFile))
+  const keys = windowsPolicyKeys(opts.names)
+  return firstSaying(await Promise.all(keys.map((key) => windowsPolicy(opts.env, opts.run, key))))
 }
 
 /**

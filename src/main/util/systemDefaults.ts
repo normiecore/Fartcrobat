@@ -2,6 +2,7 @@
  * Parsers for the small system queries Fartcrobat runs to find the default printer and the
  * default PDF app. Kept free of Electron so they can be unit tested.
  */
+import { LEGACY, PRODUCT_NAME, productNames } from '@shared/identity'
 
 /** `lpstat -d` (CUPS, Linux and macOS): "system default destination: Office_Laser". */
 export function parseLpstatDefault(output: string): string | null {
@@ -29,11 +30,18 @@ export function regValue(output: string, name: string): string | null {
   return null
 }
 
-/** The ProgId Fartcrobat's Windows installer registers for .pdf (electron-builder.yml, win.fileAssociations). */
-export const WINDOWS_PROG_ID = 'Fartcrobat.Document'
+/**
+ * The ProgId the Windows installer registers for .pdf (electron-builder.yml, win.fileAssociations).
+ * It keeps its first name for good (src/shared/identity.ts): people's default-app choice points at it.
+ */
+export const WINDOWS_PROG_ID = LEGACY.windowsProgId
 
-/** Whether a .pdf UserChoice ProgId means Fartcrobat opens PDFs. */
-export function isFartcrobatProgId(progId: string, exeName = 'Fartcrobat.exe'): boolean {
+/**
+ * Whether a .pdf UserChoice ProgId means this app opens PDFs: its ProgId, or "Open with" naming
+ * this executable or one it had before a rename.
+ */
+export function isFartcrobatProgId(progId: string, exeName = `${PRODUCT_NAME}.exe`): boolean {
   const id = progId.trim().toLowerCase()
-  return id === WINDOWS_PROG_ID.toLowerCase() || id === `applications\\${exeName.toLowerCase()}`
+  if (id === WINDOWS_PROG_ID.toLowerCase()) return true
+  return [exeName, ...productNames().map((n) => `${n}.exe`)].some((exe) => id === `applications\\${exe.toLowerCase()}`)
 }

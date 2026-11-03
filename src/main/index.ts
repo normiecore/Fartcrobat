@@ -2,12 +2,13 @@ import { app, BrowserWindow, clipboard, ClipboardItem, dialog, shell, type SaveD
 import { existsSync, writeFileSync, type Stats } from 'node:fs'
 import { access, readFile, stat } from 'node:fs/promises'
 import { userInfo } from 'node:os'
-import { basename, extname } from 'node:path'
+import { basename, extname, join } from 'node:path'
+import { LEGACY, PRODUCT_NAME, userDataFolderName, userDataOverride } from '@shared/identity'
 import type { SaveDialogOptions } from '@shared/types'
 import type { MainContext, MainFeatureModule } from './context'
 import { appVersion } from './appVersion'
 import { registerCertKeyHandlers } from './certkeys'
-import { defaultAppStatus, setDefaultApp } from './defaultApp'
+import { defaultAppStatus, refreshLinuxDesktopFile, setDefaultApp } from './defaultApp'
 import { handle, send } from './ipc'
 import { applyDefaultMenu, applyMenu } from './menu'
 import { registerPasswordHandlers } from './passwords'
@@ -33,10 +34,10 @@ import {
   takeLaunchFiles
 } from './windows'
 
-app.setName('Fartcrobat')
-if (process.env.FARTCROBAT_USER_DATA) app.setPath('userData', process.env.FARTCROBAT_USER_DATA)
+app.setName(PRODUCT_NAME)
+pinUserData()
 // Match the installer's shortcuts so the taskbar groups the window with the pinned icon.
-if (process.platform === 'win32') app.setAppUserModelId('org.fartcrobat.app')
+if (process.platform === 'win32') app.setAppUserModelId(LEGACY.appId)
 // Before any session exists: on Linux Chromium would otherwise download spell-check dictionaries
 // from Google as each one starts (util/spellcheck.ts).
 app.on('session-created', (s) => keepSpellCheckOffline(s))
@@ -47,6 +48,20 @@ app.on('session-created', (s) => keepSpellCheckOffline(s))
  * arguments, so it is filtered out like any other non-document argument instead of by position.
  */
 const ARGV_SKIP = 1
+
+/**
+ * The userData folder: one named in the environment (development, tests), else the folder from
+ * before a rename when this computer has one (src/shared/identity.ts), else Electron's default.
+ * Runs before anything reads userData, the single-instance lock included, so a renamed copy and
+ * an older one share the lock as well as the settings.
+ */
+function pinUserData() {
+  const named = userDataOverride(process.env)
+  if (named) return app.setPath('userData', named)
+  const appData = app.getPath('appData')
+  const folder = userDataFolderName((name) => existsSync(join(appData, name)))
+  if (folder !== PRODUCT_NAME) app.setPath('userData', join(appData, folder))
+}
 
 // One running instance: a second launch (e.g. double-clicking another PDF) opens a tab here and
 // the second process exits straight away without starting anything.
@@ -77,6 +92,8 @@ function start() {
 
   app.whenReady().then(() => {
     TempFiles.sweepStale(app.getPath('temp'))
+    // A desktop entry written under the name the app had before a rename gets the current one.
+    if (process.platform === 'linux') refreshLinuxDesktopFile()
     serveRenderer()
     registerCoreHandlers()
     registerFeatureHandlers()

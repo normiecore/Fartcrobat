@@ -10,6 +10,7 @@ import { launchInfo } from './main/endpoint'
 import { refreshHelperCopy } from './main/helperCopy'
 import type { WindowHost } from './main/router'
 import { AgentAccess } from './main/service'
+import { LEGACY, USER_DATA_ENV } from '@shared/identity'
 
 // Same channels as ipc.ts (that file is part of the renderer project, this one of the main one).
 declare module '@shared/ipc' {
@@ -214,9 +215,11 @@ export function register(ctx: MainContext) {
     if (app.isPackaged) await refreshHelperCopy(bundledHelper(), shim, true)
     const command = 'node'
     const args = [shim]
-    const env = { FARTCROBAT_USER_DATA: app.getPath('userData') }
-    // JSON strings are valid TOML basic strings; no shell interpolation or config rewriting.
-    const toml = `[mcp_servers.fartcrobat]\ncommand = "node"\nargs = [${JSON.stringify(shim)}]\n\n[mcp_servers.fartcrobat.env]\nFARTCROBAT_USER_DATA = ${JSON.stringify(env.FARTCROBAT_USER_DATA)}\n`
+    const env = { [USER_DATA_ENV]: app.getPath('userData') }
+    // JSON strings are valid TOML basic strings; no shell interpolation or config rewriting. The
+    // table keeps its first name (src/shared/identity.ts) so pasting replaces an earlier setup.
+    const table = `mcp_servers.${LEGACY.mcpServer}`
+    const toml = `[${table}]\ncommand = "node"\nargs = [${JSON.stringify(shim)}]\n\n[${table}.env]\n${USER_DATA_ENV} = ${JSON.stringify(env[USER_DATA_ENV])}\n`
     return { command, args, env, toml }
   })
   ctx.handle('feature:agent-access:installExtension', async () => {

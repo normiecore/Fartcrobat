@@ -27,12 +27,16 @@ const { module: catalogue } = await runnerImport('/src/shared/agent/tools.ts', {
   logLevel: 'warn'
 })
 
+const { module: identity } = await runnerImport('/src/shared/identity.ts', { root, configFile: false, logLevel: 'warn' })
+
 const manifest = {
   // 0.2 is what `mcpb init` writes and every Claude Desktop with extension support reads; nothing
   // here needs a later version.
   manifest_version: '0.2',
-  name: 'fartcrobat',
-  display_name: 'Fartcrobat',
+  // Keeps its first value (src/shared/identity.ts): Claude Desktop replaces an installed extension
+  // only with one of the same name.
+  name: identity.LEGACY.mcpServer,
+  display_name: identity.PRODUCT_NAME,
   version: pkg.version,
   description:
     'Work with the PDF documents open in Fartcrobat: read, comment, fill forms, redact, organize pages and more.',

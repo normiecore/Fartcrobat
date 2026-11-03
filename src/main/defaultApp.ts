@@ -2,6 +2,7 @@ import { app, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
+import { PRODUCT_NAME } from '@shared/identity'
 import type { DefaultAppStatus } from '@shared/types'
 import { appImageFile } from './util/appImage'
 import {
@@ -9,6 +10,7 @@ import {
   desktopEntry,
   findDesktopFile,
   isGeneratedDesktopFile,
+  refreshedDesktopEntry,
   retargetDesktopEntry,
   userApplicationsDir
 } from './util/linuxDesktop'
@@ -30,15 +32,18 @@ function linuxExecutable(): string | null {
   return appImageFile(process.execPath, process.env) ?? (app.isPackaged ? process.execPath : null)
 }
 
+/** The icon theme name of the app icon desktop entries the app writes use. */
+const LINUX_ICON = 'fartcrobat'
+
 /** Copies the app icon to the user's icon theme folder so the desktop entry has an icon. */
 function installLinuxIcon(): string {
   try {
     const src = join(__dirname, '../../resources/icon.png')
     const dir = join(dirname(userApplicationsDir()), 'icons/hicolor/512x512/apps')
     mkdirSync(dir, { recursive: true })
-    writeFileSync(join(dir, 'fartcrobat.png'), readFileSync(src))
+    writeFileSync(join(dir, `${LINUX_ICON}.png`), readFileSync(src))
   } catch {}
-  return 'fartcrobat'
+  return LINUX_ICON
 }
 
 /**
@@ -63,6 +68,24 @@ function ensureLinuxDesktopFile(): boolean {
   } catch (err) {
     console.error('Could not write the desktop entry', err)
     return !!existing
+  }
+}
+
+/**
+ * Brings the desktop entry this install wrote for itself up to date (its name after a rename), at
+ * start. Only an entry that starts this very executable is touched; nothing is created.
+ */
+export function refreshLinuxDesktopFile() {
+  const exe = linuxExecutable()
+  if (!exe) return
+  const path = join(userApplicationsDir(), DESKTOP_FILE)
+  try {
+    const content = refreshedDesktopEntry(readFileSync(path, 'utf8'), exe, LINUX_ICON)
+    if (content === null) return
+    installLinuxIcon()
+    writeFileSync(path, content, { mode: 0o644 })
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Could not update the desktop entry', err)
   }
 }
 
@@ -132,7 +155,7 @@ export async function setDefaultApp(): Promise<DefaultAppStatus> {
   } else if (process.platform === 'win32') {
     // Opens Fartcrobat's page in Settings > Default apps (the installer registers the app's
     // capabilities under RegisteredApplications as "Fartcrobat").
-    await shell.openExternal('ms-settings:defaultapps?registeredAppUser=Fartcrobat')
+    await shell.openExternal(`ms-settings:defaultapps?registeredAppUser=${encodeURIComponent(PRODUCT_NAME)}`)
   }
   return defaultAppStatus()
 }

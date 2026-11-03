@@ -1,4 +1,5 @@
 # Installer configuration (electron-builder). Build with: npm run dist (or dist:win / dist:mac / dist:linux)
+# Keeps its first value for good (src/shared/identity.ts): installed copies update by it.
 appId: org.fartcrobat.app
 productName: Fartcrobat
 copyright: Copyright © 2026 Fartcrobat contributors. Licensed under the GNU AGPL v3 or later.
@@ -53,6 +54,9 @@ win:
 # install keeps the installer it ran for its next update's differential download, which only
 # matches when it is the file the updater picks for its processor.
 nsis:
+  # Pinned to UUID v5 of the first appId (org.fartcrobat.app) so the installer keeps updating the
+  # same install whatever the product is called (src/shared/identity.ts, LEGACY.nsisGuid).
+  guid: bd977413-7ee9-5f76-80a8-7e980aa59bd1
   buildUniversalInstaller: false
   # build/installer.nsh registers Fartcrobat under Default apps (RegisteredApplications).
   include: build/installer.nsh
@@ -122,4 +126,7 @@ linux:
 appImage:
   artifactName: ${productName}-${arch}.${ext}
 deb:
+  # Keeps its first name whatever the product is called, so dpkg upgrades the installed package
+  # (src/shared/identity.ts, LEGACY.debPackage).
+  packageName: fartcrobat
   priority: optional
