@@ -175,7 +175,7 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
     try {
       const bytes = await dataOf(sel)
       const path = await invoke('file:tempPath', name)
-      await invoke('file:write', path, bytes)
+      await invoke('file:write', path, bytes, { fromDocument: true })
       const failure = await invoke('shell:openPath', path)
       if (failure) showError(failure, `Could not open ${name}`)
     } catch (err) {
@@ -192,7 +192,7 @@ export function AttachmentsPanel({ doc }: { doc: DocumentModel }) {
         ...(ext ? [{ name: `${ext.toUpperCase()} files`, extensions: [ext] }] : []),
         { name: 'All files', extensions: ['*'] }
       ]
-      const path = await saveBytesAs(bytes, name, filters, 'Save Attachment')
+      const path = await saveBytesAs(bytes, name, filters, 'Save Attachment', { fromDocument: true })
       if (path) toast(`Saved ${basename(path)}`, { kind: 'success' })
     } catch (err) {
       showError(err, `Could not save ${name}`)

@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { send } from './ipc'
 import { APP_ORIGIN } from './protocol'
 import { appImageFile } from './util/appImage'
+import { externalUrlToOpen } from './util/externalUrl'
 import { spellCheckInWindows } from './util/spellcheck'
 
 /** Document windows (print jobs use hidden windows that are not part of this set). */
@@ -459,7 +460,8 @@ export function createWindow(): BrowserWindow {
 
   // Never navigate the app window away; open web links in the browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:|^mailto:/i.test(url)) void shell.openExternal(url)
+    const target = externalUrlToOpen(url)
+    if (target) void shell.openExternal(target)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e, url) => {

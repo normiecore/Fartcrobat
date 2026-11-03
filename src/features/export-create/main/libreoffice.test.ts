@@ -12,6 +12,14 @@ import { candidatePaths, convertWithLibreOffice, findLibreOffice, libreOfficeVer
 const FIXTURES = resolve(__dirname, '../../../../tests/fixtures/export-create')
 
 describe('LibreOffice detection', () => {
+  it('does not look for LibreOffice in relative PATH folders', () => {
+    const win = candidatePaths('win32', { PATH: '.;C:\\Tools;relative\\dir', ProgramFiles: 'C:\\Program Files' })
+    expect(win.some((p) => p.startsWith('C:\\Tools'))).toBe(true)
+    expect(win.filter((p) => !/^[A-Za-z]:\\/.test(p))).toEqual([])
+    const linux = candidatePaths('linux', { PATH: '.:/usr/bin::bin' })
+    expect(linux.filter((p) => !p.startsWith('/'))).toEqual([])
+  })
+
   it('knows the standard install locations of every platform', () => {
     const win = candidatePaths('win32', { ProgramFiles: 'C:\\Program Files', PATH: '' })
     expect(win).toContain('C:\\Program Files\\LibreOffice\\program\\soffice.exe')

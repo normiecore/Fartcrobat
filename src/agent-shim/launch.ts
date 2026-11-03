@@ -4,6 +4,7 @@ import { access, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { AGENT_DIR, APP_FILE } from '@shared/agent/protocol'
+import { regExe } from '@shared/winSystem'
 
 export interface LaunchTarget {
   executable: string
@@ -69,7 +70,7 @@ export function parseRegQuery(output: string): string | null {
 function regInstallLocation(root: 'HKCU' | 'HKLM'): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
-      'reg',
+      regExe(process.env),
       ['query', `${root}\\${WINDOWS_INSTALL_KEY}`, '/v', 'InstallLocation'],
       { windowsHide: true, timeout: 5000 },
       (err, stdout) => resolve(err ? null : parseRegQuery(String(stdout)))

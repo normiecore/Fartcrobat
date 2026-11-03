@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import type { DefaultAppStatus } from '@shared/types'
+import { regExe } from '@shared/winSystem'
 import { appImageFile } from './util/appImage'
 import {
   DESKTOP_FILE,
@@ -97,7 +98,7 @@ export async function defaultAppStatus(): Promise<DefaultAppStatus> {
       }
     }
     case 'win32': {
-      const out = await run('reg', [
+      const out = await run(regExe(process.env), [
         'query',
         'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\.pdf\\UserChoice',
         '/v',

@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { PrintJob } from '@shared/types'
+import { regExe } from '@shared/winSystem'
 import { sessionTemp } from './temp'
 import { sheetStyle } from './util/printSheet'
 import { parseLpstatDefault, parseWindowsDevice } from './util/systemDefaults'
@@ -87,7 +88,7 @@ function run(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<stri
 /** The name of the system's default printer, or null when there is none or it cannot be told. */
 export async function defaultPrinterName(): Promise<string | null> {
   if (process.platform === 'win32') {
-    return parseWindowsDevice(await run('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows', '/v', 'Device']))
+    return parseWindowsDevice(await run(regExe(process.env), ['query', 'HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows', '/v', 'Device']))
   }
   // CUPS (Linux, macOS); the C locale keeps the output in English.
   return parseLpstatDefault(await run('lpstat', ['-d'], { ...process.env, LC_ALL: 'C', LANG: 'C' }))

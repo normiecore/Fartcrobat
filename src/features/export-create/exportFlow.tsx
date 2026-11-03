@@ -87,7 +87,7 @@ async function chooseDestination(doc: DocumentModel, format: ExportFormat, optio
 
 async function confirmOverwrite(paths: string[]): Promise<boolean> {
   const existing: string[] = []
-  for (const p of paths) if (await invoke('file:exists', p)) existing.push(p)
+  for (const p of paths) if (await invoke('file:exists', p, { allowRemote: true })) existing.push(p)
   if (!existing.length) return true
   const answer = await ask({
     title: 'Replace existing files?',
