@@ -446,10 +446,14 @@ test('certify a form with an invisible signature that allows form filling', asyn
       expect(saved.toString('latin1').match(/%%EOF/g)?.length).toBeGreaterThanOrEqual(3)
       await entry.getByRole('button', { name: /Expand/ }).click()
       await expect(entry).toContainText('Form field “fullName” was filled in or changed')
-      await expect(entry).toContainText("Certification is valid, but the signer's identity is unknown.")
+      // Allowed by the certifier, so not invalid, but the document is no longer as it was
+      // certified: the status says so and offers the signed version to compare.
+      await expect(entry).toContainText('The document was changed after it was signed.')
+      await expect(entry).toContainText('Use View Signed Version to see the document as it was signed')
+      await expect(entry.getByRole('button', { name: 'View Signed Version' })).toBeEnabled()
       await expect(entry.locator('.fc-digital-signatures-changes .is-allowed')).not.toHaveCount(0)
       await expect(entry.locator('.fc-digital-signatures-changes .is-disallowed')).toHaveCount(0)
-      await expect(bar).toContainText('Signed and all signatures are valid')
+      await expect(bar).toContainText('At least one signature has problems.')
       await page.waitForTimeout(300)
       await page.screenshot({ path: `${SHOTS}/digital-signatures-certified-filled.png` })
     }

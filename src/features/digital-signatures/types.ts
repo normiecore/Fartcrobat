@@ -206,6 +206,23 @@ export interface SignatureReport {
   changes: ChangeEntry[]
   /** Details could not be determined for later changes. */
   changesUnknown: boolean
+  /**
+   * The signed revision could not be read, so the restrictions the signer applied (field lock,
+   * certification) are not known: later changes count as not allowed.
+   */
+  restrictionsUnknown: boolean
+  /**
+   * What the file holds after this signature's revision: nothing ('none'), only later signatures
+   * written the way a standard incremental signing writes them ('signing'), or anything else,
+   * including changes that could not be checked ('other'). Anything but 'none' and 'signing' caps
+   * the status at a warning, whatever `changes` says.
+   */
+  laterUpdates: 'none' | 'signing' | 'other'
+  /**
+   * Most restrictive permission in force for this signature: its own certification or the one it
+   * was made under, and its field lock. 1 means no change at all is allowed after it.
+   */
+  permissionInForce: MdpPermission | null
   /** Fatal problems (signature invalid). */
   problems: string[]
   /** Problems that make the signature questionable. */
