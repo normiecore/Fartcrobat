@@ -234,7 +234,22 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
       {r.timestamp && (
         <Row label="Timestamp">
           {formatDateTime(r.timestamp.time)} by {r.timestamp.authority}{' '}
-          {!r.timestamp.valid ? '(could not be verified)' : st.timestampTrusted ? '' : '(the time-stamping authority is not trusted)'}
+          {!r.timestamp.valid
+            ? '(could not be verified)'
+            : !r.timestamp.authorityOk
+              ? '(not from a valid time-stamping certificate)'
+              : st.timestampTrusted
+                ? ''
+                : '(the time-stamping authority is not trusted)'}
+          {r.timestamp.certificates.length > 0 && (
+            <>
+              {' '}
+              {/* So the person can see the authority and trust it (or its root) in the Certificate Viewer. */}
+              <Button size="sm" onClick={() => openCertificateViewer(r.timestamp!.certificates)}>
+                Show Timestamp Certificate…
+              </Button>
+            </>
+          )}
         </Row>
       )}
       <Row label="Field">

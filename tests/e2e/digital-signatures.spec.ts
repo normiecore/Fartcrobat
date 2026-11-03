@@ -605,3 +605,44 @@ test('signer names in scripts without a built-in font (Arabic) and CJK show in t
     await app.close()
   }
 })
+
+test('an embedded timestamp counts once its authority is trusted from Show Timestamp Certificate', async () => {
+  // signed-timestamp.pdf (make_chain.py): signed by "leaf" with an embedded RFC 3161 timestamp from
+  // "tsa", whose root "tsa-root" is separate from the signer's chain. Test keys only.
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('digital-signatures/signed-timestamp.pdf'))
+    await waitForRender(page)
+    await runCommand(page, 'sign.showSignaturesPanel')
+    const rightPanel = page.locator('aside.shell-rightpanel[aria-label="Signatures"]')
+    const entry = rightPanel.locator('.fc-digital-signatures-entry').first()
+    await expect(entry).toContainText('Signed by leaf')
+    await entry.getByRole('button', { name: 'Signature options' }).click()
+    await page.getByRole('menuitem', { name: 'Show Signature Properties…' }).click()
+    const props = dialog(page, 'Signature Properties')
+    await expect(props).toBeVisible()
+    await expect(props).toContainText('(the time-stamping authority is not trusted)')
+    await expect(props).toContainText('the time-stamping authority is unknown')
+
+    await props.getByRole('button', { name: 'Show Timestamp Certificate…' }).click()
+    const viewer = dialog(page, 'Certificate Viewer')
+    await expect(viewer).toContainText('CN=tsa,')
+    await expect(viewer).toContainText('Time stamping')
+    const chainList = viewer.getByRole('list', { name: 'Certificate chain' })
+    await expect(chainList.getByRole('button')).toHaveText(['tsa-root', 'tsa'])
+    await chainList.getByRole('button', { name: 'tsa-root' }).click()
+    await expect(viewer).toContainText('CN=tsa-root,')
+    await viewer.getByRole('button', { name: 'Trust This Certificate' }).click()
+    await expect(viewer.getByRole('button', { name: 'Remove from Trusted Certificates' })).toBeVisible()
+    await viewer.getByRole('button', { name: 'Close' }).last().click()
+    await expect(viewer).toBeHidden()
+
+    await expect(props).not.toContainText('time-stamping authority is not trusted')
+    await expect(props).not.toContainText('the time-stamping authority is unknown')
+    await expect(props).toContainText('The signature includes an embedded timestamp from tsa.')
+    // Trusting the authority's root does not make the signer's identity known.
+    await expect(props).toContainText("the signer's identity is unknown")
+  } finally {
+    await app.close()
+  }
+})

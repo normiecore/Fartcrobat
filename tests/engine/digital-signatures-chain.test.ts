@@ -1,6 +1,10 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { createLocalEngine } from '@engine/local'
+import type docOps from '@engine/ops/doc'
+import type sigOps from '@features/digital-signatures/engine'
+import { verifyTimestampToken } from '@features/digital-signatures/lib/cms'
 import { der } from '@features/digital-signatures/lib/asn1'
 import { digest, parsePublicKey, rsaPkcs1Verify } from '@features/digital-signatures/lib/crypto'
 import { OID } from '@features/digital-signatures/lib/oids'
@@ -19,7 +23,9 @@ const POOL_NAMES = [
   'inter-pl0',
   'inter-expired',
   'inter-nokcs',
-  'self-leaf'
+  'self-leaf',
+  'ee-noku',
+  'nobc'
 ]
 const WHEN = new Date('2026-06-01T00:00:00Z')
 
@@ -72,6 +78,24 @@ describe('certificate chains', () => {
 
   it('does not trust a chain through a CA whose key usage excludes certificate signing', async () => {
     expect(await trustedAt('leaf-nokcs', ['root'])).toBe(-1)
+  })
+
+  it('does not trust a certificate issued by an end entity without a key usage extension', async () => {
+    // ee-noku is CA:FALSE and has no keyUsage: only basicConstraints rules it out as an issuer.
+    const { certificates, verified } = await chainOf('leaf-of-ee-noku')
+    expect(certificates.map((c) => c.subjectName)).toEqual(['leaf-of-ee-noku', 'ee-noku', 'root'])
+    expect(verified).toEqual([false, true, true])
+    expect(await trustedAt('leaf-of-ee-noku', ['root'])).toBe(-1)
+    expect(await trustedAt('leaf-of-ee-noku', ['ee-noku'])).toBe(-1)
+  })
+
+  it('does not trust a certificate issued by a certificate without basic constraints', async () => {
+    // nobc has keyCertSign but no basicConstraints extension, so it is not a CA (RFC 5280 4.2.1.9).
+    const { certificates, verified } = await chainOf('leaf-of-nobc')
+    expect(certificates.map((c) => c.subjectName)).toEqual(['leaf-of-nobc', 'nobc', 'root'])
+    expect(verified).toEqual([false, true, true])
+    expect(await trustedAt('leaf-of-nobc', ['root'])).toBe(-1)
+    expect(await trustedAt('leaf-of-nobc', ['nobc'])).toBe(-1)
   })
 
   it('does not let a trusted leaf certificate vouch for another leaf', async () => {
@@ -179,7 +203,14 @@ describe('embedded timestamps', () => {
     return {
       kind: 'approval',
       signingTime: '2024-05-01T12:00:00.000Z',
-      timestamp: { time: '2024-05-02T09:00:00.000Z', authority: 'Some TSA', valid, certificates: [tsa, tsaRoot], chainVerified: [true, true] },
+      timestamp: {
+        time: '2024-05-02T09:00:00.000Z',
+        authority: 'Some TSA',
+        valid,
+        authorityOk: true,
+        certificates: [tsa, tsaRoot],
+        chainVerified: [true, true]
+      },
       certificates: [],
       chainVerified: [],
       problems: [],
@@ -211,5 +242,100 @@ describe('embedded timestamps', () => {
     r.timestamp!.chainVerified = [false, true]
     expect(timestampTrusted(r, new Set(['TSAROOT']))).toBe(false)
     expect(timestampTrusted(report(false), new Set(['TSAROOT']))).toBe(false)
+  })
+})
+
+describe('RFC 3161 timestamp tokens', () => {
+  // Tokens over chain/ts-data.bin made by make_chain.py: ts-good by `openssl ts -reply` with tsa
+  // (critical EKU timeStamping), the others with the same TSTInfo signed by tsa-wrong-eku (EKU
+  // emailProtection) and tsa-expired (valid 2020-2021). All chain to tsa-root.
+  const file = (name: string) => new Uint8Array(readFileSync(join(DIR, name)))
+  const DATA = file('ts-data.bin')
+  const sha = async (name: string) => (await describeCertificate(cert(name))).sha256
+
+  async function reportFor(token: string, data = DATA): Promise<SignatureReport> {
+    const t = await verifyTimestampToken(file(token), data)
+    return {
+      kind: 'approval',
+      signingTime: '2024-05-01T12:00:00.000Z',
+      timestamp: {
+        time: t.time.toISOString(),
+        authority: t.authority,
+        valid: t.valid,
+        authorityOk: t.authorityOk,
+        certificates: await Promise.all(t.chain.map((l) => describeCertificate(l.cert))),
+        chainVerified: t.chain.map((l) => l.verified)
+      },
+      certificates: [],
+      chainVerified: [],
+      problems: [],
+      warnings: [],
+      changes: [],
+      integrity: true,
+      signatureValid: true,
+      coversWholeFile: true,
+      permission: null,
+      lock: null,
+      unknownReason: null
+    } as unknown as SignatureReport
+  }
+
+  it('verifies a token from a proper authority and trusts it through its root', async () => {
+    const t = await verifyTimestampToken(file('ts-good.tst'), DATA)
+    expect(t.valid).toBe(true)
+    expect(t.authorityOk).toBe(true)
+    expect(t.chain.map((l) => l.cert.subject.text)).toEqual([cert('tsa').subject.text, cert('tsa-root').subject.text])
+    expect(t.chain.map((l) => l.verified)).toEqual([true, true])
+    const r = await reportFor('ts-good.tst')
+    expect(timestampTrusted(r, new Set())).toBe(false)
+    expect(displayedSigningTime(r, new Set())).toBe(r.signingTime)
+    expect(timestampTrusted(r, new Set([await sha('tsa-root')]))).toBe(true)
+    expect(timestampTrusted(r, new Set([await sha('tsa')]))).toBe(true)
+    expect(displayedSigningTime(r, new Set([await sha('tsa-root')]))).toBe(r.timestamp!.time)
+    // Another root does not vouch for this authority.
+    expect(timestampTrusted(r, new Set([await sha('root')]))).toBe(false)
+  })
+
+  it('does not verify a token over other data', async () => {
+    const r = await reportFor('ts-good.tst', new TextEncoder().encode('other data'))
+    expect(r.timestamp!.valid).toBe(false)
+    expect(timestampTrusted(r, new Set([await sha('tsa-root')]))).toBe(false)
+  })
+
+  it('does not trust a token signed by a certificate without the time-stamping key usage', async () => {
+    const r = await reportFor('ts-wrong-eku.tst')
+    expect(timestampTrusted(r, new Set([await sha('tsa-root')]))).toBe(false)
+    const t = await verifyTimestampToken(file('ts-wrong-eku.tst'), DATA)
+    expect(t.valid).toBe(true)
+    expect(t.authorityOk).toBe(false)
+    expect(t.chain.map((l) => l.verified)).toEqual([true, true])
+    expect(timestampTrusted(r, new Set([await sha('tsa-wrong-eku')]))).toBe(false)
+    expect(displayedSigningTime(r, new Set([await sha('tsa-root')]))).toBe(r.signingTime)
+    expect(signatureStatus(r, new Set([await sha('tsa-root')])).details.join(' ')).toMatch(/not a time-stamping certificate/)
+  })
+
+  it('does not trust a token signed by an authority certificate that was not valid at the timestamp time', async () => {
+    const r = await reportFor('ts-expired.tst')
+    expect(timestampTrusted(r, new Set([await sha('tsa-root')]))).toBe(false)
+    const t = await verifyTimestampToken(file('ts-expired.tst'), DATA)
+    expect(t.valid).toBe(true)
+    expect(t.authorityOk).toBe(false)
+    expect(timestampTrusted(r, new Set([await sha('tsa-expired')]))).toBe(false)
+  })
+
+  it('reports the embedded timestamp of a signed PDF with its authority chain', async () => {
+    // ../signed-timestamp.pdf: signed by leaf, with a timestamp from tsa over the signature value.
+    const engine = await createLocalEngine()
+    const res = await engine.ops<typeof docOps>('doc').open(file('../signed-timestamp.pdf'), { fileName: 'signed-timestamp.pdf' })
+    expect(res.ok).toBe(true)
+    const report = await engine.ops<typeof sigOps>('digital-signatures').validate()
+    const r = report.signatures[0]
+    expect(r.integrity).toBe(true)
+    expect(r.certificates.map((c) => c.subjectName)).toEqual(['leaf', 'inter', 'root'])
+    expect(r.timestamp).toMatchObject({ valid: true, authorityOk: true, chainVerified: [true, true] })
+    expect(r.timestamp!.certificates.map((c) => c.subjectName)).toEqual(['tsa', 'tsa-root'])
+    expect(timestampTrusted(r, new Set([await sha('root')]))).toBe(false)
+    expect(timestampTrusted(r, new Set([await sha('tsa-root')]))).toBe(true)
+    expect(signatureStatus(r, new Set([await sha('root')])).details.join(' ')).toMatch(/time-stamping authority is unknown/)
   })
 })

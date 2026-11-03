@@ -48,11 +48,12 @@ export function trustedIndex(r: SignatureReport, trusted: Set<string>): number {
 }
 
 /**
- * Whether the signature's timestamp time can be relied on: the token verified and its authority
- * is trusted. Otherwise the time is only what the signer (or an unknown authority) claims.
+ * Whether the signature's timestamp time can be relied on: the token verified, its signer is a
+ * time-stamping certificate valid at that time, and that certificate is trusted (itself or through
+ * its chain). Otherwise the time is only what the signer (or an unknown authority) claims.
  */
 export function timestampTrusted(r: SignatureReport, trusted: Set<string>): boolean {
-  if (!r.timestamp?.valid) return false
+  if (!r.timestamp?.valid || !r.timestamp.authorityOk) return false
   if (r.kind === 'timestamp') return trustedIndex(r, trusted) >= 0
   return chainTrustedIndex(r.timestamp.certificates, r.timestamp.chainVerified, trusted) >= 0
 }
@@ -110,7 +111,9 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
     details.push(
       !r.timestamp.valid
         ? 'The signature includes a timestamp, but it could not be verified.'
-        : tsTrusted || isTimestamp
+        : !r.timestamp.authorityOk
+          ? `The signature includes a timestamp from ${authority}, but its certificate is not a time-stamping certificate that was valid at that time.${isTimestamp ? '' : ' The signing time is only what the signer claims.'}`
+          : tsTrusted || isTimestamp
           ? `The signature includes an embedded timestamp from ${authority}.`
           : `The signature includes an embedded timestamp from ${authority}, but the time-stamping authority is unknown because its certificate is not in your list of trusted certificates. The signing time is only what the signer claims.`
     )

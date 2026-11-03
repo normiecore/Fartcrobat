@@ -203,6 +203,16 @@ export function couldHaveIssued(issuer: Certificate, cert: Certificate): boolean
   return true
 }
 
+/**
+ * Whether `cert` may sign RFC 3161 timestamps at `time`: it carries the extended key usage
+ * id-kp-timeStamping (RFC 3161 2.3) and was valid then.
+ */
+export function isTimestampAuthority(cert: Certificate | null, time: Date): boolean {
+  if (!cert?.extKeyUsage?.includes(OID.ekuTimeStamping)) return false
+  const t = time.getTime()
+  return t >= cert.notBefore.getTime() && t <= cert.notAfter.getTime()
+}
+
 /** Checks the certificate's signature with the issuer's public key. */
 export async function verifyIssuedBy(cert: Certificate, issuer: Certificate): Promise<boolean> {
   try {

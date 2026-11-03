@@ -180,8 +180,10 @@ export interface SignatureReport {
    * Embedded timestamp. `valid` only says the token matches and its signature verified; whether the
    * authority is trusted comes from its chain (`timestampTrusted` in status.ts). For document
    * timestamps the authority's chain is `certificates`, and these two lists are empty.
+   * `authorityOk`: the token's signer (the first certificate of the authority's chain) has the
+   * time-stamping extended key usage and was valid at the timestamp time.
    */
-  timestamp: { time: string; authority: string; valid: boolean; certificates: CertDetails[]; chainVerified: boolean[] } | null
+  timestamp: { time: string; authority: string; valid: boolean; authorityOk: boolean; certificates: CertDetails[]; chainVerified: boolean[] } | null
   subFilter: string
   digestAlgorithm: string
   signatureAlgorithm: string

@@ -15,7 +15,7 @@ import {
   sizeAt,
   type RevisionInfo
 } from '../lib/pdfbytes'
-import { buildChain, describeCertificate, displayName, parseCertificate, type Certificate } from '../lib/x509'
+import { buildChain, describeCertificate, displayName, isTimestampAuthority, parseCertificate, type Certificate } from '../lib/x509'
 import type { MdpPermission, SignatureReport, ValidationReport } from '../types'
 import { describeChanges } from './changes'
 import { certification, listSignatureFields, lockInfo, readReferences, type SigField } from './fields'
@@ -99,6 +99,7 @@ async function verifyCms(r: SignatureReport, contents: Uint8Array, data: Uint8Ar
       time: info.time.toISOString(),
       authority: info.tsa || (v.signer ? displayName(v.signer.subject) : ''),
       valid: r.integrity && v.signatureOk,
+      authorityOk: isTimestampAuthority(v.signer, info.time),
       certificates: [],
       chainVerified: []
     }
@@ -278,6 +279,7 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
             time: ver.timestamp.time.toISOString(),
             authority: ver.timestamp.authority,
             valid: ver.timestamp.valid,
+            authorityOk: ver.timestamp.authorityOk,
             certificates: await Promise.all(ver.timestamp.chain.map((l) => describeCertificate(l.cert))),
             chainVerified: ver.timestamp.chain.map((l) => l.verified)
           }
