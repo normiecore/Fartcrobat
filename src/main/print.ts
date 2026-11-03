@@ -28,7 +28,7 @@ export async function printImages(job: PrintJob): Promise<{ ok: boolean; error?:
       writeFileSync(join(dir, name), Buffer.from(p.data), { mode: 0o600 })
       imgs.push(`<div class="page"><img src="${name}" style="${sheetStyle(job.fit, p.widthPt, p.heightPt)}"></div>`)
     })
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(job.jobName ?? 'Fartcrobat')}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(job.jobName ?? 'Inkmoor')}</title>
 <style>
 @page { margin: 0; }
 html, body { margin: 0; padding: 0; background: white; }

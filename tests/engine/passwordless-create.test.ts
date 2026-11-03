@@ -354,7 +354,7 @@ for name in sys.argv[3:]:
 print(json.dumps(out))
 `
 
-describe.skipIf(!hasPyHanko())('pyHanko opens what Fartcrobat creates', () => {
+describe.skipIf(!hasPyHanko())('pyHanko opens what Inkmoor creates', () => {
   it('two groups, per-group permissions', async () => {
     const e = await openFixture('passwordless/source.pdf')
     const out = await encrypt(e, [group(['alice'], PRINT_ONLY), group(['bob'], {}, true)])

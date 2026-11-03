@@ -516,7 +516,7 @@ export function buildSummary(s: Session, opts: SummaryOptions): Uint8Array {
   const out = new m.PDFDocument(raw)
   try {
     out.setMetaData('info:Title', title)
-    out.setMetaData('info:Creator', 'Fartcrobat')
+    out.setMetaData('info:Creator', 'Inkmoor')
     const saved = out.saveToBuffer('compress,garbage=yes')
     const bytes = saved.asUint8Array().slice()
     saved.destroy()

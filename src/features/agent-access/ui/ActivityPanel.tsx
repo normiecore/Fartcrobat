@@ -73,7 +73,7 @@ export function ConnectionList({ connections, compact }: { connections: AgentCon
               {c.running ? ` · ${c.running} running` : ''}
             </span>
             {!shimForwardsCompanion(c.shimVersion) && (
-              <span className="shell-muted">Uses the extension from an older Fartcrobat: add it again to chat in Fartcrobat.</span>
+              <span className="shell-muted">Uses the extension from an older Inkmoor: add it again to chat in Inkmoor.</span>
             )}
           </div>
           <Button size="sm" icon={Unplug} title="It cannot connect again until you allow it." onClick={() => disconnect(c.id)}>

@@ -12,7 +12,7 @@ export interface CompanionMessage {
 }
 interface CompanionState {
   /**
-   * Whether the next conversation that uses Fartcrobat joins the chat. Off until the person opens
+   * Whether the next conversation that uses Inkmoor joins the chat. Off until the person opens
    * the chat (armCompanion), and off again when they end it or its conversation disconnects, until
    * they allow a new conversation: who reads what they type is their choice.
    */
@@ -44,7 +44,7 @@ export function endCompanion() {
 }
 
 /**
- * The person opened the chat: the next conversation that uses Fartcrobat may join (not after an end).
+ * The person opened the chat: the next conversation that uses Inkmoor may join (not after an end).
  * The companion stays on screen from then on, so an open chat never waits out of sight, where it
  * cannot be closed, after every AI app disconnects.
  */
@@ -65,7 +65,7 @@ export function allowNewConversation() {
 }
 export function sendCompanionMessage(text: string, document?: string, documentHandle?: string) {
   const s = useCompanion.getState()
-  if (!s.owner) throw new Error('Ask your AI app to use a Fartcrobat tool first.')
+  if (!s.owner) throw new Error('Ask your AI app to use an Inkmoor tool first.')
   if (!text.trim() || text.length > 8000) throw new Error('Enter a message of up to 8,000 characters.')
   if (s.messages.some((m) => m.role === 'user' && !m.delivered))
     throw new Error('Your previous message is still waiting for the AI app.')
@@ -100,8 +100,8 @@ export async function exchangeCompanion(options: {
     if (!s.autoJoin)
       throw new Error(
         s.ended
-          ? 'Chat ended. Ask the person to allow a new conversation in Fartcrobat.'
-          : 'The person has not opened the chat in Fartcrobat. Ask them to click Chat here first.'
+          ? 'Chat ended. Ask the person to allow a new conversation in Inkmoor.'
+          : 'The person has not opened the chat in Inkmoor. Ask them to click Chat here first.'
       )
     if (!s.owner)
       useCompanion.setState({ owner: { id: connectionId, name, session }, revealed: true, messages: [], autoJoin: false })
@@ -203,4 +203,4 @@ export function autoJoinCompanion(connectionId: number, name: string, session: s
 }
 
 const COMPANION_INSTRUCTIONS =
-  'This conversation is now connected to the Fartcrobat companion. Keep this session token in this conversation only. Finish the current request, then call companion_chat with this session to listen. Reply to each user message with message and reply_to, and use its documentHandle for PDF operations. Continue listening while the person wants companion chat. Do not invent tasks on idle; stop when the session ends or the person asks. Report actual progress, not hidden reasoning.'
+  'This conversation is now connected to the Inkmoor companion. Keep this session token in this conversation only. Finish the current request, then call companion_chat with this session to listen. Reply to each user message with message and reply_to, and use its documentHandle for PDF operations. Continue listening while the person wants companion chat. Do not invent tasks on idle; stop when the session ends or the person asks. Report actual progress, not hidden reasoning.'

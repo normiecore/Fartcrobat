@@ -25,7 +25,7 @@ function makeUpdater(capability: UpdateCapability, settings: UpdateSettings): Up
       onQuit: (handler) => app.once('quit', (_e, exitCode) => handler(exitCode))
     })
   return electronUpdater(process.platform, {
-    // The AppImage got a new file name: what starts it (the desktop entry Fartcrobat wrote as the
+    // The AppImage got a new file name: what starts it (the desktop entry Inkmoor wrote as the
     // default PDF app, the agent shim's app.json) must name the new file, before this process exits.
     appImageMoved: (from, to) => {
       linuxAppImageMoved(from, to)

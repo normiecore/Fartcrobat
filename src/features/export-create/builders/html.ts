@@ -16,7 +16,7 @@ function head(title: string, css: string, lang?: string | null): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="generator" content="Fartcrobat">
+<meta name="generator" content="Inkmoor">
 <title>${escapeHtml(title)}</title>
 <style>
 ${css}

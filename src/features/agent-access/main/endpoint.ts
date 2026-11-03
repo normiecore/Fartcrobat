@@ -35,8 +35,8 @@ export async function newAddress(
   platform: NodeJS.Platform = process.platform,
   tmp = tmpdir()
 ): Promise<ListenAddress> {
-  if (platform === 'win32') return { address: `\\\\.\\pipe\\fartcrobat-agent-${randomHex(16)}`, dir: null }
-  const dir = await mkdtemp(join(tmp, 'fartcrobat-agent-'))
+  if (platform === 'win32') return { address: `\\\\.\\pipe\\inkmoor-agent-${randomHex(16)}`, dir: null }
+  const dir = await mkdtemp(join(tmp, 'inkmoor-agent-'))
   await chmod(dir, 0o700)
   return { address: join(dir, 'agent.sock'), dir }
 }

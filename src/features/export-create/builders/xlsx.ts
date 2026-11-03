@@ -111,7 +111,7 @@ function writePage(w: Writer, page: LPage, opts: ExcelOptions) {
 
 export async function buildXlsx(layout: DocLayout, opts: ExcelOptions, meta: { title: string }): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook()
-  wb.creator = 'Fartcrobat'
+  wb.creator = 'Inkmoor'
   wb.title = meta.title
   wb.created = new Date()
   const writers: Writer[] = []

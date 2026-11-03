@@ -194,7 +194,7 @@ export function prepareSignature(m: Mupdf, pdf: PDFDocument, req: SignRequest, t
   if (req.contactInfo?.trim()) v.put('ContactInfo', pdf.newString(req.contactInfo.trim()))
   const build = pdf.newDictionary()
   const app = pdf.newDictionary()
-  app.put('Name', pdf.newName('Fartcrobat'))
+  app.put('Name', pdf.newName('Inkmoor'))
   build.put('App', app)
   const filter = pdf.newDictionary()
   filter.put('Name', pdf.newName('Adobe.PPKLite'))

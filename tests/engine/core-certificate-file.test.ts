@@ -217,7 +217,7 @@ describe('what the person and agents are told', () => {
     )
     expect(err).toBeInstanceOf(certificates.CertificateUnavailableError)
     expect(err).toMatchObject({ code: 'NO_CERTIFICATE', unsupportedKey: false, windowsStore: 'constrained' })
-    expect(err.message).toMatch(/None of your Digital IDs can open it\. Windows only lets PowerShell run in Constrained Language Mode on this computer, so Fartcrobat cannot use the Windows certificate store\. You can still use a Digital ID\.$/)
+    expect(err.message).toMatch(/None of your Digital IDs can open it\. Windows only lets PowerShell run in Constrained Language Mode on this computer, so Inkmoor cannot use the Windows certificate store\. You can still use a Digital ID\.$/)
     expect(certificateFailure('locked.pdf', err)!.message).toMatch(/could not search the Windows certificate store/)
   })
 

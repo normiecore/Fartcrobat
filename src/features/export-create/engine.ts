@@ -243,7 +243,7 @@ export default defineOps('export-create', {
       })
       if (!out.countPages()) throw new EngineError('Nothing to create: no pages were added', 'EMPTY')
       if (opts.title) out.setMetaData('info:Title', opts.title)
-      out.setMetaData('info:Creator', 'Fartcrobat')
+      out.setMetaData('info:Creator', 'Inkmoor')
       s.progress(1, 'Finishing')
       const bytes = takeBuffer(out.saveToBuffer('garbage=compact,compress'))
       return withTransfer(bytes, [bytes.buffer as ArrayBuffer])

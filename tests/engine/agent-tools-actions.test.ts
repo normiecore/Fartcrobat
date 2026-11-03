@@ -129,7 +129,7 @@ describe('agent tools: paths and overwrite decisions', () => {
     expect(samePath(null, '/docs/a.pdf', 'linux')).toBe(false)
   })
 
-  it('tells protection Fartcrobat cannot open from other open errors', () => {
+  it('tells protection Inkmoor cannot open from other open errors', () => {
     expect(openErrorCode("This file could not be opened: unknown encryption handler: 'Adobe.PubSec'")).toBe('unsupported')
     expect(openErrorCode("unknown encryption handler: 'MicrosoftIRMServices'")).toBe('unsupported')
     expect(openErrorCode('cannot find startxref')).toBe('file_error')

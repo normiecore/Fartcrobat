@@ -10,6 +10,7 @@ import { launchInfo } from './main/endpoint'
 import { refreshHelperCopy } from './main/helperCopy'
 import type { WindowHost } from './main/router'
 import { AgentAccess } from './main/service'
+import { LEGACY, USER_DATA_ENV } from '@shared/identity'
 
 // Same channels as ipc.ts (that file is part of the renderer project, this one of the main one).
 declare module '@shared/ipc' {
@@ -139,13 +140,13 @@ function helperForApps(): string {
 
 function extensionPath(): string {
   return app.isPackaged
-    ? join(process.resourcesPath, 'agent', 'fartcrobat.mcpb')
-    : join(__dirname, '..', 'agent', 'fartcrobat.mcpb')
+    ? join(process.resourcesPath, 'agent', 'inkmoor.mcpb')
+    : join(__dirname, '..', 'agent', 'inkmoor.mcpb')
 }
 
 /** A shorter wait before calls answer still_running, for tests of unpackaged builds only. */
 function testWaitMs(): number | undefined {
-  const ms = Number(process.env.FARTCROBAT_AGENT_WAIT_MS)
+  const ms = Number(process.env.INKMOOR_AGENT_WAIT_MS)
   return !app.isPackaged && Number.isFinite(ms) && ms > 0 ? ms : undefined
 }
 
@@ -210,18 +211,20 @@ export function register(ctx: MainContext) {
   if (app.isPackaged) void refreshHelperCopy(bundledHelper(), helperForApps(), false).catch(() => {})
   ctx.handle('feature:agent-access:chatgptConfig', async () => {
     const shim = helperForApps()
-    if (!existsSync(bundledHelper())) throw new Error('The MCP helper is missing. Build or reinstall Fartcrobat first.')
+    if (!existsSync(bundledHelper())) throw new Error('The MCP helper is missing. Build or reinstall Inkmoor first.')
     if (app.isPackaged) await refreshHelperCopy(bundledHelper(), shim, true)
     const command = 'node'
     const args = [shim]
-    const env = { FARTCROBAT_USER_DATA: app.getPath('userData') }
-    // JSON strings are valid TOML basic strings; no shell interpolation or config rewriting.
-    const toml = `[mcp_servers.fartcrobat]\ncommand = "node"\nargs = [${JSON.stringify(shim)}]\n\n[mcp_servers.fartcrobat.env]\nFARTCROBAT_USER_DATA = ${JSON.stringify(env.FARTCROBAT_USER_DATA)}\n`
+    const env = { [USER_DATA_ENV]: app.getPath('userData') }
+    // JSON strings are valid TOML basic strings; no shell interpolation or config rewriting. The
+    // table keeps its first name (src/shared/identity.ts) so pasting replaces an earlier setup.
+    const table = `mcp_servers.${LEGACY.mcpServer}`
+    const toml = `[${table}]\ncommand = "node"\nargs = [${JSON.stringify(shim)}]\n\n[${table}.env]\n${USER_DATA_ENV} = ${JSON.stringify(env[USER_DATA_ENV])}\n`
     return { command, args, env, toml }
   })
   ctx.handle('feature:agent-access:installExtension', async () => {
     const path = extensionPath()
-    if (!existsSync(path)) return 'The Claude Desktop extension is not included in this copy of Fartcrobat.'
+    if (!existsSync(path)) return 'The Claude Desktop extension is not included in this copy of Inkmoor.'
     return shell.openPath(path)
   })
 

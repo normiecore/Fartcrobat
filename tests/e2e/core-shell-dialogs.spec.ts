@@ -16,7 +16,7 @@ test('a confirmation without a primary button takes focus, traps Tab and closes 
   const { app, page } = await launch()
   try {
     await openFile(page, fixturePath('text.pdf'))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().ops('pages').rotate([0], 90))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().ops('pages').rotate([0], 90))
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
     await page.focus('.shell-search')
 
@@ -92,7 +92,7 @@ test('number fields can be cleared and retyped', async () => {
     await page.keyboard.type('7')
     expect(await field.inputValue()).toBe('7')
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().prefs.recentFilesLimit))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().prefs.recentFilesLimit))
       .toBe(7)
 
     // Leaving the field empty restores the last valid value.

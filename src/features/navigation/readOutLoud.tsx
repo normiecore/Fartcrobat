@@ -41,7 +41,7 @@ useReadAloud.subscribe((s, p) => {
 })
 
 const NO_VOICES =
-  'Read Out Loud needs a text-to-speech voice, and none is installed on this computer. On Linux, install speech-dispatcher and espeak-ng; on Windows and macOS, add a voice in the system speech settings. Then restart Fartcrobat.'
+  'Read Out Loud needs a text-to-speech voice, and none is installed on this computer. On Linux, install speech-dispatcher and espeak-ng; on Windows and macOS, add a voice in the system speech settings. Then restart Inkmoor.'
 
 function synth(): SpeechSynthesis | null {
   return typeof window !== 'undefined' && 'speechSynthesis' in window ? window.speechSynthesis : null
@@ -232,7 +232,7 @@ export function ReadingSettings() {
     stopReading()
     const my = ++token
     try {
-      await speak('This is how Fartcrobat reads your documents out loud.', v, my)
+      await speak('This is how Inkmoor reads your documents out loud.', v, my)
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), { kind: 'error' })
     }

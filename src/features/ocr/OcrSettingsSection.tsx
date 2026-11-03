@@ -71,7 +71,7 @@ export function OcrSettingsSection() {
         <p className={`${P}-settings-note`}>
           English is included. For other languages, add the Tesseract language file, named like <code>fra.traineddata</code>{' '}
           or <code>deu.traineddata.gz</code> (from the tessdata, tessdata_fast or tessdata_best collections of the
-          Tesseract project). It is copied into Fartcrobat&apos;s settings folder, so recognition keeps working offline.
+          Tesseract project). It is copied into Inkmoor&apos;s settings folder, so recognition keeps working offline.
         </p>
       </div>
       <Button

@@ -19,9 +19,9 @@ Settings > MCP servers, save and restart. Installed copies ship the helper next 
 (`main/helperCopy.ts`): an AppImage's resources move on every launch, and an update replaces them.
 Each start refreshes that copy when it exists, so it always matches the app. The release
 workflow runs `tests/e2e/agent-chatgpt.spec.ts` against the packaged app. The setup also names
-the userData folder in `FARTCROBAT_USER_DATA`, because ChatGPT passes servers only part of the
+the userData folder in `INKMOOR_USER_DATA`, because ChatGPT passes servers only part of the
 environment (XDG_CONFIG_HOME, for one). The helper does not take the usual folder for a separate
-profile (`separateProfile` in `src/agent-shim/launch.ts`), so it starts Fartcrobat as for the
+profile (`separateProfile` in `src/agent-shim/launch.ts`), so it starts Inkmoor as for the
 Claude extension: through WMI on Windows, which keeps it out of ChatGPT's MSIX package and its
 private AppData, and with LaunchServices on a Mac. The advanced section supplies a TOML entry for the
 same Codex host. It never rewrites the user's existing config or claims an installed connection
@@ -32,8 +32,8 @@ https://learn.chatgpt.com/docs/extend/mcp#configure-in-the-chatgpt-desktop-app
 
 ## Chat from the companion
 
-MCP is client-initiated: Fartcrobat cannot start a conversation in another desktop app. The
-person opens the chat (Chat here, or the avatar), and the next conversation that uses Fartcrobat
+MCP is client-initiated: Inkmoor cannot start a conversation in another desktop app. The
+person opens the chat (Chat here, or the avatar), and the next conversation that uses Inkmoor
 joins it (see 0.2.1 below). The conversation can then take place under the avatar while that
 external session stays active. No separate model, API key or billing
 integration is added. If the client stops listening, the UI says so and asks the person to resume
@@ -59,7 +59,7 @@ speech input, API-backed standalone chat, or stream the desktop app's entire con
 
 ## 0.2.1: automatic conversation joining
 
-Opening the chat (Chat here, or the avatar) lets the next conversation that uses Fartcrobat join:
+Opening the chat (Chat here, or the avatar) lets the next conversation that uses Inkmoor join:
 its next successful tool call returns the private token in a separate MCP content block. Nothing
 joins before the person opens the chat, so a conversation that only asks about a document is not
 told to listen, and who reads what the person types is their choice. One conversation joins per
@@ -84,6 +84,6 @@ applied by the router; an explicit `companion_chat` still joins, since its sessi
 `data`), and the chat and the connection list tell the person to add the extension again.
 
 No invitation is needed. The AI app still controls tool calls: it must follow the returned listening
-instructions, and Fartcrobat cannot wake a finished or closed external conversation. Connection
+instructions, and Inkmoor cannot wake a finished or closed external conversation. Connection
 status and listening status remain separate. The companion uses three slow working poses (1.1 s
 per pose), stops while waiting for review, and honours reduced motion.

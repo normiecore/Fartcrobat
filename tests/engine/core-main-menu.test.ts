@@ -22,7 +22,7 @@ const model: MenuModel = {
       ]
     },
     { id: 'window', label: 'Window', items: [{ id: 'window.home', label: 'Home', enabled: true }] },
-    { id: 'help', label: 'Help', items: [{ id: 'help.about', label: 'About Fartcrobat', enabled: true }] }
+    { id: 'help', label: 'Help', items: [{ id: 'help.about', label: 'About Inkmoor', enabled: true }] }
   ]
 }
 
@@ -30,7 +30,7 @@ function setup(platform: string, appWindowFocused = true) {
   const commands: string[] = []
   const actions: string[] = []
   const template = buildMenuTemplate(model, platform, {
-    appName: 'Fartcrobat',
+    appName: 'Inkmoor',
     command: (id) => commands.push(id),
     appWindowFocused: () => appWindowFocused,
     sendAction: (s) => actions.push(s)
@@ -45,7 +45,7 @@ function setup(platform: string, appWindowFocused = true) {
 describe('native menu on macOS', () => {
   it('starts with the app menu, with Quit as the standard role', () => {
     const { template } = setup('darwin')
-    expect(template[0].label).toBe('Fartcrobat')
+    expect(template[0].label).toBe('Inkmoor')
     const roles = (template[0].submenu as MenuItemConstructorOptions[]).map((i) => i.role).filter(Boolean)
     expect(roles).toContain('quit')
     expect(roles).toContain('hide')

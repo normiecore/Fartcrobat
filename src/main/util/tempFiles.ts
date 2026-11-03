@@ -1,7 +1,11 @@
 import { chmodSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { join, relative, resolve, isAbsolute } from 'node:path'
+import { PRODUCT_NAME, productNames } from '@shared/identity'
 
-const PREFIX = 'fartcrobat-'
+const PREFIX = `${PRODUCT_NAME.toLowerCase()}-`
+const STALE_NAME = new RegExp(
+  `^(?:${productNames().map((n) => n.toLowerCase().replace(/[^a-z0-9]/g, '\\$&')).join('|')})-(?:print-)?(\\d+)-`
+)
 const RESERVED_WINDOWS_NAMES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i
 
 /** Makes a file name safe on every platform (no folders, no reserved names or characters). */
@@ -86,8 +90,8 @@ export class TempFiles {
   }
 
   /**
-   * Removes temporary files and folders left by Fartcrobat sessions that are no longer running
-   * (this naming scheme and the older fartcrobat-<pid>-<name> / fartcrobat-print-<pid>-<n>).
+   * Removes temporary files and folders left by Inkmoor sessions that are no longer running
+   * (this naming scheme and the older inkmoor-<pid>-<name> / inkmoor-print-<pid>-<n>).
    * Only entries owned by the current user are touched. Returns the removed paths.
    */
   static sweepStale(base: string, isAlive: (pid: number) => boolean = pidAlive): string[] {
@@ -100,7 +104,8 @@ export class TempFiles {
     }
     const uid = typeof process.getuid === 'function' ? process.getuid() : null
     for (const name of names) {
-      const m = /^fartcrobat-(?:print-)?(\d+)-/.exec(name)
+      // Folders from before a rename carry the old prefix (src/shared/identity.ts).
+      const m = STALE_NAME.exec(name)
       if (!m) continue
       const pid = Number(m[1])
       if (pid === process.pid || isAlive(pid)) continue

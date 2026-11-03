@@ -24,7 +24,7 @@ export interface OpModule<T extends Record<string, OpFn> = Record<string, OpFn>>
   ops: T
 }
 
-export const MUTATION = Symbol.for('fartcrobat.mutation')
+export const MUTATION = Symbol.for('inkmoor.mutation')
 
 /** A fixed label, or a function of the op's arguments (e.g. "Delete 3 Pages"). */
 export type MutationLabel = string | ((...args: any[]) => string)

@@ -208,7 +208,7 @@ describe('compare report', () => {
     // highlights have popup notes, an author and the compare tag
     const hl = doc.loadPage(1).getAnnotations().find((a) => a.getType() === 'Highlight')!
     expect(hl.getObject().get('Popup').isNull()).toBe(false)
-    expect(hl.getAuthor()).toBe('Fartcrobat Compare')
+    expect(hl.getAuthor()).toBe('Inkmoor Compare')
     expect(hl.getObject().get('FartcrobatData').get('fartcrobat').asString()).toBe('compare')
     expect(hl.getColor().map((v) => Math.round(v * 100) / 100)).toEqual([0.96, 0.62, 0.04])
     expect(doc.loadOutline()?.map((o) => o.title)).toEqual([

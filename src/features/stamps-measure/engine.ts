@@ -26,7 +26,7 @@ type MupdfPixmap = InstanceType<Session['mupdf']['Pixmap']>
 
 /** Catalog key holding the document's measurement scale. */
 export const SCALE_KEY = 'FartcrobatMeasure'
-/** Marker put in appearance streams Fartcrobat draws itself (measurement labels). */
+/** Marker put in appearance streams Inkmoor draws itself (measurement labels). */
 const AP_MARKER = 'FartcrobatAP'
 const EXTRA_KEY = 'FartcrobatData'
 

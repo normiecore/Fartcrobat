@@ -52,7 +52,7 @@ export const PUBSEC_PERMISSION = {
 export type PubSecPermission = keyof typeof PUBSEC_PERMISSION
 
 /**
- * The most /Recipients a certificate-encrypted file may have for Fartcrobat to open it. The engine
+ * The most /Recipients a certificate-encrypted file may have for Inkmoor to open it. The engine
  * refuses larger ones (CERTIFICATE_UNSUPPORTED) and the main process refuses larger certkeys:*
  * requests. Real files have a few envelopes of a few kilobytes.
  */
@@ -77,7 +77,7 @@ export interface PubSecRecipient {
   /** SubjectKeyIdentifier, uppercase hex (subjectKeyIdentifier). */
   ski?: string
   /**
-   * Key transport: 'rsa' (PKCS#1 v1.5), 'rsa-oaep'; 'ec' is key agreement (ECDH), which Fartcrobat
+   * Key transport: 'rsa' (PKCS#1 v1.5), 'rsa-oaep'; 'ec' is key agreement (ECDH), which Inkmoor
    * cannot open; 'other' anything else.
    */
   keyType: 'rsa' | 'rsa-oaep' | 'ec' | 'other'
@@ -237,7 +237,7 @@ export interface CertKeysStatus {
   digitalIds: number
   /**
    * The Windows helper is running. A smart card unlocked with its PIN stays unlocked until the
-   * helper stops ("Lock smart card", or quitting Fartcrobat).
+   * helper stops ("Lock smart card", or quitting Inkmoor).
    */
   helperRunning: boolean
 }

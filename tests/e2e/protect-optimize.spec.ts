@@ -14,19 +14,19 @@ async function stubSaveDialog(app: ElectronApplication, path: string) {
 }
 
 async function openPath(page: Page, path: string) {
-  await page.evaluate((p) => void (window as any).__fartcrobat.openPaths([p]), path)
+  await page.evaluate((p) => void (window as any).__inkmoor.openPaths([p]), path)
 }
 
 async function docInfo(page: Page) {
   return page.evaluate(() => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     return d ? { encryption: d.state.info.encryption as string | null, permissions: d.state.info.permissions, filePath: d.state.filePath as string | null } : null
   })
 }
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {
   await page.evaluate((t) => {
-    const { useApp } = (window as any).__fartcrobat
+    const { useApp } = (window as any).__inkmoor
     useApp.setState({ prefs: { ...useApp.getState().prefs, theme: t } })
   }, theme)
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
@@ -34,7 +34,7 @@ async function setTheme(page: Page, theme: 'light' | 'dark') {
 
 /** Runs a command without waiting for it to finish (commands that open dialogs wait for them). */
 async function fire(page: Page, id: string) {
-  await page.evaluate((c) => void (window as any).__fartcrobat.runCommand(c), id)
+  await page.evaluate((c) => void (window as any).__inkmoor.runCommand(c), id)
 }
 
 /** A dialog by its title (the dialog frame has no accessible name). */
@@ -262,7 +262,7 @@ test('compress a PDF with a large image and see the size reduction', async () =>
     expect((await activeDocState(page))?.title).toBe('big-image_compressed.pdf')
     await waitForRender(page)
     const optimized = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const bytes: Uint8Array = await d.saveBytes({})
       return bytes.length
     })

@@ -251,7 +251,7 @@ export interface CommentRecord {
   imagePng?: string
   /** Embedded file of a FileAttachment (base64). */
   file?: { name: string; mime?: string; data: string }
-  /** Fartcrobat feature data (/FartcrobatData). */
+  /** Inkmoor feature data (/FartcrobatData). */
   extra?: Record<string, string>
 }
 

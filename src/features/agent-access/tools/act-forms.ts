@@ -73,7 +73,7 @@ export function normalizeValue(field: FormField, value: unknown): NormalizedValu
   switch (field.type) {
     case 'text': {
       if (typeof value !== 'string') throw new InvalidArgs(`${name} is a text field: give its value as a string`)
-      // Refused rather than cut, as typing in Fartcrobat stops at the limit: a cut date or number would be wrong.
+      // Refused rather than cut, as typing in Inkmoor stops at the limit: a cut date or number would be wrong.
       const max = field.widget.maxLen
       if (max > 0 && value.length > max)
         throw new InvalidArgs(`${name} takes at most ${max} characters${field.widget.comb ? ', one per box' : ''} (got ${value.length})`)

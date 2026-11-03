@@ -52,7 +52,7 @@ describe('companion conversations', () => {
     expect(useCompanion.getState()).toMatchObject({ autoJoin: true, revealed: true })
   })
   it('does not accept prompts without an active session', () => {
-    expect(() => sendCompanionMessage('Read this')).toThrow(/use a Fartcrobat tool/)
+    expect(() => sendCompanionMessage('Read this')).toThrow(/use an Inkmoor tool/)
   })
   it('delivers only once and displays the reply associated with the user message', async () => {
     await join()

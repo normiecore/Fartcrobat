@@ -6,7 +6,7 @@ import { dirname } from 'node:path'
 import { atomicWrite } from '@main/util/atomicWrite'
 
 /**
- * Copies `from` to `to` when the two differ, so the copy always matches this version of Fartcrobat.
+ * Copies `from` to `to` when the two differ, so the copy always matches this version of Inkmoor.
  * With `create` false a missing copy stays missing: no AI app has been set up with it yet.
  * Returns whether the copy exists afterwards.
  */

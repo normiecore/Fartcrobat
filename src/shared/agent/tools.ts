@@ -52,7 +52,7 @@ export type AgentToolName =
   | 'set_metadata'
   | 'undo'
   | 'redo'
-  // irreversible: the person confirms or completes a dialog in Fartcrobat
+  // irreversible: the person confirms or completes a dialog in Inkmoor
   | 'apply_redactions'
   | 'sign_document'
   | 'protect_document'
@@ -62,9 +62,9 @@ export type AgentToolName =
  * How the app gates a call:
  * - none: runs straight away.
  * - conditional: runs straight away unless it would overwrite a file or discard unsaved work;
- *   then the person confirms in Fartcrobat first.
- * - confirm: the person confirms in Fartcrobat first (Decline is the default button).
- * - handoff: opens a Fartcrobat dialog, prefilled; the person completes it (passwords, Digital ID).
+ *   then the person confirms in Inkmoor first.
+ * - confirm: the person confirms in Inkmoor first (Decline is the default button).
+ * - handoff: opens an Inkmoor dialog, prefilled; the person completes it (passwords, Digital ID).
  */
 export type AgentGate = 'none' | 'conditional' | 'confirm' | 'handoff'
 
@@ -149,7 +149,7 @@ const styleRuns: JsonSchema = { type: 'array', minItems: 1, maxItems: 1000, desc
 export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'companion_chat', title: 'Companion chat',
-    description: 'A successful Fartcrobat tool result automatically supplies a companion token once the person has opened the chat in Fartcrobat. Pass it on every call. For explicit recovery only, call without arguments to join an unowned focused window; an existing chat never returns its token. Use the session to listen for a user message (up to 30 seconds), or send a reply with message and reply_to (the user message id). Continue listening while the person wants this chat. An idle result means no message yet, not a task. Use message.documentHandle for document tools when supplied, so changing tabs cannot redirect a request. Each session belongs to one connection and window. Only report actual actions and concise progress; never hidden reasoning. This does not modify a PDF.',
+    description: 'A successful Inkmoor tool result automatically supplies a companion token once the person has opened the chat in Inkmoor. Pass it on every call. For explicit recovery only, call without arguments to join an unowned focused window; an existing chat never returns its token. Use the session to listen for a user message (up to 30 seconds), or send a reply with message and reply_to (the user message id). Continue listening while the person wants this chat. An idle result means no message yet, not a task. Use message.documentHandle for document tools when supplied, so changing tabs cannot redirect a request. Each session belongs to one connection and window. Only report actual actions and concise progress; never hidden reasoning. This does not modify a PDF.',
     inputSchema: obj({
       session: { type: 'string', maxLength: 100 },
       message: { type: 'string', minLength: 1, maxLength: 8000 },
@@ -163,7 +163,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'wait_for_result',
     title: 'Wait for a running call',
     description:
-      'Some calls wait for the person in Fartcrobat (a confirmation, a password prompt, the Sign or Protect dialog) or take long (text recognition). Instead of timing out, such a call answers after about 45 seconds with {"status": "still_running", "ticket": ...}. Call this with the ticket to wait for its result; it waits up to about 45 seconds and may answer still_running again. Pass cancel: true to stop the call instead (a confirmation still open counts as declined).',
+      'Some calls wait for the person in Inkmoor (a confirmation, a password prompt, the Sign or Protect dialog) or take long (text recognition). Instead of timing out, such a call answers after about 45 seconds with {"status": "still_running", "ticket": ...}. Call this with the ticket to wait for its result; it waits up to about 45 seconds and may answer still_running again. Pass cancel: true to stop the call instead (a confirmation still open counts as declined).',
     inputSchema: obj(
       {
         ticket: { type: 'string', minLength: 1, description: 'The ticket from a still_running answer.' },
@@ -179,7 +179,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'list_documents',
     title: 'List open documents',
     description:
-      'Documents open in Fartcrobat (every window): handle, title, file path, page count, whether it has unsaved changes or is encrypted, and which one the person is looking at.',
+      'Documents open in Inkmoor (every window): handle, title, file path, page count, whether it has unsaved changes or is encrypted, and which one the person is looking at.',
     inputSchema: obj({}),
     annotations: READ,
     gate: 'none',
@@ -229,7 +229,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   {
     name: 'render_page',
     title: 'Look at a page',
-    description: 'A picture (PNG) of a page as Fartcrobat shows it, including comments and form values, optionally cropped to a region. ' + UNTRUSTED,
+    description: 'A picture (PNG) of a page as Inkmoor shows it, including comments and form values, optionally cropped to a region. ' + UNTRUSTED,
     inputSchema: obj(
       {
         handle,
@@ -305,9 +305,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   // ---- view ----
   {
     name: 'show_in_app',
-    title: 'Show something in Fartcrobat',
+    title: 'Show something in Inkmoor',
     description:
-      'Bring a document to the front in Fartcrobat and scroll to a page or a region (briefly outlined), or select comments by id so the person sees what you are talking about. Does not change the document.',
+      'Bring a document to the front in Inkmoor and scroll to a page or a region (briefly outlined), or select comments by id so the person sees what you are talking about. Does not change the document.',
     inputSchema: obj({
       handle,
       page,
@@ -324,7 +324,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'open_document',
     title: 'Open a file',
     description:
-      'Open a file in Fartcrobat (PDF, images, Office documents, XPS, EPUB and others it can convert) and return its handle. If the file is already open in the window the person used last (also as a converted tab not yet saved as a PDF), returns that tab; list_documents shows the tabs of every window. A protected file opens without a prompt when its password is saved on this device or it is encrypted to one of the person\'s certificates; otherwise it waits for the person in Fartcrobat. You never see passwords or keys.',
+      'Open a file in Inkmoor (PDF, images, Office documents, XPS, EPUB and others it can convert) and return its handle. If the file is already open in the window the person used last (also as a converted tab not yet saved as a PDF), returns that tab; list_documents shows the tabs of every window. A protected file opens without a prompt when its password is saved on this device or it is encrypted to one of the person\'s certificates; otherwise it waits for the person in Inkmoor. You never see passwords or keys.',
     inputSchema: obj(
       { path, page: { ...page, description: 'Page to show. Default: the page the document opens at (a tab that is already open stays on its page).' } },
       ['path']
@@ -403,8 +403,8 @@ export const AGENT_TOOLS: AgentToolDef[] = [
   },
   {
     name: 'edit_text',
-    title: 'Edit page text in Fartcrobat',
-    description: 'Replace, delete, move or format existing PDF text, or add native page text. Changes appear in the open Fartcrobat document, not in comments or a separate document. First call get_editable_text and use its revision, block_id and exact original_text. Existing formatting is kept unless overridden. New text needs rect; existing text can supply rect to move/resize its box. Text wraps inside its box but other blocks and pages do not reflow. The edits appear one by one on the open document with a Review edits panel, where the person accepts or rejects each edit; the result lists acceptedEdits and rejectedEdits (1-based edit numbers). The accepted edits are one undo step; nothing is saved until save_document. Unsafe text overlaps, off-page content and unsupported characters are refused. preview_only returns proposed page images and issues without changing anything or asking. Limits: 50 edits, 5 pages, 60000 characters per batch.',
+    title: 'Edit page text in Inkmoor',
+    description: 'Replace, delete, move or format existing PDF text, or add native page text. Changes appear in the open Inkmoor document, not in comments or a separate document. First call get_editable_text and use its revision, block_id and exact original_text. Existing formatting is kept unless overridden. New text needs rect; existing text can supply rect to move/resize its box. Text wraps inside its box but other blocks and pages do not reflow. The edits appear one by one on the open document with a Review edits panel, where the person accepts or rejects each edit; the result lists acceptedEdits and rejectedEdits (1-based edit numbers). The accepted edits are one undo step; nothing is saved until save_document. Unsafe text overlaps, off-page content and unsupported characters are refused. preview_only returns proposed page images and issues without changing anything or asking. Limits: 50 edits, 5 pages, 60000 characters per batch.',
     inputSchema: obj({
       handle,
       revision: { type: 'integer', minimum: 0, description: 'Document revision from the latest get_editable_text.' },
@@ -540,7 +540,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'set_form_values',
     title: 'Fill in form fields',
     description:
-      'Fill interactive form fields by name (from list_form_fields): text as a string (at most maxLength characters), checkboxes as true/false, a group of check boxes that share a name (several options) by the value of the box to tick, radio buttons, lists and combo boxes by option value or label. Runs the form\'s own formatting and calculations, like typing in Fartcrobat. One undoable step. Signature fields are signed with sign_document.',
+      'Fill interactive form fields by name (from list_form_fields): text as a string (at most maxLength characters), checkboxes as true/false, a group of check boxes that share a name (several options) by the value of the box to tick, radio buttons, lists and combo boxes by option value or label. Runs the form\'s own formatting and calculations, like typing in Inkmoor. One undoable step. Signature fields are signed with sign_document.',
     inputSchema: obj(
       {
         handle,
@@ -565,7 +565,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'mark_redactions',
     title: 'Mark for redaction',
     description:
-      'Mark areas or text for redaction. Marks show as outlined boxes and remove nothing until apply_redactions; they can be reviewed, deleted or undone in Fartcrobat. Give items (page and rect or rects), or a query or pattern to mark every match.',
+      'Mark areas or text for redaction. Marks show as outlined boxes and remove nothing until apply_redactions; they can be reviewed, deleted or undone in Inkmoor. Give items (page and rect or rects), or a query or pattern to mark every match.',
     inputSchema: obj({
       handle,
       items: {
@@ -642,7 +642,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'undo',
     title: 'Undo',
     description:
-      'Undo the last change to a document, like Edit > Undo. Your own changes undo straight away; if the last change is the person\'s (or applied redactions), they confirm in Fartcrobat first. Returns what was undone.',
+      'Undo the last change to a document, like Edit > Undo. Your own changes undo straight away; if the last change is the person\'s (or applied redactions), they confirm in Inkmoor first. Returns what was undone.',
     inputSchema: obj({ handle }),
     annotations: EDIT,
     gate: 'conditional',
@@ -652,7 +652,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'redo',
     title: 'Redo',
     description:
-      'Redo the last undone change, like Edit > Redo. If it is the person\'s change (or applied redactions), they confirm in Fartcrobat first.',
+      'Redo the last undone change, like Edit > Redo. If it is the person\'s change (or applied redactions), they confirm in Inkmoor first.',
     inputSchema: obj({ handle }),
     annotations: EDIT,
     gate: 'conditional',
@@ -664,7 +664,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'apply_redactions',
     title: 'Apply redactions',
     description:
-      'Permanently remove the text, images and graphics under redaction marks (all marks, or the given ids). The person confirms in Fartcrobat first. Afterwards save the document (save_document with a new path keeps the original).',
+      'Permanently remove the text, images and graphics under redaction marks (all marks, or the given ids). The person confirms in Inkmoor first. Afterwards save the document (save_document with a new path keeps the original).',
     inputSchema: obj({ handle, ids: { type: 'array', items: { type: 'integer' }, description: 'Only these marks (from list_annotations, type "Redact").' } }),
     annotations: DESTRUCTIVE,
     gate: 'confirm',
@@ -674,7 +674,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'sign_document',
     title: 'Sign with a certificate',
     description:
-      'Start a digital (certificate) signature in Fartcrobat: opens its Sign dialog for an existing signature field, or for a new signature box at page and rect. The person chooses their Digital ID, types its password and picks where to save the signed copy. Returns the saved path and the validation result, or cancelled.',
+      'Start a digital (certificate) signature in Inkmoor: opens its Sign dialog for an existing signature field, or for a new signature box at page and rect. The person chooses their Digital ID, types its password and picks where to save the signed copy. Returns the saved path and the validation result, or cancelled.',
     inputSchema: obj({
       handle,
       field_name: { type: 'string', description: 'An unsigned signature field (from list_form_fields).' },
@@ -692,7 +692,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'protect_document',
     title: 'Protect with a password',
     description:
-      'Open Fartcrobat\'s Protect dialog for a document, with the options given ticked. The person types the passwords and confirms; the protected copy is saved where they choose. You never see the passwords.',
+      'Open Inkmoor\'s Protect dialog for a document, with the options given ticked. The person types the passwords and confirms; the protected copy is saved where they choose. You never see the passwords.',
     inputSchema: obj({
       handle,
       require_open_password: { type: 'boolean', description: 'Ask for a password to open the document. Default true.' },
@@ -706,7 +706,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
     name: 'remove_security',
     title: 'Remove security',
     description:
-      'Remove the password and restrictions (or the certificate security) from a document and save it without them: over its file, or where the person chooses if it has none. The person confirms in Fartcrobat first (and types the permissions password if one is needed). A certificate-encrypted document has no permissions password: only a certificate allowed to change its security can remove it. Returns the saved path.',
+      'Remove the password and restrictions (or the certificate security) from a document and save it without them: over its file, or where the person chooses if it has none. The person confirms in Inkmoor first (and types the permissions password if one is needed). A certificate-encrypted document has no permissions password: only a certificate allowed to change its security can remove it. Returns the saved path.',
     inputSchema: obj({ handle }),
     annotations: DESTRUCTIVE,
     gate: 'confirm',

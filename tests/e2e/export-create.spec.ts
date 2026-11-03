@@ -20,24 +20,24 @@ async function stubOpenDialog(app: ElectronApplication, paths: string[]) {
 }
 
 async function openPath(page: Page, path: string) {
-  await page.evaluate((p) => void (window as any).__fartcrobat.openPaths([p]), path)
+  await page.evaluate((p) => void (window as any).__inkmoor.openPaths([p]), path)
 }
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {
   await page.evaluate((t) => {
-    const { useApp } = (window as any).__fartcrobat
+    const { useApp } = (window as any).__inkmoor
     useApp.setState({ prefs: { ...useApp.getState().prefs, theme: t } })
   }, theme)
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
 }
 
 async function docCount(page: Page) {
-  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length as number)
+  return page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.length as number)
 }
 
 /** Text of a page of the active document. */
 async function pageText(page: Page, index: number) {
-  return page.evaluate(async (i) => (await (window as any).__fartcrobat.getActiveDoc().pageText(i)).text as string, index)
+  return page.evaluate(async (i) => (await (window as any).__inkmoor.getActiveDoc().pageText(i)).text as string, index)
 }
 
 function pngSize(file: string) {
@@ -170,7 +170,7 @@ test('Export a PDF: Word, images to a folder, text from the menu, keyboard, a re
     // ---- a document that forbids copying cannot be exported
     const locked = join(dir, 'Locked.pdf')
     await page.evaluate(async (p) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const bytes = await d.core.doc.save({ mode: 'full', encrypt: { method: 'aes-128', userPassword: '', ownerPassword: 'owner', permissions: { copy: false } } })
       await (window as any).api.invoke('file:write', p, bytes)
     }, locked)
@@ -256,7 +256,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
 
     // ---- a password-protected PDF among the files asks for its password
     await stubOpenDialog(app, [fixturePath('encrypted.pdf'), fixturePath('scan.png')])
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromFile'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('create.fromFile'))
     await expect(page.getByRole('heading', { name: 'Password required' })).toBeVisible({ timeout: 30000 })
     await expect(page.getByText('“encrypted.pdf” is protected.')).toBeVisible()
     await page.keyboard.type('secret')
@@ -265,7 +265,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     expect((await activeDocState(page))?.pageCount).toBe(2)
 
     // ---- Blank page: A4 landscape, 3 pages
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.blank'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('create.blank'))
     await expect(page.getByTestId('create-view')).toBeVisible()
     await page.getByLabel('Page size').selectOption('a4')
     await page.getByRole('radio', { name: 'Landscape' }).click()
@@ -274,13 +274,13 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await page.getByTestId('create-blank').click()
     await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(4)
     const size = await page.evaluate(() => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       return { n: d.state.info.pageCount, w: Math.round(d.state.info.pages[0].width), h: Math.round(d.state.info.pages[0].height), title: d.state.title }
     })
     expect(size).toEqual({ n: 3, w: 842, h: 595, title: 'Untitled.pdf' })
 
     // ---- HTML file (offline conversion with Chromium)
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.open'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('create.open'))
     await page.getByRole('button', { name: /HTML file/ }).click()
     await stubOpenDialog(app, [fixturePath('export-create/sample.html')])
     await shot(page, 'html-form')
@@ -294,15 +294,15 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await app.evaluate(async ({ clipboard, ClipboardItem }, bytes) => {
       await clipboard.write([new ClipboardItem({ 'image/png': new Blob([new Uint8Array(bytes)], { type: 'image/png' }) })])
     }, png)
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromClipboard'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('create.fromClipboard'))
     await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(6)
     expect(await activeDocState(page)).toMatchObject({ title: 'Clipboard.pdf', pageCount: 1, dirty: true })
     await app.evaluate(async ({ clipboard }) => clipboard.writeText('Copied from the clipboard'))
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromClipboard'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('create.fromClipboard'))
     await expect.poll(() => docCount(page), { timeout: 30000 }).toBe(7)
     expect(await pageText(page, 0)).toContain('Copied from the clipboard')
     await app.evaluate(({ clipboard }) => clipboard.clear())
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.fromClipboard'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('create.fromClipboard'))
     await expect(page.locator('.toast', { hasText: 'The clipboard is empty' })).toBeVisible()
 
     // ---- an Office file opened like any file is converted (by LibreOffice when it is installed,
@@ -318,7 +318,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await shot(page, 'docx-converted')
 
     // ---- Preferences > Convert finds LibreOffice
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('app.preferences'))
     await page.locator('.prefs-nav button', { hasText: 'Convert' }).click()
     await page.getByTestId('lo-detect').click()
     await expect(page.getByTestId('lo-status')).toContainText(libreOffice ? /Found LibreOffice \d/ : 'LibreOffice was not found')
@@ -327,7 +327,7 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await page.waitForTimeout(300)
     await shot(page, 'settings-convert-dark')
     await page.getByRole('button', { name: 'Done', exact: true }).click()
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('create.open'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('create.open'))
     await page.getByRole('button', { name: /^Images/ }).click()
     await shot(page, 'images-dark')
     await setTheme(page, 'light')

@@ -20,7 +20,7 @@ const SIGNER_RE = /^Signature of (.+)$/
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-/** The email Fartcrobat opens in the user's mail app. */
+/** The email Inkmoor opens in the user's mail app. */
 export function mailtoLink(title: string, signers: Signer[], path: string | null): string {
   const to = signers
     .map((s) => s.email.trim())
@@ -33,7 +33,7 @@ export function mailtoLink(title: string, signers: Signer[], path: string | null
     '',
     `Please review and sign the attached document “${title}”.${names ? ` Signature fields are marked for: ${names}.` : ''}`,
     '',
-    'You can sign it with Fartcrobat, Adobe Acrobat Reader or any PDF app that supports signature fields, then send the signed file back to me.',
+    'You can sign it with Inkmoor, Adobe Acrobat Reader or any PDF app that supports signature fields, then send the signed file back to me.',
     ...(path ? ['', `(File: ${path})`] : []),
     '',
     'Thank you!'
@@ -133,7 +133,7 @@ function RequestSignBody({ doc }: { doc: DocumentModel }) {
       <div className="fc-prepare-form-note">
         <Info size={16} aria-hidden />
         <span>
-          Fartcrobat works offline, so it doesn’t send documents through a signing service. Add a signature
+          Inkmoor works offline, so it doesn’t send documents through a signing service. Add a signature
           field for each signer, then save the PDF and email it to them — they can sign it in any PDF app.
         </span>
       </div>

@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import { RENDERER_CSP } from './util/csp'
 
 export const APP_SCHEME = 'app'
-export const APP_ORIGIN = `${APP_SCHEME}://fartcrobat`
+export const APP_ORIGIN = `${APP_SCHEME}://inkmoor`
 
 /** Must run before the app is ready. */
 export function registerAppScheme() {
@@ -17,7 +17,7 @@ export function registerAppScheme() {
 }
 
 /**
- * Serves the built renderer from out/renderer over app://fartcrobat/... Every response carries the
+ * Serves the built renderer from out/renderer over app://inkmoor/... Every response carries the
  * app's Content-Security-Policy, so it also applies to Web Workers (the PDF engine), which do not
  * inherit the page's <meta> policy.
  */

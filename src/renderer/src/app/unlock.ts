@@ -205,7 +205,7 @@ export interface CertUnlockPorts {
   problem(problem: CertProblem): Promise<'retry' | 'cancel'>
   /**
    * None of the person's keys opens the file. `canAdd` offers "Add Digital ID..."; `unsupportedKey`:
-   * only keys Fartcrobat cannot use yet (elliptic-curve) match; `windowsStore`: the probe's
+   * only keys Inkmoor cannot use yet (elliptic-curve) match; `windowsStore`: the probe's
    * WindowsStoreState when the Windows certificate store could not be searched ('constrained', 'busy',
    * 'unavailable'), which the message says.
    */
@@ -250,11 +250,11 @@ const DEFAULT_PROBLEMS: Partial<Record<CertKeysErrorCode, string>> = {
   CARD_NOT_PRESENT: 'Insert the smart card with this certificate, then try again.',
   KEY_UNAVAILABLE: 'The private key of this certificate cannot be used right now.',
   CONSTRAINED_LANGUAGE:
-    'Windows only lets PowerShell run in Constrained Language Mode on this computer, so Fartcrobat cannot use the Windows certificate store. You can still use a Digital ID.',
-  POWERSHELL_UNAVAILABLE: 'Windows PowerShell could not be started, so Fartcrobat cannot use the Windows certificate store. You can still use a Digital ID.',
+    'Windows only lets PowerShell run in Constrained Language Mode on this computer, so Inkmoor cannot use the Windows certificate store. You can still use a Digital ID.',
+  POWERSHELL_UNAVAILABLE: 'Windows PowerShell could not be started, so Inkmoor cannot use the Windows certificate store. You can still use a Digital ID.',
   TIMEOUT: 'Windows did not answer in time.',
   ID_UNAVAILABLE: 'The Digital ID file could not be read. Remove the Digital ID in Preferences > Digital IDs and import it again.',
-  UNSUPPORTED: 'This kind of certificate cannot open files in Fartcrobat yet.'
+  UNSUPPORTED: 'This kind of certificate cannot open files in Inkmoor yet.'
 }
 
 function problemMessage(code: CertKeysErrorCode, message: string): string {
@@ -329,7 +329,7 @@ export function noCertificateMessage(recipients: PubSecRecipient[], windowsStore
 }
 
 /**
- * Only keys Fartcrobat cannot use yet match: "This document is encrypted for “EC Test”. It uses an
+ * Only keys Inkmoor cannot use yet match: "This document is encrypted for “EC Test”. It uses an
  * elliptic-curve certificate, ...", and why the Windows certificate store was not searched.
  */
 export function unsupportedKeyMessage(candidates: CertKeyCandidate[], windowsStore?: BlockedWindowsStore): string {
@@ -344,7 +344,7 @@ export function unsupportedKeyMessage(candidates: CertKeyCandidate[], windowsSto
     : one
       ? 'It uses a kind of certificate'
       : 'They use kinds of certificates'
-  const message = `This document is encrypted for ${names}. ${kind}, which Fartcrobat cannot open yet.`
+  const message = `This document is encrypted for ${names}. ${kind}, which Inkmoor cannot open yet.`
   return windowsStore ? `${message} ${windowsStoreNote(windowsStore)}` : message
 }
 

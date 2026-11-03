@@ -2,12 +2,12 @@ import { expect, test, type Page } from '@playwright/test'
 import { activeDocState, fixturePath, launch, openFile, waitForRender } from './helpers'
 
 async function pageText(page: Page, index: number): Promise<string> {
-  return page.evaluate((i) => (window as any).__fartcrobat.getActiveDoc().core.text.plain(i), index)
+  return page.evaluate((i) => (window as any).__inkmoor.getActiveDoc().core.text.plain(i), index)
 }
 
 async function pageSize(page: Page, index: number): Promise<{ width: number; height: number }> {
   return page.evaluate((i) => {
-    const p = (window as any).__fartcrobat.getActiveDoc().state.info.pages[i]
+    const p = (window as any).__inkmoor.getActiveDoc().state.info.pages[i]
     return { width: p.width, height: p.height }
   }, index)
 }
@@ -43,13 +43,13 @@ test('headers, footers, watermarks, backgrounds, Bates numbers and cropping', as
     await hf.getByLabel('Page number format').selectOption('Page 1 of n')
     await hf.getByRole('button', { name: 'Insert page number' }).click()
     await expect(hf.locator('textarea[data-slot="footerCenter"]')).toHaveValue('Page <<1>> of <<n>>')
-    await hf.locator('textarea[data-slot="headerRight"]').fill('Fartcrobat test')
+    await hf.locator('textarea[data-slot="headerRight"]').fill('Inkmoor test')
     await hf.getByLabel('Font size (pt)').fill('14')
     await waitForPreview(page)
     await page.screenshot({ path: 'test-results/page-marks-headerfooter-dialog.png' })
     await hf.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(hf).toBeHidden()
-    await expect.poll(() => pageText(page, 2)).toContain('Fartcrobat test')
+    await expect.poll(() => pageText(page, 2)).toContain('Inkmoor test')
     // the fixture already shows "Page 3 of 5" once; our footer adds another
     expect((await pageText(page, 2)).split('Page 3 of 5').length - 1).toBe(2)
     let st = await activeDocState(page)
@@ -90,13 +90,13 @@ test('headers, footers, watermarks, backgrounds, Bates numbers and cropping', as
     await expect(confirmRemove).toBeVisible()
     await confirmRemove.getByRole('button', { name: 'Remove' }).click()
     await expect.poll(() => pageText(page, 0)).not.toContain('CONFIDENTIAL')
-    expect(await pageText(page, 0)).toContain('Fartcrobat test')
+    expect(await pageText(page, 0)).toContain('Inkmoor test')
     st = await activeDocState(page)
     expect(st?.journal.undoLabel).toBe('Remove Watermark')
 
     // ---- Background and Bates numbering (dark theme) ----
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState({ prefs: { ...useApp.getState().prefs, theme: 'dark' } })
     })
     await panel.getByRole('button', { name: /Add Bates numbering/ }).click()
@@ -125,15 +125,15 @@ test('headers, footers, watermarks, backgrounds, Bates numbers and cropping', as
     await bg.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(bg).toBeHidden()
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState({ prefs: { ...useApp.getState().prefs, theme: 'light' } })
     })
     await page.waitForTimeout(600)
     await page.screenshot({ path: 'test-results/page-marks-all-marks.png' })
 
     // ---- Crop page 1 by dragging, at 150% zoom ----
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.5))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(0))
     await page.waitForTimeout(500)
     await panel.getByRole('button', { name: /Crop pages/ }).click()
     await expect(page.locator('.fc-page-marks-toolbar')).toBeVisible()
@@ -217,13 +217,13 @@ test('headers, footers, watermarks, backgrounds, Bates numbers and cropping', as
 /** Starts a command without waiting for it (dialog commands finish when their dialog closes). */
 async function startCommand(page: Page, id: string) {
   await page.evaluate((c) => {
-    void (window as any).__fartcrobat.runCommand(c)
+    void (window as any).__inkmoor.runCommand(c)
   }, id)
 }
 
 async function markGroups(page: Page): Promise<{ type: string; source: string | null }[]> {
   return page.evaluate(async () => {
-    const listing = await (window as any).__fartcrobat.getActiveDoc().ops('page-marks').list()
+    const listing = await (window as any).__inkmoor.getActiveDoc().ops('page-marks').list()
     return listing.groups.map((g: any) => ({ type: g.type, source: g.settings.source?.kind ?? null }))
   })
 }
@@ -240,7 +240,7 @@ test('image watermark, add-or-replace prompt and a header on a rotated page', as
 
     // The page-marks commands are in the Document menu.
     const menuCommands = await page.evaluate(() =>
-      (window as any).__fartcrobat.registry.menus
+      (window as any).__inkmoor.registry.menus
         .filter((m: any) => m.menu === 'document' && m.command.startsWith('marks.'))
         .map((m: any) => m.command)
     )
@@ -274,8 +274,8 @@ test('image watermark, add-or-replace prompt and a header on a rotated page', as
     await hf.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(hf).toBeHidden()
     await expect.poll(() => pageText(page, 2)).toContain('Sheet 3 of 3')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom('fit-page'))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(2))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom('fit-page'))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(2))
     await page.waitForTimeout(800)
     await page.screenshot({ path: 'test-results/page-marks-rotated.png' })
 
@@ -330,8 +330,8 @@ test('image watermark, add-or-replace prompt and a header on a rotated page', as
       ])
 
     // ---- Crop the rotated page by dragging, at 75% zoom ----
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(0.75))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(2))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(0.75))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(2))
     await page.waitForTimeout(600)
     await startCommand(page, 'marks.crop')
     await expect(page.locator('.fc-page-marks-toolbar')).toBeVisible()
@@ -358,7 +358,7 @@ test('image watermark, add-or-replace prompt and a header on a rotated page', as
     expect(size.height).toBeLessThan(213)
     // still turned by /Rotate, cropped in the orientation it is shown in
     expect(
-      await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[2].rotation)
+      await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.pages[2].rotation)
     ).toBe(90)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(500)
@@ -404,7 +404,7 @@ test('saved settings, trim boxes and dark mode', async () => {
 
     // ---- Set Page Boxes: a trim box on every page (dark theme) ----
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState({ prefs: { ...useApp.getState().prefs, theme: 'dark' } })
     })
     await page.keyboard.press('Control+Shift+T')
@@ -421,7 +421,7 @@ test('saved settings, trim boxes and dark mode', async () => {
     await boxes.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(boxes).toBeHidden()
     const trim = await page.evaluate(async () => {
-      const v = await (window as any).__fartcrobat.getActiveDoc().ops('page-marks').boxes(4, 0.2)
+      const v = await (window as any).__inkmoor.getActiveDoc().ops('page-marks').boxes(4, 0.2)
       v.bitmap?.close()
       return v.trim
     })
@@ -440,7 +440,7 @@ test('saved settings, trim boxes and dark mode', async () => {
     await expect
       .poll(() =>
         page.evaluate(async () => {
-          const v = await (window as any).__fartcrobat.getActiveDoc().ops('page-marks').boxes(0, 0.2)
+          const v = await (window as any).__inkmoor.getActiveDoc().ops('page-marks').boxes(0, 0.2)
           v.bitmap?.close()
           return v.trim
         })

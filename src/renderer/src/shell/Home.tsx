@@ -34,7 +34,7 @@ function DefaultAppBanner() {
   return (
     <div className="home-banner">
       <div>
-        <b>Make Fartcrobat your default PDF app?</b>
+        <b>Make Inkmoor your default PDF app?</b>
         <div className="shell-muted">{status.instructions}</div>
       </div>
       <Button variant="primary" onClick={() => void invoke('defaultApp:set').then(setStatus)}>
@@ -48,7 +48,7 @@ function DefaultAppBanner() {
           // Remembered: Home is shown again after every closed document and on every start.
           setDismissed(true)
           void setPrefs({ checkDefaultAppOnStartup: false })
-          toast('Fartcrobat won’t ask again. You can make it the default PDF app from Help or Preferences.', { timeout: 6000 })
+          toast('Inkmoor won’t ask again. You can make it the default PDF app from Help or Preferences.', { timeout: 6000 })
         }}
       >
         <X size={16} />
@@ -67,7 +67,7 @@ export function Home() {
     <div className="home">
       <div className="home-inner">
         <DefaultAppBanner />
-        <h1 className="home-title">Welcome to Fartcrobat</h1>
+        <h1 className="home-title">Welcome to Inkmoor</h1>
         <p className="shell-muted home-sub">Open a PDF, or pick a tool to get started. You can also drop files anywhere in this window.</p>
         <div className="home-tiles">
           <button className="home-tile home-tile-open" onClick={() => void openFileDialog()}>

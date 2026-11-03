@@ -149,7 +149,7 @@ const signDocument: ToolHandler = async (args, ctx) => {
       ctx,
       doc,
       `${certify ? 'certifying' : 'signing'} not completed`,
-      'The person did not complete the signature in Fartcrobat (they cancelled, or Fartcrobat showed them why it failed). The document was not changed.'
+      'The person did not complete the signature in Inkmoor (they cancelled, or Inkmoor showed them why it failed). The document was not changed.'
     )
   const saved = doc.state.filePath
   const report = await validateDocument(doc)
@@ -189,7 +189,7 @@ const protectDocumentTool: ToolHandler = async (args, ctx) => {
       ctx,
       doc,
       'protecting not completed',
-      'The document was not protected: the person cancelled the Protect dialog (or Fartcrobat showed them why it failed).'
+      'The document was not protected: the person cancelled the Protect dialog (or Inkmoor showed them why it failed).'
     )
   const security = await securityOf(doc).catch(() => null)
   ctx.audit({ document: doc.state.filePath ?? auditName(doc), summary: `protected and saved to ${doc.state.filePath}` })
@@ -225,7 +225,7 @@ const removeSecurity: ToolHandler = async (args, ctx) => {
       message: paragraphs(
         `${certificate ? `Remove the certificate security from “${doc.state.title}”?` : `Remove the password and all restrictions from “${doc.state.title}”?`} Anyone with the file will be able to open, print, copy and change it.`,
         path
-          ? `Fartcrobat saves it without security over its file${doc.state.dirty ? ', together with the unsaved changes' : ''}.`
+          ? `Inkmoor saves it without security over its file${doc.state.dirty ? ', together with the unsaved changes' : ''}.`
           : 'You will choose where to save the unprotected PDF.',
         ...(st.ownerAccess ? [] : ['Its permissions password is needed: you will be asked for it.'])
       ),
@@ -240,7 +240,7 @@ const removeSecurity: ToolHandler = async (args, ctx) => {
       ctx,
       doc,
       'security not removed',
-      'The security was not removed: the person cancelled (or Fartcrobat showed them why it failed).'
+      'The security was not removed: the person cancelled (or Inkmoor showed them why it failed).'
     )
   ctx.audit({ document: saved, summary: `removed security, saved to ${saved}` })
   return { data: { ...describeDoc(ctx, doc), saved, encrypted: !!doc.state.info.encryption } }

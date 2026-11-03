@@ -1,7 +1,7 @@
 // What this installation can do with an update (docs/features/updates.md, U2), and the switches
-// tests use. Packaged builds ignore every FARTCROBAT_UPDATE_* / FARTCROBAT_FAKE_UPDATER variable,
+// tests use. Packaged builds ignore every INKMOOR_UPDATE_* / INKMOOR_FAKE_UPDATER variable,
 // so nobody can point an installed copy at another server or another installer, except
-// FARTCROBAT_UPDATE_CHECKS=0, which only turns automatic checks off (e2e runs against a packaged
+// INKMOOR_UPDATE_CHECKS=0, which only turns automatic checks off (e2e runs against a packaged
 // build must not ask github.com).
 import { dirname } from 'node:path'
 import { appImageFile } from '@main/util/appImage'
@@ -34,11 +34,11 @@ export interface InstallFacts {
  *
  * An AppImage update deletes the .AppImage file and puts the new one in its folder, so it must be
  * this process's own file (APPIMAGE is passed on to every program an AppImage starts, such as a
- * .deb Fartcrobat opened from another AppImage app) in a folder the person can write to (an
+ * .deb Inkmoor opened from another AppImage app) in a folder the person can write to (an
  * administrator may have put it in /opt).
  */
 export function updateCapability(facts: InstallFacts): UpdateCapability {
-  if (!facts.isPackaged) return facts.env.FARTCROBAT_FAKE_UPDATER ? 'install' : 'notify'
+  if (!facts.isPackaged) return facts.env.INKMOOR_FAKE_UPDATER ? 'install' : 'notify'
   if (!facts.hasUpdateConfig) return 'notify'
   switch (facts.platform) {
     case 'win32':
@@ -67,30 +67,30 @@ export interface UpdateSettings {
 }
 
 /**
- * Packaged builds: github.com, automatic checks allowed (unless FARTCROBAT_UPDATE_CHECKS=0), the
+ * Packaged builds: github.com, automatic checks allowed (unless INKMOOR_UPDATE_CHECKS=0), the
  * real delay. Unpackaged builds (npm run dev, tests): automatic checks only with
- * FARTCROBAT_UPDATE_CHECKS=1, and the test variables apply.
+ * INKMOOR_UPDATE_CHECKS=1, and the test variables apply.
  */
 export function updateSettings(isPackaged: boolean, env: NodeJS.ProcessEnv): UpdateSettings {
   if (isPackaged)
     return {
       base: RELEASES_BASE,
       testBase: null,
-      autoChecks: env.FARTCROBAT_UPDATE_CHECKS !== '0',
+      autoChecks: env.INKMOOR_UPDATE_CHECKS !== '0',
       firstCheckDelayMs: UPDATE_FIRST_CHECK_DELAY_MS,
       fakeUpdaterFile: null
     }
-  const testBase = httpUrl(env.FARTCROBAT_UPDATE_URL)
-  const delay = Number(env.FARTCROBAT_UPDATE_FIRST_CHECK_MS)
+  const testBase = httpUrl(env.INKMOOR_UPDATE_URL)
+  const delay = Number(env.INKMOOR_UPDATE_FIRST_CHECK_MS)
   return {
     base: testBase ?? RELEASES_BASE,
     testBase,
-    autoChecks: env.FARTCROBAT_UPDATE_CHECKS === '1',
+    autoChecks: env.INKMOOR_UPDATE_CHECKS === '1',
     firstCheckDelayMs:
-      env.FARTCROBAT_UPDATE_FIRST_CHECK_MS && Number.isFinite(delay) && delay >= 0
+      env.INKMOOR_UPDATE_FIRST_CHECK_MS && Number.isFinite(delay) && delay >= 0
         ? delay
         : UPDATE_FIRST_CHECK_DELAY_MS,
-    fakeUpdaterFile: env.FARTCROBAT_FAKE_UPDATER || null
+    fakeUpdaterFile: env.INKMOOR_FAKE_UPDATER || null
   }
 }
 

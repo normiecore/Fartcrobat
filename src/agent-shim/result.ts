@@ -1,4 +1,4 @@
-// How the shim presents Fartcrobat's tools and their results to an AI app over MCP.
+// How the shim presents Inkmoor's tools and their results to an AI app over MCP.
 import type { CallToolResult, Tool } from '@modelcontextprotocol/server'
 import type { AgentClientInfo, AgentErrorCode, AgentToolResult } from '@shared/agent/protocol'
 import { AGENT_TOOLS } from '@shared/agent/tools'
@@ -15,7 +15,7 @@ export function mcpTools(): Tool[] {
 }
 
 /**
- * The AI app as it introduced itself over MCP. A missing name stays empty, so Fartcrobat shows its
+ * The AI app as it introduced itself over MCP. A missing name stays empty, so Inkmoor shows its
  * own wording for an AI app that did not say who it is.
  */
 export function clientInfo(info: unknown): AgentClientInfo {

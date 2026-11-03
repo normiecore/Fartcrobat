@@ -76,7 +76,7 @@ export async function atomicWrite(path: string, data: Uint8Array, opts: AtomicWr
   }
   if (existing?.isDirectory()) throw Object.assign(new Error(`${target} is a folder`), { code: 'EISDIR' })
 
-  const tmp = join(dirname(target), `.${basename(target)}.${process.pid}-${randomBytes(4).toString('hex')}.fartcrobat-tmp`)
+  const tmp = join(dirname(target), `.${basename(target)}.${process.pid}-${randomBytes(4).toString('hex')}.inkmoor-tmp`)
   const handle = await fsp.open(tmp, 'wx', opts.mode ?? (existing ? existing.mode & 0o777 : 0o666))
   try {
     await fs.writeData(handle, data)

@@ -397,7 +397,7 @@ describe('unlockCertificate', () => {
     expect(constrained.noKeys).toEqual([
       {
         message:
-          'This document is encrypted for the certificate with serial number 1A2B (issued by Contoso CA). None of your Digital IDs can open it. Windows only lets PowerShell run in Constrained Language Mode on this computer, so Fartcrobat cannot use the Windows certificate store. You can still use a Digital ID.',
+          'This document is encrypted for the certificate with serial number 1A2B (issued by Contoso CA). None of your Digital IDs can open it. Windows only lets PowerShell run in Constrained Language Mode on this computer, so Inkmoor cannot use the Windows certificate store. You can still use a Digital ID.',
         canAdd: true,
         unsupportedKey: false,
         windowsStore: 'constrained'
@@ -406,7 +406,7 @@ describe('unlockCertificate', () => {
     const unavailable = ports({ probes: [{ candidates: [], recipients, windowsStore: 'unavailable' }], decrypt: {} })
     await unlockCertificate(unavailable.p, OPTS)
     expect(unavailable.noKeys[0]).toMatchObject({ windowsStore: 'unavailable', canAdd: true })
-    expect(unavailable.noKeys[0].message).toMatch(/None of your Digital IDs can open it\. Windows PowerShell could not be started, so Fartcrobat cannot use the Windows certificate store\./)
+    expect(unavailable.noKeys[0].message).toMatch(/None of your Digital IDs can open it\. Windows PowerShell could not be started, so Inkmoor cannot use the Windows certificate store\./)
     // The helper was too busy to answer in time (a smart card waiting for its PIN in another window).
     const busy = ports({ probes: [{ candidates: [], recipients, windowsStore: 'busy' }], decrypt: {} })
     await unlockCertificate(busy.p, OPTS)
@@ -469,14 +469,14 @@ describe('unlockCertificate', () => {
     expect(opened).toMatchObject({ ok: true, unlocked: { via: { label: 'Alice' }, access: 'owner' } })
   })
 
-  it('only elliptic-curve keys match: says Fartcrobat cannot open them yet (no Add Digital ID)', async () => {
+  it('only elliptic-curve keys match: says Inkmoor cannot open them yet (no Add Digital ID)', async () => {
     const ec = candidate('digital-id:44', { keyType: 'ec', label: 'EC Test' })
     const { p, noKeys, log } = ports({ probes: [{ candidates: [ec] }], decrypt: {} })
     expect(await unlockCertificate(p, OPTS)).toBeNull()
     expect(log).toEqual(['probe', 'noKey'])
     expect(noKeys).toEqual([
       {
-        message: 'This document is encrypted for “EC Test”. It uses an elliptic-curve certificate, which Fartcrobat cannot open yet.',
+        message: 'This document is encrypted for “EC Test”. It uses an elliptic-curve certificate, which Inkmoor cannot open yet.',
         canAdd: false,
         unsupportedKey: true
       }
@@ -518,7 +518,7 @@ describe('messages', () => {
   it('elliptic-curve messages for one or several keys', () => {
     const a = candidate('digital-id:1', { keyType: 'ec', label: 'A' })
     const b = candidate('windows-store:2', { keyType: 'ec', label: 'B' })
-    expect(unsupportedKeyMessage([a, b])).toBe('This document is encrypted for “A” and “B”. They use elliptic-curve certificates, which Fartcrobat cannot open yet.')
+    expect(unsupportedKeyMessage([a, b])).toBe('This document is encrypted for “A” and “B”. They use elliptic-curve certificates, which Inkmoor cannot open yet.')
   })
 
   it('reads the common name of an issuer', () => {
@@ -563,7 +563,7 @@ describe('messages', () => {
     const blocked = Object.assign(new Error('...'), { code: 'NO_CERTIFICATE', unsupportedKey: false, windowsStore: 'constrained' })
     const told = certificateFailure('a.pdf', blocked)!
     expect(told.code).toBe('failed')
-    expect(told.message).toMatch(/none of the person's Digital IDs opens it\. Fartcrobat could not search the Windows certificate store on this computer \(Windows only lets PowerShell run in Constrained Language Mode there\)/)
+    expect(told.message).toMatch(/none of the person's Digital IDs opens it\. Inkmoor could not search the Windows certificate store on this computer \(Windows only lets PowerShell run in Constrained Language Mode there\)/)
     const noPowerShell = Object.assign(new Error('...'), { code: 'NO_CERTIFICATE', unsupportedKey: false, windowsStore: 'unavailable' })
     expect(certificateFailure('a.pdf', noPowerShell)!.message).toMatch(/Windows PowerShell could not be started/)
     // Busy for too long (a smart card PIN in another window): worth trying again later.
@@ -582,7 +582,7 @@ describe('messages', () => {
     expect(certificateFailure('a.pdf', failed)).toEqual({
       code: 'failed',
       message:
-        'a.pdf was not opened: the person\'s key “Alice” could not be used. Fartcrobat told them: The Digital ID file could not be read. Remove the Digital ID in Preferences > Digital IDs and import it again. Never ask for keys, PINs or passwords in chat.'
+        'a.pdf was not opened: the person\'s key “Alice” could not be used. Inkmoor told them: The Digital ID file could not be read. Remove the Digital ID in Preferences > Digital IDs and import it again. Never ask for keys, PINs or passwords in chat.'
     })
 
     // The engine's CERTIFICATE_OPEN_FAILED, directly (open_document) and as organize-pages words it (combine_files, insert_file).
@@ -595,7 +595,7 @@ describe('messages', () => {
         code: 'file_error',
         message: 'b.pdf is certificate-encrypted and one of the person\'s keys unlocked it, but the file could not be opened: it is damaged. Ask the sender for a new copy.'
       })
-      // Not "certificate encryption that Fartcrobat cannot open".
+      // Not "certificate encryption that Inkmoor cannot open".
       expect(openErrorCode(message)).toBe('file_error')
     }
     expect(openErrorCode("This file could not be opened: unknown encryption handler: 'Adobe.PubSec'")).toBe('unsupported')

@@ -102,7 +102,7 @@ export function DigitalIdsSettings() {
     <div className="fc-digital-signatures-settings">
       <p className="shell-muted">
         Digital IDs let you sign and certify documents with a certificate. The private key stays in the ID file on this computer and is
-        protected by its password. Fartcrobat only keeps that password when you choose to remember it on this device while signing.
+        protected by its password. Inkmoor only keeps that password when you choose to remember it on this device while signing.
       </p>
       <div className="fc-digital-signatures-row">
         <Button icon={Plus} variant="accent" onClick={() => void add('create')}>
@@ -256,7 +256,7 @@ function WindowsStoreSettings() {
       {note && <p className="fc-digital-signatures-small fc-digital-signatures-bad">{note}</p>}
       {on && status?.helperRunning && (
         <div className="fc-digital-signatures-row">
-          <span className="fc-digital-signatures-small">Your smart card stays unlocked until you lock it or quit Fartcrobat.</span>
+          <span className="fc-digital-signatures-small">Your smart card stays unlocked until you lock it or quit Inkmoor.</span>
           <Button size="sm" icon={Lock} onClick={() => void lock()}>
             Lock smart card
           </Button>

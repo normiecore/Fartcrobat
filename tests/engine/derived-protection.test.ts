@@ -417,7 +417,7 @@ function vrp(bytes: Uint8Array): [number, number, number] {
 }
 
 function runPypdf(cases: (Omit<PypdfCase, 'path' | 'vrp'> & { bytes: Uint8Array; source: Uint8Array })[]) {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-derived-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-derived-'))
   try {
     const json: PypdfCase[] = cases.map((c, i) => {
       const path = join(dir, `out-${i}.pdf`)

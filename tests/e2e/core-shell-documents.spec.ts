@@ -25,7 +25,7 @@ async function stubHandler(app: ElectronApplication, channel: string, result: un
 }
 
 async function docTitles(page: Page): Promise<string[]> {
-  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.map((d: any) => d.state.title))
+  return page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.map((d: any) => d.state.title))
 }
 
 function dialogTitled(page: Page, title: string) {
@@ -33,7 +33,7 @@ function dialogTitled(page: Page, title: string) {
 }
 
 async function dialogCount(page: Page): Promise<number> {
-  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().dialogs.length)
+  return page.evaluate(() => (window as any).__inkmoor.useApp.getState().dialogs.length)
 }
 
 function countRotate90(path: string): number {
@@ -47,7 +47,7 @@ test('an edit made while the file is being written stays unsaved', async () => {
     await openFile(page, file)
     await waitForRender(page)
     await page.evaluate(async () => {
-      const f = (window as any).__fartcrobat
+      const f = (window as any).__inkmoor
       const pages = f.getActiveDoc().ops('pages')
       await pages.rotate([1], 90)
       // The save serializes first; the rotation of page 1 lands while the bytes are being written.
@@ -74,7 +74,7 @@ test('opening the same file twice at once opens a single tab', async () => {
   try {
     const file = fixturePath('text.pdf')
     await page.evaluate(async (p) => {
-      const f = (window as any).__fartcrobat
+      const f = (window as any).__inkmoor
       await Promise.all([f.openPaths([p]), f.openPaths([p]), f.openPaths([p.replace(/\/text\.pdf$/, '/./text.pdf')])])
     }, file)
     await waitForRender(page)
@@ -103,15 +103,15 @@ test('closing the last document leaves Read Mode so Home keeps its top bar', asy
     await page.keyboard.press('Control+w')
     await expect(page.locator('.home')).toBeVisible()
     await expect(page.locator('.shell-topbar')).toBeVisible()
-    expect(await page.evaluate(() => (window as any).__fartcrobat.useApp.getState().readMode)).toBe(false)
+    expect(await page.evaluate(() => (window as any).__inkmoor.useApp.getState().readMode)).toBe(false)
     await page.screenshot({ path: 'test-results/core-shell-home-after-read-mode.png' })
 
     // Full Screen chosen on Home keeps the top bar too, and the next document opens normally.
     await page.keyboard.press('Control+l')
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().fullScreen)).toBe(true)
+    await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().fullScreen)).toBe(true)
     await expect(page.locator('.shell-topbar')).toBeVisible()
     await page.keyboard.press('Escape')
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().fullScreen)).toBe(false)
+    await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().fullScreen)).toBe(false)
   } finally {
     await app.close()
   }
@@ -122,7 +122,7 @@ test('cancelling quit keeps every tab open, and repeated close requests ask only
   try {
     await openFile(page, fixturePath('text.pdf'))
     await openFile(page, fixturePath('form.pdf'))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().ops('pages').rotate([0], 90))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().ops('pages').rotate([0], 90))
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
 
     const requestClose = () =>
@@ -148,14 +148,14 @@ test('Revert reloads the tab in place and keeps its position', async () => {
     await openFile(page, fixturePath('text.pdf'))
     await openFile(page, fixturePath('form.pdf'))
     const firstId = await page.evaluate(() => {
-      const f = (window as any).__fartcrobat
+      const f = (window as any).__inkmoor
       const s = f.useApp.getState()
       f.useApp.setState({ activeDocId: s.docs[0].id })
       return s.docs[0].id
     })
     await waitForRender(page)
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       d.view.goToPage(2)
       await d.ops('pages').rotate([0], 90)
     })
@@ -168,10 +168,10 @@ test('Revert reloads the tab in place and keeps its position', async () => {
     await page.getByRole('menuitem', { name: 'Revert' }).click()
     await dialogTitled(page, 'Revert').getByRole('button', { name: 'Revert' }).click()
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(false)
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[0].rotation)).toBe(0)
+    await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.pages[0].rotation)).toBe(0)
     expect(await docTitles(page)).toEqual(['text.pdf', 'form.pdf'])
     const after = await page.evaluate(() => {
-      const f = (window as any).__fartcrobat
+      const f = (window as any).__inkmoor
       const d = f.getActiveDoc()
       return { id: d.id, rotation: d.state.info.pages[0].rotation, page: d.state.currentPage, canUndo: d.state.journal.canUndo }
     })
@@ -217,13 +217,13 @@ test('a Home tile opens its tool on the file picked for it', async () => {
   try {
     await stubHandler(app, 'file:openDialog', [fixturePath('text.pdf')])
     const tile = await page.evaluate(() => {
-      const g = (window as any).__fartcrobat.registry.toolGroups.find((t: any) => t.homeTile && t.panel && t.requiresDocument !== false)
+      const g = (window as any).__inkmoor.registry.toolGroups.find((t: any) => t.homeTile && t.panel && t.requiresDocument !== false)
       return g ? { id: g.id, label: g.label } : null
     })
     test.skip(!tile, 'No Home tile with a tool panel is registered')
     await page.locator('.home-tile', { hasText: tile!.label }).click()
     await expect.poll(async () => (await activeDocState(page))?.title).toBe('text.pdf')
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolGroupId)).toBe(tile!.id)
+    await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolGroupId)).toBe(tile!.id)
   } finally {
     await app.close()
   }
@@ -234,7 +234,7 @@ test('a tool chosen before any document is open starts once a file is picked', a
   try {
     await stubHandler(app, 'file:openDialog', [fixturePath('text.pdf')])
     await page.evaluate(() => {
-      const f = (window as any).__fartcrobat
+      const f = (window as any).__inkmoor
       const Nothing = () => null
       f.registry.toolGroups.push({ id: 'shell-probe', label: 'Shell Probe Tool', icon: Nothing, order: 9999, panel: Nothing })
       f.useApp.setState({ paletteOpen: true })
@@ -243,7 +243,7 @@ test('a tool chosen before any document is open starts once a file is picked', a
     await page.keyboard.press('Enter')
     await expect.poll(async () => (await activeDocState(page))?.title).toBe('text.pdf')
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolGroupId))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolGroupId))
       .toBe('shell-probe')
   } finally {
     await app.close()
@@ -263,7 +263,7 @@ test('the in-app Menu shows check marks and the default-app banner stays dismiss
     await page.screenshot({ path: 'test-results/core-shell-menu-checks.png' })
     // Choosing another layout moves the check mark.
     await page.getByRole('menuitemcheckbox', { name: 'Two Page View', exact: true }).click()
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.layout)).toBe('two-page')
+    await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.layout)).toBe('two-page')
     await page.locator('.shell-menu-btn').click()
     await page.getByRole('menuitem', { name: 'View', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Page Display' }).click()
@@ -297,19 +297,19 @@ test('the in-app Menu shows check marks and the default-app banner stays dismiss
 
 test('a second launch with a relative path opens the file from its own folder', async () => {
   // A single-instance app, like a normal installation.
-  const { app, page, userData } = await launch([], { FARTCROBAT_MULTI_INSTANCE: '' })
+  const { app, page, userData } = await launch([], { INKMOOR_MULTI_INSTANCE: '' })
   try {
     const electronPath = createRequire(import.meta.url)('electron') as unknown as string
     const second = spawn(electronPath, [join(ROOT, 'out/main/index.js'), '--no-sandbox', '--disable-gpu', 'text.pdf'], {
       cwd: FIXTURES,
-      env: { ...process.env, FARTCROBAT_USER_DATA: userData, FARTCROBAT_MULTI_INSTANCE: '' },
+      env: { ...process.env, INKMOOR_USER_DATA: userData, INKMOOR_MULTI_INSTANCE: '' },
       stdio: 'ignore'
     })
     const code = await new Promise<number | null>((resolve) => second.on('exit', resolve))
     expect(code).toBe(0)
     await page.waitForSelector('.viewer-page canvas')
     const opened = await page.evaluate(() =>
-      (window as any).__fartcrobat.useApp.getState().docs.map((d: any) => d.state.filePath)
+      (window as any).__inkmoor.useApp.getState().docs.map((d: any) => d.state.filePath)
     )
     expect(opened).toEqual([fixturePath('text.pdf')])
   } finally {

@@ -3,7 +3,7 @@ import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRende
 
 async function selectWord(page: Page, word: string) {
   await page.evaluate(async (w) => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const t = await d.pageText(0)
     const start = t.text.indexOf(w)
     d.setSelection({ kind: 'text', ranges: [{ page: 0, start, end: start + w.length }] })
@@ -12,7 +12,7 @@ async function selectWord(page: Page, word: string) {
 
 function searchFinished(page: Page) {
   return page.evaluate(() => {
-    const s = (window as any).__fartcrobat.getActiveDoc().state.search
+    const s = (window as any).__inkmoor.getActiveDoc().state.search
     return !!s.query && !s.running
   })
 }
@@ -71,12 +71,12 @@ test('clicking the page number box and back does not move the view', async () =>
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(3))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(3))
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(3, 2)
     await page.waitForTimeout(300)
-    const scrollTop = () => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.getViewportElement().scrollTop)
+    const scrollTop = () => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.getViewportElement().scrollTop)
     await page.evaluate(() => {
-      const el = (window as any).__fartcrobat.getActiveDoc().view.getViewportElement()
+      const el = (window as any).__inkmoor.getActiveDoc().view.getViewportElement()
       el.scrollTop = 1500
     })
     await page.waitForTimeout(300)

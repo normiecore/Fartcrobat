@@ -1,7 +1,8 @@
 /**
- * Parsers for the small system queries Fartcrobat runs to find the default printer and the
+ * Parsers for the small system queries Inkmoor runs to find the default printer and the
  * default PDF app. Kept free of Electron so they can be unit tested.
  */
+import { LEGACY, PRODUCT_NAME } from '@shared/identity'
 
 /** `lpstat -d` (CUPS, Linux and macOS): "system default destination: Office_Laser". */
 export function parseLpstatDefault(output: string): string | null {
@@ -29,11 +30,19 @@ export function regValue(output: string, name: string): string | null {
   return null
 }
 
-/** The ProgId Fartcrobat's Windows installer registers for .pdf (electron-builder.yml, win.fileAssociations). */
-export const WINDOWS_PROG_ID = 'Fartcrobat.Document'
+/**
+ * The ProgId the Windows installer registers for .pdf (electron-builder.yml, win.fileAssociations).
+ * It keeps its first name for good (src/shared/identity.ts): people's default-app choice points at it.
+ */
+export const WINDOWS_PROG_ID = LEGACY.windowsProgId
 
-/** Whether a .pdf UserChoice ProgId means Fartcrobat opens PDFs. */
-export function isFartcrobatProgId(progId: string, exeName = 'Fartcrobat.exe'): boolean {
+/**
+ * Whether a .pdf UserChoice ProgId means this app opens PDFs: its ProgId (the installer points it
+ * at the current executable), or "Open with" naming this executable. An "Open with" choice of the
+ * executable from before a rename does not count: the update removed that file, so PDFs no longer
+ * open, and the app must offer Make default again.
+ */
+export function isInkmoorProgId(progId: string, exeName = `${PRODUCT_NAME}.exe`): boolean {
   const id = progId.trim().toLowerCase()
   return id === WINDOWS_PROG_ID.toLowerCase() || id === `applications\\${exeName.toLowerCase()}`
 }

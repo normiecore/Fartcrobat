@@ -505,7 +505,7 @@ export function AgentCompanion() {
             <div className={`${P}-setup`}>
               <p>
                 {companion.autoJoin
-                  ? 'Ask Claude or ChatGPT to use Fartcrobat. The next conversation that does connects to this chat, no invitation needed.'
+                  ? 'Ask Claude or ChatGPT to use Inkmoor. The next conversation that does connects to this chat, no invitation needed.'
                   : 'Chat ended. No conversation can connect until you allow a new one.'}
               </p>
               {!companion.autoJoin && (
@@ -515,7 +515,7 @@ export function AgentCompanion() {
               )}
               {companion.autoJoin && agent.outdated && (
                 <p className={`${P}-hint`}>
-                  {agent.outdated} uses the Fartcrobat extension from an older version, which doesn’t
+                  {agent.outdated} uses the Inkmoor extension from an older version, which doesn’t
                   connect to this chat by itself. Add it again in Preferences &gt; AI apps, then restart{' '}
                   {agent.outdated}.
                 </p>

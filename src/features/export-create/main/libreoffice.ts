@@ -114,7 +114,7 @@ export async function convertWithLibreOffice(
   opts: { profileDir?: string; timeoutMs?: number } = {}
 ): Promise<Uint8Array> {
   if (!existsSync(file)) throw new Error(`${basename(file)} does not exist`)
-  const work = mkdtempSync(join(tmpdir(), 'fartcrobat-convert-'))
+  const work = mkdtempSync(join(tmpdir(), 'inkmoor-convert-'))
   const profile = opts.profileDir ?? join(work, 'profile')
   try {
     const outDir = join(work, 'out')

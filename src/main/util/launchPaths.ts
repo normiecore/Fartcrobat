@@ -3,7 +3,7 @@ import { extname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /**
- * File types Fartcrobat opens from the command line, the OS ("Open with", Finder, a second
+ * File types Inkmoor opens from the command line, the OS ("Open with", Finder, a second
  * launch) and drag and drop onto the Dock icon. MuPDF opens most of them directly; Office and
  * OpenDocument files go through the LibreOffice converter when a feature registers one (the
  * renderer explains what to install when it cannot open a file).

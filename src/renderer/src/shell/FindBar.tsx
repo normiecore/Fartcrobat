@@ -26,9 +26,9 @@ export function FindBar({ doc }: { doc: DocumentModel }) {
       inputRef.current?.focus()
       inputRef.current?.select()
     }
-    window.addEventListener('fartcrobat:focus-find', onFocus)
+    window.addEventListener('inkmoor:focus-find', onFocus)
     return () => {
-      window.removeEventListener('fartcrobat:focus-find', onFocus)
+      window.removeEventListener('inkmoor:focus-find', onFocus)
       cancelPending()
     }
   }, [])

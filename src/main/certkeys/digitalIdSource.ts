@@ -210,10 +210,10 @@ function checkAlgorithms(hit: Hit): {
 } {
   if (hit.recipient.kind === 'kari')
     throw unsupported(
-      'This document is encrypted for an elliptic curve (EC) certificate. Fartcrobat can only open documents encrypted for RSA certificates.'
+      'This document is encrypted for an elliptic curve (EC) certificate. Inkmoor can only open documents encrypted for RSA certificates.'
     )
   if (hit.recipient.kind !== 'ktri')
-    throw unsupported('This document uses a kind of certificate encryption that Fartcrobat does not support.')
+    throw unsupported('This document uses a kind of certificate encryption that Inkmoor does not support.')
   let cipher: ContentCipher | null = null
   try {
     cipher = contentCipher(hit.parsed.contentEncryption)
@@ -221,14 +221,14 @@ function checkAlgorithms(hit: Hit): {
     cipher = null
   }
   if (!cipher)
-    throw unsupported('This document is encrypted with an algorithm that Fartcrobat does not support.')
+    throw unsupported('This document is encrypted with an algorithm that Inkmoor does not support.')
   const oid = hit.recipient.keyEncryption.oid
   if (oid === ENVELOPE_OID.rsaEncryption) return { cipher, scheme: 'RSAES-PKCS1-V1_5', oaep: null }
   if (oid === ENVELOPE_OID.rsaesOaep) {
     const oaep = readOaep(hit.recipient.keyEncryption.params)
     if (oaep) return { cipher, scheme: 'RSA-OAEP', oaep }
   }
-  throw unsupported('This document is encrypted with an algorithm that Fartcrobat does not support.')
+  throw unsupported('This document is encrypted with an algorithm that Inkmoor does not support.')
 }
 
 function decryptContent(forge: ForgeLib, c: ContentCipher, key: Uint8Array, data: Uint8Array): Uint8Array {
@@ -389,7 +389,7 @@ export function createDigitalIdSource(o: DigitalIdSourceOptions): DigitalIdSourc
         )
       if (keyTypeOf(id.cert) !== 'rsa')
         throw unsupported(
-          'This document is encrypted for an elliptic curve (EC) certificate. Fartcrobat can only open documents encrypted for RSA certificates.'
+          'This document is encrypted for an elliptic curve (EC) certificate. Inkmoor can only open documents encrypted for RSA certificates.'
         )
       const algs = checkAlgorithms(hit)
 

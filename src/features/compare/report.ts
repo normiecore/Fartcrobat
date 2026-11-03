@@ -40,7 +40,7 @@ export const REPORT_COLORS: Record<ChangeCategory, RGB> = {
   page: [0.39, 0.45, 0.55]
 }
 
-const AUTHOR = 'Fartcrobat Compare'
+const AUTHOR = 'Inkmoor Compare'
 
 function hex(c: RGB) {
   return '#' + c.map((v) => Math.round(v * 255).toString(16).padStart(2, '0')).join('')
@@ -155,7 +155,7 @@ td.go { width: 44pt }
 .none { font-size: 12pt; color: #268e6c; margin-top: 10pt }
 </style></head><body>
 <h1>Compare report</h1>
-<p class="muted">Created with Fartcrobat on ${esc(input.date)}</p>
+<p class="muted">Created with Inkmoor on ${esc(input.date)}</p>
 <h2>Documents</h2>
 <table class="files">
 <tr><td class="k">Old file</td><td><b>${esc(input.oldName)}</b> — ${esc(rangeLabel(input.oldPages, input.oldPageCount))}</td></tr>
@@ -373,7 +373,7 @@ export function buildReport(s: Session, input: ReportInput): Uint8Array {
     })
     setOutline(out, outline)
     out.setMetaData('info:Title', `Compare report: ${input.oldName} and ${input.newName}`)
-    out.setMetaData('info:Creator', 'Fartcrobat')
+    out.setMetaData('info:Creator', 'Inkmoor')
     out.setMetaData('info:Subject', `Differences between ${input.oldName} and ${input.newName}`)
     const buf = out.saveToBuffer('garbage=compact,compress')
     const bytes = buf.asUint8Array().slice()

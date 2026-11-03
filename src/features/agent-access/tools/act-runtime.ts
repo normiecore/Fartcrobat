@@ -83,7 +83,7 @@ export async function requireConfirmation(
   if (ok) return
   throwIfAborted(ctx)
   ctx.audit({ ...(doc ? { document: auditName(doc) } : {}), outcome: 'declined', summary: declined })
-  throw new ToolError('declined', `The person declined in Fartcrobat: ${declined}. Do not retry unless they ask.`)
+  throw new ToolError('declined', `The person declined in Inkmoor: ${declined}. Do not retry unless they ask.`)
 }
 
 /** Ends a call whose dialog the person closed without finishing. */

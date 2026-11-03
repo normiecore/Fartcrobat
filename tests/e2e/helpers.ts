@@ -20,10 +20,10 @@ export interface App {
 
 /**
  * Launches the built app (run `npm run build` first) with a throwaway profile. Set
- * FARTCROBAT_EXECUTABLE to a packaged app (e.g. release/linux-unpacked/fartcrobat) to test that instead.
+ * INKMOOR_EXECUTABLE to a packaged app (e.g. release/linux-unpacked/inkmoor) to test that instead.
  * Remembering passwords is off unless `opts.rememberPasswords` is set: otherwise specs would behave
  * differently on machines with a keyring (and would use it). Automatic update checks are off
- * unless `env` sets FARTCROBAT_UPDATE_CHECKS. `opts.kv` puts feature data in the settings store
+ * unless `env` sets INKMOOR_UPDATE_CHECKS. `opts.kv` puts feature data in the settings store
  * before the app starts (Digital IDs for tests/e2e/certificate-encryption.spec.ts), `opts.prefs`
  * more preferences.
  */
@@ -32,7 +32,7 @@ export async function launch(
   env: Record<string, string> = {},
   opts: { rememberPasswords?: boolean; kv?: Record<string, unknown>; prefs?: Partial<Preferences> } = {}
 ): Promise<App> {
-  const userData = mkdtempSync(join(tmpdir(), 'fartcrobat-e2e-'))
+  const userData = mkdtempSync(join(tmpdir(), 'inkmoor-e2e-'))
   // `kv` seeds feature data in the settings store (e.g. 'digital-signatures:ids').
   if (!opts.rememberPasswords || opts.kv || opts.prefs)
     writeFileSync(
@@ -42,7 +42,7 @@ export async function launch(
         ...(opts.kv ? { kv: opts.kv } : {})
       })
     )
-  const packaged = process.env.FARTCROBAT_EXECUTABLE
+  const packaged = process.env.INKMOOR_EXECUTABLE
   const app = await electron.launch({
     ...(packaged ? { executablePath: resolve(ROOT, packaged) } : {}),
     args: [
@@ -54,11 +54,11 @@ export async function launch(
     ],
     env: {
       ...process.env,
-      FARTCROBAT_USER_DATA: userData,
-      FARTCROBAT_MULTI_INSTANCE: '1',
-      FARTCROBAT_FORCE_CLOSE: '1',
+      INKMOOR_USER_DATA: userData,
+      INKMOOR_MULTI_INSTANCE: '1',
+      INKMOOR_FORCE_CLOSE: '1',
       // No update checks unless a spec turns them on (tests/e2e/updates.spec.ts).
-      FARTCROBAT_UPDATE_CHECKS: '0',
+      INKMOOR_UPDATE_CHECKS: '0',
       ...env
     } as Record<string, string>
   })
@@ -73,7 +73,7 @@ export async function launch(
 
 /** Opens a file through the same path the OS uses (no native dialog). */
 export async function openFile(page: Page, path: string) {
-  await page.evaluate((p) => (window as any).__fartcrobat.openPaths([p]), path)
+  await page.evaluate((p) => (window as any).__inkmoor.openPaths([p]), path)
   await page.waitForSelector('.viewer-page canvas')
 }
 
@@ -95,7 +95,7 @@ export async function waitForRender(page: Page, pageIndex = 0) {
 
 export async function activeDocState(page: Page) {
   return page.evaluate(() => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     if (!d) return null
     const s = d.state
     return {
@@ -113,7 +113,7 @@ export async function activeDocState(page: Page) {
 }
 
 export async function runCommand(page: Page, id: string) {
-  await page.evaluate((c) => (window as any).__fartcrobat.runCommand(c), id)
+  await page.evaluate((c) => (window as any).__inkmoor.runCommand(c), id)
 }
 
 /** A menu entry by its label, whether or not it is checkable (menuitem or menuitemcheckbox). */

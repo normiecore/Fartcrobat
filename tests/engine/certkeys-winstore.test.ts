@@ -6,7 +6,7 @@
 // PowerShell: $PWSH, else /usr/local/bin/pwsh or /usr/bin/pwsh (pwsh 7 on Linux, with HOME set to a
 // temporary folder so .NET uses a private certificate store), or the stock Windows PowerShell 5.1 on
 // Windows. Without one that runs `exit 0`, those blocks are skipped. The store tests run on Linux, and on
-// Windows only on CI or with FARTCROBAT_WINSTORE_TESTS=1, because there they import the test
+// Windows only on CI or with INKMOOR_WINSTORE_TESTS=1, because there they import the test
 // certificates into the real CurrentUser\My and AddressBook (and remove them afterwards). Never on macOS,
 // where .NET keeps CurrentUser\My in the keychain whatever HOME says.
 import { spawnSync } from 'node:child_process'
@@ -230,8 +230,8 @@ describe('error mapping', () => {
 
   it('takes test PowerShell options from the environment of unpackaged builds only', () => {
     const env = {
-      FARTCROBAT_TEST_POWERSHELL: '/usr/bin/pwsh',
-      FARTCROBAT_TEST_POWERSHELL_HOME: '/tmp/x',
+      INKMOOR_TEST_POWERSHELL: '/usr/bin/pwsh',
+      INKMOOR_TEST_POWERSHELL_HOME: '/tmp/x',
       PATH: '/bin'
     }
     expect(testPowerShellOptions(env, true)).toEqual({})
@@ -241,7 +241,7 @@ describe('error mapping', () => {
     expect(o.env?.HOME).toBe('/tmp/x')
     expect(o.env?.PATH).toBe('/bin')
     expect(
-      testPowerShellOptions({ FARTCROBAT_TEST_POWERSHELL: '/usr/bin/pwsh' }, false).env?.HOME
+      testPowerShellOptions({ INKMOOR_TEST_POWERSHELL: '/usr/bin/pwsh' }, false).env?.HOME
     ).toBeUndefined()
   })
 })
@@ -727,7 +727,7 @@ const IS_PS51 = IS_WIN && !process.env.PWSH
 const STORE_TESTS =
   Boolean(PS) &&
   (process.platform === 'linux' ||
-    (IS_WIN && (Boolean(process.env.CI) || process.env.FARTCROBAT_WINSTORE_TESTS === '1')))
+    (IS_WIN && (Boolean(process.env.CI) || process.env.INKMOOR_WINSTORE_TESTS === '1')))
 
 function runPs(args: string[]): string {
   const env: NodeJS.ProcessEnv = { ...(helperOpts.env ?? process.env), TERM: 'dumb' }
@@ -1121,7 +1121,7 @@ describe.skipIf(!IS_WIN || !STORE_TESTS)('real Windows key storage (Windows only
       const [thumbprint, derB64] = runPs([
         '-Command',
         `Import-Module Microsoft.PowerShell.Security -ErrorAction Stop; ` +
-          `$c = New-SelfSignedCertificate -Type DocumentEncryptionCert -Subject 'CN=Fartcrobat helper test' ` +
+          `$c = New-SelfSignedCertificate -Type DocumentEncryptionCert -Subject 'CN=Inkmoor helper test' ` +
           `-CertStoreLocation Cert:\\CurrentUser\\My -KeyAlgorithm RSA -KeyLength 2048 -KeyExportPolicy NonExportable ${extra} ` +
           `-NotAfter (Get-Date).AddDays(1); [Console]::Out.WriteLine($c.Thumbprint + ' ' + [Convert]::ToBase64String($c.RawData))`
       ])

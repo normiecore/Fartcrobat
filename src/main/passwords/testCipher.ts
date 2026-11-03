@@ -1,7 +1,7 @@
 /**
  * A reversible stand-in for safeStorage, for end-to-end tests on machines without a keyring (CI).
  * It protects nothing, so index.ts only uses it in unpackaged builds started with
- * FARTCROBAT_TEST_SECRET_CIPHER=1. The output is not plain text, so tests can still check that the
+ * INKMOOR_TEST_SECRET_CIPHER=1. The output is not plain text, so tests can still check that the
  * store file never holds a password.
  */
 import type { SecretCipher } from './store'
@@ -11,7 +11,7 @@ const HEAD = 'FCTEST1:'
 const mask = (b: Uint8Array) => b.map((x, i) => x ^ (0x5a + i) % 256)
 
 export function testCipherEnabled(isPackaged: boolean, env: NodeJS.ProcessEnv): boolean {
-  return !isPackaged && env.FARTCROBAT_TEST_SECRET_CIPHER === '1'
+  return !isPackaged && env.INKMOOR_TEST_SECRET_CIPHER === '1'
 }
 
 export function testCipher(o: { disabled: () => 'policy' | 'off' | null }): SecretCipher {

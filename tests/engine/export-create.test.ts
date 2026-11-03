@@ -499,7 +499,7 @@ describe('Create a PDF', () => {
     // The image page is the size of the image at its resolution (96 dpi).
     expect(info.pages[0].width).toBeCloseTo(956.25, 1)
     expect(info.pages[0].height).toBeCloseTo(1237.5, 1)
-    expect(info.metadata.creator).toBe('Fartcrobat')
+    expect(info.metadata.creator).toBe('Inkmoor')
   })
 
   it('fits images on Letter or A4 pages inside the margins, landscape for wide images', async () => {

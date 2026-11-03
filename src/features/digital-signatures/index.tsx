@@ -32,7 +32,7 @@ interface SignFieldEvent {
   rect?: [number, number, number, number]
 }
 
-/** Always mounted: loads IDs and trust, answers forms-fill's 'fartcrobat:sign-field', tidies up. */
+/** Always mounted: loads IDs and trust, answers forms-fill's 'inkmoor:sign-field', tidies up. */
 function SignatureGlobals() {
   useEffect(() => {
     void loadIds()
@@ -54,14 +54,14 @@ function SignatureGlobals() {
         await startSigning(doc, { mode: 'sign', target: { kind: 'field', name } })
       })().catch((err) => showError(err, 'Could not start signing'))
     }
-    window.addEventListener('fartcrobat:sign-field', onSignField)
+    window.addEventListener('inkmoor:sign-field', onSignField)
     const unsub = useApp.subscribe((s, prev) => {
       if (s.docs === prev.docs) return
       const open = new Set(s.docs.map((d) => d.id))
       for (const id of Object.keys(useSigStore.getState().byDoc)) if (!open.has(id)) forgetDocument(id)
     })
     return () => {
-      window.removeEventListener('fartcrobat:sign-field', onSignField)
+      window.removeEventListener('inkmoor:sign-field', onSignField)
       unsub()
     }
   }, [])

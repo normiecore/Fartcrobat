@@ -12,7 +12,7 @@ const field = (page: Page, name: string) => page.locator(`.fc-forms-fill-layer [
 /** Field values straight from the document (what Save writes). */
 async function values(page: Page): Promise<Record<string, string | string[]>> {
   return page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const list: { name: string; value: string | string[] }[] = await d.ops('forms-fill').exportValues()
     return Object.fromEntries(list.map((f) => [f.name, f.value]))
   })
@@ -25,7 +25,7 @@ async function valueOf(page: Page, name: string) {
 /** Runs a command without waiting for it (for commands that open a dialog and wait for an answer). */
 async function startCommand(page: Page, id: string) {
   await page.evaluate((c) => {
-    void (window as any).__fartcrobat.runCommand(c)
+    void (window as any).__inkmoor.runCommand(c)
   }, id)
 }
 
@@ -58,7 +58,7 @@ async function clickOutside(page: Page) {
 
 /** Whether another feature is installed (some behaviour moves to it when it is). */
 function hasFeature(page: Page, id: string) {
-  return page.evaluate((fid) => (window as any).__fartcrobat.registry.features.some((f: { id: string }) => f.id === fid), id)
+  return page.evaluate((fid) => (window as any).__inkmoor.registry.features.some((f: { id: string }) => f.id === fid), id)
 }
 
 test('fill form.pdf with the mouse and keyboard, save, reopen, clear and undo', async () => {
@@ -233,7 +233,7 @@ test('a value typed but not committed yet is written before Save or Rotate from 
     await expect(dialog).toBeVisible()
     await dialog.getByRole('button', { name: 'Rotate', exact: true }).click()
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[0].rotation))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.pages[0].rotation))
       .toBe(90)
     expect(await valueOf(page, 'fullName')).toBe('Ada Lovelace')
     await expect(field(page, 'fullName')).toHaveValue('Ada Lovelace')
@@ -321,7 +321,7 @@ test('calculations, formats, keystroke filters and validation (calc.pdf)', async
     await shot(page, '9-calc')
 
     // Controls follow the zoom
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.5))
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
     await page.waitForTimeout(300)
     const zoom = 1.5
@@ -376,7 +376,7 @@ test('all field types, buttons, signature fields, form data and dark mode', asyn
     await waitForRender(page)
     await page.evaluate(() => {
       ;(window as any).__signEvents = []
-      window.addEventListener('fartcrobat:sign-field', (e) => (window as any).__signEvents.push((e as CustomEvent).detail))
+      window.addEventListener('inkmoor:sign-field', (e) => (window as any).__signEvents.push((e as CustomEvent).detail))
     })
     await expect(page.locator('.fc-forms-fill-msgbar')).toContainText('2 required fields left')
     await expect(field(page, 'memberId')).toHaveAttribute('readonly', '')
@@ -523,7 +523,7 @@ test('all field types, buttons, signature fields, form data and dark mode', asyn
 
     // Dark theme: the message bar, the field being edited and the dropdowns stay readable
     await runCommand(page, 'nav.first')
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
     await expect(page.locator('html[data-theme="dark"]')).toHaveCount(1)
     await field(page, 'comments').click()
     await page.keyboard.type('Written in the dark theme')
@@ -560,7 +560,7 @@ test('dynamic XFA forms and signed signature fields', async () => {
     await expect(sig).toHaveClass(/is-signed/)
     const events = await page.evaluate(() => {
       const list: unknown[] = []
-      window.addEventListener('fartcrobat:sign-field', (e) => list.push((e as CustomEvent).detail))
+      window.addEventListener('inkmoor:sign-field', (e) => list.push((e as CustomEvent).detail))
       ;(window as any).__signedEvents = list
       return list.length
     })

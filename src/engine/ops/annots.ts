@@ -84,7 +84,7 @@ export interface AnnotInfo {
   isOpen: boolean
   /** Name of an attached file (FileAttachment). */
   fileName: string | null
-  /** Custom data stored by Fartcrobat features (e.g. measurement scale, stamp kind). */
+  /** Custom data stored by Inkmoor features (e.g. measurement scale, stamp kind). */
   extra: Record<string, string>
 }
 

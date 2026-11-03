@@ -18,7 +18,7 @@ test('companion chats with its owner, moves, minimizes and ends cleanly', async 
   try {
     const { page, agent } = s
     await waitForRender(page)
-    // MCP initialization advertises tools without connecting to Fartcrobat. The first tool
+    // MCP initialization advertises tools without connecting to Inkmoor. The first tool
     // call authenticates the local pipe and makes the connected-client companion appear, but
     // joins nothing: the person has not opened the chat.
     expect(companionOf(await agent.call('get_context'))).toBeUndefined()
@@ -35,7 +35,7 @@ test('companion chats with its owner, moves, minimizes and ends cleanly', async 
     await runCommand(page, 'view.readMode')
     await expect(companion).toBeHidden()
     await page.keyboard.press('Escape')
-    await expect.poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().readMode)).toBe(false)
+    await expect.poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().readMode)).toBe(false)
     await expect(companion.getByText('Waiting for a conversation', { exact: true })).toBeVisible()
     // Opened: the next call of the conversation joins, without an invitation.
     const session = companionOf(await agent.call('get_context'))!.session
@@ -144,7 +144,7 @@ test('working poses advance gently and respect reduced motion', async () => {
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     dataOf(await agent.call('get_context'))
     await page.evaluate(() => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const original = d.engine.call.bind(d.engine)
       d.engine.call = async (...args: any[]) => {
         if (args[0] === 'agent-text.layout') await new Promise<void>(resolve => { (window as any).__releaseLayout = resolve })
@@ -210,7 +210,7 @@ test('the companion is dragged by any part that is not text, a click still opens
     await expect(companion.getByRole('button', { name: 'Hide companion chat', exact: true })).toBeVisible()
     expect((await boxOf(companion)).x).toBe(moved.x)
     // Text to read in the chat does not start a drag.
-    await dragBy(page, companion.getByText(/Ask Claude or ChatGPT to use Fartcrobat/), -80, 0)
+    await dragBy(page, companion.getByText(/Ask Claude or ChatGPT to use Inkmoor/), -80, 0)
     expect((await boxOf(companion)).x).toBe(moved.x)
     // The chat head does, and dragging it leaves the chat open.
     await dragBy(page, companion.getByText('Waiting for a conversation', { exact: true }), 40, 0)

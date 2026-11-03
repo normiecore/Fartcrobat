@@ -47,7 +47,7 @@ beforeEach(() => {
 
 const FILE = 'v5-two-envelopes.pdf'
 
-/** The fixture opened by `person` as Fartcrobat opens it (DocState.unlock says which key, with what access). */
+/** The fixture opened by `person` as Inkmoor opens it (DocState.unlock says which key, with what access). */
 async function openedAs(person: 'alice' | 'bob') {
   const e: Engine = await openFixtureAs(FILE, person)
   const key = keyFor(FILE, person)

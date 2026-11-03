@@ -50,7 +50,7 @@ export default defineFeature({
       run: () => checkForUpdates()
     }
   ],
-  // Right after About Fartcrobat (core's Help group).
+  // Right after About Inkmoor (core's Help group).
   menus: [{ menu: 'help', group: 'help', command: 'help.checkForUpdates', order: 4 }],
   settings: [{ id: 'updates', label: 'Updates', order: 95, component: UpdateSettings }],
   globals: [UpdatesGlobal]

@@ -39,15 +39,15 @@ describe('agent access policy', () => {
     expect(agentAccessState(false, 'enabled')).toEqual({ enabled: true, policy: 'enabled' })
   })
 
-  it('prefers the machine policy to the file FARTCROBAT_POLICY_FILE names', async () => {
+  it('prefers the machine policy to the file INKMOOR_POLICY_FILE names', async () => {
     const on = policy('on.json', '{"agentAccess":{"enabled":true}}')
     const off = policy('off.json', '{"agentAccess":{"enabled":false}}')
     const missing = join(dir, 'missing.json')
     const machine = (file: string) => machinePolicy('linux', {}, file)
     expect(currentPolicy(await machine(missing), {})).toBeNull()
-    expect(currentPolicy(await machine(missing), { FARTCROBAT_POLICY_FILE: off })).toBe('disabled')
-    expect(currentPolicy(await machine(off), { FARTCROBAT_POLICY_FILE: on })).toBe('disabled')
-    expect(currentPolicy(await machine(on), { FARTCROBAT_POLICY_FILE: off })).toBe('enabled')
+    expect(currentPolicy(await machine(missing), { INKMOOR_POLICY_FILE: off })).toBe('disabled')
+    expect(currentPolicy(await machine(off), { INKMOOR_POLICY_FILE: on })).toBe('disabled')
+    expect(currentPolicy(await machine(on), { INKMOOR_POLICY_FILE: off })).toBe('enabled')
   })
 
   it('reads each section on its own (agent access and remembered passwords share the policy)', async () => {
@@ -57,8 +57,8 @@ describe('agent access policy', () => {
     const agentOnly = policy('agent.json', '{"agentAccess":{"enabled":false}}')
     expect(readPolicy(agentOnly, 'rememberPasswords')).toBeNull()
     expect(readPolicy(policy('broken.json', '{'), 'rememberPasswords')).toBe('disabled')
-    // Sections fall back to FARTCROBAT_POLICY_FILE one by one.
-    expect(await readMachinePolicy({ file: agentOnly, env: { FARTCROBAT_POLICY_FILE: both } })).toEqual({
+    // Sections fall back to INKMOOR_POLICY_FILE one by one.
+    expect(await readMachinePolicy({ file: agentOnly, env: { INKMOOR_POLICY_FILE: both } })).toEqual({
       agentAccess: 'disabled',
       rememberPasswords: 'disabled',
       autoUpdate: null
@@ -98,17 +98,17 @@ describe('agent access policy', () => {
     // Only an explicit false reads as 'disabled'.
     const off = policy('off.json', '\uFEFF{"rememberPasswords":{"enabled":false}}')
     expect((await readMachinePolicy({ file: off, env: {} })).rememberPasswords).toBe('disabled')
-    // A broken machine file still beats FARTCROBAT_POLICY_FILE; a broken test file is invalid too.
+    // A broken machine file still beats INKMOOR_POLICY_FILE; a broken test file is invalid too.
     const on = policy('on.json', '{"rememberPasswords":{"enabled":true}}')
-    expect((await readMachinePolicy({ file: typo, env: { FARTCROBAT_POLICY_FILE: on } })).rememberPasswords).toBe('invalid')
+    expect((await readMachinePolicy({ file: typo, env: { INKMOOR_POLICY_FILE: on } })).rememberPasswords).toBe('invalid')
     expect(
-      (await readMachinePolicy({ file: join(dir, 'missing.json'), env: { FARTCROBAT_POLICY_FILE: typo } })).rememberPasswords
+      (await readMachinePolicy({ file: join(dir, 'missing.json'), env: { INKMOOR_POLICY_FILE: typo } })).rememberPasswords
     ).toBe('invalid')
   })
 
   it('knows where macOS and Linux keep the machine policy file, and that Windows has none', () => {
-    expect(machinePolicyFile('darwin')).toBe('/Library/Application Support/Fartcrobat/policy.json')
-    expect(machinePolicyFile('linux')).toBe('/etc/fartcrobat/policy.json')
+    expect(machinePolicyFile('darwin')).toBe('/Library/Application Support/Inkmoor/policy.json')
+    expect(machinePolicyFile('linux')).toBe('/etc/inkmoor/policy.json')
     // A file under ProgramData could be planted by any user, or redirected with %ProgramData%.
     expect(machinePolicyFile('win32')).toBeNull()
   })
@@ -122,13 +122,13 @@ describe('agent access policy', () => {
         done(err, stdout)
       }
     const out = (...values: string[]) =>
-      `\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Fartcrobat\r\n${values.map((v) => `    ${v}\r\n`).join('')}\r\n`
+      `\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Inkmoor\r\n${values.map((v) => `    ${v}\r\n`).join('')}\r\n`
     expect(await windowsPolicy({ SystemRoot: 'D:\\Win' }, reg(null, out('AgentAccess    REG_DWORD    0x1')))).toEqual({
       agentAccess: 'enabled',
       rememberPasswords: null,
       autoUpdate: null
     })
-    expect(calls[0]).toEqual({ file: 'D:\\Win\\System32\\reg.exe', args: ['query', 'HKLM\\SOFTWARE\\Policies\\Fartcrobat'] })
+    expect(calls[0]).toEqual({ file: 'D:\\Win\\System32\\reg.exe', args: ['query', 'HKLM\\SOFTWARE\\Policies\\Inkmoor'] })
     expect(
       await windowsPolicy({}, reg(null, out('AgentAccess    REG_DWORD    0x0', 'RememberPasswords    REG_DWORD    0x0')))
     ).toEqual({ agentAccess: 'disabled', rememberPasswords: 'disabled', autoUpdate: null })
@@ -174,10 +174,10 @@ describe('agent access policy', () => {
     // Mistakes turn checking off (no checks at all, manual ones included).
     expect(readPolicy(policy('bad.json', '{"autoUpdate":true}'), 'autoUpdate')).toBe('disabled')
     expect((await readMachinePolicy({ file: policy('bad2.json', '{"autoUpdate":{"enabled":1}}'), env: {} })).autoUpdate).toBe('invalid')
-    // FARTCROBAT_POLICY_FILE only fills in what the machine leaves unset.
-    expect((await readMachinePolicy({ file: join(dir, 'missing.json'), env: { FARTCROBAT_POLICY_FILE: off } })).autoUpdate).toBe('disabled')
-    expect((await readMachinePolicy({ file: on, env: { FARTCROBAT_POLICY_FILE: off } })).autoUpdate).toBe('enabled')
-    // Windows: the REG_DWORD AutoUpdate under HKLM\SOFTWARE\Policies\Fartcrobat.
+    // INKMOOR_POLICY_FILE only fills in what the machine leaves unset.
+    expect((await readMachinePolicy({ file: join(dir, 'missing.json'), env: { INKMOOR_POLICY_FILE: off } })).autoUpdate).toBe('disabled')
+    expect((await readMachinePolicy({ file: on, env: { INKMOOR_POLICY_FILE: off } })).autoUpdate).toBe('enabled')
+    // Windows: the REG_DWORD AutoUpdate under HKLM\SOFTWARE\Policies\Inkmoor.
     expect(WINDOWS_POLICY_VALUES.autoUpdate).toBe('AutoUpdate')
     expect(parseRegQuery('    AutoUpdate    REG_DWORD    0x0', 'autoUpdate')).toBe('disabled')
     expect(parseRegQuery('    AutoUpdate    REG_DWORD    0x1', 'autoUpdate')).toBe('enabled')
@@ -210,17 +210,17 @@ describe('agent handshake helpers', () => {
 
   it('starts an AppImage again from its file, not from its temporary mount', () => {
     const mount = '/tmp/.mount_FartcrAb12'
-    const own = { APPIMAGE: '/home/me/Apps/Fartcrobat.AppImage', APPDIR: mount }
+    const own = { APPIMAGE: '/home/me/Apps/Inkmoor.AppImage', APPDIR: mount }
     expect(
-      launchInfo(`${mount}/fartcrobat`, true, `${mount}/resources/app.asar`, '1.2.3', own).executable
-    ).toBe('/home/me/Apps/Fartcrobat.AppImage')
+      launchInfo(`${mount}/inkmoor`, true, `${mount}/resources/app.asar`, '1.2.3', own).executable
+    ).toBe('/home/me/Apps/Inkmoor.AppImage')
     expect(
-      launchInfo(`${mount}/fartcrobat`, true, '', '1.2.3', { ...own, APPDIR: `${mount}/` }).executable
-    ).toBe('/home/me/Apps/Fartcrobat.AppImage')
+      launchInfo(`${mount}/inkmoor`, true, '', '1.2.3', { ...own, APPDIR: `${mount}/` }).executable
+    ).toBe('/home/me/Apps/Inkmoor.AppImage')
     // Inherited from an AppImage that started this copy (an AI app): not this app's file.
     const inherited = { APPIMAGE: '/home/me/Claude.AppImage', APPDIR: '/tmp/.mount_ClaudeX' }
-    expect(launchInfo('/opt/Fartcrobat/fartcrobat', true, '', '1.2.3', inherited).executable).toBe(
-      '/opt/Fartcrobat/fartcrobat'
+    expect(launchInfo('/opt/Inkmoor/inkmoor', true, '', '1.2.3', inherited).executable).toBe(
+      '/opt/Inkmoor/inkmoor'
     )
     expect(
       launchInfo('/repo/node_modules/electron/dist/electron', false, '/repo', '1.2.3', own).executable
@@ -230,8 +230,8 @@ describe('agent handshake helpers', () => {
   it('follows an AppImage an update renamed in app.json, only when app.json names the old file', () => {
     const dir = mkdtempSync(join(tmpdir(), 'fc-agent-app-'))
     try {
-      const from = '/home/me/Apps/Fartcrobat-0.2.0.AppImage'
-      const to = '/home/me/Apps/Fartcrobat-0.2.1.AppImage'
+      const from = '/home/me/Apps/Inkmoor-0.2.0.AppImage'
+      const to = '/home/me/Apps/Inkmoor-0.2.1.AppImage'
       // No app.json yet: nothing to do.
       retargetAppFile(dir, from, to)
       mkdirSync(dirname(appFile(dir)), { recursive: true })
@@ -243,9 +243,9 @@ describe('agent handshake helpers', () => {
         appVersion: '0.2.0',
         enabled: true
       })
-      writeFileSync(appFile(dir), JSON.stringify({ executable: '/opt/Fartcrobat/fartcrobat', args: [], appVersion: '0.2.0' }))
+      writeFileSync(appFile(dir), JSON.stringify({ executable: '/opt/Inkmoor/inkmoor', args: [], appVersion: '0.2.0' }))
       retargetAppFile(dir, from, to)
-      expect(JSON.parse(readFileSync(appFile(dir), 'utf8')).executable).toBe('/opt/Fartcrobat/fartcrobat')
+      expect(JSON.parse(readFileSync(appFile(dir), 'utf8')).executable).toBe('/opt/Inkmoor/inkmoor')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -253,9 +253,9 @@ describe('agent handshake helpers', () => {
 
   it('tells the shim how to start the app', () => {
     expect(
-      launchInfo('/opt/Fartcrobat/fartcrobat', true, '/opt/Fartcrobat/resources/app.asar', '1.2.3', {})
+      launchInfo('/opt/Inkmoor/inkmoor', true, '/opt/Inkmoor/resources/app.asar', '1.2.3', {})
     ).toEqual({
-      executable: '/opt/Fartcrobat/fartcrobat',
+      executable: '/opt/Inkmoor/inkmoor',
       args: [],
       appVersion: '1.2.3'
     })

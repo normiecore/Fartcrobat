@@ -345,7 +345,7 @@ print(json.dumps({'status': res.status.name, 'version': int(r.encrypt_dict['/V']
 `
 
 describe.skipIf(!hasPyHanko())('pyHanko opens saved files', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-pubsec-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-pubsec-'))
   afterAll(() => rmSync(dir, { recursive: true, force: true }))
 
   for (const file of ['v5-classic.pdf', 'v5-objstm.pdf', 'v4-rc4.pdf', 'v4-aes128-objstm.pdf', 'v5-nometa.pdf', 'v5-two-envelopes.pdf']) {

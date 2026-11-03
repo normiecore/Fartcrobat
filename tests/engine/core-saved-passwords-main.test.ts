@@ -84,10 +84,10 @@ describe('electronCipher', () => {
 })
 
 describe('test cipher', () => {
-  it('is only used by unpackaged builds started with FARTCROBAT_TEST_SECRET_CIPHER=1', () => {
-    expect(testCipherEnabled(false, { FARTCROBAT_TEST_SECRET_CIPHER: '1' })).toBe(true)
-    expect(testCipherEnabled(true, { FARTCROBAT_TEST_SECRET_CIPHER: '1' })).toBe(false)
-    expect(testCipherEnabled(false, { FARTCROBAT_TEST_SECRET_CIPHER: 'true' })).toBe(false)
+  it('is only used by unpackaged builds started with INKMOOR_TEST_SECRET_CIPHER=1', () => {
+    expect(testCipherEnabled(false, { INKMOOR_TEST_SECRET_CIPHER: '1' })).toBe(true)
+    expect(testCipherEnabled(true, { INKMOOR_TEST_SECRET_CIPHER: '1' })).toBe(false)
+    expect(testCipherEnabled(false, { INKMOOR_TEST_SECRET_CIPHER: 'true' })).toBe(false)
     expect(testCipherEnabled(false, {})).toBe(false)
   })
 
@@ -227,13 +227,13 @@ describe('passwords:* handlers', () => {
   })
 
   it('senderAllowed: only the top frame of an app window showing the app', () => {
-    const app = 'app://fartcrobat'
-    const ok = { appWindow: true, topFrame: true, url: 'app://fartcrobat/index.html' }
+    const app = 'app://inkmoor'
+    const ok = { appWindow: true, topFrame: true, url: 'app://inkmoor/index.html' }
     expect(senderAllowed(ok, [app])).toBe(true)
     expect(senderAllowed({ ...ok, appWindow: false }, [app])).toBe(false)
     expect(senderAllowed({ ...ok, topFrame: false }, [app])).toBe(false)
     expect(senderAllowed({ ...ok, url: 'https://example.com/' }, [app])).toBe(false)
-    expect(senderAllowed({ ...ok, url: 'app://fartcrobat.evil/index.html' }, [app])).toBe(false)
+    expect(senderAllowed({ ...ok, url: 'app://inkmoor.evil/index.html' }, [app])).toBe(false)
     expect(senderAllowed({ ...ok, url: '' }, [app])).toBe(false)
     expect(senderAllowed({ ...ok, url: 'http://localhost:5173/' }, [app, 'http://localhost:5173'])).toBe(true)
   })

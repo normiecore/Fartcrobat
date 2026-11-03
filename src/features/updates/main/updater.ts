@@ -33,7 +33,7 @@ export const DOWNLOAD_DAMAGED = 'The downloaded update was damaged. Try again.'
 export const DOWNLOAD_NO_SPACE =
   "There isn't enough disk space to download the update. Free up some space and try again."
 export const mismatchMessage = (version: string) =>
-  `Fartcrobat ${version} can't be installed from inside the app. Download it from GitHub instead.`
+  `Inkmoor ${version} can't be installed from inside the app. Download it from GitHub instead.`
 
 /** What the person reads when a download fails. */
 export function downloadErrorMessage(err: unknown): string {

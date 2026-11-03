@@ -4,7 +4,7 @@ import { realpathSync } from 'node:fs'
 /**
  * The .AppImage file this process runs from, or null. The AppImage runtime mounts the image at a
  * temporary folder (APPDIR) and sets APPIMAGE to the file. Every program an AppImage starts
- * inherits both (an AI app that starts Fartcrobat through the agent shim, a PDF opened from an
+ * inherits both (an AI app that starts Inkmoor through the agent shim, a PDF opened from an
  * AppImage app through xdg-open), so they only belong to this process when execPath is inside
  * APPDIR. `realpath` resolves APPDIR when it lies under a linked folder (execPath is resolved).
  */

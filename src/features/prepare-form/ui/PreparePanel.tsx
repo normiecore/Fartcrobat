@@ -100,7 +100,7 @@ function PreparePanelBody({ doc }: { doc: DocumentModel }) {
         <div className="fc-prepare-form-note is-warning" role="note">
           <TriangleAlert size={16} aria-hidden />
           <span>
-            This form also has an XFA (LiveCycle) design. Fartcrobat edits its standard fields; apps that show
+            This form also has an XFA (LiveCycle) design. Inkmoor edits its standard fields; apps that show
             the XFA design will not see the changes.
           </span>
         </div>

@@ -59,7 +59,7 @@ const FAILED: Record<Action, string> = {
   'feature:updates:download': 'Could not start the download',
   'feature:updates:cancel': 'Could not stop the download',
   'feature:updates:dismiss': 'Could not close the notification',
-  'feature:updates:restart': 'Could not restart Fartcrobat',
+  'feature:updates:restart': 'Could not restart Inkmoor',
   'feature:updates:openReleasePage': 'Could not open the release page'
 }
 

@@ -1,4 +1,4 @@
-# Fartcrobat: notes for Claude sessions
+# Inkmoor: notes for Claude sessions
 
 Open-source (AGPL) desktop PDF reader, editor and signer for Windows, macOS and Linux. The layout
 follows current Adobe Acrobat Pro. Works offline, no built-in AI: its only network request of its
@@ -9,6 +9,13 @@ Office conversion when installed, with a built-in fallback.
 
 ## State
 
+- **Renamed: Fartcrobat is now Inkmoor from 0.4.0** (PR #26, owner's choice 3 Nov 2026). Releases up
+  to 0.3.0 are Fartcrobat. Installed copies update into Inkmoor, which only works because some ids
+  keep the old name for good: everything in `LEGACY` in `src/shared/identity.ts`, the GitHub repo
+  `normiecore/Fartcrobat`, the PDF keys (`/FartcrobatData`, `/FartcrobatMark`, ...), the XFDF and
+  form-data formats, `fartcrobat-settings.json` and the saved-password key domain. Never rename
+  these. Fixtures still contain the old name ("Hello Fartcrobat page 1"). See
+  `docs/features/rename.md`.
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`). It has no updater.
@@ -76,7 +83,7 @@ Office conversion when installed, with a built-in fallback.
   - The prototypes in `prototypes/passwordless/` are ported and were removed (git history has
     them).
 - The machine policy for all three features is `src/main/policy.ts`: REG_DWORDs `AgentAccess`,
-  `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
+  `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Inkmoor` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
 - 0.2.1 and 0.2.2 were published on 20 Oct 2026. Next: let an installed 0.2.0 or 0.2.1 update from
@@ -125,7 +132,7 @@ Office conversion when installed, with a built-in fallback.
 - Agent access: contracts in `src/shared/agent/` (tool catalogue, pipe protocol, main/window
   messages), the feature in `src/features/agent-access/` (main process pipe server, window runner
   and tool handlers, UI), the MCP shim in `src/agent-shim/` (built to `out/agent/shim.mjs` and the
-  Claude Desktop extension `out/agent/fartcrobat.mcpb`, shipped as `<resources>/agent/`).
+  Claude Desktop extension `out/agent/inkmoor.mcpb`, shipped as `<resources>/agent/`).
 - Certificate encryption: contracts in `src/shared/certkeys.ts`, the engine side in
   `src/engine/crypt/` (reader, bridge, writer; `index.ts` describes it), key sources and the
   PowerShell helper in `src/main/certkeys/`, the open flow in `src/renderer/src/app/unlock.ts` and
@@ -157,7 +164,7 @@ outputs are committed; tests never generate them at run time.
   `--keep-tools` to only limit CPUs, which matches the CI job after it installs the tools. Run
   both before pushing anything that touches tests: most past CI failures were races that only
   showed up on 2 CPUs, or tool checks that behaved differently when a tool was missing.
-- `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` runs e2e specs against a packaged
+- `INKMOOR_EXECUTABLE=release/linux-unpacked/inkmoor` runs e2e specs against a packaged
   build (the release workflow smoke-tests this way).
 - `sudo env "PATH=$PATH" tests/update-rehearsal/linux.sh` updates the latest released AppImage to a
   build of this checkout from a fake GitHub (root, throwaway machines only; README there).
@@ -195,7 +202,7 @@ outputs are committed; tests never generate them at run time.
 ## Conventions and gotchas
 
 - e2e tests wait on observable state (`expect`, `expect.poll`), never fixed sleeps. To force a
-  race in a test, monkeypatch `window.__fartcrobat.getActiveDoc().engine.call` to delay or gate a
+  race in a test, monkeypatch `window.__inkmoor.getActiveDoc().engine.call` to delay or gate a
   specific call.
 - Dialogs are named via `aria-labelledby`, so `getByLabel('Password')` can match the dialog itself.
   Use role-based, `exact`, or dialog-scoped locators. Checkable menu items have role
@@ -220,7 +227,7 @@ outputs are committed; tests never generate them at run time.
 - Certificate-encrypted sessions must never write `s.pdf.saveToBuffer()` output (it holds the
   temporary bridge dictionary); `tests/engine/passwordless-guard.test.ts` allow-lists the calls.
 - Tests that use outside tools (pyHanko, pwsh) skip without them; CI sets
-  `FARTCROBAT_REQUIRE_PYHANKO=1` so the pyHanko cross-checks cannot skip there.
+  `INKMOOR_REQUIRE_PYHANKO=1` so the pyHanko cross-checks cannot skip there.
 - Worktree-isolated agents have been based on an old commit before. Check the base with
   `git log` before merging their work.
 - Git: work on the branch the session names, open a draft PR, and let the owner merge.
@@ -280,7 +287,7 @@ capture, scanner input.
 
 ### 0.2.1 (#17, 20 Oct 2026)
 
-- Companion: opening the chat lets the next conversation that uses Fartcrobat join, without an
+- Companion: opening the chat lets the next conversation that uses Inkmoor join, without an
   invitation. Closing or minimizing it before one joins takes that back until it is opened again;
   End & clear, or a disconnect of the joined conversation, ends it until the person allows a new
   conversation. Shims older than 0.2.1 drop the token, so their calls never join by themselves
@@ -289,7 +296,7 @@ capture, scanner input.
   ends it) and three working poses. See the agent-companion and agent-text-editing notes.
 - Connect ChatGPT Desktop works in installed builds: `shim.mjs` ships next to app.asar and the
   setup points at a copy in `<userData>/agent-helper/`, refreshed at each start. The setup's
-  `FARTCROBAT_USER_DATA` names the usual folder, which the helper does not take for a separate
+  `INKMOOR_USER_DATA` names the usual folder, which the helper does not take for a separate
   profile (`separateProfile` in `src/agent-shim/launch.ts`): it starts the app through WMI or
   LaunchServices, as for the Claude extension.
 - #17 was merged on 20 Oct 2026 with a merge commit, and its Release run published 0.2.1.

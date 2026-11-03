@@ -2,8 +2,8 @@
  * Certificate encryption (PDF public-key security, /Adobe.PubSec). The test Digital IDs and files are
  * in tests/fixtures/passwordless/ (make_pubsec.py; the keys are for tests only). Digital IDs are put
  * in the test profile's settings before the app starts, as Preferences > Digital IDs would list them.
- * Remembering uses the test cipher (FARTCROBAT_TEST_SECRET_CIPHER=1), which packaged builds ignore,
- * so the file is skipped with FARTCROBAT_EXECUTABLE. The Windows certificate store test runs the
+ * Remembering uses the test cipher (INKMOOR_TEST_SECRET_CIPHER=1), which packaged builds ignore,
+ * so the file is skipped with INKMOOR_EXECUTABLE. The Windows certificate store test runs the
  * helper with PowerShell 7 on Linux against a private test store, and skips without pwsh.
  */
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
@@ -17,9 +17,9 @@ import { dirname, join } from 'node:path'
 import { dataOf, errorOf, expectAudit, startShim, type Agent } from './agent-helpers'
 import { ROOT, activeDocState, fixturePath, launch, runCommand, waitForRender } from './helpers'
 
-test.skip(!!process.env.FARTCROBAT_EXECUTABLE, 'packaged builds have no test cipher')
+test.skip(!!process.env.INKMOOR_EXECUTABLE, 'packaged builds have no test cipher')
 
-const TEST_CIPHER = { FARTCROBAT_TEST_SECRET_CIPHER: '1' }
+const TEST_CIPHER = { INKMOOR_TEST_SECRET_CIPHER: '1' }
 const FIX = 'passwordless'
 const PKI = fixturePath(`${FIX}/pki`)
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/certificate-encryption-${name}.png` })
@@ -56,7 +56,7 @@ function digitalId(name: string, label: string, dir: string) {
  * store is off, so on Windows these tests neither start PowerShell nor depend on the person's store.
  */
 async function launchWithIds(ids: { name: string; label: string }[], env: Record<string, string> = {}) {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-ids-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-ids-'))
   return launch([], { ...TEST_CIPHER, ...env }, {
     rememberPasswords: true,
     prefs: { useWindowsCertificateStore: false },
@@ -66,18 +66,18 @@ async function launchWithIds(ids: { name: string; label: string }[], env: Record
 
 /** A copy of a fixture in a new folder. */
 function tempCopy(fixture: string, name: string): string {
-  const path = join(mkdtempSync(join(tmpdir(), 'fartcrobat-cert-')), name)
+  const path = join(mkdtempSync(join(tmpdir(), 'inkmoor-cert-')), name)
   copyFileSync(fixturePath(`${FIX}/${fixture}`), path)
   return path
 }
 
 /** Starts a command that may open a dialog, without waiting for it to finish. */
 async function startCommand(page: Page, id: string) {
-  await page.evaluate((c) => void (window as any).__fartcrobat.runCommand(c), id)
+  await page.evaluate((c) => void (window as any).__inkmoor.runCommand(c), id)
 }
 
 async function openPath(page: Page, path: string) {
-  await page.evaluate((p) => void (window as any).__fartcrobat.openPaths([p]), path)
+  await page.evaluate((p) => void (window as any).__inkmoor.openPaths([p]), path)
 }
 
 async function closeActive(page: Page) {
@@ -118,7 +118,7 @@ async function expectOpened(page: Page, title: string) {
 /** Engine facts of the active document. */
 function activeInfo(page: Page) {
   return page.evaluate(() => {
-    const doc = (window as any).__fartcrobat.getActiveDoc()
+    const doc = (window as any).__inkmoor.getActiveDoc()
     const info = doc.state.info
     return {
       security: info.security as string | null,
@@ -131,7 +131,7 @@ function activeInfo(page: Page) {
 }
 
 /**
- * Bytes a certificate-encrypted file written by Fartcrobat must (not) contain. `plaintext` is a title
+ * Bytes a certificate-encrypted file written by Inkmoor must (not) contain. `plaintext` is a title
  * the test gave the document: certificate-encrypted saves write no object streams, so the document
  * information dictionary would show it if it were written in clear.
  */
@@ -170,7 +170,7 @@ test('a Digital ID opens a certificate-encrypted file; the password is remembere
     await shot(page, 'protect-panel')
 
     // An edit is saved back with the same certificate security, and the file reopens silently.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.setMetadata({ title: 'Edited title' }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().core.doc.setMetadata({ title: 'Edited title' }))
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
     await runCommand(page, 'file.save')
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(false)
@@ -186,7 +186,7 @@ test('a Digital ID opens a certificate-encrypted file; the password is remembere
     expect((await activeInfo(page)).unlock?.via).toMatchObject({ savedPassword: true })
 
     // Revert reads the file again with the key the tab already has.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.setMetadata({ title: 'Not saved' }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().core.doc.setMetadata({ title: 'Not saved' }))
     await startCommand(page, 'file.revert')
     await dialogTitled(page, 'Revert').getByRole('button', { name: 'Revert' }).click()
     await expect.poll(async () => (await activeInfo(page)).title).toBe('Edited title')
@@ -208,7 +208,7 @@ test('a file for someone else says who it is for and offers to add a Digital ID'
     await shot(page, 'no-match')
     await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toHaveCount(0)
-    expect(await page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length)).toBe(0)
+    expect(await page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.length)).toBe(0)
   } finally {
     await app.close()
   }
@@ -247,10 +247,10 @@ test('saving a signed certificate-encrypted file warns that its signatures will 
     await page.keyboard.press('Enter')
     await expectOpened(page, 'signed.pdf')
     const before = readFileSync(file)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.setMetadata({ title: 'Changed after signing' }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().core.doc.setMetadata({ title: 'Changed after signing' }))
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
     // Kept, so the file is compared once the cancelled save has ended (a Cancel that saved has written by then).
-    const cancelled = page.evaluate(() => (window as any).__fartcrobat.runCommand('file.save') as Promise<boolean>)
+    const cancelled = page.evaluate(() => (window as any).__inkmoor.runCommand('file.save') as Promise<boolean>)
     cancelled.catch(() => {}) // awaited below; an earlier failure must not be hidden by its rejection
     const warn = dialogTitled(page, 'Invalidate signatures?')
     await expect(warn).toBeVisible()
@@ -271,7 +271,7 @@ test('saving a signed certificate-encrypted file warns that its signatures will 
 })
 
 test('Encrypt with Certificate for two recipients: each one opens the file with their own Digital ID', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-cert-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-cert-'))
   const plain = join(dir, 'plain.pdf')
   copyFileSync(fixturePath('text.pdf'), plain)
   const encrypted = join(dir, 'for-alice-and-bob.pdf')
@@ -346,7 +346,7 @@ test('an agent opens a certificate-encrypted file silently with a remembered Dig
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [join(ROOT, 'out/agent/shim.mjs')],
-      env: { ...getDefaultEnvironment(), FARTCROBAT_USER_DATA: userData },
+      env: { ...getDefaultEnvironment(), INKMOOR_USER_DATA: userData },
       stderr: 'pipe'
     })
     client = new Client({ name: 'certificate-encryption-e2e', version: '1.0.0' })
@@ -476,13 +476,13 @@ test('the Windows certificate store opens a file without a prompt (helper run wi
   const pwsh = powershell()
   test.skip(!pwsh, 'needs PowerShell (pwsh)')
   // A private .NET store: HOME decides where .NET on Linux keeps CurrentUser\My.
-  const home = mkdtempSync(join(tmpdir(), 'fartcrobat-store-'))
+  const home = mkdtempSync(join(tmpdir(), 'inkmoor-store-'))
   execFileSync(
     pwsh!,
     ['-NoLogo', '-NoProfile', '-NonInteractive', '-File', fixturePath(`${FIX}/winstore/import_store.ps1`), '-Pki', join(PKI, 'winstore')],
     { env: { ...process.env, HOME: home }, stdio: 'ignore', timeout: 120_000 }
   )
-  const { app, page } = await launch([], { FARTCROBAT_TEST_POWERSHELL: pwsh!, FARTCROBAT_TEST_POWERSHELL_HOME: home })
+  const { app, page } = await launch([], { INKMOOR_TEST_POWERSHELL: pwsh!, INKMOOR_TEST_POWERSHELL_HOME: home })
   try {
     await watchForPrompts(page)
     const file = tempCopy('v5-classic.pdf', 'store.pdf')

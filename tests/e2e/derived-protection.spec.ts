@@ -17,7 +17,7 @@ async function stubOpenDialog(app: ElectronApplication, paths: string[]) {
 
 /** Opens a protected file, typing its password in the prompt. */
 async function openProtected(page: Page, path: string, password: string, title: string) {
-  const opening = page.evaluate((p) => (window as any).__fartcrobat.openPaths([p]), path)
+  const opening = page.evaluate((p) => (window as any).__inkmoor.openPaths([p]), path)
   await page.getByLabel('Password', { exact: true }).fill(password)
   await page.keyboard.press('Enter')
   await opening
@@ -28,7 +28,7 @@ async function openProtected(page: Page, path: string, password: string, title: 
 /** Security of the active tab, and whether its engine reopens its own saved bytes without a password. */
 async function activeSecurity(page: Page) {
   return page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const bytes = await d.saveBytes({})
     const reloaded = await d.core.doc.reload(bytes, {})
     return { encryption: d.state.info.encryption, copy: d.state.info.permissions.copy, reloaded: reloaded.ok }
@@ -43,7 +43,7 @@ function fileSecurity(path: string, password: string) {
 
 /** Starts a command without waiting for it: commands that open a dialog finish when it closes. */
 async function startCommand(page: Page, id: string) {
-  await page.evaluate((c) => void (window as any).__fartcrobat.runCommand(c), id)
+  await page.evaluate((c) => void (window as any).__inkmoor.runCommand(c), id)
 }
 
 const passwordPrompt = (page: Page) => page.locator('.ui-dialog', { hasText: 'Password required' })
@@ -65,7 +65,7 @@ test('extract, split and combine keep the protection of their source', async () 
 
     // Split a 256-bit AES document: every part needs its open password.
     await openProtected(page, fixturePath('derived-protection/aes256-open.pdf'), 'open-256', 'aes256-open.pdf')
-    const outDir = mkdtempSync(join(tmpdir(), 'fartcrobat-derived-'))
+    const outDir = mkdtempSync(join(tmpdir(), 'inkmoor-derived-'))
     await stubOpenDialog(app, [outDir])
     await startCommand(page, 'organize.split')
     const dialog = page.getByRole('dialog')

@@ -7,7 +7,7 @@ let cached: string | null = null
 
 /**
  * app.getVersion() in installed copies. Unpackaged runs (npm run dev, tests) start out/main, which
- * has no package.json, so Electron says "0.0" there: they read Fartcrobat's package.json instead.
+ * has no package.json, so Electron says "0.0" there: they read Inkmoor's package.json instead.
  */
 export function appVersion(): string {
   cached ??=

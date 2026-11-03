@@ -74,7 +74,7 @@ export function latestCall(calls: CallRecord[], ownerId?: number): CallRecord | 
 
 // ---- labels ------------------------------------------------------------------------------------
 
-/** How Fartcrobat names an AI app: "Claude" for Claude's apps, else what the app reported. */
+/** How Inkmoor names an AI app: "Claude" for Claude's apps, else what the app reported. */
 export function appLabel(name: string | undefined): string {
   const n = (name ?? '').trim()
   if (!n) return 'AI app'

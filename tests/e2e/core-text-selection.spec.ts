@@ -6,7 +6,7 @@ import { activeDocState, fixturePath, launch, openFile, waitForRender } from './
 
 async function selection(page: Page) {
   return page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     return { sel: d.state.selection, text: (await d.selectedText()) as string }
   })
 }
@@ -14,7 +14,7 @@ async function selection(page: Page) {
 /** Client coordinates of characters of the first occurrence of `word` on page 0. */
 async function wordGeometry(page: Page, word: string) {
   return page.evaluate(async (w) => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const t = await d.pageText(0)
     const i = t.text.indexOf(w)
     const pg = document.querySelector('.viewer-page[data-page-index="0"]')!.getBoundingClientRect()
@@ -35,7 +35,7 @@ async function openAt100() {
   const a = await launch()
   await openFile(a.page, fixturePath('text.pdf'))
   await waitForRender(a.page)
-  await a.page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1))
+  await a.page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1))
   await a.page.waitForTimeout(600)
   return a
 }

@@ -94,7 +94,7 @@ function GeneralSettings() {
         <Checkbox checked={prefs.restoreLastView} onChange={(v) => set({ restoreLastView: v })} label="Reopen documents at the page and zoom where I left off" />
         <Checkbox checked={prefs.highlightFormFields} onChange={(v) => set({ highlightFormFields: v })} label="Highlight form fields" />
         <Checkbox checked={prefs.keepToolSelected} onChange={(v) => set({ keepToolSelected: v })} label="Keep annotation tools selected after use" />
-        <Checkbox checked={prefs.checkDefaultAppOnStartup} onChange={(v) => set({ checkDefaultAppOnStartup: v })} label="Offer to make Fartcrobat the default PDF app" />
+        <Checkbox checked={prefs.checkDefaultAppOnStartup} onChange={(v) => set({ checkDefaultAppOnStartup: v })} label="Offer to make Inkmoor the default PDF app" />
         <Checkbox checked={prefs.hardwareAcceleration} onChange={(v) => set({ hardwareAcceleration: v })} label="Use hardware acceleration (restart required)" />
       </div>
       <div className="prefs-default-app">
@@ -104,7 +104,7 @@ function GeneralSettings() {
             {status === null
               ? 'Checking…'
               : status.isDefault
-                ? 'Fartcrobat opens PDF files by default.'
+                ? 'Inkmoor opens PDF files by default.'
                 : status.instructions}
           </div>
         </div>
@@ -152,7 +152,7 @@ export function PasswordSettings() {
   const removeAll = async () => {
     const ok = await confirm({
       title: 'Remove all saved passwords?',
-      message: 'Fartcrobat will ask for these passwords again the next time the documents and Digital IDs are used.',
+      message: 'Inkmoor will ask for these passwords again the next time the documents and Digital IDs are used.',
       confirmLabel: 'Remove All',
       danger: true
     })
@@ -162,7 +162,7 @@ export function PasswordSettings() {
     <div className="prefs-passwords">
       <Switch checked={on} disabled={policy} onChange={(v) => void setPrefs({ rememberPasswords: v })} label="Remember passwords on this device" />
       <p className="shell-muted">
-        When you open a protected document or sign with a Digital ID, Fartcrobat can remember the password so you only type it once.
+        When you open a protected document or sign with a Digital ID, Inkmoor can remember the password so you only type it once.
         Remembered documents then open without asking, also when an AI app opens them for you.
       </p>
       {status && <p className="prefs-passwords-note">{savedPasswordsNote(status, on)}</p>}
@@ -290,19 +290,19 @@ function aboutUpdateLine(s: UpdateStatus): { text: string | null; action?: About
     case 'checking':
       return { text: 'Checking for updates…' }
     case 'upToDate':
-      return { text: `Fartcrobat ${s.currentVersion} is up to date.` }
+      return { text: `Inkmoor ${s.currentVersion} is up to date.` }
     case 'available':
-      return { text: `Fartcrobat ${v} is available.`, action: { label: 'Download', channel: 'feature:updates:download', failed: DOWNLOAD_FAILED } }
+      return { text: `Inkmoor ${v} is available.`, action: { label: 'Download', channel: 'feature:updates:download', failed: DOWNLOAD_FAILED } }
     case 'downloading':
-      return { text: `Downloading Fartcrobat ${v}… ${Math.floor(s.progress?.percent ?? 0)}%` }
+      return { text: `Downloading Inkmoor ${v}… ${Math.floor(s.progress?.percent ?? 0)}%` }
     case 'ready':
       return {
-        text: `Fartcrobat ${v} is ready to install.`,
-        action: { label: 'Restart now', channel: 'feature:updates:restart', failed: 'Could not restart Fartcrobat' }
+        text: `Inkmoor ${v} is ready to install.`,
+        action: { label: 'Restart now', channel: 'feature:updates:restart', failed: 'Could not restart Inkmoor' }
       }
     case 'error':
       if (s.errorDuring === 'download')
-        return { text: `Couldn't download Fartcrobat ${v}.`, action: { label: 'Try again', channel: 'feature:updates:download', failed: DOWNLOAD_FAILED } }
+        return { text: `Couldn't download Inkmoor ${v}.`, action: { label: 'Try again', channel: 'feature:updates:download', failed: DOWNLOAD_FAILED } }
       // Automatic checks that fail stay silent.
       return { text: s.manual ? (s.error ?? CHECK_FAILED) : null }
     default:
@@ -372,10 +372,10 @@ function AboutUpdates() {
 export function openAbout() {
   const info = useApp.getState().systemInfo
   void openDialog((close) => (
-    <Dialog title="About Fartcrobat" onClose={() => close()} width={480} footer={<Button variant="primary" onClick={() => close()}>Close</Button>}>
+    <Dialog title="About Inkmoor" onClose={() => close()} width={480} footer={<Button variant="primary" onClick={() => close()}>Close</Button>}>
       <div className="about">
         <div className="about-logo">F</div>
-        <h3>Fartcrobat {info?.appVersion}</h3>
+        <h3>Inkmoor {info?.appVersion}</h3>
         <p>A free, open-source PDF reader, editor and signer.</p>
         <p className="shell-muted">
           Licensed under the GNU Affero General Public License v3 or later. PDF engine: MuPDF by Artifex Software

@@ -62,7 +62,7 @@ const MAX_SOCKETS = 64
 const MAX_HANDSHAKES = 16
 
 export const BLOCKED_MESSAGE =
-  'The person disconnected this AI app in Fartcrobat. Do not use Fartcrobat again unless they ask; they can allow it again in Fartcrobat (Preferences > AI apps).'
+  'The person disconnected this AI app in Inkmoor. Do not use Inkmoor again unless they ask; they can allow it again in Inkmoor (Preferences > AI apps).'
 
 let connectionCounter = 0
 
@@ -166,10 +166,10 @@ export class AgentServer {
       return
     }
     if (this.sockets.size >= MAX_SOCKETS) {
-      // Say why, so the shim reports busy instead of treating Fartcrobat as not running.
+      // Say why, so the shim reports busy instead of treating Inkmoor as not running.
       socket.on('error', () => {})
       socket.end(
-        encodeMessage({ t: 'reject', code: 'busy', message: 'Fartcrobat is busy. Try again in a moment.' })
+        encodeMessage({ t: 'reject', code: 'busy', message: 'Inkmoor is busy. Try again in a moment.' })
       )
       setTimeout(() => socket.destroy(), 1000).unref?.()
       return
@@ -280,7 +280,7 @@ export class AgentServer {
     if (msg.protocol !== AGENT_PROTOCOL_VERSION) {
       reject(
         'protocol',
-        `This version of Fartcrobat (${this.opts.appVersion}) needs agent protocol ${AGENT_PROTOCOL_VERSION}. Update Fartcrobat or its Claude Desktop extension.`
+        `This version of Inkmoor (${this.opts.appVersion}) needs agent protocol ${AGENT_PROTOCOL_VERSION}. Update Inkmoor or its Claude Desktop extension.`
       )
       return null
     }
@@ -292,7 +292,7 @@ export class AgentServer {
     if (!verifyMac(this.opts.token, 'client', nonce, msg.mac)) {
       reject(
         'bad_auth',
-        'Authentication failed. Restart the AI app so it reads the current Fartcrobat connection details.'
+        'Authentication failed. Restart the AI app so it reads the current Inkmoor connection details.'
       )
       return null
     }
@@ -304,7 +304,7 @@ export class AgentServer {
       return null
     }
     if (this.connections.size >= this.maxConnections) {
-      reject('busy', 'Too many AI apps are connected to Fartcrobat.')
+      reject('busy', 'Too many AI apps are connected to Inkmoor.')
       return null
     }
     return {
