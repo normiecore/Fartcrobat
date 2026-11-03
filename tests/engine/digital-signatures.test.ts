@@ -198,6 +198,7 @@ describe('signing and validation', () => {
     expect(b.coversWholeFile).toBe(true)
     expect(a.changes.map((c) => c.description)).toContain('Signature field “Signature2” was added and signed')
     expect(a.changes.every((c) => c.allowed)).toBe(true)
+    expect(a.laterUpdates).toBe('signing')
     expect(signatureStatus(a, new Set()).level).toBe('unknown-identity')
     expect(b.signerName).toBe('Émile Zoë')
     expect(b.signatureAlgorithm).toBe('ECDSA with SHA-256')
@@ -245,8 +246,12 @@ describe('signing and validation', () => {
     const comment = r.changes.find((c) => c.category === 'annotation')
     expect(comment?.description).toMatch(/^Page 3: 1 comment added/)
     expect(comment?.allowed).toBe(true)
+    // Allowed or not, anything but a later signature caps the status at a warning.
+    expect(r.laterUpdates).toBe('other')
     const st = signatureStatus(r, new Set())
-    expect(st.level).toBe('unknown-identity')
+    expect(st.level).toBe('warning')
+    expect(st.title).toBe('The document was changed after it was signed.')
+    expect(st.details.join(' ')).toMatch(/View Signed Version/)
   })
 
   it('certifies a form: filling in is allowed, comments are not (P=2)', async () => {
@@ -272,7 +277,8 @@ describe('signing and validation', () => {
     expect(r1.changes.length).toBeGreaterThan(0)
     expect(r1.changes.find((c) => c.category === 'form')?.description).toBe('Form field “fullName” was filled in or changed')
     expect(r1.changes.every((c) => c.allowed)).toBe(true)
-    expect(signatureStatus(r1, new Set()).level).toBe('unknown-identity')
+    // Filling in is allowed by the certifier, so it is not invalid; but the document changed.
+    expect(signatureStatus(r1, new Set()).level).toBe('warning')
 
     const e3 = await openBytes(filled)
     await e3.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [50, 50, 70, 70], contents: 'not allowed' })
@@ -954,6 +960,173 @@ describe('updates after signing', () => {
       expect(r.changes).toContainEqual({ category: 'annotation', page: 0, allowed: false, description: 'Page 1: 1 comment removed (FreeText)' })
       expect(r.changes).toContainEqual(expect.objectContaining({ category: 'form', allowed: true }))
       expect(level).toBe('invalid')
+    })
+  })
+
+  describe('only later signatures keep a signature valid', () => {
+    async function check(name: string) {
+      const bytes = fixture(`digital-signatures/${name}`)
+      const report = await validateBytes(bytes)
+      return { bytes, report, r: report.signatures[0], level: signatureStatus(report.signatures[0], new Set()).level }
+    }
+    const blocked = (r: ValidationReport['signatures'][number], category: string, text: RegExp) =>
+      r.changes.some((c) => c.category === category && text.test(c.description) && !c.allowed)
+
+    it('caps the status when an update changes an object MuPDF reads without a reference (an object stream /First)', async () => {
+      const { bytes, r, level } = await check('update-objstm-first.pdf')
+      expect(pageText(bytes.slice(0, r.revisionEnd))).toContain('Amount due: 100 EUR')
+      expect(pageText(bytes)).toContain('Amount due: 999 EUR')
+      expect(r.integrity).toBe(true)
+      expect(r.laterUpdates).toBe('other')
+      expect(r.changes).toEqual([{ category: 'other', allowed: false, description: 'Other parts of the document were changed' }])
+      expect(level).toBe('warning')
+      expect(signatureStatus(r, new Set()).title).toBe('The document was changed after it was signed.')
+      // A certification that allows no changes is invalid after any change at all.
+      const p1 = await check('update-objstm-first-p1.pdf')
+      expect(pageText(p1.bytes)).toContain('Amount due: 999 EUR')
+      expect(p1.r.kind).toBe('certification')
+      expect(p1.level).toBe('invalid')
+    })
+
+    it('judges a font shared by several fields as part of each of them', async () => {
+      const locked = await check('update-shared-font-lock.pdf')
+      expect(locked.r.lock).toMatchObject({ action: 'Include', fields: ['Amount'] })
+      expect(blocked(locked.r, 'form', /Amount/)).toBe(true)
+      expect(locked.level).toBe('invalid')
+      const sig = await check('update-shared-font-sig-p2.pdf')
+      expect(blocked(sig.r, 'signature', /Signature1.*changed after it was signed/)).toBe(true)
+      expect(sig.level).toBe('invalid')
+    })
+
+    it('keeps a field locked when an update renames it', async () => {
+      const { r, level } = await check('update-lock-rename.pdf')
+      expect(blocked(r, 'form', /Total/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('locks every field but the listed ones for /Action /Exclude', async () => {
+      const { r, level } = await check('update-lock-exclude.pdf')
+      expect(r.lock).toMatchObject({ action: 'Exclude', fields: ['Notes'] })
+      expect(blocked(r, 'form', /Amount/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('locks the fields under a locked parent field', async () => {
+      const { r, level } = await check('update-lock-parent.pdf')
+      expect(blocked(r, 'form', /Invoice\.Amount/)).toBe(true)
+      expect(level).toBe('invalid')
+    })
+
+    it('judges a widget written directly in /Annots as a field, not a comment', async () => {
+      const { bytes, r, level } = await check('update-direct-widget.pdf')
+      expect(pageText(bytes)).not.toContain('100')
+      expect(blocked(r, 'form', /Amount/)).toBe(true)
+      expect(r.changes.some((c) => c.category === 'annotation')).toBe(false)
+      expect(level).toBe('invalid')
+    })
+
+    it('keeps a signature valid when a crafted later signature only adds its own field', async () => {
+      const { report, r, level } = await check('update-later-signature.pdf')
+      expect(report.signatures.map((x) => [x.fieldName, x.integrity, x.signatureValid])).toEqual([
+        ['Signature1', true, true],
+        ['Signature2', true, true]
+      ])
+      expect(r.laterUpdates).toBe('signing')
+      expect(r.changes).toEqual([expect.objectContaining({ category: 'signature', allowed: true, description: 'Signature field “Signature2” was added and signed' })])
+      expect(level).toBe('unknown-identity')
+    })
+
+    it('does not let a later signature define an object the signed revision already refers to', async () => {
+      const { bytes, report, r, level } = await check('update-later-signature-dangling.pdf')
+      expect(pageText(bytes.slice(0, r.revisionEnd))).not.toContain('999 EUR')
+      expect(pageText(bytes)).toContain('999 EUR')
+      expect(report.signatures[1].coversWholeFile).toBe(true)
+      expect(r.laterUpdates).toBe('other')
+      expect(level).toBe('warning')
+    })
+
+    it('keeps signatures valid through later signatures made by the app', async () => {
+      // A new field, then the existing empty field.
+      const e = await openFixture('digital-signatures/unsigned-field.pdf')
+      const first = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+      const second = await (await openBytes(first.bytes)).sig.sign(request(ecId, { target: { kind: 'field', name: 'Approver' } }))
+      const third = await (await openBytes(second.bytes)).sig.sign(request(rsaId, { target: { kind: 'invisible' }, lock: true }))
+      const report = await validateBytes(third.bytes)
+      expect(report.signatures.map((x) => [x.fieldName, x.laterUpdates])).toEqual([
+        ['Signature1', 'signing'],
+        ['Approver', 'signing'],
+        ['Signature2', 'none']
+      ])
+      expect(report.signatures.map((x) => signatureStatus(x, new Set()).level)).toEqual(['unknown-identity', 'unknown-identity', 'unknown-identity'])
+
+      // Under a certification that allows signing, signing its empty field is allowed.
+      const c = await openFixture('digital-signatures/unsigned-field.pdf')
+      const certified = await c.ops<typeof sigOps>('digital-signatures').sign(request(rsaId, { mode: 'certify', permission: 2, target: { kind: 'invisible' } }))
+      const signed = await (await openBytes(certified.bytes)).sig.sign(request(ecId, { target: { kind: 'field', name: 'Approver' } }))
+      const cr = (await validateBytes(signed.bytes)).signatures[0]
+      expect(cr.kind).toBe('certification')
+      expect(cr.changes.every((x) => x.allowed)).toBe(true)
+      expect(cr.laterUpdates).toBe('signing')
+      expect(signatureStatus(cr, new Set()).level).toBe('unknown-identity')
+
+      // Object streams and encryption.
+      const src = new mupdf.PDFDocument(fixture('text.pdf'))
+      const buf = src.saveToBuffer('garbage,compress,objstms')
+      const compact = buf.asUint8Array().slice()
+      buf.destroy()
+      src.destroy()
+      const o1 = await (await openBytes(compact)).sig.sign(request(rsaId))
+      const o2 = await (await openBytes(o1.bytes)).sig.sign(request(ecId, { target: { kind: 'new', page: 1, rect: [300, 650, 540, 720] } }))
+      expect((await validateBytes(o2.bytes)).signatures[0].laterUpdates).toBe('signing')
+      const enc = await openFixture('encrypted.pdf', 'secret')
+      const n1 = await enc.ops<typeof sigOps>('digital-signatures').sign(request(rsaId))
+      const n2 = await (await openBytes(n1.bytes, 'enc.pdf', 'secret')).sig.sign(request(ecId, { target: { kind: 'invisible' } }))
+      expect((await validateBytes(n2.bytes, 'secret')).signatures[0].laterUpdates).toBe('signing')
+    })
+
+    it('caps the status when anything else comes before a later signature', async () => {
+      const e = await openFixture('form.pdf')
+      const first = await e.ops<typeof sigOps>('digital-signatures').sign(request(rsaId, { target: { kind: 'invisible' } }))
+      const e2 = await openBytes(first.bytes)
+      const forms = e2.ops<typeof formOps>('forms')
+      await forms.setValue((await forms.listAll()).find((f) => f.name === 'fullName')!.id, 'Ada Lovelace')
+      const filled = await e2.doc.save({})
+      const second = await (await openBytes(filled)).sig.sign(request(ecId, { target: { kind: 'invisible' } }))
+      const [a, b] = (await validateBytes(second.bytes)).signatures
+      expect(a.changes.every((c) => c.allowed)).toBe(true)
+      expect(a.laterUpdates).toBe('other')
+      expect(signatureStatus(a, new Set()).level).toBe('warning')
+      expect(b.laterUpdates).toBe('none')
+      expect(signatureStatus(b, new Set()).level).toBe('unknown-identity')
+    })
+
+    it('fails closed on reports that do not say what came later, and on any change after a signature that allows none', () => {
+      const r = {
+        changes: [],
+        changesUnknown: false,
+        permission: null,
+        lock: null,
+        problems: [],
+        warnings: [],
+        certificates: [],
+        chainVerified: [],
+        kind: 'approval',
+        integrity: true,
+        signatureValid: true,
+        coversWholeFile: false,
+        revisionEnd: 1000,
+        unknownReason: null,
+        timestamp: null,
+        signingTime: null,
+        certExpiredNow: false,
+        certValidAtSigning: true
+      } as unknown as Parameters<typeof signatureStatus>[0]
+      expect(signatureStatus(r, new Set()).level).toBe('warning')
+      expect(signatureStatus({ ...r, laterUpdates: 'signing' }, new Set()).level).toBe('unknown-identity')
+      expect(signatureStatus({ ...r, laterUpdates: 'signing', kind: 'certification', permission: 1 }, new Set()).level).toBe('invalid')
+      expect(signatureStatus({ ...r, laterUpdates: 'signing', permissionInForce: 1 }, new Set()).level).toBe('invalid')
+      expect(signatureStatus({ ...r, laterUpdates: 'signing', lock: { action: 'All', fields: [], permission: 1 } }, new Set()).level).toBe('invalid')
+      expect(signatureStatus({ ...r, coversWholeFile: true, laterUpdates: 'none', kind: 'certification', permission: 1 }, new Set()).level).toBe('unknown-identity')
     })
   })
 })

@@ -54,6 +54,31 @@ update-field-moved-p2.pdf certification allowing form filling; the update moves 
                          over the page text with a new appearance.
 update-comment-removed-p2.pdf certification allowing form filling, with a comment on the page; the
                          update removes the comment and changes the text field.
+update-objstm-first.pdf  approval signature; the object stream's /First is a reference to an
+                         integer object and the stream holds a second copy of its objects that
+                         draws another form XObject (999 EUR); the update only changes that
+                         integer, an object nothing refers to through the document's structure.
+update-objstm-first-p1.pdf the same, certified without changes.
+update-shared-font-lock.pdf approval signature locking the field Amount (/Action /Include); the
+                         fields Notes (listed first) and Amount draw with one shared font; the
+                         update changes that font's encoding so that Amount shows 900.
+update-shared-font-sig-p2.pdf certification allowing form filling, with a visible signature whose
+                         appearance shares the font with Notes; the update changes the font so
+                         that the signature shows 900 EUR.
+update-lock-rename.pdf   the Include lock; the update renames the locked field Amount to Total
+                         and changes its value and appearance.
+update-lock-exclude.pdf  approval signature locking every field except Notes (/Action /Exclude);
+                         the update changes Amount.
+update-lock-parent.pdf   approval signature locking the field Invoice (/Action /Include), the
+                         parent of Invoice.Amount; the update changes Invoice.Amount.
+update-direct-widget.pdf approval signature locking all fields, the text field written directly
+                         in the page's /Annots; the update points its appearance at a planted
+                         999 appearance.
+update-later-signature.pdf approval signature followed by a second, valid signature on a new field
+                         whose appearance uses a new form XObject (object 50).
+update-later-signature-dangling.pdf the same, but the signed revision's page already refers to
+                         object 50 (which it does not have), so the second signature's update makes
+                         the page draw 999 EUR.
 
 Run from the repository root:  python3 tests/fixtures/digital-signatures/make_update_fixtures.py
 Needs the cryptography package.
@@ -233,10 +258,13 @@ def amount_appearance_stream(text: bytes) -> bytes:
     return b"BT /F1 12 Tf 2 10 Td (" + text + b") Tj ET"
 
 
-def sign(data: bytes) -> bytes:
-    """Fills in the byte range and the detached CMS signature of the placeholder in `data`."""
+def sign(data: bytes, last: bool = False) -> bytes:
+    """Fills in the byte range and the detached CMS signature of the placeholder in `data`.
+
+    last: sign the last signature dictionary of the file (a later signature) instead of the first.
+    """
     # Byte range around the /Contents value, then the detached CMS signature over it.
-    start = data.index(b"/Contents <") + len(b"/Contents ")
+    start = (data.rindex if last else data.index)(b"/Contents <") + len(b"/Contents ")
     end = data.index(b">", start) + 1
     br = b"[0 %d %d %d]" % (start, end, len(data) - end)
     br = br[:-1].ljust(len(BYTE_RANGE_PLACEHOLDER) - 1) + b"]"
@@ -571,6 +599,188 @@ def comment_removed_p2() -> None:
     write("update-comment-removed-p2.pdf", bytes(pdf.buf))
 
 
+SIG_DICT = (
+    b"<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /Name (Store Test Me) /M (D:20260101120000Z)%s"
+    b" /ByteRange %s /Contents <%s> >>"
+)
+
+
+def sig_dict(certify: int | None = None) -> bytes:
+    reference = (
+        b" /Reference [<< /Type /SigRef /TransformMethod /DocMDP /TransformParams << /Type /TransformParams /P %d /V /1.2 >> >>]" % certify
+        if certify
+        else b""
+    )
+    return SIG_DICT % (reference, BYTE_RANGE_PLACEHOLDER, b"0" * (2 * CONTENTS_BYTES))
+
+
+def objstm_first() -> None:
+    """An object stream with an indirect /First and two copies of its objects."""
+    for certify, name in ((None, "update-objstm-first.pdf"), (1, "update-objstm-first-p1.pdf")):
+        first = compressed_objects(certify, WITH_XOBJECT)
+        second = compressed_objects(certify, b"<< /XObject << /X1 13 0 R >> /Font << /F1 8 0 R >> >>")
+        width = {n: max(len(a), len(b)) + 2 for (n, a), (_, b) in zip(first, second)}
+        head = b""
+        off = 0
+        for n, _ in first:
+            head += b"%d %d " % (n, off)
+            off += width[n]
+        head += b"\n"
+        set_a = b"".join(a.ljust(width[n]) for n, a in first)
+        set_b = b"".join(b.ljust(width[n]) for n, b in second)
+        pdf = Pdf(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+        pdf.obj(4, b"", b"BT /F1 24 Tf 72 700 Td (Invoice) Tj ET /X1 Do")
+        pdf.obj(6, sig_dict(certify))
+        xo_dict, xo_stream = form_xobject(b"Amount due: 100 EUR")
+        pdf.obj(7, xo_dict, xo_stream)
+        xo_dict, xo_stream = form_xobject(b"Amount due: 999 EUR")
+        pdf.obj(13, xo_dict, xo_stream)
+        pdf.obj(23, b"%d" % len(head))
+        pdf.obj(20, b"/Type /ObjStm /N %d /First 23 0 R" % len(first), head + set_a + set_b)
+        entries = {0: (0, 0, 65535)}
+        for n, o in pdf.offsets.items():
+            entries[n] = (1, o, 0)
+        for i, (n, _) in enumerate(first):
+            entries[n] = (2, 20, i)
+        prev = xref_stream(pdf.buf, 21, entries, 24)
+        update = Pdf(sign(bytes(pdf.buf)))
+        update.obj(23, b"%d" % (len(head) + len(set_a)))
+        xref_stream(update.buf, 24, {23: (1, update.offsets[23], 0)}, 25, prev=prev)
+        write(name, bytes(update.buf))
+
+
+FIELD_AP = b"/Type /XObject /Subtype /Form /BBox [0 0 200 30] /Resources << /Font << /F1 15 0 R >> >>"
+FONT_NINE = (
+    b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica"
+    b" /Encoding << /Type /Encoding /BaseEncoding /WinAnsiEncoding /Differences [49 /nine] >> >>"
+)
+TEXT_FIELD = b"<< /Type /Annot /Subtype /Widget /FT /Tx /T (%s) /V (%s) /Rect [72 %d 272 %d] /F 4 /P 3 0 R /DA (/Helv 12 Tf 0 g) /AP << /N %d 0 R >> >>"
+
+
+def field_text(text: bytes) -> bytes:
+    return b"BT /F1 12 Tf 2 10 Td (" + text + b") Tj ET"
+
+
+def two_fields_base(lock: bytes = b"", certify: int | None = None, sig_visible: bool = False) -> tuple[bytes, int]:
+    """Notes (object 16, listed first) and Amount (object 9) draw with the shared font 15."""
+    pdf = Pdf(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+    perms = b" /Perms << /DocMDP 6 0 R >>" if certify else b""
+    pdf.obj(
+        1,
+        b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [16 0 R 9 0 R 5 0 R] /SigFlags 3 /DA (/Helv 0 Tf 0 g)"
+        b" /DR << /Font << /Helv 15 0 R >> >> >>%s >>" % perms,
+    )
+    pdf.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    pdf.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 8 0 R >> >> /Contents 4 0 R /Annots [16 0 R 9 0 R 5 0 R] >>")
+    pdf.obj(4, b"", b"BT /F1 24 Tf 72 700 Td (Invoice) Tj ET")
+    if sig_visible:
+        pdf.obj(5, b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature1) /Rect [72 300 272 330] /F 4 /P 3 0 R /V 6 0 R /AP << /N 18 0 R >>%s >>" % lock)
+        pdf.obj(18, FIELD_AP, field_text(b"Approved: 100 EUR"))
+    else:
+        pdf.obj(5, b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature1) /Rect [0 0 0 0] /F 132 /P 3 0 R /V 6 0 R%s >>" % lock)
+    pdf.obj(6, sig_dict(certify))
+    pdf.obj(8, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    pdf.obj(9, TEXT_FIELD % (b"Amount", b"100", 500, 530, 13))
+    pdf.obj(13, FIELD_AP, field_text(b"100"))
+    pdf.obj(15, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    pdf.obj(16, TEXT_FIELD % (b"Notes", b"ok", 400, 430, 17))
+    pdf.obj(17, FIELD_AP, field_text(b"ok"))
+    xref = pdf.xref(b" /Size 19 /Root 1 0 R ", with_free_head=True)
+    return sign(bytes(pdf.buf)), xref
+
+
+def update_of(base: bytes, xref: int, objs: list[tuple]) -> bytes:
+    pdf = Pdf(base)
+    for n, body, *st in objs:
+        pdf.obj(n, body, st[0] if st else None)
+    pdf.xref(b" /Size %d /Root 1 0 R /Prev %d " % (max(19, max(pdf.offsets) + 1), xref))
+    return bytes(pdf.buf)
+
+
+INCLUDE_AMOUNT = b" /Lock << /Type /SigFieldLock /Action /Include /Fields [(Amount)] >>"
+
+
+def shared_font_and_locks() -> None:
+    base, xref = two_fields_base(lock=INCLUDE_AMOUNT)
+    write("update-shared-font-lock.pdf", update_of(base, xref, [(15, FONT_NINE)]))
+    write("update-lock-rename.pdf", update_of(base, xref, [(9, TEXT_FIELD % (b"Total", b"999", 500, 530, 13)), (13, FIELD_AP, field_text(b"999"))]))
+    base, xref = two_fields_base(lock=b" /Lock << /Type /SigFieldLock /Action /Exclude /Fields [(Notes)] >>")
+    write("update-lock-exclude.pdf", update_of(base, xref, [(9, TEXT_FIELD % (b"Amount", b"999", 500, 530, 13)), (13, FIELD_AP, field_text(b"999"))]))
+    base, xref = two_fields_base(certify=2, sig_visible=True)
+    write("update-shared-font-sig-p2.pdf", update_of(base, xref, [(15, FONT_NINE)]))
+
+
+def lock_parent() -> None:
+    """Invoice (object 30) is the parent of the widget Amount (object 9)."""
+    pdf = Pdf(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+    pdf.obj(1, b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [30 0 R 5 0 R] /SigFlags 3 /DA (/Helv 0 Tf 0 g) >> >>")
+    pdf.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    pdf.obj(3, b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 8 0 R >> >> /Contents 4 0 R /Annots [9 0 R 5 0 R] >>")
+    pdf.obj(4, b"", b"BT /F1 24 Tf 72 700 Td (Invoice) Tj ET")
+    pdf.obj(5, b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature1) /Rect [0 0 0 0] /F 132 /P 3 0 R /V 6 0 R /Lock << /Type /SigFieldLock /Action /Include /Fields [(Invoice)] >> >>")
+    pdf.obj(6, sig_dict())
+    pdf.obj(8, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    amount = b"<< /Type /Annot /Subtype /Widget /FT /Tx /Parent 30 0 R /T (Amount) /V (%s) /Rect [72 500 272 530] /F 4 /P 3 0 R /DA (/Helv 12 Tf 0 g) /AP << /N 13 0 R >> >>"
+    pdf.obj(9, amount % b"100")
+    pdf.obj(13, AMOUNT_AP, amount_appearance_stream(b"100"))
+    pdf.obj(30, b"<< /T (Invoice) /Kids [9 0 R] >>")
+    xref = pdf.xref(b" /Size 31 /Root 1 0 R ", with_free_head=True)
+    update = Pdf(sign(bytes(pdf.buf)))
+    update.obj(9, amount % b"999")
+    update.obj(13, AMOUNT_AP, amount_appearance_stream(b"999"))
+    update.xref(b" /Size 31 /Root 1 0 R /Prev %d " % xref)
+    write("update-lock-parent.pdf", bytes(update.buf))
+
+
+def direct_widget() -> None:
+    widget = b"<< /Type /Annot /Subtype /Widget /FT /Tx /T (Amount) /V (%s) /Rect [72 500 272 530] /F 4 /DA (/Helv 12 Tf 0 g) /AP << /N %d 0 R >> >>"
+
+    def page(value: bytes, ap: int) -> bytes:
+        return b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 8 0 R >> >> /Contents 4 0 R /Annots [5 0 R " + (widget % (value, ap)) + b"] >>"
+
+    pdf = Pdf(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+    pdf.obj(1, b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R] /SigFlags 3 >> >>")
+    pdf.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+    pdf.obj(3, page(b"100", 13))
+    pdf.obj(4, b"", b"BT /F1 24 Tf 72 700 Td (Invoice) Tj ET")
+    pdf.obj(5, b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature1) /Rect [0 0 0 0] /F 132 /P 3 0 R /V 6 0 R /Lock << /Type /SigFieldLock /Action /All >> >>")
+    pdf.obj(6, sig_dict())
+    pdf.obj(8, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+    pdf.obj(13, AMOUNT_AP, amount_appearance_stream(b"100"))
+    pdf.obj(15, AMOUNT_AP, amount_appearance_stream(b"999"))
+    xref = pdf.xref(b" /Size 16 /Root 1 0 R ", with_free_head=True)
+    update = Pdf(sign(bytes(pdf.buf)))
+    update.obj(3, page(b"999", 15))
+    update.xref(b" /Size 16 /Root 1 0 R /Prev %d " % xref)
+    write("update-direct-widget.pdf", bytes(update.buf))
+
+
+def later_signature() -> None:
+    """A second signature on a new field; its appearance draws the new form XObject 50."""
+    for dangling, name in ((False, "update-later-signature.pdf"), (True, "update-later-signature-dangling.pdf")):
+        pdf = Pdf(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
+        pdf.obj(1, b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R] /SigFlags 3 >> >>")
+        pdf.obj(2, b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
+        extra = b" /XObject << /X2 50 0 R >>" if dangling else b""
+        page = b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 8 0 R >>%s >> /Contents 4 0 R /Annots [5 0 R%s] >>"
+        pdf.obj(3, page % (extra, b""))
+        pdf.obj(4, b"", b"BT /F1 24 Tf 72 700 Td (Invoice) Tj ET" + (b" /X2 Do" if dangling else b""))
+        pdf.obj(5, b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature1) /Rect [0 0 0 0] /F 132 /P 3 0 R /V 6 0 R >>")
+        pdf.obj(6, sig_dict())
+        pdf.obj(8, b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>")
+        xref = pdf.xref(b" /Size 9 /Root 1 0 R ", with_free_head=True)
+        update = Pdf(sign(bytes(pdf.buf)))
+        update.obj(1, b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [5 0 R 30 0 R] /SigFlags 3 >> >>")
+        update.obj(3, page % (extra, b" 30 0 R"))
+        update.obj(30, b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature2) /Rect [300 50 500 100] /F 132 /P 3 0 R /V 32 0 R /AP << /N 31 0 R >> >>")
+        update.obj(31, b"/Type /XObject /Subtype /Form /BBox [0 0 200 50] /Resources << /XObject << /S 50 0 R >> >>", b"/S Do")
+        xo_dict, xo_stream = form_xobject(b"Amount due: 999 EUR")
+        update.obj(50, xo_dict, xo_stream)
+        update.obj(32, sig_dict())
+        update.xref(b" /Size 51 /Root 1 0 R /Prev %d " % xref)
+        write(name, sign(bytes(update.buf), last=True))
+
+
 def plain() -> None:
     base, _ = signed_base()
     write("update-base.pdf", base)
@@ -597,3 +807,8 @@ if __name__ == "__main__":
     dr_locked_ap()
     widgets_moved_p2()
     comment_removed_p2()
+    objstm_first()
+    shared_font_and_locks()
+    lock_parent()
+    direct_widget()
+    later_signature()

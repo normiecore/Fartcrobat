@@ -37,8 +37,24 @@ export function trustedIndex(r: SignatureReport, trusted: Set<string>): number {
   return -1
 }
 
+/** The title of a signature whose document was changed after it was signed (other than by signing). */
+export const CHANGED_AFTER_SIGNING = 'The document was changed after it was signed.'
+
+/**
+ * Whether anything other than later signatures was written after the signature's revision. Fails
+ * closed: a report that does not say (an older report) counts as changed.
+ */
+export function changedAfterSigning(r: SignatureReport): boolean {
+  return !r.coversWholeFile && r.revisionEnd > 0 && r.laterUpdates !== 'signing'
+}
+
 export function signatureStatus(r: SignatureReport, trusted: Set<string>): SignatureStatus {
   const details: string[] = []
+  const changedLater = changedAfterSigning(r)
+  // Anything at all written after a signature that allows no changes (certification P=1, a lock
+  // with P=1, or made under either).
+  const noChangesAllowed = r.permission === 1 || r.lock?.permission === 1 || r.permissionInForce === 1
+  const anyLater = !r.coversWholeFile && r.revisionEnd > 0
   const restricted = r.permission !== null || r.lock !== null || !!r.restrictionsUnknown
   const disallowed = r.changes.filter((c) => !c.allowed)
   const ti = trustedIndex(r, trusted)
@@ -65,6 +81,10 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
         : 'The document was changed after this signature was applied, and the changes cannot be checked.'
     )
   }
+  if (changedLater && r.integrity === true) {
+    details.push('The document was changed after this signature was applied. Use View Signed Version to see the document as it was signed and compare.')
+  }
+  if (noChangesAllowed && anyLater && r.integrity === true) details.push('The signer allowed no changes after signing, and the document was updated after this signature was applied.')
   details.push(...r.problems)
   if (r.unknownReason) details.push(r.unknownReason)
 
@@ -97,9 +117,18 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
   let level: StatusLevel
   // Changes that cannot be checked count as changes that are not allowed.
   const unchecked = r.changesUnknown
-  if (r.problems.length || r.integrity === false || r.signatureValid === false || (restricted && (disallowed.length || unchecked))) level = 'invalid'
+  if (
+    r.problems.length ||
+    r.integrity === false ||
+    r.signatureValid === false ||
+    (restricted && (disallowed.length || unchecked)) ||
+    (noChangesAllowed && anyLater)
+  )
+    level = 'invalid'
   else if (r.unknownReason || r.integrity === null || r.signatureValid === null) level = 'unknown'
-  else if (r.warnings.length || disallowed.length || unchecked || (r.timestamp && !r.timestamp.valid)) level = 'warning'
+  // Fail closed: anything written after the signature other than later signatures, described or
+  // not, allowed by the signer or not, is at best a warning.
+  else if (r.warnings.length || disallowed.length || unchecked || changedLater || (r.timestamp && !r.timestamp.valid)) level = 'warning'
   else level = identityKnown ? 'valid' : 'unknown-identity'
 
   const noun = isTimestamp ? 'Document timestamp' : r.kind === 'certification' ? 'Certification' : 'Signature'
@@ -111,7 +140,9 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
           ? 'Document timestamp is valid, but the time-stamping authority is unknown.'
           : `${noun} is valid, but the signer's identity is unknown.`
         : level === 'warning'
-          ? `${noun} is valid, but there are problems.`
+          ? changedLater
+            ? CHANGED_AFTER_SIGNING
+            : `${noun} is valid, but there are problems.`
           : level === 'unknown'
             ? `${noun} validity is unknown.`
             : `${noun} is invalid.`

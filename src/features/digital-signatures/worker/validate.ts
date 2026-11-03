@@ -13,12 +13,14 @@ import {
   revisionNumberAt,
   signedBytes,
   sizeAt,
-  type RevisionInfo
+  type RevisionInfo,
+  type XrefEntryType
 } from '../lib/pdfbytes'
 import { buildChain, describeCertificate, displayName, parseCertificate, type Certificate } from '../lib/x509'
 import type { MdpPermission, SignatureReport, ValidationReport } from '../types'
 import { describeChanges } from './changes'
 import { certification, listSignatureFields, lockInfo, readReferences, safe, signedFieldIn, type SigField } from './fields'
+import { laterUpdatesOtherThanSigning } from './later'
 
 function readByteRange(v: PDFObject): number[] {
   const raw = v.get('ByteRange')
@@ -39,6 +41,10 @@ interface Context {
   certEnd: number
   /** MuPDF had to repair the file: it does not read it the way its cross-reference sections say. */
   repaired: boolean
+  /** Signatures followed by later updates, to check once every signature is verified. */
+  later: { r: SignatureReport; changed: Map<number, XrefEntryType> }[]
+  /** Object number of each report's signature dictionary. */
+  vNums: Map<SignatureReport, number>
 }
 
 function emptyReport(f: SigField, v: PDFObject): SignatureReport {
@@ -77,6 +83,8 @@ function emptyReport(f: SigField, v: PDFObject): SignatureReport {
     changes: [],
     changesUnknown: false,
     restrictionsUnknown: false,
+    laterUpdates: 'other',
+    permissionInForce: null,
     problems: [],
     warnings: [],
     unknownReason: null
@@ -143,6 +151,7 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
   const docMdp = refs.find((x) => x.method === 'DocMDP')
   const vRef = f.field.resolve().get('V')
   const vNum = vRef.isIndirect() ? vRef.asIndirect() : f.fieldNum
+  ctx.vNums.set(r, vNum)
   if (docMdp || (ctx.certified && ctx.certified.sigNum === vNum)) {
     r.kind = 'certification'
     r.permission = docMdp?.permission ?? ctx.certified?.permission ?? 2
@@ -155,7 +164,18 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
   const chk = await checkSignatureData(ctx, r, v, vNum)
   if (!chk) return r
 
-  if (r.coversWholeFile) return r
+  // Permission in force for this signature: certification (if signed at or after it) and lock.
+  const inForce = (): MdpPermission | null => {
+    let permission: MdpPermission | null = null
+    if (ctx.certified && chk.end >= ctx.certEnd && ctx.certEnd > 0) permission = ctx.certified.permission
+    if (r.lock?.permission) permission = permission ? (Math.min(permission, r.lock.permission) as MdpPermission) : r.lock.permission
+    return permission
+  }
+  r.permissionInForce = inForce()
+  if (r.coversWholeFile) {
+    r.laterUpdates = 'none'
+    return r
+  }
   // Later updates: what they changed, judged by the rules in force when this signature was made.
   // A repaired file is not read the way its cross-reference sections say, so its changes are unknown.
   const changed = ctx.revs && !ctx.repaired ? objectsChangedAfter(src, ctx.revs, chk.end) : null
@@ -174,19 +194,16 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
     const signedField = vRef.isIndirect() ? signedFieldIn(before, vNum) : null
     if (signedField) r.lock = lockInfo(f, signedField)
     else r.restrictionsUnknown = true
+    const permission = inForce()
+    r.permissionInForce = permission
     if (changed === null) {
       r.changesUnknown = true
       return r
     }
     // Byte range must not have been tampered with by a later update of this signature dictionary.
     if (changed.has(vNum) && changed.get(vNum) !== 'f') r.problems.push('The signature dictionary was changed after signing.')
-    // Permission in force for this signature: certification (if signed at or after it) and lock.
-    let permission: MdpPermission | null = null
-    if (ctx.certified && chk.end >= ctx.certEnd && ctx.certEnd > 0) permission = ctx.certified.permission
-    if (r.lock?.permission) permission = permission ? (Math.min(permission, r.lock.permission) as MdpPermission) : r.lock.permission
-    const lockedFields = r.lock ? (r.lock.action === 'All' ? '*' : r.lock.action === 'Include' ? r.lock.fields : null) : null
     try {
-      r.changes = describeChanges(ctx.s.pdf, changed, sizeAt(ctx.revs!, chk.end), { permission, lockedFields, before })
+      r.changes = describeChanges(ctx.s.pdf, changed, sizeAt(ctx.revs!, chk.end), { permission, lock: r.lock, before })
     } catch {
       r.changes = []
       r.changesUnknown = true
@@ -198,10 +215,48 @@ async function validateOne(ctx: Context, f: SigField): Promise<SignatureReport> 
       r.changes = []
       r.changesUnknown = true
     }
+    if (!r.changesUnknown) ctx.later.push({ r, changed })
   } finally {
     before?.destroy()
   }
   return r
+}
+
+/**
+ * Decides, for each signature followed by later updates, whether those updates are only later
+ * signatures (laterUpdates 'signing'); it stays 'other' otherwise. The later signatures must have
+ * verified, and the newest of them must cover the whole file. See later.ts.
+ */
+function judgeLaterUpdates(ctx: Context, signatures: SignatureReport[]) {
+  const src = ctx.src!
+  const verified = signatures.filter((x) => x.integrity === true && x.signatureValid === true && !x.problems.length && x.revisionEnd > 0 && ctx.vNums.has(x))
+  const coveredBySignature = verified.some((x) => x.coversWholeFile)
+  const todo = coveredBySignature && !ctx.repaired ? ctx.later.filter((x) => !x.r.changesUnknown) : []
+  let now: PDFDocument | null = null
+  try {
+    if (todo.length) now = openRevision(ctx.s, src, src.length)
+    for (const { r, changed } of todo) {
+      const laterSigs = new Set(verified.filter((x) => x.revisionEnd > r.revisionEnd).map((x) => ctx.vNums.get(x)!))
+      if (!now || !laterSigs.size) continue
+      const before = openRevision(ctx.s, src, r.revisionEnd)
+      if (!before) continue
+      try {
+        const why = laterUpdatesOtherThanSigning(now, before, changed, laterSigs)
+        if (why === null && !wasRepaired(now) && !wasRepaired(before)) r.laterUpdates = 'signing'
+      } finally {
+        before.destroy()
+      }
+    }
+  } finally {
+    now?.destroy()
+  }
+  // A change describeChanges has nothing to say about (an object MuPDF reads without any
+  // reference to it, for one) is still a change.
+  for (const r of signatures) {
+    if (r.laterUpdates === 'other' && !r.coversWholeFile && r.revisionEnd > 0 && !r.changesUnknown && !r.changes.length) {
+      r.changes.push({ category: 'other', allowed: false, description: 'Other parts of the document were changed' })
+    }
+  }
 }
 
 function wasRepaired(pdf: PDFDocument): boolean {
@@ -376,7 +431,7 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
   }
   certified ??= certification(pdf)
   const repaired = !!src && wasRepaired(pdf)
-  const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired }
+  const ctx: Context = { s, src, revs, certified, certEnd: 0, repaired, later: [], vNums: new Map() }
   if (certified && src) {
     const certField = fields.find((f) => {
       const v = f.field.resolve().get('V')
@@ -406,6 +461,7 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
       r.changesUnknown = true
     }
   }
+  if (src) judgeLaterUpdates(ctx, signatures)
   signatures.sort((a, b) => (a.revisionEnd || Infinity) - (b.revisionEnd || Infinity))
   signatures.forEach((r, i) => (r.signedVersion = i + 1))
   const certSig = signatures.find((x) => x.kind === 'certification')
