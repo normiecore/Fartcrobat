@@ -16,6 +16,11 @@ Office conversion when installed, with a built-in fallback.
   form-data formats, `fartcrobat-settings.json` and the saved-password key domain. Never rename
   these. Fixtures still contain the old name ("Hello Fartcrobat page 1"). See
   `docs/features/rename.md`.
+- 0.4.0 (3 Nov 2026) is the first Inkmoor release and carries the fixes from a security review of
+  0.3.0 (HTML conversion, signature validation, sign after sanitize, links and attachments, form
+  scripts, Office conversion). They were prepared privately in `normiecore/inkmoor-security`
+  (PRs #1 and #2 there, with the findings and review notes); publish a GitHub security advisory
+  for them after the release.
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`). It has no updater.
