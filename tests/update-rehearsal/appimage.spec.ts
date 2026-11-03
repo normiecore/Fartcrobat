@@ -1,12 +1,15 @@
 // Update rehearsal for the Linux AppImage (README.md): the released AppImage of the previous
 // version, installed in a test user's home, updates itself from a fake GitHub (fake-github.mjs) to
 // a build of the next version. Run through linux.sh, which prepares the user, the releases and the
-// test certificate, and sets the REHEARSAL_* variables.
+// test certificate, and sets the REHEARSAL_* variables. The old version may be called Fartcrobat
+// and the new one Inkmoor (names.mjs): the AppImage is replaced in place and keeps the file name of
+// the old one, and the new version keeps using the old userData folder.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import { execFileSync, type ChildProcess } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
 import {
+  cardText,
   checkFromHelpMenu,
   contactsOnlyGitHub,
   describe,
@@ -14,12 +17,16 @@ import {
   downloadUpdate,
   HERE,
   env,
+  expectUpdatesManaged,
+  openUnsavedDocument,
   otherHosts,
   otherHostsAfter,
+  productFor,
   sha512,
   shot,
   startFakeGitHub,
   updateCard,
+  userDataPath,
   version,
   ymlSha512,
   type FakeGitHub
@@ -30,13 +37,22 @@ const USER = env('REHEARSAL_USER')
 const HOME = env('REHEARSAL_HOME')
 const OLD = env('REHEARSAL_OLD')
 const NEW = env('REHEARSAL_NEW')
-/** Where the person keeps the AppImage, and the released file of the old version. */
-const INSTALLED = join(HOME, 'Applications', 'Fartcrobat-x86_64.AppImage')
+/** The names of the released version and of the build it updates to (names.mjs). */
+const OLD_NAMES = productFor(OLD)
+const NEW_NAMES = productFor(NEW)
+/**
+ * Where the person keeps the AppImage, under the old version's file name: the update replaces the
+ * file in place, so it keeps that name whatever the new version is called. And the released file
+ * of the old version.
+ */
+const INSTALLED = join(HOME, 'Applications', OLD_NAMES.appImage)
 const RELEASES = join(WORK, 'releases')
-const OLD_APPIMAGE = join(RELEASES, `v${OLD}`, 'Fartcrobat-x86_64.AppImage')
+const OLD_APPIMAGE = join(RELEASES, `v${OLD}`, OLD_NAMES.appImage)
 const NEW_SHA = ymlSha512(join(RELEASES, `v${NEW}`, 'latest-linux.yml'))
 const DOCUMENT = join(HOME, 'rehearsal', 'notes.pdf')
-const POLICY = '/etc/fartcrobat/policy.json'
+/** The policy file the old version reads; the new one still reads it (and its own first). */
+const OLD_POLICY = OLD_NAMES.linuxPolicy
+const POLICIES = [...new Set([OLD_NAMES.linuxPolicy, NEW_NAMES.linuxPolicy])]
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(8 * 60_000)
@@ -56,14 +72,18 @@ test.afterAll(() => gh?.stop())
 /** The person's machine before each scenario: the old AppImage, no settings, no update cache, nothing running. */
 function freshInstall() {
   killApps()
+  rmSync(join(HOME, 'Applications'), { recursive: true, force: true })
   mkdirSync(join(HOME, 'Applications'), { recursive: true })
   copyFileSync(OLD_APPIMAGE, INSTALLED)
   chmodSync(INSTALLED, 0o755)
-  for (const dir of ['.config/Fartcrobat', '.cache/fartcrobat-updater']) rmSync(join(HOME, dir), { recursive: true, force: true })
+  // Settings and update caches under either name: the old version starts as on a new machine.
+  for (const v of [OLD, NEW])
+    for (const dir of [join('.config', productFor(v).userData), join('.cache', productFor(v).updaterCache)])
+      rmSync(join(HOME, dir), { recursive: true, force: true })
   mkdirSync(join(HOME, 'rehearsal'), { recursive: true })
   copyFileSync(join(HERE, '..', 'fixtures', 'text.pdf'), DOCUMENT)
   execFileSync('chown', ['-R', `${USER}:${USER}`, join(HOME, 'Applications'), join(HOME, 'rehearsal')])
-  rmSync(POLICY, { force: true })
+  for (const file of POLICIES) rmSync(file, { force: true })
 }
 
 function killApps() {
@@ -72,7 +92,7 @@ function killApps() {
   } catch {}
 }
 
-/** The test user's Fartcrobat processes: pid and command line. */
+/** The test user's processes of the app (the AppImage, under either name): pid and command line. */
 function appProcesses(): { pid: number; args: string }[] {
   let out = ''
   try {
@@ -81,7 +101,7 @@ function appProcesses(): { pid: number; args: string }[] {
   return out
     .split('\n')
     .map((l) => /^\s*(\d+)\s+(.*)$/.exec(l))
-    .filter((m): m is RegExpExecArray => !!m && /appimage_extracted_|Fartcrobat-x86_64\.AppImage/.test(m[2]))
+    .filter((m): m is RegExpExecArray => !!m && (/appimage_extracted_/.test(m[2]) || m[2].includes(OLD_NAMES.appImage)))
     .map((m) => ({ pid: Number(m[1]), args: m[2] }))
 }
 
@@ -126,15 +146,16 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
   const before = (await gh.requests()).length
   const { app, page, proc } = await startApp()
   expect(await version(app)).toBe(OLD)
+  const userData = await userDataPath(app)
+  expect(userData).toBe(join(HOME, '.config', OLD_NAMES.userData))
   const oldExe = appProcesses().map((p) => p.args)
   await checkFromHelpMenu(page)
-  await downloadUpdate(page, NEW)
+  // The old app's card, in its own name, about the new version.
+  await downloadUpdate(page, OLD, NEW)
   await shot(page, 'appimage-ready')
 
   // An unsaved document: Restart now goes through the normal quit flow and Cancel stops it.
-  await page.evaluate((p) => (window as any).__fartcrobat.openPaths([p]), DOCUMENT)
-  await page.waitForSelector('.viewer-page canvas')
-  await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.markDirty())
+  await openUnsavedDocument(page, OLD, DOCUMENT)
   const card = updateCard(page)
   await card.getByRole('button', { name: 'Restart now' }).click()
   const ask = page.getByRole('dialog', { name: 'Save changes?' })
@@ -142,7 +163,7 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
   await shot(page, 'appimage-asks')
   await ask.getByRole('button', { name: 'Cancel' }).click()
   await expect(ask).toBeHidden()
-  await expect(card).toContainText(`Fartcrobat ${NEW} is ready to install.`)
+  await expect(card).toContainText(cardText(OLD, NEW, 'ready'))
   expect(await sha512(INSTALLED)).toBe(ymlSha512(join(RELEASES, `v${OLD}`, 'latest-linux.yml')))
 
   // Restart now, Don't Save: the AppImage is replaced in place and the new version starts.
@@ -157,6 +178,8 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
   await new Promise((r) => setTimeout(r, 5000))
   expect(appProcesses().length).toBeGreaterThan(0)
   killApps()
+  // Replaced in place: the file keeps the old version's name, and no other file appeared next to it.
+  expect(readdirSync(join(HOME, 'Applications'))).toEqual([OLD_NAMES.appImage])
 
   const reqs = await report('restart-now', before)
   // The release was found and downloaded from GitHub only, and in parts (differential download).
@@ -174,12 +197,15 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
   console.log(`Download: ${download.text}`)
   expect(download.differential, download.text).toBe(true)
 
-  // The new version, started again: it is NEW, up to date, and asks nobody but GitHub.
+  // The new version, started again: it is NEW, keeps the old userData folder (settings kept), is
+  // up to date, and asks nobody but GitHub.
   const fromNew = (await gh.requests()).length
   const startedAt = Date.now()
   const again = await startApp()
   try {
     expect(await version(again.app)).toBe(NEW)
+    expect(await userDataPath(again.app)).toBe(userData)
+    if (NEW_NAMES.userData !== OLD_NAMES.userData) expect(existsSync(join(HOME, '.config', NEW_NAMES.userData))).toBe(false)
     await checkFromHelpMenu(again.page)
     await expect(again.page.locator('.toast', { hasText: /up to date/i })).toBeVisible({ timeout: 60_000 })
     await shot(again.page, 'appimage-new-up-to-date')
@@ -188,13 +214,30 @@ test(`Restart now: ${OLD} asks about unsaved changes, then replaces its AppImage
     await again.app.close().catch(() => {})
     killApps()
   }
+
+  // A policy deployed for the old version, in its location, still applies to the new one.
+  mkdirSync(dirname(OLD_POLICY), { recursive: true })
+  writeFileSync(OLD_POLICY, JSON.stringify({ autoUpdate: { enabled: false } }))
+  try {
+    const managed = await startApp()
+    try {
+      expect(await version(managed.app)).toBe(NEW)
+      await expectUpdatesManaged(managed.page)
+      await shot(managed.page, 'appimage-new-old-policy')
+    } finally {
+      await managed.app.close().catch(() => {})
+    }
+  } finally {
+    for (const file of POLICIES) rmSync(file, { force: true })
+    killApps()
+  }
 })
 
-test(`Later: the update installs when Fartcrobat quits, without starting ${NEW}`, async () => {
+test(`Later: the update installs when the app quits, without starting ${NEW}`, async () => {
   freshInstall()
   const { app, page, proc } = await startApp()
   await checkFromHelpMenu(page)
-  await downloadUpdate(page, NEW)
+  await downloadUpdate(page, OLD, NEW)
   await updateCard(page).getByRole('button', { name: 'Later' }).click()
   await expect(updateCard(page)).toBeHidden()
   await app.close()
@@ -213,7 +256,7 @@ test('a download that does not match its published checksum is refused, and the 
     const { app, page, proc } = await startApp()
     await checkFromHelpMenu(page)
     const card = updateCard(page)
-    await expect(card).toContainText('Fartcrobat 99.0.0 is available.', { timeout: 60_000 })
+    await expect(card).toContainText(cardText(OLD, '99.0.0', 'available'), { timeout: 60_000 })
     await card.getByRole('button', { name: 'Download' }).click()
     await expect(card.getByRole('button', { name: 'Try again' })).toBeVisible({ timeout: 240_000 })
     // Refused for its checksum, not for any other failure (all of which also offer Try again).
@@ -228,22 +271,21 @@ test('a download that does not match its published checksum is refused, and the 
   }
 })
 
-test('autoUpdate off in policy.json: no request reaches GitHub', async () => {
+test(`autoUpdate off in ${OLD_POLICY}: no request reaches GitHub`, async () => {
   freshInstall()
-  mkdirSync('/etc/fartcrobat', { recursive: true })
-  writeFileSync(POLICY, JSON.stringify({ autoUpdate: { enabled: false } }))
+  mkdirSync(dirname(OLD_POLICY), { recursive: true })
+  writeFileSync(OLD_POLICY, JSON.stringify({ autoUpdate: { enabled: false } }))
   const before = (await gh.requests()).length
   try {
     const { app, page } = await startApp()
-    await checkFromHelpMenu(page)
-    await expect(page.locator('.toast', { hasText: 'Updates are managed by your organization.' })).toBeVisible()
+    await expectUpdatesManaged(page)
     // Past the automatic check, which comes 30 s after start.
     await new Promise((r) => setTimeout(r, 40_000))
     await app.close().catch(() => {})
     const reqs = await report('policy-off', before)
     expect(reqs.filter((r) => r.host === 'github.com' || r.host === 'release-assets.githubusercontent.com')).toEqual([])
   } finally {
-    rmSync(POLICY, { force: true })
+    for (const file of POLICIES) rmSync(file, { force: true })
     killApps()
   }
 })

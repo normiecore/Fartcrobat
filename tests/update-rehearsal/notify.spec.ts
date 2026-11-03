@@ -3,22 +3,41 @@
 // Linux .deb. The released app, installed for real, finds the next version on a fake GitHub
 // (fake-github.mjs); Download opens that release's page, where the person downloads the new file;
 // the machine policy turns it all off. Run by .github/workflows/update-rehearsal.yml (jobs mac and
-// deb), which install the app and trust the test certificate first.
+// deb), which install the app and trust the test certificate first. Only the old version runs here,
+// under the name it was released with (names.mjs); deb-upgrade.spec.ts starts the new .deb after
+// the job installs it over the old one.
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
-import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { checkFromHelpMenu, contactsOnlyGitHub, describe, env, otherHosts, shot, startFakeGitHub, updateCard, version, type FakeGitHub } from './common'
+import { join } from 'node:path'
+import {
+  asAdministrator,
+  cardText,
+  checkFromHelpMenu,
+  contactsOnlyGitHub,
+  describe,
+  env,
+  expectUpdatesManaged,
+  otherHosts,
+  productFor,
+  shot,
+  startFakeGitHub,
+  updateCard,
+  version,
+  type FakeGitHub
+} from './common'
 
 const WORK = env('REHEARSAL_WORK')
 const OLD = env('REHEARSAL_OLD')
 const NEW = env('REHEARSAL_NEW')
-/** The installed app: /Applications/Fartcrobat.app/Contents/MacOS/Fartcrobat or /opt/Fartcrobat/fartcrobat. */
-const EXE = env('REHEARSAL_EXE')
 const KIND = env('REHEARSAL_KIND') as 'mac' | 'deb'
-const POLICY = KIND === 'mac' ? '/Library/Application Support/Fartcrobat/policy.json' : '/etc/fartcrobat/policy.json'
+/** The names the old version was released with. */
+const OLD_NAMES = productFor(OLD)
+/** The installed app (/Applications/<name>.app/Contents/MacOS/<name>, /opt/<name>/<name in lower case>), unless REHEARSAL_EXE says. */
+const EXE = process.env.REHEARSAL_EXE || (KIND === 'mac' ? OLD_NAMES.macExe : OLD_NAMES.debExe)
+const POLICY = KIND === 'mac' ? OLD_NAMES.macPolicy : OLD_NAMES.linuxPolicy
 const RELEASES = join(WORK, 'releases')
 const OUT = join(WORK, 'out')
+/** The repository keeps its name whatever the app is called (src/shared/identity.ts). */
 const RELEASE_PAGE = `https://github.com/normiecore/Fartcrobat/releases/tag/v${NEW}`
 
 test.describe.configure({ mode: 'serial' })
@@ -47,16 +66,6 @@ async function startApp(): Promise<{ app: ElectronApplication; page: Page }> {
   return { app, page }
 }
 
-/** Writes (or with null, deletes) a file only an administrator may change. The runners have sudo without a password. */
-function asAdministrator(file: string, text: string | null) {
-  const root = process.getuid?.() === 0
-  const run = (cmd: string, args: string[], input?: string) =>
-    execFileSync(root ? cmd : 'sudo', root ? args : ['-n', cmd, ...args], { input, stdio: ['pipe', 'ignore', 'inherit'] })
-  if (text === null) return run('rm', ['-f', file])
-  run('mkdir', ['-p', dirname(file)])
-  run('tee', [file], text)
-}
-
 /** Writes the requests of one scenario (from its first) to out/ and returns them. */
 async function report(name: string, from: number) {
   const reqs = (await gh.requests()).slice(from)
@@ -79,7 +88,8 @@ test(`${KIND}: ${OLD} finds ${NEW}, and Download opens its release page`, async 
     })
     await checkFromHelpMenu(page)
     const card = updateCard(page)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`, { timeout: 60_000 })
+    // The old app's card, in its own name, about the new version.
+    await expect(card).toContainText(cardText(OLD, NEW, 'available'), { timeout: 60_000 })
     await expect(card).toContainText('Opens the download page on GitHub.')
     await shot(page, `${KIND}-available`)
     await card.getByRole('button', { name: 'Download' }).click()
@@ -102,8 +112,7 @@ test(`${KIND}: autoUpdate off in ${POLICY}: no request reaches GitHub`, async ()
   const before = (await gh.requests()).length
   try {
     const { app, page } = await startApp()
-    await checkFromHelpMenu(page)
-    await expect(page.locator('.toast', { hasText: 'Updates are managed by your organization.' })).toBeVisible()
+    await expectUpdatesManaged(page)
     await shot(page, `${KIND}-policy`)
     // Past the automatic check, which comes 30 s after start.
     await new Promise((r) => setTimeout(r, 40_000))

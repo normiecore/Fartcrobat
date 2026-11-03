@@ -2,9 +2,13 @@ name: Update rehearsal
 
 # The newest release updates itself to a build of the next version, on Linux (AppImage) and Windows
 # (installed per user and per machine), from a fake GitHub; on a Mac (.dmg) and with the Ubuntu .deb
-# it finds the next version and sends the person to its release page. See
-# tests/update-rehearsal/README.md. Nothing is published: the fake answers for github.com inside
-# each runner.
+# it finds the next version and sends the person to its release page; the new .deb then installs
+# over the old one. See tests/update-rehearsal/README.md. Nothing is published: the fake answers for
+# github.com inside each runner.
+#
+# The app was called Fartcrobat up to 0.3 and Inkmoor from 0.4.0 on: each side's file names,
+# executables and policy locations come from its version (tests/update-rehearsal/names.mjs), so a
+# Fartcrobat release can be rehearsed updating to an Inkmoor build.
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +16,7 @@ on:
         description: 'Released version to update from (default: the latest release)'
         required: false
       new:
-        description: 'Version the rehearsal build gets (default: the next patch version)'
+        description: 'Version the rehearsal build gets (default: the next patch version, at least 0.4.0)'
         required: false
   # The release workflow runs it before publishing (release.yml, rehearsal).
   workflow_call:
@@ -30,6 +34,7 @@ on:
       - 'src/features/updates/**'
       - 'electron-builder.yml'
       - 'scripts/release-downloads.mjs'
+      - 'src/shared/identity.ts'
 
 # github.workflow is the caller's name when called: a release's rehearsal is never cancelled by a push.
 concurrency:
@@ -46,15 +51,27 @@ jobs:
       old: ${{ steps.v.outputs.old }}
       new: ${{ steps.v.outputs.new }}
     steps:
+      # package.json (the name this checkout builds) and the naming helper only.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            package.json
+            tests/update-rehearsal/names.mjs
+          sparse-checkout-cone-mode: false
       - id: v
         env:
           GH_TOKEN: ${{ github.token }}
           OLD: ${{ inputs.old }}
           NEW: ${{ inputs.new }}
         run: |
+          set -euo pipefail
+          names=tests/update-rehearsal/names.mjs
           [ -n "$OLD" ] || OLD=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName | sed 's/^v//')
-          [ -n "$NEW" ] || NEW=$(echo "$OLD" | awk -F. '{ printf "%d.%d.%d", $1, $2, $3 + 1 }')
-          echo "Rehearsal: $OLD -> $NEW"
+          # The next patch version, or 0.4.0 when that would still be a Fartcrobat version.
+          [ -n "$NEW" ] || NEW=$(node "$names" default-new "$OLD")
+          # Every job builds NEW from this checkout: it must be a version of the name the checkout builds.
+          node "$names" check-build "$NEW"
+          echo "Rehearsal: $(node "$names" "$OLD" name) $OLD -> $(node "$names" "$NEW" name) $NEW"
           echo "old=$OLD" >> "$GITHUB_OUTPUT"
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
 
@@ -102,10 +119,13 @@ jobs:
       # The arm64 installer stops on this x64 PC instead of installing nothing (build/installer.nsh).
       - name: The arm64 installer refuses an x64 PC
         run: |
-          $p = Start-Process -FilePath "build-new\Fartcrobat-Setup-${{ needs.versions.outputs.new }}-arm64.exe" -ArgumentList '/S' -Wait -PassThru
+          $setup = node tests/update-rehearsal/names.mjs "${{ needs.versions.outputs.new }}" winSetupArm64
+          $p = Start-Process -FilePath "build-new\$setup" -ArgumentList '/S' -Wait -PassThru
           if ($p.ExitCode -ne 1) { throw "The arm64 installer exited with $($p.ExitCode) on x64, not 1" }
-          reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall /s /f Fartcrobat 2>$null
-          if ($LASTEXITCODE -eq 0) { throw 'The arm64 installer installed something on x64' }
+          foreach ($name in 'Fartcrobat', 'Inkmoor') {
+            reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall /s /f $name 2>$null
+            if ($LASTEXITCODE -eq 0) { throw "The arm64 installer installed something on x64 ($name)" }
+          }
           $global:LASTEXITCODE = 0
       - uses: actions/upload-artifact@v4
         with:
@@ -159,7 +179,10 @@ jobs:
       - name: The released installers of the old version
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release download "v$env:REHEARSAL_OLD" --repo "$env:GITHUB_REPOSITORY" -p latest.yml -p "Fartcrobat-Setup-*" -D "$env:REHEARSAL_WORK\releases\v$env:REHEARSAL_OLD"
+        run: |
+          # Under the name the old version was released with (Fartcrobat up to 0.3).
+          $name = node tests/update-rehearsal/names.mjs $env:REHEARSAL_OLD name
+          gh release download "v$env:REHEARSAL_OLD" --repo "$env:GITHUB_REPOSITORY" -p latest.yml -p "$name-Setup-*" -D "$env:REHEARSAL_WORK\releases\v$env:REHEARSAL_OLD"
       - name: Test certificate, trusted machine-wide on this throwaway runner
         run: |
           node tests/update-rehearsal/make-certs.mjs "$env:REHEARSAL_WORK\tls"
@@ -185,7 +208,6 @@ jobs:
       REHEARSAL_OLD: ${{ needs.versions.outputs.old }}
       REHEARSAL_NEW: ${{ needs.versions.outputs.new }}
       REHEARSAL_KIND: mac
-      REHEARSAL_EXE: /Applications/Fartcrobat.app/Contents/MacOS/Fartcrobat
     steps:
       - run: |
           echo "REHEARSAL_WORK=$RUNNER_TEMP/rehearsal" >> "$GITHUB_ENV"
@@ -202,11 +224,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # macos-latest has Apple silicon.
-          dmg="Fartcrobat-$REHEARSAL_OLD-arm64.dmg"
+          # macos-latest has Apple silicon. The old version's names (notify.spec.ts starts
+          # /Applications/<its name>.app).
+          dmg=$(node tests/update-rehearsal/names.mjs "$REHEARSAL_OLD" macDmgArm64)
+          app=$(node tests/update-rehearsal/names.mjs "$REHEARSAL_OLD" macApp)
           gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p "$dmg" -D "$REHEARSAL_WORK/old"
           hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/dmg" "$REHEARSAL_WORK/old/$dmg"
-          cp -R "$RUNNER_TEMP/dmg/Fartcrobat.app" /Applications/
+          cp -R "$RUNNER_TEMP/dmg/$app" /Applications/
           hdiutil detach "$RUNNER_TEMP/dmg"
       - name: Test certificate, trusted machine-wide on this throwaway runner
         run: |
@@ -224,16 +248,17 @@ jobs:
           overwrite: true
 
   # The released .deb, on Ubuntu 24.04 as a desktop has it, tells people about the next version and
-  # sends them to its release page (installing needs a root password prompt).
+  # sends them to its release page (installing needs a root password prompt). Then the next
+  # version's .deb, installed over it as people install it, upgrades the one package (it keeps the
+  # name `fartcrobat` across the rename) and starts.
   deb:
     needs: versions
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       REHEARSAL_OLD: ${{ needs.versions.outputs.old }}
       REHEARSAL_NEW: ${{ needs.versions.outputs.new }}
       REHEARSAL_KIND: deb
-      REHEARSAL_EXE: /opt/Fartcrobat/fartcrobat
     steps:
       - run: |
           echo "REHEARSAL_WORK=$RUNNER_TEMP/rehearsal" >> "$GITHUB_ENV"
@@ -244,21 +269,22 @@ jobs:
           node-version: 22
           cache: npm
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb libnss3-tools
+      # With Electron: this job also builds the next version's .deb.
       - run: npm ci
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - name: Ubuntu's desktop setting, AppArmor limiting user namespaces
         # GitHub's runner image turns the limit off; Ubuntu 24.04 desktops have it on, and the .deb
-        # installs an AppArmor profile for Fartcrobat so that its sandbox still works.
+        # installs an AppArmor profile for the app so that its sandbox still works.
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
       - name: The released .deb of the old version, installed as people install it
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          deb="fartcrobat_${REHEARSAL_OLD}_amd64.deb"
+          set -euo pipefail
+          names() { node tests/update-rehearsal/names.mjs "$REHEARSAL_OLD" "$1"; }
+          deb=$(names debFile)
           gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p "$deb" -D "$REHEARSAL_WORK/old"
           sudo apt-get install -y "$REHEARSAL_WORK/old/$deb"
-          ls -l /opt/Fartcrobat/chrome-sandbox /etc/apparmor.d/fartcrobat
+          ls -l "$(names debDir)/chrome-sandbox" "$(names debAppArmor)"
       - name: Test certificate, trusted by this user (Chromium reads the user's NSS database)
         run: |
           node tests/update-rehearsal/make-certs.mjs "$REHEARSAL_WORK/tls"
@@ -267,6 +293,40 @@ jobs:
           certutil -d "sql:$HOME/.pki/nssdb" -A -t 'C,,' -n 'Fartcrobat Update Rehearsal CA' -i "$REHEARSAL_WORK/tls/ca.pem"
       - name: Rehearse the update notice
         run: xvfb-run -a npx playwright test -c tests/update-rehearsal/playwright.config.ts notify
+      # The next version, built as the release workflow builds it, with only the version changed.
+      - name: The new version's .deb
+        run: npm run build && npx electron-builder --linux deb --publish never "-c.extraMetadata.version=$REHEARSAL_NEW" "-c.directories.output=build-new"
+      - name: The new .deb installed over the old one, as people install it
+        run: |
+          set -euo pipefail
+          names() { node tests/update-rehearsal/names.mjs "$1" "$2"; }
+          deb=$(names "$REHEARSAL_NEW" debFile)
+          sudo apt-get install -y "$PWD/build-new/$deb"
+          # One package, the new version, under the package name both names share.
+          pkgs=$(dpkg-query -W -f '${db:Status-Abbrev} ${Package} ${Version}\n' | awk '$1 != "un" && $2 ~ /fartcrobat|inkmoor/ { print $1, $2, $3 }')
+          echo "$pkgs"
+          [ "$pkgs" = "ii fartcrobat $REHEARSAL_NEW" ] || { echo "::error::Expected the one package fartcrobat $REHEARSAL_NEW, found: $pkgs"; exit 1; }
+          # The app moved to the new name's folder (/opt/Fartcrobat to /opt/Inkmoor), with its link in /usr/bin.
+          old_exe=$(names "$REHEARSAL_OLD" debExe)
+          new_exe=$(names "$REHEARSAL_NEW" debExe)
+          test -x "$new_exe"
+          ls -l "$(names "$REHEARSAL_NEW" debDir)/chrome-sandbox"
+          [ "$(readlink -f "/usr/bin/$(basename "$new_exe")")" = "$new_exe" ] || { echo "::error::/usr/bin/$(basename "$new_exe") does not start $new_exe"; exit 1; }
+          if [ "$old_exe" != "$new_exe" ]; then
+            [ ! -e "$old_exe" ] || { echo "::error::$old_exe is still there after the upgrade"; exit 1; }
+            [ ! -e "/usr/bin/$(basename "$old_exe")" ] || echo "::warning::/usr/bin/$(basename "$old_exe") is still there after the upgrade"
+          fi
+          # electron-builder names the AppArmor profile after the executable: the new package installs
+          # one for the new path (deb-upgrade.spec.ts starts the app with Chromium's sandbox through it),
+          # and the old package's removal script deletes the old one.
+          profile=$(names "$REHEARSAL_NEW" debAppArmor)
+          old_profile=$(names "$REHEARSAL_OLD" debAppArmor)
+          grep -F "\"$new_exe\"" "$profile"
+          if [ "$old_profile" != "$profile" ] && [ -e "$old_profile" ]; then
+            echo "::warning::$old_profile (for $old_exe) is still there after the upgrade"
+          fi
+      - name: Rehearse the upgraded app
+        run: xvfb-run -a npx playwright test -c tests/update-rehearsal/playwright.config.ts deb-upgrade
       - name: For comparison, the AppImage with the same setting
         # Not a check: the job summary says whether the released AppImage starts where AppArmor limits
         # user namespaces, as on an Ubuntu 24.04 desktop (README.md sends Ubuntu users to the .deb).
@@ -276,12 +336,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           dir="$RUNNER_TEMP/appimage"
-          gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p Fartcrobat-x86_64.AppImage -D "$dir"
-          chmod +x "$dir/Fartcrobat-x86_64.AppImage"
+          appimage=$(node tests/update-rehearsal/names.mjs "$REHEARSAL_OLD" appImage)
+          prefix=$(node tests/update-rehearsal/names.mjs "$REHEARSAL_OLD" envPrefix)
+          gh release download "v$REHEARSAL_OLD" --repo "$GITHUB_REPOSITORY" -p "$appimage" -D "$dir"
+          chmod +x "$dir/$appimage"
           # The AppImage's launcher (AppRun) turns Chromium's sandbox off when this fails.
           if unshare -Ur true 2>/dev/null; then sandbox="with Chromium's sandbox"; else sandbox="without Chromium's sandbox (its launcher adds --no-sandbox when user namespaces are unavailable)"; fi
           status=0
-          APPIMAGE_EXTRACT_AND_RUN=1 FARTCROBAT_UPDATE_CHECKS=0 timeout -k 5 20 xvfb-run -a "$dir/Fartcrobat-x86_64.AppImage" > "$dir/log.txt" 2>&1 || status=$?
+          env APPIMAGE_EXTRACT_AND_RUN=1 "${prefix}_UPDATE_CHECKS=0" timeout -k 5 20 xvfb-run -a "$dir/$appimage" > "$dir/log.txt" 2>&1 || status=$?
           if [ "$status" = 124 ]; then result="It was still running after 20 s, $sandbox."; else result="It stopped with status $status."; fi
           pkill -f appimage_extracted_ || true
           {

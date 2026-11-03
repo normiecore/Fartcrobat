@@ -1,11 +1,16 @@
 // Shared parts of the update rehearsals (README.md): the fake GitHub, what it was asked, and the
-// update card. The rehearsals drive a packaged Fartcrobat that is installed for real.
+// update card. The rehearsals drive a packaged app that is installed for real: a release called
+// Fartcrobat (up to 0.3) or Inkmoor (0.4.0 on), updated to a build that may have the other name.
+// Which names each side has comes from its version (names.mjs).
 import { expect, type ElectronApplication, type Page } from '@playwright/test'
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { createReadStream, existsSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { productFor } from './names.mjs'
+
+export { ALL_NAMES, DEB_PACKAGE, productFor, type ProductNames } from './names.mjs'
 
 export const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -151,12 +156,50 @@ export async function checkFromHelpMenu(page: Page) {
   await page.getByRole('menuitem', { name: 'Check for Updates...' }).click()
 }
 
-/** Downloads the offered version from the card and waits until it is ready to install. */
-export async function downloadUpdate(page: Page, newVersion: string) {
+/**
+ * What the update card of the running app (version `running`) says about the offered version:
+ * the running app's own name, so a Fartcrobat release offering Inkmoor 0.4.0 says
+ * "Fartcrobat 0.4.0 is available.".
+ */
+export function cardText(running: string, offered: string, state: 'available' | 'ready'): string {
+  return `${productFor(running).name} ${offered} is ${state === 'available' ? 'available' : 'ready to install'}.`
+}
+
+/** Downloads the offered version from the card of the running app and waits until it is ready to install. */
+export async function downloadUpdate(page: Page, running: string, offered: string) {
   const card = updateCard(page)
-  await expect(card).toContainText(`Fartcrobat ${newVersion} is available.`, { timeout: 60_000 })
+  await expect(card).toContainText(cardText(running, offered, 'available'), { timeout: 60_000 })
   await card.getByRole('button', { name: 'Download' }).click()
-  await expect(card).toContainText(`Fartcrobat ${newVersion} is ready to install.`, { timeout: 240_000 })
+  await expect(card).toContainText(cardText(running, offered, 'ready'), { timeout: 240_000 })
+}
+
+/** Opens a document in the running app (version `running`) and gives it unsaved changes, through its test hook. */
+export async function openUnsavedDocument(page: Page, running: string, file: string) {
+  const hook = productFor(running).windowGlobal
+  await page.evaluate(([hook, file]) => (window as any)[hook].openPaths([file]), [hook, file])
+  await page.waitForSelector('.viewer-page canvas')
+  await page.evaluate((hook) => (window as any)[hook].getActiveDoc().core.doc.markDirty(), hook)
+}
+
+/** The running app's userData folder. */
+export async function userDataPath(app: ElectronApplication): Promise<string> {
+  return app.evaluate(({ app }) => app.getPath('userData'))
+}
+
+/** The machine policy has turned updates off: Help > Check for Updates... says so. */
+export async function expectUpdatesManaged(page: Page) {
+  await checkFromHelpMenu(page)
+  await expect(page.locator('.toast', { hasText: 'Updates are managed by your organization.' })).toBeVisible()
+}
+
+/** Writes (or with null, deletes) a file only an administrator may change. The runners have sudo without a password. */
+export function asAdministrator(file: string, text: string | null) {
+  const root = process.getuid?.() === 0
+  const run = (cmd: string, args: string[], input?: string) =>
+    execFileSync(root ? cmd : 'sudo', root ? args : ['-n', cmd, ...args], { input, stdio: ['pipe', 'ignore', 'inherit'] })
+  if (text === null) return run('rm', ['-f', file])
+  run('mkdir', ['-p', dirname(file)])
+  run('tee', [file], text)
 }
 
 export const shot = (page: Page, name: string) =>
