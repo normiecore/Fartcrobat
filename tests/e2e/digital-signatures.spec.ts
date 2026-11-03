@@ -646,3 +646,45 @@ test('an embedded timestamp counts once its authority is trusted from Show Times
     await app.close()
   }
 })
+
+test('a document timestamp from a certificate that may not sign timestamps is not shown as valid', async () => {
+  // doctimestamp-wrong-eku.pdf (make_chain.py): a document timestamp whose token is signed by
+  // "tsa-wrong-eku" (extended key usage emailProtection), issued by "tsa-root". Test keys only.
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('digital-signatures/doctimestamp-wrong-eku.pdf'))
+    await waitForRender(page)
+    await runCommand(page, 'sign.showSignaturesPanel')
+    const rightPanel = page.locator('aside.shell-rightpanel[aria-label="Signatures"]')
+    const entry = rightPanel.locator('.fc-digital-signatures-entry').first()
+    await expect(entry).toContainText('Timestamped by')
+    await entry.getByRole('button', { name: 'Signature options' }).click()
+    await page.getByRole('menuitem', { name: 'Show Signature Properties…' }).click()
+    const props = dialog(page, 'Signature Properties')
+    await expect(props).toBeVisible()
+
+    // Trust the authority's root: the timestamp still is not from a time-stamping certificate.
+    await props.getByRole('button', { name: "Show Signer's Certificate…" }).click()
+    const viewer = dialog(page, 'Certificate Viewer')
+    const chainList = viewer.getByRole('list', { name: 'Certificate chain' })
+    await expect(chainList.getByRole('button')).toHaveText(['tsa-root', 'tsa-wrong-eku'])
+    await chainList.getByRole('button', { name: 'tsa-root' }).click()
+    await viewer.getByRole('button', { name: 'Trust This Certificate' }).click()
+    await expect(viewer.getByRole('button', { name: 'Remove from Trusted Certificates' })).toBeVisible()
+    await viewer.getByRole('button', { name: 'Close' }).last().click()
+    await expect(viewer).toBeHidden()
+
+    await expect(props.locator('.fc-digital-signatures-verdict-title')).toHaveText('Document timestamp is valid, but there are problems.')
+    await expect(props).toContainText('(not from a valid time-stamping certificate)')
+    await expect(props).toContainText('is not a time-stamping certificate')
+    await expect(props).not.toContainText('The time-stamping authority is trusted.')
+    await expect(props.getByRole('button', { name: 'Trust This Signer' })).toHaveCount(0)
+    await props.getByRole('button', { name: 'Close' }).last().click()
+    await expect(page.locator('.fc-digital-signatures-bar')).toContainText('At least one signature has problems.')
+    await expect(entry).toContainText('Document timestamp is valid, but there are problems.')
+    await entry.getByRole('button', { name: /^Expand / }).click()
+    await expect(entry).toContainText('(not from a valid time-stamping certificate)')
+  } finally {
+    await app.close()
+  }
+})

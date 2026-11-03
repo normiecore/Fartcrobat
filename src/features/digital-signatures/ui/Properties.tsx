@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CircleCheck, CircleX, Download, FileStack, ShieldCheck, ShieldOff, ShieldQuestion } from 'lucide-react'
 import { Button, Dialog, openDialog, showError, toast, type DocumentModel } from '@renderer/sdk'
 import type { CertDetails } from '../lib/x509'
-import { displayedSigningTime, permissionText, signatureStatus } from '../status'
+import { displayedSigningTime, permissionText, signatureStatus, signingTimeNote, timestampAuthorityInvalid } from '../status'
 import type { SignatureReport } from '../types'
 import { exportCertificate, trustCertificate, untrustCertificate } from './ids'
 import { StatusIcon } from './StatusIcon'
@@ -141,6 +141,9 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
   const st = signatureStatus(r, trusted)
   const signer = r.certificates[0]
   const signerTrusted = st.identityKnown
+  // Trusting a certificate that may not sign timestamps would not make its document timestamp valid.
+  const canTrustSigner = !signerTrusted && !timestampAuthorityInvalid(r)
+  const timeNote = signingTimeNote(r, trusted)
   return (
     <Dialog
       title="Signature Properties"
@@ -174,7 +177,7 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
           <div className="fc-digital-signatures-verdict-title">{st.title}</div>
           <div className="shell-muted">
             {r.kind === 'timestamp' ? 'Document timestamp' : r.kind === 'certification' ? 'Certified by' : 'Signed by'} <b>{r.signerName}</b>
-            {r.signingTime ? <> on {formatDateTime(displayedSigningTime(r, trusted))}</> : null}
+            {r.signingTime ? <> on {formatDateTime(displayedSigningTime(r, trusted))}{timeNote ? ` ${timeNote}` : ''}</> : null}
           </div>
         </div>
       </div>
@@ -211,7 +214,7 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
           <Button size="sm" disabled={!signer} onClick={() => openCertificateViewer(r.certificates)}>
             Show Signer's Certificate…
           </Button>
-          {signer && !signerTrusted && (
+          {signer && canTrustSigner && (
             <Button
               size="sm"
               icon={ShieldCheck}
@@ -230,7 +233,7 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
       <Row label="Reason">{r.reason}</Row>
       <Row label="Location">{r.location}</Row>
       <Row label="Contact info">{r.contactInfo}</Row>
-      <Row label="Signing time">{r.signingTime ? `${formatDateTime(r.signingTime)}${r.kind === 'timestamp' ? '' : ' (from the signer’s computer)'}` : 'Not given'}</Row>
+      <Row label="Signing time">{r.signingTime ? `${formatDateTime(r.signingTime)}${r.kind === 'timestamp' ? (timeNote ? ` ${timeNote}` : '') : ' (from the signer’s computer)'}` : 'Not given'}</Row>
       {r.timestamp && (
         <Row label="Timestamp">
           {formatDateTime(r.timestamp.time)} by {r.timestamp.authority}{' '}

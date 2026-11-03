@@ -58,18 +58,40 @@ export function timestampTrusted(r: SignatureReport, trusted: Set<string>): bool
   return chainTrustedIndex(r.timestamp.certificates, r.timestamp.chainVerified, trusted) >= 0
 }
 
+/**
+ * A document timestamp whose token verified but whose signer is not a time-stamping certificate
+ * valid at the token's time. Its time cannot be relied on, whoever issued that certificate.
+ */
+export function timestampAuthorityInvalid(r: SignatureReport): boolean {
+  return r.kind === 'timestamp' && !!r.timestamp?.valid && !r.timestamp.authorityOk
+}
+
 /** The signing time to show: the trusted timestamp's time, else the time the signer claims. */
 export function displayedSigningTime(r: SignatureReport, trusted: Set<string>): string | null {
   return timestampTrusted(r, trusted) ? r.timestamp!.time : r.signingTime
+}
+
+/**
+ * A note to show after a document timestamp's time when that time is not vouched for (for a
+ * document timestamp, the time shown is always the token's own), else ''.
+ */
+export function signingTimeNote(r: SignatureReport, trusted: Set<string>): string {
+  if (r.kind !== 'timestamp' || !r.signingTime || timestampTrusted(r, trusted)) return ''
+  if (!r.timestamp?.valid) return '(could not be verified)'
+  if (!r.timestamp.authorityOk) return '(not from a valid time-stamping certificate)'
+  return '(the time-stamping authority is not trusted)'
 }
 
 export function signatureStatus(r: SignatureReport, trusted: Set<string>): SignatureStatus {
   const details: string[] = []
   const restricted = r.permission !== null || r.lock !== null
   const disallowed = r.changes.filter((c) => !c.allowed)
-  const ti = trustedIndex(r, trusted)
-  const identityKnown = ti >= 0
   const isTimestamp = r.kind === 'timestamp'
+  // A document timestamp's identity is its authority: a certificate that may not sign timestamps
+  // (or was not valid at that time) is no known authority, even if the person trusts it or its CA.
+  const authorityInvalid = timestampAuthorityInvalid(r)
+  const ti = authorityInvalid ? -1 : trustedIndex(r, trusted)
+  const identityKnown = ti >= 0
   const tsTrusted = timestampTrusted(r, trusted)
 
   // Integrity
@@ -94,7 +116,11 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
 
   // Identity
   if (r.certificates.length) {
-    if (identityKnown) details.push(isTimestamp ? 'The time-stamping authority is trusted.' : "The signer's identity is valid.")
+    if (authorityInvalid)
+      details.push(
+        "The time-stamping authority's certificate is not a time-stamping certificate that was valid at the timestamp time, so the time cannot be relied on."
+      )
+    else if (identityKnown) details.push(isTimestamp ? 'The time-stamping authority is trusted.' : "The signer's identity is valid.")
     else
       details.push(
         isTimestamp
@@ -105,14 +131,14 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
   details.push(...r.warnings)
 
   // Time
-  if (r.timestamp) {
+  if (r.timestamp && !authorityInvalid) {
     const authority = r.timestamp.authority || 'a time-stamping authority'
     // A document timestamp's authority is the signer: the identity line above says whether it is trusted.
     details.push(
       !r.timestamp.valid
         ? 'The signature includes a timestamp, but it could not be verified.'
         : !r.timestamp.authorityOk
-          ? `The signature includes a timestamp from ${authority}, but its certificate is not a time-stamping certificate that was valid at that time.${isTimestamp ? '' : ' The signing time is only what the signer claims.'}`
+          ? `The signature includes a timestamp from ${authority}, but its certificate is not a time-stamping certificate that was valid at that time. The signing time is only what the signer claims.`
           : tsTrusted || isTimestamp
           ? `The signature includes an embedded timestamp from ${authority}.`
           : `The signature includes an embedded timestamp from ${authority}, but the time-stamping authority is unknown because its certificate is not in your list of trusted certificates. The signing time is only what the signer claims.`
@@ -123,7 +149,7 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
   let level: StatusLevel
   if (r.problems.length || r.integrity === false || r.signatureValid === false || (restricted && disallowed.length)) level = 'invalid'
   else if (r.unknownReason || r.integrity === null || r.signatureValid === null) level = 'unknown'
-  else if (r.warnings.length || disallowed.length || (r.timestamp && !r.timestamp.valid)) level = 'warning'
+  else if (r.warnings.length || disallowed.length || (r.timestamp && !r.timestamp.valid) || authorityInvalid) level = 'warning'
   else level = identityKnown ? 'valid' : 'unknown-identity'
 
   const noun = isTimestamp ? 'Document timestamp' : r.kind === 'certification' ? 'Certification' : 'Signature'

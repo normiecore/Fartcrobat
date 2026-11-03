@@ -3,9 +3,9 @@
 TEST KEYS ONLY - never use for anything real. Keys are EC P-256 derived from fixed labels, so
 anyone can recompute them; every certificate carries OU=TEST KEYS ONLY. ECDSA signatures are
 randomised, so running this again gives different (equally valid) files. Only the DER
-certificates (chain/<name>.cer), the RFC 3161 tokens (chain/<name>.tst) and one signed PDF are
-written; tests never run this script. Certificates that already exist are kept (the keys are
-fixed, so new certificates still chain to them); pass --force to write every file again.
+certificates (chain/<name>.cer), the RFC 3161 tokens (chain/<name>.tst) and a few signed PDFs
+are written; tests never run this script. Files that already exist are kept (the keys are fixed,
+so new certificates still chain to them); pass --force to write every file again.
 
 Run from anywhere:  python3 -I tests/fixtures/digital-signatures/make_chain.py [--force]
 Needs the cryptography package and the openssl command (for the timestamp tokens).
@@ -45,6 +45,12 @@ Timestamp tokens over the bytes of chain/ts-data.bin (time: when this script ran
 signed-timestamp.pdf (one directory up): one page, signature field "Signature1" signed by leaf
 (adbe.pkcs7.detached, inter and root embedded) with an embedded timestamp from tsa over the
 signature value (an unsigned timeStampToken attribute).
+
+Document timestamps (one directory up): one page, field "Timestamp1", /Type /DocTimeStamp,
+/SubFilter /ETSI.RFC3161, the token over the byte range of the file:
+  doctimestamp-good.pdf      made by `openssl ts -reply`, signed by tsa
+  doctimestamp-wrong-eku.pdf the same kind of TSTInfo signed by tsa-wrong-eku (tsa-root embedded)
+  doctimestamp-leaf.pdf      the same kind of TSTInfo signed by leaf (inter and root embedded)
 """
 import datetime
 import hashlib
@@ -177,13 +183,27 @@ def main() -> None:
             )
         (work / "signer-chain.pem").write_bytes((work / "inter.pem").read_bytes() + (work / "root.pem").read_bytes())
         data = b"Fartcrobat timestamp test data"  # no line break, so no end-of-line conversion can change it
-        (OUT / "ts-data.bin").write_bytes(data)
-        good = timestamp(work, data, "tsa")
-        (OUT / "ts-good.tst").write_bytes(good)
+        write(OUT / "ts-data.bin", lambda: data)
+        good = write(OUT / "ts-good.tst", lambda: timestamp(work, data, "tsa"))
         tst_info = encapsulated_content(work, good)
-        (OUT / "ts-wrong-eku.tst").write_bytes(cms_sign(work, tst_info, "tsa-wrong-eku", TST_INFO_OID))
-        (OUT / "ts-expired.tst").write_bytes(cms_sign(work, tst_info, "tsa-expired", TST_INFO_OID))
-        (HERE / "signed-timestamp.pdf").write_bytes(signed_pdf(work))
+        write(OUT / "ts-wrong-eku.tst", lambda: cms_sign(work, tst_info, "tsa-wrong-eku", TST_INFO_OID))
+        write(OUT / "ts-expired.tst", lambda: cms_sign(work, tst_info, "tsa-expired", TST_INFO_OID))
+        write(HERE / "signed-timestamp.pdf", lambda: signed_pdf(work))
+        write(HERE / "doctimestamp-good.pdf", lambda: doc_timestamp_pdf(work, lambda b: timestamp(work, b, "tsa")))
+        write(HERE / "doctimestamp-wrong-eku.pdf", lambda: doc_timestamp_pdf(work, lambda b: resigned_token(work, b, "tsa-wrong-eku")))
+        write(
+            HERE / "doctimestamp-leaf.pdf",
+            lambda: doc_timestamp_pdf(work, lambda b: resigned_token(work, b, "leaf", "signer-chain.pem")),
+        )
+
+
+def write(path: Path, make_bytes) -> bytes:
+    """Writes make_bytes() to path unless the file exists (and --force was not given)."""
+    if path.exists() and not FORCE:
+        return path.read_bytes()
+    data = make_bytes()
+    path.write_bytes(data)
+    return data
 
 
 # ---- timestamp tokens and the signed PDF (openssl) -----------------------------------------
@@ -298,17 +318,42 @@ def add_timestamp(work: Path, cms: bytes) -> bytes:
     return der_tlv(0x30, content_info[0] + der_tlv(0xA0, signed_data))
 
 
+def resigned_token(work: Path, data: bytes, signer: str, chain: str = "tsa-root.pem") -> bytes:
+    """A token over `data` whose TSTInfo comes from `openssl ts -reply` but is signed by `signer`."""
+    return cms_sign(work, encapsulated_content(work, timestamp(work, data, "tsa")), signer, TST_INFO_OID, chain)
+
+
 def signed_pdf(work: Path) -> bytes:
     """A one-page PDF with signature field Signature1 signed by leaf, with an embedded timestamp."""
+    return one_page_signed_pdf(
+        b"Signed with an embedded timestamp - TEST KEYS ONLY",
+        b"Signature1",
+        b"/Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /Name (leaf) /M (D:20260601000000Z)",
+        lambda signed: add_timestamp(work, cms_sign(work, signed, "leaf", chain="signer-chain.pem")),
+    )
+
+
+def doc_timestamp_pdf(work: Path, token_for) -> bytes:
+    """A one-page PDF with a document timestamp in field Timestamp1: token_for(signed bytes)."""
+    return one_page_signed_pdf(
+        b"Document timestamp - TEST KEYS ONLY",
+        b"Timestamp1",
+        b"/Type /DocTimeStamp /Filter /Adobe.PPKLite /SubFilter /ETSI.RFC3161",
+        token_for,
+    )
+
+
+def one_page_signed_pdf(text: bytes, field: bytes, sig_entries: bytes, sign) -> bytes:
+    """A one-page PDF with one signature field whose /Contents is sign(the bytes in its byte range)."""
     contents_len = 16384
     placeholder_range = b"[0 0000000000 0000000000 0000000000]"
-    stream = b"BT /F1 18 Tf 72 720 Td (Signed with an embedded timestamp - TEST KEYS ONLY) Tj ET"
+    stream = b"BT /F1 18 Tf 72 720 Td (" + text + b") Tj ET"
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
         b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>",
-        b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Signature1) /F 4 /Rect [72 560 300 640] /P 3 0 R /V 5 0 R >>",
-        b"<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /Name (leaf) /M (D:20260601000000Z) /ByteRange "
+        b"<< /Type /Annot /Subtype /Widget /FT /Sig /T (" + field + b") /F 4 /Rect [72 560 300 640] /P 3 0 R /V 5 0 R >>",
+        b"<< " + sig_entries + b" /ByteRange "
         + placeholder_range
         + b" /Contents <"
         + b"0" * contents_len
@@ -332,7 +377,7 @@ def signed_pdf(work: Path) -> bytes:
     at = out.index(placeholder_range)
     out[at : at + len(placeholder_range)] = byte_range
     signed = bytes(out[:start] + out[end:])
-    cms = add_timestamp(work, cms_sign(work, signed, "leaf", chain="signer-chain.pem"))
+    cms = sign(signed)
     hex_cms = cms.hex().encode()
     assert len(hex_cms) <= contents_len
     out[start + 1 : start + 1 + len(hex_cms)] = hex_cms

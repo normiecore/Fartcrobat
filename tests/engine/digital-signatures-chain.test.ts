@@ -9,7 +9,7 @@ import { der } from '@features/digital-signatures/lib/asn1'
 import { digest, parsePublicKey, rsaPkcs1Verify } from '@features/digital-signatures/lib/crypto'
 import { OID } from '@features/digital-signatures/lib/oids'
 import { buildChain, describeCertificate, parseCertificate, type CertDetails, type Certificate } from '@features/digital-signatures/lib/x509'
-import { chainTrustedIndex, displayedSigningTime, signatureStatus, timestampTrusted } from '@features/digital-signatures/status'
+import { chainTrustedIndex, displayedSigningTime, overallStatus, signatureStatus, signingTimeNote, timestampTrusted } from '@features/digital-signatures/status'
 import type { SignatureReport } from '@features/digital-signatures/types'
 
 // Certificates from tests/fixtures/digital-signatures/make_chain.py (valid 2025-2045 unless noted).
@@ -338,4 +338,67 @@ describe('RFC 3161 timestamp tokens', () => {
     expect(timestampTrusted(r, new Set([await sha('tsa-root')]))).toBe(true)
     expect(signatureStatus(r, new Set([await sha('root')])).details.join(' ')).toMatch(/time-stamping authority is unknown/)
   })
+})
+
+describe('document timestamps', () => {
+  // ../doctimestamp-*.pdf from make_chain.py: a /DocTimeStamp (ETSI.RFC3161) over the file, its
+  // token signed by tsa (good), tsa-wrong-eku (EKU emailProtection) or leaf (no EKU at all).
+  const sha = async (name: string) => (await describeCertificate(cert(name))).sha256
+
+  async function validate(name: string) {
+    const engine = await createLocalEngine()
+    const res = await engine.ops<typeof docOps>('doc').open(new Uint8Array(readFileSync(join(DIR, '..', name))), { fileName: name })
+    expect(res.ok).toBe(true)
+    const report = await engine.ops<typeof sigOps>('digital-signatures').validate()
+    expect(report.signatures).toHaveLength(1)
+    return { report, r: report.signatures[0] }
+  }
+
+  it('trusts a document timestamp from a time-stamping authority under a trusted root', async () => {
+    const { report, r } = await validate('doctimestamp-good.pdf')
+    expect(r.kind).toBe('timestamp')
+    expect(r.integrity).toBe(true)
+    expect(r.timestamp).toMatchObject({ valid: true, authorityOk: true })
+    expect(r.certificates.map((c) => c.subjectName)).toEqual(['tsa', 'tsa-root'])
+    const trusted = new Set([await sha('tsa-root')])
+    const st = signatureStatus(r, trusted)
+    expect(st.level).toBe('valid')
+    expect(st.title).toBe('Document timestamp is valid.')
+    expect(st.timestampTrusted).toBe(true)
+    expect(signingTimeNote(r, trusted)).toBe('')
+    expect(overallStatus(report, trusted)!.level).toBe('valid')
+    // Untrusted authority: valid, but the authority (and so the time) is unknown.
+    expect(signatureStatus(r, new Set()).level).toBe('unknown-identity')
+    expect(signingTimeNote(r, new Set())).toMatch(/not trusted/)
+  })
+
+  for (const [file, signer, chain] of [
+    ['doctimestamp-wrong-eku.pdf', 'tsa-wrong-eku', ['tsa-wrong-eku', 'tsa-root']],
+    ['doctimestamp-leaf.pdf', 'leaf', ['leaf', 'inter', 'root']]
+  ] as const) {
+    it(`does not show a document timestamp signed by ${signer} (not a time-stamping certificate) as valid`, async () => {
+      const { report, r } = await validate(file)
+      expect(r.kind).toBe('timestamp')
+      expect(r.integrity).toBe(true)
+      expect(r.signatureValid).toBe(true)
+      expect(r.timestamp).toMatchObject({ valid: true, authorityOk: false })
+      expect(r.certificates.map((c) => c.subjectName)).toEqual(chain)
+      expect(r.chainVerified.every(Boolean)).toBe(true)
+      // Even when the certificate's root, or the certificate itself, is trusted.
+      for (const name of [chain[chain.length - 1], signer]) {
+        const trusted = new Set([await sha(name)])
+        const st = signatureStatus(r, trusted)
+        expect(st.level).toBe('warning')
+        expect(st.title).toBe('Document timestamp is valid, but there are problems.')
+        expect(st.identityKnown).toBe(false)
+        expect(st.trustedIndex).toBe(-1)
+        expect(st.timestampTrusted).toBe(false)
+        const text = st.details.join(' ')
+        expect(text).not.toMatch(/authority is trusted/)
+        expect(text).toMatch(/not a time-stamping certificate/)
+        expect(signingTimeNote(r, trusted)).toBe('(not from a valid time-stamping certificate)')
+        expect(overallStatus(report, trusted)!.level).toBe('warning')
+      }
+    })
+  }
 })
