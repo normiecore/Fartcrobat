@@ -16,7 +16,7 @@ import {
   type RevisionInfo,
   type XrefEntryType
 } from '../lib/pdfbytes'
-import { buildChain, describeCertificate, displayName, parseCertificate, type Certificate } from '../lib/x509'
+import { buildChain, describeCertificate, displayName, isTimestampAuthority, parseCertificate, type Certificate } from '../lib/x509'
 import type { MdpPermission, SignatureReport, ValidationReport } from '../types'
 import { describeChanges } from './changes'
 import { certification, listSignatureFields, lockInfo, readReferences, safe, signedFieldIn, type SigField } from './fields'
@@ -105,7 +105,15 @@ async function verifyCms(r: SignatureReport, contents: Uint8Array, data: Uint8Ar
     const info = parseTstInfo(v.eContent)
     const d = await digest(info.digestName, data)
     r.integrity = v.digestOk && bytesEqual(d, info.imprint)
-    r.timestamp = { time: info.time.toISOString(), authority: info.tsa || (v.signer ? displayName(v.signer.subject) : ''), valid: r.integrity && v.signatureOk }
+    // The authority's chain is the signature's own chain (r.certificates).
+    r.timestamp = {
+      time: info.time.toISOString(),
+      authority: info.tsa || (v.signer ? displayName(v.signer.subject) : ''),
+      valid: r.integrity && v.signatureOk,
+      authorityOk: isTimestampAuthority(v.signer, info.time),
+      certificates: [],
+      chainVerified: []
+    }
     r.signingTime = info.time.toISOString()
     return v
   }
@@ -138,7 +146,7 @@ async function verifyX509RsaSha1(r: SignatureReport, v: PDFObject, contents: Uin
     return null
   }
   const d = await digest('SHA-1', data)
-  const ok = rsaPkcs1Verify(parsePublicKey(signer.publicKey.spki), sig, d) !== null
+  const ok = rsaPkcs1Verify(parsePublicKey(signer.publicKey.spki), sig, d, 'SHA-1') !== null
   r.integrity = ok
   r.signatureValid = ok
   return signer
@@ -352,6 +360,20 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
   const holder = objectAt(src, r.byteRange[1])
   if (holder !== null && holder !== vNum) r.problems.push('The signed data does not belong to this signature field.')
 
+  // A document timestamp is an RFC 3161 token signed by the authority, and an RFC 3161 token is
+  // only a document timestamp. Any other combination is malformed and is not checked further: its
+  // signer is no time-stamping authority, and no time in it can be relied on.
+  const docTimeStamp = readName(v.get('Type')) === 'DocTimeStamp'
+  if (docTimeStamp !== (r.subFilter === 'ETSI.RFC3161')) {
+    r.problems.push(
+      docTimeStamp
+        ? 'This document timestamp is not an RFC 3161 timestamp (its format is not ETSI.RFC3161), so it cannot be checked.'
+        : 'This signature uses the document timestamp format (ETSI.RFC3161) but is not a document timestamp, so it cannot be checked.'
+    )
+    if (!r.signerName) r.signerName = 'Unknown signer'
+    return { end: chk.end }
+  }
+
   const data = signedBytes(src, r.byteRange)
   let signer: Certificate | null = null
   let pool: Certificate[] = []
@@ -368,7 +390,18 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
         signer = ver.signer
         pool = ver.certificates
         if (ver.signingTime && r.kind !== 'timestamp') r.signingTime = ver.signingTime.toISOString()
-        if (ver.timestamp) r.timestamp = { time: ver.timestamp.time.toISOString(), authority: ver.timestamp.authority, valid: ver.timestamp.valid }
+        // An RFC 3161 token's authority is the token's own signer (set by verifyCms). A token
+        // nested in its SignerInfo is not that authority and is ignored.
+        if (ver.timestamp && r.subFilter !== 'ETSI.RFC3161') {
+          r.timestamp = {
+            time: ver.timestamp.time.toISOString(),
+            authority: ver.timestamp.authority,
+            valid: ver.timestamp.valid,
+            authorityOk: ver.timestamp.authorityOk,
+            certificates: await Promise.all(ver.timestamp.chain.map((l) => describeCertificate(l.cert))),
+            chainVerified: ver.timestamp.chain.map((l) => l.verified)
+          }
+        }
         if (ver.signingCertificateOk === false) r.problems.push('The signing-certificate reference in the signature does not match the certificate.')
         if (!signer) r.problems.push("The signer's certificate is missing from the signature.")
       }
@@ -381,17 +414,17 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
   if (r.signatureValid === false && r.integrity !== false) r.problems.push('The signature value does not match the signer’s certificate.')
 
   if (signer) {
-    const { chain, complete } = await buildChain(signer, pool)
+    const when = r.timestamp?.valid ? new Date(r.timestamp.time) : r.signingTime ? new Date(r.signingTime) : new Date()
+    const { chain, complete } = await buildChain(signer, pool, when)
     r.chainComplete = complete
     r.chainVerified = chain.map((l) => l.verified)
     r.certificates = await Promise.all(chain.map((l) => describeCertificate(l.cert)))
     if (!r.signerName || r.kind !== 'timestamp') r.signerName = displayName(signer.subject)
-    const when = r.timestamp?.valid ? new Date(r.timestamp.time) : r.signingTime ? new Date(r.signingTime) : new Date()
     r.certValidAtSigning = when >= signer.notBefore && when <= signer.notAfter
     r.certExpiredNow = Date.now() > signer.notAfter.getTime()
     if (r.certValidAtSigning === false) r.warnings.push("The signer's certificate was not valid at the signing time.")
     const brokenLink = r.chainVerified.findIndex((ok, i) => !ok && (i < chain.length - 1 || complete))
-    if (brokenLink >= 0) r.warnings.push('A certificate in the chain does not verify against its issuer.')
+    if (brokenLink >= 0) r.warnings.push('A certificate in the chain was not validly issued by the next one (its signature does not verify, or the issuer may not issue certificates).')
   }
   if (!r.signerName) r.signerName = 'Unknown signer'
   return { end: chk.end }

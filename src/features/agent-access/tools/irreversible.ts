@@ -5,7 +5,7 @@ import type { SignTarget } from '@features/digital-signatures/types'
 import { CERTIFICATE_ENCRYPTED_SIGNING, isCertificateEncrypted } from '@features/digital-signatures/ui/encrypted'
 import { startSigning } from '@features/digital-signatures/ui/flow'
 import { sigOps, trustedSet, validateDocument } from '@features/digital-signatures/ui/store'
-import { overallStatus, signatureStatus } from '@features/digital-signatures/status'
+import { displayedSigningTime, overallStatus, signatureStatus, signingTimeNote } from '@features/digital-signatures/status'
 import { protectDocument, removeDocumentSecurity, securityOf } from '@features/protect-optimize/flows'
 import { markNeedsReload, saveRedactedCopy } from '@features/redact/actions'
 import { redactOps } from '@features/redact/store'
@@ -164,7 +164,8 @@ const signDocument: ToolHandler = async (args, ctx) => {
       signatures: (report?.signatures ?? []).map((s) => ({
         field: s.fieldName,
         signer: s.signerName,
-        signingTime: s.signingTime,
+        signingTime: displayedSigningTime(s, trusted),
+        ...(signingTimeNote(s, trusted) ? { signingTimeNote: signingTimeNote(s, trusted) } : {}),
         page: s.page + 1,
         status: signatureStatus(s, trusted).level
       }))
