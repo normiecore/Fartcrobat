@@ -6,6 +6,7 @@ import { Button, Dialog, invoke, openDialog, setPrefs, showError, usePrefs } fro
 import { BlockedList, ConnectionList } from './ActivityPanel'
 import { setAgentStatus, useAgentUi } from './store'
 import { useCompanion } from './companionStore'
+import { LEGACY } from '@shared/identity'
 import '../ipc'
 
 const P = 'fc-agent-access'
@@ -93,8 +94,8 @@ function ChatGPTSetup({
           {copied ? 'Copied' : 'Copy configuration'}
         </Button>
         <p>
-          Add this entry to your Codex host config.toml only if no inkmoor entry exists. Update an existing
-          entry rather than duplicating it.
+          Add this entry to your Codex host config.toml only if it has no [mcp_servers.{LEGACY.mcpServer}] entry
+          yet (Fartcrobat used the same one). If it has, replace that entry rather than adding a second one.
         </p>
       </details>
       <p>This connects local desktop tools. It does not connect ChatGPT web or mobile by itself.</p>

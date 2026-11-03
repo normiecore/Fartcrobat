@@ -42,3 +42,23 @@
   DeleteRegKey SHELL_CONTEXT "Software\Fartcrobat\Capabilities"
   DeleteRegKey /ifempty SHELL_CONTEXT "Software\Fartcrobat"
 !macroend
+
+; An install from before the rename (Fartcrobat, up to 0.3) lives in a folder named Fartcrobat. When
+; this installer runs with its pages (not the silent in-app update), electron-builder appends
+; \Inkmoor to any folder whose path does not contain "Inkmoor" (instFilesPre), which would put the
+; app in ...\Fartcrobat\Inkmoor next to an empty old folder. This hook replaces that check for the
+; files page: a folder ending in \Fartcrobat is kept as it is, any other gets electron-builder's.
+!macro customPageAfterChangeDir
+  !ifdef allowToChangeInstallationDirectory
+    !ifdef MUI_PAGE_CUSTOMFUNCTION_PRE
+      !undef MUI_PAGE_CUSTOMFUNCTION_PRE
+    !endif
+    !define MUI_PAGE_CUSTOMFUNCTION_PRE keepLegacyInstallDir
+    Function keepLegacyInstallDir
+      StrCpy $0 $INSTDIR "" -11
+      ${If} $0 != "\Fartcrobat"
+        Call instFilesPre
+      ${EndIf}
+    FunctionEnd
+  !endif
+!macroend

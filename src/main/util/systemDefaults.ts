@@ -2,7 +2,7 @@
  * Parsers for the small system queries Inkmoor runs to find the default printer and the
  * default PDF app. Kept free of Electron so they can be unit tested.
  */
-import { LEGACY, PRODUCT_NAME, productNames } from '@shared/identity'
+import { LEGACY, PRODUCT_NAME } from '@shared/identity'
 
 /** `lpstat -d` (CUPS, Linux and macOS): "system default destination: Office_Laser". */
 export function parseLpstatDefault(output: string): string | null {
@@ -37,11 +37,12 @@ export function regValue(output: string, name: string): string | null {
 export const WINDOWS_PROG_ID = LEGACY.windowsProgId
 
 /**
- * Whether a .pdf UserChoice ProgId means this app opens PDFs: its ProgId, or "Open with" naming
- * this executable or one it had before a rename.
+ * Whether a .pdf UserChoice ProgId means this app opens PDFs: its ProgId (the installer points it
+ * at the current executable), or "Open with" naming this executable. An "Open with" choice of the
+ * executable from before a rename does not count: the update removed that file, so PDFs no longer
+ * open, and the app must offer Make default again.
  */
 export function isInkmoorProgId(progId: string, exeName = `${PRODUCT_NAME}.exe`): boolean {
   const id = progId.trim().toLowerCase()
-  if (id === WINDOWS_PROG_ID.toLowerCase()) return true
-  return [exeName, ...productNames().map((n) => `${n}.exe`)].some((exe) => id === `applications\\${exe.toLowerCase()}`)
+  return id === WINDOWS_PROG_ID.toLowerCase() || id === `applications\\${exeName.toLowerCase()}`
 }

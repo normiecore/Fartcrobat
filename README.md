@@ -93,8 +93,9 @@ computer. Download the one for yours and open it:
 - AppImage: make it executable first (right-click > Properties > Executable as Program, or
   `chmod +x Inkmoor-x86_64.AppImage`), then open it. It updates itself, and it needs FUSE 2:
   `sudo apt install libfuse2t64` on Ubuntu 24.04 and later, `libfuse2` on 22.04.
-- 0.2.0, the release before this table, names its Intel Mac file `Inkmoor-0.2.0.dmg` and also
-  has `Inkmoor-Setup-0.2.0.exe`, one Windows installer for both processors.
+- 0.2.0, the release before this table (still called Fartcrobat), names its Intel Mac file
+  `Fartcrobat-0.2.0.dmg` and also has `Fartcrobat-Setup-0.2.0.exe`, one Windows installer for both
+  processors.
 - The other files of a release are for in-app updates (`.zip`, `.blockmap`, `latest*.yml`) and for
   unpacking by hand (`.tar.gz`).
 

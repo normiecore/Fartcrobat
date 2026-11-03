@@ -11,6 +11,7 @@ import { firstSaying, machinePolicyFiles, machineReadings, windowsPolicyKeys, ty
 import { GENERATED_MARKER, LEGACY_GENERATED_MARKER, desktopEntry, hasGeneratedMarker, refreshedDesktopEntry } from '@main/util/linuxDesktop'
 import { isInkmoorProgId } from '@main/util/systemDefaults'
 import { TempFiles } from '@main/util/tempFiles'
+import { legacyUpdaterCacheDir } from '@main/util/legacyUpdaterCache'
 import { defaultUserDataDir, installCandidates, separateProfile } from '../../src/agent-shim/launch'
 
 const renamed: Names = { current: 'Newname', legacy: LEGACY.productName }
@@ -130,8 +131,9 @@ describe('MCP helper across a rename', () => {
 })
 
 describe('desktop integration across a rename', () => {
-  it('recognises "Open with" choices of either executable on Windows', () => {
-    expect(isInkmoorProgId('Applications\\Fartcrobat.exe', 'Newname.exe')).toBe(true)
+  it('does not count an "Open with" choice of the removed old executable as the default on Windows', () => {
+    // The update removed Fartcrobat.exe, so that choice opens nothing: offer Make default again.
+    expect(isInkmoorProgId('Applications\\Fartcrobat.exe', 'Newname.exe')).toBe(false)
     expect(isInkmoorProgId('Applications\\Newname.exe', 'Newname.exe')).toBe(true)
     expect(isInkmoorProgId(LEGACY.windowsProgId, 'Newname.exe')).toBe(true)
     expect(isInkmoorProgId('Applications\\Other.exe', 'Newname.exe')).toBe(false)
@@ -170,5 +172,18 @@ describe('temporary folders across a rename', () => {
     writeFileSync(join(base, 'fartcrobat-999999-abc', 'f'), 'x')
     const removed = TempFiles.sweepStale(base, () => false).map((p) => p.slice(base.length + 1)).sort()
     expect(removed).toEqual(['fartcrobat-999999-abc', 'fartcrobat-print-999999-abc'])
+  })
+})
+
+describe('updater cache across a rename', () => {
+  it('names the folder the old updater downloaded into, on each system', () => {
+    expect(legacyUpdaterCacheDir('win32', { LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local' }, 'C:\\Users\\me')).toBe(
+      'C:\\Users\\me\\AppData\\Local\\fartcrobat-updater'
+    )
+    expect(legacyUpdaterCacheDir('darwin', {}, '/Users/me')).toBe('/Users/me/Library/Caches/fartcrobat-updater')
+    expect(legacyUpdaterCacheDir('linux', {}, '/home/me')).toBe('/home/me/.cache/fartcrobat-updater')
+    expect(legacyUpdaterCacheDir('linux', { XDG_CACHE_HOME: '/c' }, '/home/me')).toBe('/c/fartcrobat-updater')
+    // Never the current one.
+    expect(legacyUpdaterCacheDir('linux', {}, '/home/me', 'Fartcrobat')).toBeNull()
   })
 })

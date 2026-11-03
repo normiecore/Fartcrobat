@@ -23,12 +23,22 @@ means Inkmoor.
   `.mcpb` manifest name, the MCP server name, the ChatGPT config table) and the migration
   plumbing is in place: the userData folder from before the rename is kept (`pinUserData` in
   src/main/index.ts, `defaultUserDataDir` in the MCP helper), machine policies are read from both
-  locations, the helper finds the app under either name, "Open with" choices of either executable
-  count as the default app, desktop entries written under the old name are rewritten at start,
+  locations, the helper finds the app under either name, the old updater's download cache is
+  removed at the first start, desktop entries written under the old name are rewritten at start,
   stale temp folders of either prefix are swept, and the Windows installer removes the old
   "Default apps" registration. `tests/engine/rename-identity.test.ts` covers it.
 - Done: the rename itself (UI, installers, artifact names, environment variables, docs) and the
   release notes (`docs/releases/v0.4.0.md`). The update rehearsal knows both names.
+- Known gaps, accepted and told in the release notes: an extension installed from 0.3 runs the
+  0.3 helper, which only knows Fartcrobat.exe and /opt/Fartcrobat; until Inkmoor has started once
+  (which rewrites agent-access/app.json) it cannot start the app after a Windows "Later" install or
+  a .deb upgrade. Windows shortcuts are deleted and recreated rather than renamed (electron-builder
+  keeps them only when the executable name is unchanged). A Windows "Open with" choice of
+  Fartcrobat.exe stops working (the file is gone), so it no longer counts as the default and the
+  app offers Make default. The .deb command becomes `inkmoor`.
+- The interactive Windows installer keeps an install folder ending in `\Fartcrobat`
+  (customPageAfterChangeDir in build/installer.nsh); electron-builder would otherwise append
+  `\Inkmoor`. Not compiled here (needs wine); the release and update-rehearsal workflows build it.
 - Not done: the macOS card offering to move the old Fartcrobat.app to the Bin (the release notes
   tell people instead), and a notice when remembered passwords could not be read after the rename
   on macOS or Linux (they are skipped silently, as before; the release notes mention it).
@@ -135,7 +145,9 @@ The analysis this plan came from (14 Oct to 3 Nov 2026 sessions) follows.
 
 5. **Windows.**
    - Rename the exe (`win.executableName` defaults to `productName`).
-   - `isFartcrobatProgId` (`systemDefaults.ts:36-38`) also accepts `applications\fartcrobat.exe`.
+   - `isFartcrobatProgId` (now `isInkmoorProgId`) does NOT accept `applications\fartcrobat.exe`: the
+     update removes that file, so such a choice is broken and the app must offer Make default (review
+     of 3 Nov 2026 corrected this).
    - `build/installer.nsh:14,23-27,33-35`: new name in `RegisteredApplications` and `Capabilities`. The old uninstaller deletes the old keys during the `--updated` run.
    - Keep `Fartcrobat.Document` in `FileAssociations`.
    - `src/main/defaultApp.ts:135` `registeredAppUser=NEWNAME`.

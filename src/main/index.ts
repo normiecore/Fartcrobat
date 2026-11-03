@@ -18,6 +18,7 @@ import { store } from './store'
 import { sessionTemp } from './temp'
 import { atomicWrite } from './util/atomicWrite'
 import { filesFromArgv, openableFile } from './util/launchPaths'
+import { removeLegacyUpdaterCache } from './util/legacyUpdaterCache'
 import { keepSpellCheckOffline } from './util/spellcheck'
 import { TempFiles } from './util/tempFiles'
 import { unsafeToOpenReason } from './util/unsafeFiles'
@@ -94,6 +95,8 @@ function start() {
     TempFiles.sweepStale(app.getPath('temp'))
     // A desktop entry written under the name the app had before a rename gets the current one.
     if (process.platform === 'linux') refreshLinuxDesktopFile()
+    // The updater of the version before the rename downloaded into a folder nothing uses now.
+    if (app.isPackaged) removeLegacyUpdaterCache()
     serveRenderer()
     registerCoreHandlers()
     registerFeatureHandlers()
