@@ -101,8 +101,22 @@ export function fallbackFamily(flags: number): string {
 export const isBold = (flags: number) => (flags & FONT_BOLD) !== 0
 export const isItalic = (flags: number) => (flags & FONT_ITALIC) !== 0
 
+/**
+ * A family name that is safe inside a quoted CSS string, in a style attribute or a <style>
+ * element: letters, digits, spaces, hyphens, underscores and periods only (font names come from
+ * the PDF and can hold any character).
+ */
+export function cssFamilyName(family: string): string {
+  return family
+    .replace(/[^\p{L}\p{N} ._-]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100)
+}
+
 /** CSS font stack for a family. */
 export function cssFontStack(family: string, flags: number): string {
   const generic = flags & FONT_MONO ? 'monospace' : flags & FONT_SERIF || /times|georgia|garamond|cambria|serif|palatino|antiqua/i.test(family) ? 'serif' : 'sans-serif'
-  return `"${family.replace(/"/g, '')}", ${generic}`
+  const name = cssFamilyName(family)
+  return name ? `"${name}", ${generic}` : generic
 }
