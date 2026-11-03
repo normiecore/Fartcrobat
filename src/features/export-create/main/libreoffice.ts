@@ -3,7 +3,7 @@
  * conversion can be tested on its own.
  */
 import { execFile } from 'node:child_process'
-import { accessSync, constants, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, delimiter, extname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -105,8 +105,32 @@ export async function findLibreOffice(preferred?: string, opts: { version?: bool
 export const LIBREOFFICE_EXTENSIONS = ['doc', 'docx', 'odt', 'rtf', 'xls', 'xlsx', 'ods', 'csv', 'ppt', 'pptx', 'odp']
 
 /**
+ * Settings written into the private profile before every conversion. Documents can link images
+ * and other content by URL (http, https, file, UNC paths); converting must only use what is inside
+ * the file, so links from the document are blocked (no trusted locations), and OLE/DDE content
+ * and link updates are turned off.
+ */
+export const PROFILE_SETTINGS = `<?xml version="1.0" encoding="UTF-8"?>
+<oor:items xmlns:oor="http://openoffice.org/2001/registry" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="BlockUntrustedRefererLinks" oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="SecureURL" oor:op="fuse"><value/></prop></item>
+<item oor:path="/org.openoffice.Office.Common/Security/Scripting"><prop oor:name="DisableActiveContent" oor:op="fuse"><value>true</value></prop></item>
+<item oor:path="/org.openoffice.Office.Writer/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>2</value></prop></item>
+<item oor:path="/org.openoffice.Office.Calc/Content/Update"><prop oor:name="Link" oor:op="fuse"><value>1</value></prop></item>
+</oor:items>
+`
+
+/** Writes PROFILE_SETTINGS into a LibreOffice user profile (replacing what LibreOffice saved there). */
+export function prepareProfile(profile: string) {
+  const user = join(profile, 'user')
+  mkdirSync(user, { recursive: true })
+  writeFileSync(join(user, 'registrymodifications.xcu'), PROFILE_SETTINGS)
+}
+
+/**
  * Converts a file to PDF with LibreOffice and returns the PDF bytes. A private user profile is
- * used, so this works while LibreOffice is open with the user's own profile.
+ * used, so this works while LibreOffice is open with the user's own profile, and its settings keep
+ * the conversion from loading content the document links to.
  */
 export async function convertWithLibreOffice(
   soffice: string,
@@ -118,6 +142,7 @@ export async function convertWithLibreOffice(
   const profile = opts.profileDir ?? join(work, 'profile')
   try {
     const outDir = join(work, 'out')
+    prepareProfile(profile)
     await run(
       soffice,
       [
