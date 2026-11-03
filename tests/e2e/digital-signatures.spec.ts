@@ -688,3 +688,31 @@ test('a document timestamp from a certificate that may not sign timestamps is no
     await app.close()
   }
 })
+
+test('a document timestamp that is not an RFC 3161 token is shown as invalid', async () => {
+  // doctimestamp-pkcs7-token.pdf (make_chain.py): /Type /DocTimeStamp with /SubFilter
+  // adbe.pkcs7.detached, signed by "leaf" with an embedded timestamp from "tsa". Test keys only.
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('digital-signatures/doctimestamp-pkcs7-token.pdf'))
+    await waitForRender(page)
+    await runCommand(page, 'sign.showSignaturesPanel')
+    const rightPanel = page.locator('aside.shell-rightpanel[aria-label="Signatures"]')
+    const entry = rightPanel.locator('.fc-digital-signatures-entry').first()
+    await expect(entry).toContainText('Timestamped by')
+    await expect(entry).toContainText('Document timestamp is invalid.')
+    await expect(page.locator('.fc-digital-signatures-bar')).toContainText('At least one signature is invalid.')
+    await entry.getByRole('button', { name: /^Expand / }).click()
+    await expect(entry).toContainText('(could not be verified)')
+    await entry.getByRole('button', { name: 'Signature options' }).click()
+    await page.getByRole('menuitem', { name: 'Show Signature Properties…' }).click()
+    const props = dialog(page, 'Signature Properties')
+    await expect(props.locator('.fc-digital-signatures-verdict-title')).toHaveText('Document timestamp is invalid.')
+    await expect(props).toContainText('is not an RFC 3161 timestamp')
+    await expect(props).toContainText('(could not be verified)')
+    await expect(props).not.toContainText('is trusted')
+    await expect(props.getByRole('button', { name: 'Trust This Signer' })).toHaveCount(0)
+  } finally {
+    await app.close()
+  }
+})

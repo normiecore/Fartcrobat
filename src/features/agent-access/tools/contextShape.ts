@@ -10,7 +10,7 @@ import type { Rect } from '@shared/geometry'
 import type { PageInfo } from '@shared/types'
 import { hitContext, rangeRects, type PageText, type SearchHit } from '@renderer/document/textModel'
 import { buildThreads, cleanDate, threadLabel } from '@features/comments/shared'
-import { displayedSigningTime, signatureStatus } from '@features/digital-signatures/status'
+import { displayedSigningTime, signatureStatus, signingTimeNote } from '@features/digital-signatures/status'
 import type { ValidationReport } from '@features/digital-signatures/types'
 
 // common.tsx has the same rounding, but importing it would pull in the whole renderer.
@@ -440,6 +440,7 @@ export function signaturesOut(report: ValidationReport, trusted: Set<string>) {
       kind: r.kind,
       signer: r.signerName,
       signingTime: displayedSigningTime(r, trusted),
+      ...(signingTimeNote(r, trusted) ? { signingTimeNote: signingTimeNote(r, trusted) } : {}),
       ...(r.timestamp
         ? { timestamp: { time: r.timestamp.time, authority: r.timestamp.authority, valid: r.timestamp.valid, trusted: st.timestampTrusted } }
         : {}),

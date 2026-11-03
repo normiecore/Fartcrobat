@@ -258,6 +258,20 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
   const holder = objectAt(src, r.byteRange[1])
   if (holder !== null && holder !== vNum) r.problems.push('The signed data does not belong to this signature field.')
 
+  // A document timestamp is an RFC 3161 token signed by the authority, and an RFC 3161 token is
+  // only a document timestamp. Any other combination is malformed and is not checked further: its
+  // signer is no time-stamping authority, and no time in it can be relied on.
+  const docTimeStamp = readName(v.get('Type')) === 'DocTimeStamp'
+  if (docTimeStamp !== (r.subFilter === 'ETSI.RFC3161')) {
+    r.problems.push(
+      docTimeStamp
+        ? 'This document timestamp is not an RFC 3161 timestamp (its format is not ETSI.RFC3161), so it cannot be checked.'
+        : 'This signature uses the document timestamp format (ETSI.RFC3161) but is not a document timestamp, so it cannot be checked.'
+    )
+    if (!r.signerName) r.signerName = 'Unknown signer'
+    return { end: chk.end }
+  }
+
   const data = signedBytes(src, r.byteRange)
   let signer: Certificate | null = null
   let pool: Certificate[] = []

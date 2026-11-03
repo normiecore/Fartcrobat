@@ -9,7 +9,16 @@ import { der } from '@features/digital-signatures/lib/asn1'
 import { digest, parsePublicKey, rsaPkcs1Verify } from '@features/digital-signatures/lib/crypto'
 import { OID } from '@features/digital-signatures/lib/oids'
 import { buildChain, describeCertificate, parseCertificate, type CertDetails, type Certificate } from '@features/digital-signatures/lib/x509'
-import { chainTrustedIndex, displayedSigningTime, overallStatus, signatureStatus, signingTimeNote, timestampTrusted } from '@features/digital-signatures/status'
+import {
+  chainTrustedIndex,
+  displayedSigningTime,
+  overallStatus,
+  signatureStatus,
+  signingTimeNote,
+  timestampAuthorityInvalid,
+  timestampTrusted
+} from '@features/digital-signatures/status'
+import { signaturesOut } from '@features/agent-access/tools/contextShape'
 import type { SignatureReport } from '@features/digital-signatures/types'
 
 // Certificates from tests/fixtures/digital-signatures/make_chain.py (valid 2025-2045 unless noted).
@@ -401,4 +410,107 @@ describe('document timestamps', () => {
       }
     })
   }
+})
+
+describe('malformed document timestamps', () => {
+  // ../doctimestamp-pkcs7*.pdf and ../sig-rfc3161.pdf from make_chain.py.
+  const sha = async (name: string) => (await describeCertificate(cert(name))).sha256
+
+  async function validate(name: string) {
+    const engine = await createLocalEngine()
+    const res = await engine.ops<typeof docOps>('doc').open(new Uint8Array(readFileSync(join(DIR, '..', name))), { fileName: name })
+    expect(res.ok).toBe(true)
+    const report = await engine.ops<typeof sigOps>('digital-signatures').validate()
+    expect(report.signatures).toHaveLength(1)
+    return { report, r: report.signatures[0] }
+  }
+
+  const claimed = new Date('2025-06-01T00:00:00Z').toISOString()
+
+  for (const file of ['doctimestamp-pkcs7.pdf', 'doctimestamp-pkcs7-token.pdf']) {
+    it(`reports a /DocTimeStamp that is not an RFC 3161 token as invalid (${file})`, async () => {
+      const { report, r } = await validate(file)
+      expect(r.kind).toBe('timestamp')
+      expect(r.subFilter).toBe('adbe.pkcs7.detached')
+      expect(r.problems.join(' ')).toMatch(/not an RFC 3161 timestamp/)
+      // Not checked further: no authority, no embedded token to take a time from.
+      expect(r.timestamp).toBeNull()
+      expect(r.certificates).toEqual([])
+      expect(r.signingTime).toBe(claimed)
+      // Whatever is trusted: the signer's root, the signer, the embedded token's authority.
+      for (const names of [[], ['root'], ['leaf'], ['tsa-root'], ['root', 'leaf', 'tsa', 'tsa-root']]) {
+        const trusted = new Set(await Promise.all(names.map(sha)))
+        const st = signatureStatus(r, trusted)
+        expect(st.level).toBe('invalid')
+        expect(st.title).toBe('Document timestamp is invalid.')
+        expect(st.identityKnown).toBe(false)
+        expect(st.timestampTrusted).toBe(false)
+        expect(st.details.join(' ')).not.toMatch(/is trusted|embedded timestamp/)
+        expect(signingTimeNote(r, trusted)).toBe('(could not be verified)')
+        expect(displayedSigningTime(r, trusted)).toBe(claimed)
+        expect(overallStatus(report, trusted)!.level).toBe('invalid')
+        const out = signaturesOut(report, trusted).signatures[0]
+        expect(out).toMatchObject({ kind: 'timestamp', status: 'invalid', identityTrusted: false, signingTime: claimed, signingTimeNote: '(could not be verified)' })
+        expect(out).not.toHaveProperty('timestamp')
+      }
+    })
+  }
+
+  it('reports a /Sig whose value is an RFC 3161 token as invalid', async () => {
+    const { report, r } = await validate('sig-rfc3161.pdf')
+    expect(r.kind).toBe('approval')
+    expect(r.subFilter).toBe('ETSI.RFC3161')
+    expect(r.problems.join(' ')).toMatch(/not a document timestamp/)
+    expect(r.timestamp).toBeNull()
+    expect(r.signingTime).toBe(claimed)
+    for (const names of [[], ['tsa'], ['tsa-root']]) {
+      const trusted = new Set(await Promise.all(names.map(sha)))
+      const st = signatureStatus(r, trusted)
+      expect(st.level).toBe('invalid')
+      expect(st.identityKnown).toBe(false)
+      expect(st.timestampTrusted).toBe(false)
+      expect(st.details.join(' ')).not.toMatch(/identity is valid|embedded timestamp/)
+      expect(overallStatus(report, trusted)!.level).toBe('invalid')
+      expect(signaturesOut(report, trusted).signatures[0]).toMatchObject({ status: 'invalid', identityTrusted: false })
+    }
+  })
+
+  it('keys the document timestamp checks on the RFC 3161 format, not on the dictionary type alone', () => {
+    // A report shaped like a /DocTimeStamp in CMS format with a verified embedded token, as if the
+    // validator had checked it: the outer chain is not a time-stamping authority's, and the
+    // embedded token's authority does not make the document timestamp trusted.
+    const leaf = { sha256: 'LEAF', isCA: false } as CertDetails
+    const root = { sha256: 'ROOT', isCA: true } as CertDetails
+    const tsa = { sha256: 'TSA', isCA: false } as CertDetails
+    const r = {
+      kind: 'timestamp',
+      subFilter: 'adbe.pkcs7.detached',
+      signingTime: '2025-06-01T00:00:00.000Z',
+      timestamp: { time: '2025-06-01T00:00:00.000Z', authority: 'tsa', valid: true, authorityOk: true, certificates: [tsa], chainVerified: [true] },
+      certificates: [leaf, root],
+      chainVerified: [true, true],
+      problems: [],
+      warnings: [],
+      changes: [],
+      integrity: true,
+      signatureValid: true,
+      coversWholeFile: true,
+      permission: null,
+      lock: null,
+      unknownReason: null
+    } as unknown as SignatureReport
+    for (const trusted of [new Set(['ROOT']), new Set(['LEAF']), new Set(['TSA']), new Set(['ROOT', 'TSA'])]) {
+      expect(timestampTrusted(r, trusted)).toBe(false)
+      expect(timestampAuthorityInvalid(r)).toBe(false)
+      expect(signingTimeNote(r, trusted)).toBe('(could not be verified)')
+      const st = signatureStatus(r, trusted)
+      expect(st.level).toBe('invalid')
+      expect(st.identityKnown).toBe(false)
+      expect(st.details.join(' ')).not.toMatch(/is trusted/)
+    }
+    // The same token as an approval signature's value is malformed too.
+    const sig = { ...r, kind: 'approval', subFilter: 'ETSI.RFC3161', timestamp: { ...r.timestamp!, certificates: [], chainVerified: [] } } as SignatureReport
+    expect(timestampTrusted(sig, new Set(['ROOT']))).toBe(false)
+    expect(signatureStatus(sig, new Set(['ROOT'])).level).toBe('invalid')
+  })
 })

@@ -51,6 +51,13 @@ Document timestamps (one directory up): one page, field "Timestamp1", /Type /Doc
   doctimestamp-good.pdf      made by `openssl ts -reply`, signed by tsa
   doctimestamp-wrong-eku.pdf the same kind of TSTInfo signed by tsa-wrong-eku (tsa-root embedded)
   doctimestamp-leaf.pdf      the same kind of TSTInfo signed by leaf (inter and root embedded)
+
+Malformed document timestamps (one directory up, the same one-page layout):
+  doctimestamp-pkcs7.pdf        /Type /DocTimeStamp but /SubFilter /adbe.pkcs7.detached, a CMS
+                                signature by leaf (inter and root embedded), /M (D:20250601000000Z)
+  doctimestamp-pkcs7-token.pdf  the same with an embedded timestamp from tsa over the signature value
+  sig-rfc3161.pdf               field "Signature1", /Type /Sig with /SubFilter /ETSI.RFC3161, a
+                                token over the byte range signed by tsa
 """
 import datetime
 import hashlib
@@ -194,6 +201,34 @@ def main() -> None:
         write(
             HERE / "doctimestamp-leaf.pdf",
             lambda: doc_timestamp_pdf(work, lambda b: resigned_token(work, b, "leaf", "signer-chain.pem")),
+        )
+        pkcs7_doc_ts = b"/Type /DocTimeStamp /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /M (D:20250601000000Z)"
+        write(
+            HERE / "doctimestamp-pkcs7.pdf",
+            lambda: one_page_signed_pdf(
+                b"Malformed document timestamp - TEST KEYS ONLY",
+                b"Timestamp1",
+                pkcs7_doc_ts,
+                lambda b: cms_sign(work, b, "leaf", chain="signer-chain.pem"),
+            ),
+        )
+        write(
+            HERE / "doctimestamp-pkcs7-token.pdf",
+            lambda: one_page_signed_pdf(
+                b"Malformed document timestamp - TEST KEYS ONLY",
+                b"Timestamp1",
+                pkcs7_doc_ts,
+                lambda b: add_timestamp(work, cms_sign(work, b, "leaf", chain="signer-chain.pem")),
+            ),
+        )
+        write(
+            HERE / "sig-rfc3161.pdf",
+            lambda: one_page_signed_pdf(
+                b"Signature in the document timestamp format - TEST KEYS ONLY",
+                b"Signature1",
+                b"/Type /Sig /Filter /Adobe.PPKLite /SubFilter /ETSI.RFC3161 /Name (tsa) /M (D:20250601000000Z)",
+                lambda b: timestamp(work, b, "tsa"),
+            ),
         )
 
 
