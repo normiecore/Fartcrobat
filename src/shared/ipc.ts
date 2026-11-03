@@ -41,8 +41,10 @@ export interface IpcApi {
   'file:openDialog': (opts: OpenDialogOptions) => string[]
   'file:saveDialog': (opts: SaveDialogOptions) => string | null
   'file:read': (path: string) => Uint8Array
-  'file:write': (path: string, data: Uint8Array) => void
-  'file:exists': (path: string) => boolean
+  /** `fromDocument`: bytes taken out of a PDF (an attachment), marked as coming from the Internet. */
+  'file:write': (path: string, data: Uint8Array, opts?: { fromDocument?: boolean }) => void
+  /** Network paths read as missing unless `allowRemote` says the person chose or confirmed the path. */
+  'file:exists': (path: string, opts?: { allowRemote?: boolean }) => boolean
   'file:stat': (path: string) => { size: number; mtimeMs: number } | null
   /** A path for `name` in a new private temporary folder (removed when the app quits). */
   'file:tempPath': (name: string) => string

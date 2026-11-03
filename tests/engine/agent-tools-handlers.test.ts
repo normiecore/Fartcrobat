@@ -143,7 +143,7 @@ describe('network locations', () => {
     expect(channels()).toEqual(['file:exists'])
     expect((await errorOf(call('open_document', { path: '//fileserver/other/x.pdf' }))).code).toBe('file_error')
     expect(useApp.getState().dialogs).toHaveLength(0)
-    expect(invoked.at(-1)).toEqual({ channel: 'file:exists', args: ['\\\\fileserver\\other\\x.pdf'] })
+    expect(invoked.at(-1)).toEqual({ channel: 'file:exists', args: ['\\\\fileserver\\other\\x.pdf', { allowRemote: true }] })
 
     // The OK is for that AI app: another connection (or the same app connecting again) asks anew.
     invoked.length = 0

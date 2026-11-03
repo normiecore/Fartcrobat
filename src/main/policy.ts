@@ -2,7 +2,8 @@
 // it in the registry, macOS and Linux in a file only an administrator can write.
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { posix, win32 } from 'node:path'
+import { posix } from 'node:path'
+import { regExe } from '@shared/winSystem'
 
 export type PolicyDecision = 'enabled' | 'disabled'
 
@@ -116,7 +117,7 @@ const runFile: RunFile = (file, args, done) =>
  * reg.exe cannot be started. Any other failure reads as 'invalid', as an unreadable file does.
  */
 export function windowsPolicy(env: NodeJS.ProcessEnv = process.env, run: RunFile = runFile): Promise<MachinePolicy> {
-  const reg = win32.join(env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe')
+  const reg = regExe(env)
   return new Promise((resolve) => {
     run(reg, ['query', WINDOWS_POLICY_KEY], (err, stdout) => {
       if (!err) return resolve(bySection((section) => parseRegQuery(stdout, section)))

@@ -83,9 +83,10 @@ function openFailure(path: string, err: unknown): ToolError {
   return new ToolError('file_error', `Could not open ${path}: ${message.replace(/^This file could not be opened: /, '')}`)
 }
 
+/** Callers confirm network paths (confirmNetworkPaths) before asking about them. */
 async function exists(path: string): Promise<boolean> {
   try {
-    return await invoke('file:exists', path)
+    return await invoke('file:exists', path, { allowRemote: true })
   } catch {
     return false
   }

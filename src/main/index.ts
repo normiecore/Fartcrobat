@@ -1,8 +1,9 @@
 import { app, BrowserWindow, clipboard, ClipboardItem, dialog, shell, type SaveDialogOptions as ElectronSaveDialogOptions } from 'electron'
-import { existsSync, writeFileSync, type Stats } from 'node:fs'
+import { existsSync, type Stats } from 'node:fs'
 import { access, readFile, stat } from 'node:fs/promises'
 import { userInfo } from 'node:os'
 import { basename, extname } from 'node:path'
+import { isRemotePath } from '@shared/remotePath'
 import type { SaveDialogOptions } from '@shared/types'
 import type { MainContext, MainFeatureModule } from './context'
 import { appVersion } from './appVersion'
@@ -16,6 +17,8 @@ import { registerAppScheme, serveRenderer } from './protocol'
 import { store } from './store'
 import { sessionTemp } from './temp'
 import { atomicWrite } from './util/atomicWrite'
+import { externalUrlToOpen } from './util/externalUrl'
+import { markAsDownloaded } from './util/markOfTheWeb'
 import { filesFromArgv, openableFile } from './util/launchPaths'
 import { keepSpellCheckOffline } from './util/spellcheck'
 import { TempFiles } from './util/tempFiles'
@@ -174,14 +177,6 @@ async function showSaveDialog(win: BrowserWindow | null, opts: SaveDialogOptions
   }
 }
 
-/** Marks a file Fartcrobat extracted from a PDF as coming from the Internet (Windows SmartScreen, Office Protected View). */
-function markOfTheWeb(path: string) {
-  if (process.platform !== 'win32') return
-  try {
-    writeFileSync(`${path}:Zone.Identifier`, '[ZoneTransfer]\r\nZoneId=3\r\n')
-  } catch {}
-}
-
 function registerCoreHandlers() {
   handle('file:openDialog', async (e, opts) => {
     const win = BrowserWindow.fromWebContents(e.sender)
@@ -194,11 +189,13 @@ function registerCoreHandlers() {
   })
   handle('file:saveDialog', (e, opts) => showSaveDialog(BrowserWindow.fromWebContents(e.sender), opts))
   handle('file:read', async (_e, path) => new Uint8Array(await readFile(path)))
-  handle('file:write', async (_e, path, data) => {
+  handle('file:write', async (_e, path, data, opts) => {
     await atomicWrite(path, data)
-    if (sessionTemp().contains(path)) markOfTheWeb(path)
+    // Attachments carry the Internet mark wherever they are written (opened or saved as).
+    if (opts?.fromDocument || sessionTemp().contains(path)) await markAsDownloaded(path)
   })
-  handle('file:exists', (_e, path) => existsWithin(path, 5000))
+  // Looking at a network path signs in to that computer: only once the person chose or confirmed it.
+  handle('file:exists', (_e, path, opts) => (isRemotePath(path, process.platform) && !opts?.allowRemote ? false : existsWithin(path, 5000)))
   handle('file:stat', async (_e, path) => {
     try {
       const s = await stat(path)
@@ -279,7 +276,8 @@ function registerCoreHandlers() {
   })
 
   handle('shell:openExternal', async (_e, url) => {
-    if (/^(https?|mailto):/i.test(url)) await shell.openExternal(url)
+    const target = externalUrlToOpen(url)
+    if (target) await shell.openExternal(target)
   })
   handle('shell:showItemInFolder', (_e, path) => shell.showItemInFolder(path))
   handle('shell:openPath', async (_e, path) => {

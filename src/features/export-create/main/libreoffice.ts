@@ -5,7 +5,7 @@
 import { execFile } from 'node:child_process'
 import { accessSync, constants, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { basename, delimiter, extname, join } from 'node:path'
+import { basename, delimiter, extname, join, posix, win32 } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export interface LibreOfficeInfo {
@@ -30,7 +30,8 @@ export function candidatePaths(platform: string = process.platform, env: NodeJS.
   const names = platform === 'win32' ? ['soffice.exe', 'soffice.com'] : ['soffice', 'libreoffice']
   // On the PATH first: that is what the user runs.
   for (const dir of (env.PATH ?? env.Path ?? '').split(platform === 'win32' ? ';' : delimiter)) {
-    if (!dir) continue
+    // A relative entry (".") would find a program in whatever folder the app was started from.
+    if (!dir || !(platform === 'win32' ? win32 : posix).isAbsolute(dir)) continue
     for (const n of names) out.push(join(dir, n))
   }
   if (platform === 'win32') {
