@@ -58,14 +58,23 @@ export function isDocumentTimestamp(r: SignatureReport): boolean {
 }
 
 /**
+ * For a document timestamp: the token verified and its signer, the signature's own certificate, is
+ * a time-stamping certificate valid at the token's time. A timestamp with a chain of its own
+ * (r.timestamp.certificates) describes some other token, not this authority.
+ */
+function documentTimestampAuthorityOk(r: SignatureReport): boolean {
+  return !!r.timestamp?.valid && r.timestamp.authorityOk && r.timestamp.certificates.length === 0
+}
+
+/**
  * Whether the signature's timestamp time can be relied on: the token verified, its signer is a
  * time-stamping certificate valid at that time, and that certificate is trusted (itself or through
  * its chain). Otherwise the time is only what the signer (or an unknown authority) claims.
  */
 export function timestampTrusted(r: SignatureReport, trusted: Set<string>): boolean {
-  if (!r.timestamp?.valid || !r.timestamp.authorityOk) return false
   // A document timestamp's authority chain is the signature's own chain.
-  if (isDocumentTimestamp(r)) return trustedIndex(r, trusted) >= 0
+  if (isDocumentTimestamp(r)) return documentTimestampAuthorityOk(r) && trustedIndex(r, trusted) >= 0
+  if (!r.timestamp?.valid || !r.timestamp.authorityOk) return false
   // A token as the signature value of anything else, or a document timestamp in another format, is malformed.
   if (r.kind === 'timestamp' || r.subFilter === 'ETSI.RFC3161') return false
   return chainTrustedIndex(r.timestamp.certificates, r.timestamp.chainVerified, trusted) >= 0
@@ -76,7 +85,7 @@ export function timestampTrusted(r: SignatureReport, trusted: Set<string>): bool
  * valid at the token's time. Its time cannot be relied on, whoever issued that certificate.
  */
 export function timestampAuthorityInvalid(r: SignatureReport): boolean {
-  return isDocumentTimestamp(r) && !!r.timestamp?.valid && !r.timestamp.authorityOk
+  return isDocumentTimestamp(r) && !!r.timestamp?.valid && !documentTimestampAuthorityOk(r)
 }
 
 /** The signing time to show: the trusted timestamp's time, else the time the signer claims. */
@@ -94,7 +103,7 @@ export function signingTimeNote(r: SignatureReport, trusted: Set<string>): strin
   if (!isDocumentTimestamp(r)) return '(could not be verified)'
   if (timestampTrusted(r, trusted)) return ''
   if (!r.timestamp?.valid) return '(could not be verified)'
-  if (!r.timestamp.authorityOk) return '(not from a valid time-stamping certificate)'
+  if (!documentTimestampAuthorityOk(r)) return '(not from a valid time-stamping certificate)'
   return '(the time-stamping authority is not trusted)'
 }
 

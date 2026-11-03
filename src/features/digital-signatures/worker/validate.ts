@@ -288,7 +288,9 @@ async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: P
         signer = ver.signer
         pool = ver.certificates
         if (ver.signingTime && r.kind !== 'timestamp') r.signingTime = ver.signingTime.toISOString()
-        if (ver.timestamp) {
+        // An RFC 3161 token's authority is the token's own signer (set by verifyCms). A token
+        // nested in its SignerInfo is not that authority and is ignored.
+        if (ver.timestamp && r.subFilter !== 'ETSI.RFC3161') {
           r.timestamp = {
             time: ver.timestamp.time.toISOString(),
             authority: ver.timestamp.authority,

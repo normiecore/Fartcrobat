@@ -202,6 +202,10 @@ def main() -> None:
             HERE / "doctimestamp-leaf.pdf",
             lambda: doc_timestamp_pdf(work, lambda b: resigned_token(work, b, "leaf", "signer-chain.pem")),
         )
+        write(
+            HERE / "doctimestamp-leaf-nested.pdf",
+            lambda: doc_timestamp_pdf(work, lambda b: add_timestamp(work, resigned_token(work, b, "leaf", "signer-chain.pem"))),
+        )
         pkcs7_doc_ts = b"/Type /DocTimeStamp /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached /M (D:20250601000000Z)"
         write(
             HERE / "doctimestamp-pkcs7.pdf",

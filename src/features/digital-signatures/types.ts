@@ -181,7 +181,8 @@ export interface SignatureReport {
    * authority is trusted comes from its chain (`timestampTrusted` in status.ts). For document
    * timestamps (/Type /DocTimeStamp with /SubFilter /ETSI.RFC3161, `isDocumentTimestamp` in
    * status.ts) the token is the signature value, its authority's chain is `certificates`, and
-   * these two lists are empty. A /DocTimeStamp in any other format, or an ETSI.RFC3161 value in a
+   * these two lists are empty (a timestamp nested in the token is ignored, and status.ts does not
+   * accept a document timestamp whose lists are not empty). A /DocTimeStamp in any other format, or an ETSI.RFC3161 value in a
    * dictionary that is not a /DocTimeStamp, is malformed: the validator reports a problem and does
    * not check it.
    * `authorityOk`: the token's signer (the first certificate of the authority's chain) has the

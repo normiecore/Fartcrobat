@@ -410,6 +410,58 @@ describe('document timestamps', () => {
       }
     })
   }
+
+  it('ignores a timestamp nested in a document timestamp token', async () => {
+    // ../doctimestamp-leaf-nested.pdf: the token is signed by leaf (no time-stamping EKU) and its
+    // SignerInfo carries a timeStampToken from tsa (under tsa-root). The authority is the token's
+    // own signer, so the nested token must not stand in for it.
+    const { report, r } = await validate('doctimestamp-leaf-nested.pdf')
+    expect(r.kind).toBe('timestamp')
+    expect(r.subFilter).toBe('ETSI.RFC3161')
+    expect(r.integrity).toBe(true)
+    expect(r.signatureValid).toBe(true)
+    expect(r.timestamp).toMatchObject({ valid: true, authorityOk: false, certificates: [], chainVerified: [] })
+    expect(r.timestamp!.authority).not.toBe('tsa')
+    expect(r.certificates.map((c) => c.subjectName)).toEqual(['leaf', 'inter', 'root'])
+    for (const names of [['root'], ['leaf'], ['tsa-root'], ['root', 'leaf', 'tsa', 'tsa-root']]) {
+      const trusted = new Set(await Promise.all(names.map(sha)))
+      const st = signatureStatus(r, trusted)
+      expect(st.level).toBe('warning')
+      expect(st.identityKnown).toBe(false)
+      expect(st.timestampTrusted).toBe(false)
+      const text = st.details.join(' ')
+      expect(text).not.toMatch(/authority is trusted|embedded timestamp/)
+      expect(text).toMatch(/not a time-stamping certificate/)
+      expect(signingTimeNote(r, trusted)).toBe('(not from a valid time-stamping certificate)')
+      expect(overallStatus(report, trusted)!.level).toBe('warning')
+      const out = signaturesOut(report, trusted).signatures[0]
+      expect(out).toMatchObject({
+        status: 'warning',
+        identityTrusted: false,
+        signingTimeNote: '(not from a valid time-stamping certificate)',
+        timestamp: { trusted: false }
+      })
+    }
+  })
+
+  it("does not take a document timestamp's authority from another chain than its own", async () => {
+    // Defensive: whatever the validator puts in r.timestamp, a document timestamp's authority is
+    // the signature's own signer, so a timestamp with its own chain is not that authority.
+    const { r } = await validate('doctimestamp-leaf.pdf')
+    const { r: other } = await validate('signed-timestamp.pdf')
+    const forged: SignatureReport = { ...r, timestamp: { ...other.timestamp! } }
+    expect(forged.timestamp).toMatchObject({ valid: true, authorityOk: true })
+    for (const names of [['root'], ['leaf'], ['tsa-root'], ['root', 'tsa-root']]) {
+      const trusted = new Set(await Promise.all(names.map(sha)))
+      expect(timestampTrusted(forged, trusted)).toBe(false)
+      expect(timestampAuthorityInvalid(forged)).toBe(true)
+      const st = signatureStatus(forged, trusted)
+      expect(st.level).toBe('warning')
+      expect(st.identityKnown).toBe(false)
+      expect(st.details.join(' ')).not.toMatch(/authority is trusted|embedded timestamp/)
+      expect(signingTimeNote(forged, trusted)).toBe('(not from a valid time-stamping certificate)')
+    }
+  })
 })
 
 describe('malformed document timestamps', () => {
