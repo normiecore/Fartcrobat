@@ -51,6 +51,7 @@ function docInfo(title: string, pageCount = 2): DocInfo {
     format: 'PDF 1.7',
     converted: false,
     encryption: null,
+    security: null,
     permissions: {} as DocInfo['permissions'],
     hasForm: false,
     hasXfa: false,

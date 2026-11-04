@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { fontFamily } from '../../src/features/export-create/fonts'
-import { parseMarker } from '../../src/features/export-create/layout'
+import { buildFlowingHtml, positionedPageHtml } from '../../src/features/export-create/builders/html'
+import type { PageContent } from '../../src/features/export-create/content'
+import { cssFontStack, fontFamily } from '../../src/features/export-create/fonts'
+import { parseMarker, type DocLayout } from '../../src/features/export-create/layout'
 import { parseNumber } from '../../src/features/export-create/numbers'
 import {
   fitImagePage,
@@ -123,5 +125,58 @@ describe('options and names', () => {
     expect(blankSize({ preset: 'letter', width: 1, height: 1, unit: 'in', landscape: true, pages: 1 })).toEqual({ width: 792, height: 612 })
     expect(blankSize({ preset: 'custom', width: 100, height: 50, unit: 'mm', landscape: true, pages: 1 })).toMatchObject({ width: expect.closeTo(283.46, 1) })
     expect(blankSize({ preset: 'custom', width: 0.5, height: 5, unit: 'in', landscape: false, pages: 1 })).toMatch(/at least 1 inch/)
+  })
+})
+
+describe('font names in exported HTML', () => {
+  const EVIL = `Evil'"; background:url(http://127.0.0.1/x)</style><script>alert(1)</script>`
+
+  it('keeps only safe characters in CSS font stacks', () => {
+    expect(cssFontStack('Times New Roman', 0)).toBe('"Times New Roman", serif')
+    expect(cssFontStack('Noto Sans CJK-JP_1.2', 0)).toBe('"Noto Sans CJK-JP_1.2", sans-serif')
+    expect(cssFontStack('Ünïcödé Schrift', 0)).toBe('"Ünïcödé Schrift", sans-serif')
+    const stack = cssFontStack(EVIL, 0)
+    expect(stack.replace(/, sans-serif$/, '')).not.toMatch(/[<>;:'()/\\]/)
+    expect(stack.match(/"/g)).toHaveLength(2)
+    expect(cssFontStack('<>;', 4)).toBe('monospace')
+  })
+
+  const run = (text: string, family: string) => ({ text, family, size: 12, color: 0, bold: false, italic: false, underline: false, strike: false, mono: false })
+  const para = (runs: ReturnType<typeof run>[]) => ({
+    kind: 'paragraph',
+    lines: [{ runs, x0: 0, y0: 0, x1: 100, y1: 12, baseline: 10, size: 12 }],
+    role: 'body',
+    level: 0,
+    align: 'left',
+    indent: 0,
+    firstLine: 0,
+    lineStep: 0,
+    size: 12,
+    bold: false,
+    preformatted: false,
+    headingCandidate: false,
+    x0: 0,
+    y0: 0,
+    x1: 100,
+    y1: 12,
+    order: 0,
+    spaceBefore: 0
+  })
+
+  it('cannot break out of the style element or a style attribute', () => {
+    const layout = { bodySize: 12, pages: [{ elements: [para([run('Body text that is long enough', EVIL), run('other', `x'; color:red; y`)])] }] }
+    const html = buildFlowingHtml(layout as unknown as DocLayout, { title: 't', images: false })
+    expect(html).not.toContain('<script>')
+    expect(html).not.toContain('url(')
+    expect(html).not.toContain('color:red')
+    expect(html.match(/<\/style>/g)).toHaveLength(1)
+  })
+
+  it('cannot inject CSS into positioned text', () => {
+    const xrun = { text: 'Hi', font: `F'; background:url(http://127.0.0.1/x); x`, size: 12, color: 0, flags: 0, x0: 0, x1: 20 }
+    const content = { width: 200, height: 200, lines: [{ segments: [{ x0: 0, y0: 0, x1: 20, y1: 12, baseline: 10, runs: [xrun] }] }] }
+    const html = positionedPageHtml(content as unknown as PageContent, 1)
+    expect(html).not.toContain('url(')
+    expect(html).toContain(`font-family:'F background url http 127.0.0.1 x x', sans-serif;font-size:12.0pt`)
   })
 })

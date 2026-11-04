@@ -13,6 +13,7 @@ import {
   showError,
   stripExtension,
   toast,
+  unlockCertificateFile,
   unlockFile,
   useApp,
   withProgress,
@@ -105,7 +106,25 @@ export async function convertHtml(path: string): Promise<Uint8Array> {
 
 // ---- building ---------------------------------------------------------------------------
 
-/** Builds a new PDF in a throwaway engine (no document needs to be open). */
+/**
+ * Asks the person (or their keys) while the progress window is put away, so it does not cover the
+ * question; it comes back afterwards.
+ */
+async function withoutProgress<T>(fn: () => Promise<T>): Promise<T> {
+  const progress = useApp.getState().progress
+  useApp.setState({ progress: null })
+  try {
+    return await fn()
+  } finally {
+    useApp.setState({ progress })
+  }
+}
+
+/**
+ * Builds a new PDF in a throwaway engine (no document needs to be open). Protected files are
+ * unlocked on the way: a password saved on this device or typed by the person, or for certificate
+ * encryption one of the person's keys, given to that engine.
+ */
 async function buildPdf(
   parts: CreatePart[],
   opts: { image?: ImagePageOptions; title?: string },
@@ -120,6 +139,32 @@ async function buildPdf(
         return await ops.build(parts, opts)
       } catch (err) {
         const code = (err as { code?: string }).code
+        if (code === 'NEEDS_CERTIFICATE') {
+          const name = /^(.*?) is encrypted with certificates$/.exec((err as Error).message)?.[1]
+          const part = parts.find((p) => p.kind === 'file' && p.name === name)
+          if (!part || part.kind !== 'file') throw err
+          const docOps = engine.ops<typeof docOpsT>('doc')
+          const certificateOf = async () => {
+            const r = await docOps.checkFile(part.data, part.name)
+            return 'needsCertificate' in r && r.needsCertificate ? r.certificate : null
+          }
+          const certificate = await certificateOf()
+          // A key given before should have opened it: do not ask in circles.
+          if (!certificate) throw err
+          const unlocked = await withoutProgress(() =>
+            unlockCertificateFile({
+              name: part.name,
+              filePath: part.path ?? null,
+              certificate,
+              attempt: async (key) => {
+                await docOps.addCertificateKey(key)
+                return !(await certificateOf())
+              }
+            })
+          )
+          if (!unlocked) throw new Cancelled()
+          continue
+        }
         const m = /^(.*?) is password protected$|^The password for (.*?) is incorrect$/.exec((err as Error).message)
         if ((code === 'NEEDS_PASSWORD' || code === 'WRONG_PASSWORD') && m) {
           const name = m[1] ?? m[2]
@@ -129,19 +174,18 @@ async function buildPdf(
           const docOps = engine.ops<typeof docOpsT>('doc')
           const checked = await docOps.checkFile(part.data, part.name)
           const lock = checked.needsPassword ? checked.lock : null
-          // The progress window would cover the question: put it away while asking.
-          const progress = useApp.getState().progress
-          useApp.setState({ progress: null })
-          const unlocked = await unlockFile({
-            name,
-            filePath: part.path ?? null,
-            lock,
-            wrong: code === 'WRONG_PASSWORD',
-            attempt: async (pw) => {
-              const r = await docOps.checkFile(part.data, part.name, pw)
-              return r.needsPassword ? r.access : 'user'
-            }
-          }).finally(() => useApp.setState({ progress }))
+          const unlocked = await withoutProgress(() =>
+            unlockFile({
+              name,
+              filePath: part.path ?? null,
+              lock,
+              wrong: code === 'WRONG_PASSWORD',
+              attempt: async (pw) => {
+                const r = await docOps.checkFile(part.data, part.name, pw)
+                return r.needsPassword ? r.access : 'user'
+              }
+            })
+          )
           if (!unlocked) throw new Cancelled()
           part.password = unlocked.password
           continue

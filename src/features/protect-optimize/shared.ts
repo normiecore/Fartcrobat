@@ -118,6 +118,28 @@ export function encryptOptions(s: ProtectSettings): NonNullable<SaveOptions['enc
   return { method: s.method, userPassword, ownerPassword, permissions: permissionsFor(s) }
 }
 
+/**
+ * The lines of "Your PDF is protected". `remembered`: the open password was saved on this device;
+ * `certificate`: the document had certificate security, which the password replaced.
+ */
+export function protectedSummary(s: ProtectSettings, opts: { remembered?: boolean; certificate?: boolean } = {}): string[] {
+  const out: string[] = []
+  if (s.requireOpenPassword) {
+    out.push(`Opening it needs the password you set${opts.remembered ? '. It is saved on this device, so the file opens here without asking' : ''}.`)
+  } else {
+    out.push(
+      opts.certificate
+        ? 'It is no longer encrypted for its recipients: anyone with the file can open it without a password.'
+        : 'Anyone with the file can open it without a password.'
+    )
+  }
+  if (s.restrictEditing) {
+    const restricted = restrictionList(permissionsFor(s))
+    out.push(restricted.length ? `Without the permissions password, these are not allowed: ${sentenceList(restricted)}.` : 'Changing its security needs the permissions password.')
+  }
+  return out
+}
+
 export type PasswordStrength = { score: 0 | 1 | 2 | 3 | 4; label: string }
 
 /** Rough password strength in Acrobat's words (Weak / Medium / Strong / Best). */
@@ -152,7 +174,10 @@ export interface SecurityStatus {
   method: string | null
   /** The file asks for a password before it opens. */
   needsOpenPassword: boolean
-  /** All permissions are granted in this session (owner password used, or nothing restricted). */
+  /**
+   * All permissions are granted in this session (owner password used, or nothing restricted). For
+   * certificate security: the envelope that opened it may change the security.
+   */
   ownerAccess: boolean
   permissions: Record<Permission, boolean>
 }
@@ -171,6 +196,31 @@ export function restrictionList(p: Record<Permission, boolean>): string[] {
   if (!p.copy) out.push('copying text and images')
   if (!p.accessibility) out.push('screen reader access')
   return out
+}
+
+export type PermissionLevel = 'allowed' | 'partial' | 'denied'
+
+/**
+ * The rows of the Protect panel's permissions table: label, value, level. `changeSecurity` adds the
+ * row certificate security has (whether the envelope that opened it may change the security).
+ */
+export function permissionRows(p: Record<Permission, boolean>, opts: { changeSecurity?: boolean } = {}): [string, string, PermissionLevel][] {
+  const allowed = (v: boolean) => (v ? 'Allowed' : 'Not allowed')
+  const level = (v: boolean): PermissionLevel => (v ? 'allowed' : 'denied')
+  const printing: [string, PermissionLevel] = !p.print ? ['Not allowed', 'denied'] : p['print-hq'] ? ['Allowed', 'allowed'] : ['Low resolution only', 'partial']
+  return [
+    ['Printing', printing[0], printing[1]],
+    ['Changing the document', allowed(p.edit), level(p.edit)],
+    ['Document assembly', allowed(p.assemble), level(p.assemble)],
+    ['Content copying', allowed(p.copy), level(p.copy)],
+    ['Content copying for accessibility', allowed(p.accessibility), level(p.accessibility)],
+    ['Commenting', allowed(p.annotate), level(p.annotate)],
+    ['Filling of form fields', allowed(p.form), level(p.form)],
+    ['Signing', allowed(p.form), level(p.form)],
+    ...(opts.changeSecurity !== undefined
+      ? [['Changing the security', allowed(opts.changeSecurity), level(opts.changeSecurity)] as [string, string, PermissionLevel]]
+      : [])
+  ]
 }
 
 export function isRestricted(p: Record<Permission, boolean>): boolean {

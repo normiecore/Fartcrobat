@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { send } from './ipc'
 import { APP_ORIGIN } from './protocol'
 import { appImageFile } from './util/appImage'
+import { externalUrlToOpen } from './util/externalUrl'
+import { spellCheckInWindows } from './util/spellcheck'
 
 /** Document windows (print jobs use hidden windows that are not part of this set). */
 const windows = new Set<BrowserWindow>()
@@ -54,7 +56,7 @@ interface PendingInstall {
 }
 let pendingInstall: PendingInstall | null = null
 
-const forceClose = () => !!process.env.FARTCROBAT_FORCE_CLOSE
+const forceClose = () => !!process.env.INKMOOR_FORCE_CLOSE
 
 export function isAppWindow(win: BrowserWindow | null | undefined): win is BrowserWindow {
   return !!win && windows.has(win) && !win.isDestroyed()
@@ -78,7 +80,7 @@ export function allWindows(): BrowserWindow[] {
 export function showWindow(win: BrowserWindow) {
   if (win.isDestroyed()) return
   if (win.isMinimized()) win.restore()
-  if (!process.env.FARTCROBAT_HIDDEN && readyToShow.has(win) && !win.isVisible()) win.show()
+  if (!process.env.INKMOOR_HIDDEN && readyToShow.has(win) && !win.isVisible()) win.show()
   if (win.isVisible()) win.focus()
 }
 const readyToShow = new WeakSet<BrowserWindow>()
@@ -172,7 +174,7 @@ async function checkRenderer(win: BrowserWindow, req: CloseRequest) {
     const { response } = await dialog.showMessageBox(win, {
       signal: req.dialogAbort.signal,
       type: 'warning',
-      title: 'Fartcrobat is not responding',
+      title: 'Inkmoor is not responding',
       message: 'This window is not responding.',
       detail: 'You can wait for it to finish, or close it now. Changes you have not saved in this window will be lost.',
       buttons: ['Close Anyway', 'Wait'],
@@ -368,7 +370,7 @@ async function offerReload(win: BrowserWindow, reason: string) {
   const files = openFilesByWindow.get(win) ?? []
   const { response } = await dialog.showMessageBox(win, {
     type: 'error',
-    title: 'Fartcrobat',
+    title: 'Inkmoor',
     message: 'This window stopped working.',
     detail:
       (reason === 'oom' ? 'It ran out of memory. ' : '') +
@@ -399,7 +401,7 @@ export function createWindow(): BrowserWindow {
     minWidth: 720,
     minHeight: 480,
     show: false,
-    title: 'Fartcrobat',
+    title: 'Inkmoor',
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1e1e' : '#f4f4f4',
     icon: join(__dirname, '../../resources/icon.png'),
     autoHideMenuBar: process.platform !== 'darwin',
@@ -408,9 +410,8 @@ export function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      // Chromium on Linux downloads Hunspell dictionaries from Google on first use; Fartcrobat
-      // promises to work offline, so spell checking uses only the OS checker (Windows, macOS).
-      spellcheck: process.platform !== 'linux'
+      // Only where the system provides the spell checker, which downloads nothing (util/spellcheck.ts).
+      spellcheck: spellCheckInWindows()
     }
   })
   windows.add(win)
@@ -419,7 +420,7 @@ export function createWindow(): BrowserWindow {
   win.on('focus', () => (lastFocused = win))
   win.once('ready-to-show', () => {
     readyToShow.add(win)
-    if (!process.env.FARTCROBAT_HIDDEN) win.show()
+    if (!process.env.INKMOOR_HIDDEN) win.show()
   })
   win.on('closed', () => {
     windows.delete(win)
@@ -459,7 +460,8 @@ export function createWindow(): BrowserWindow {
 
   // Never navigate the app window away; open web links in the browser instead.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:|^mailto:/i.test(url)) void shell.openExternal(url)
+    const target = externalUrlToOpen(url)
+    if (target) void shell.openExternal(target)
     return { action: 'deny' }
   })
   win.webContents.on('will-navigate', (e, url) => {

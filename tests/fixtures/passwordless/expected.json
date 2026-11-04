@@ -1,0 +1,898 @@
+{
+  "_comment": "Made by make_pubsec.py. TEST KEYS ONLY - never use for anything real. See README.md.",
+  "files": [
+    {
+      "file": "v5-classic.pdf",
+      "description": "V5 AES-256, classic xref table",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "17d658e814e4fefa557c71cc48365c9785084be9"
+      },
+      "fileKeyHex": "e50de0e1687d1285462e2bd7df36e360513f41fcb7e52c79a57ec18aa6a3fb8f",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], pdf_mac=False); copy_into_new_writer(stream_xrefs=False)"
+    },
+    {
+      "file": "v5-objstm.pdf",
+      "description": "V5, xref stream, annotation and every other dictionary inside an object stream",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "stream",
+      "objectStreams": true,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "06ef0c6ae994ad45c5f9eb79230e4388a92ca172"
+      },
+      "fileKeyHex": "a51e98f6157a60b916cfa20ec24ae82133ee1d5447b8a5dc6c8db670f78eb48c",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], pdf_mac=False); stream_xrefs=True, every non-stream object moved into one object stream"
+    },
+    {
+      "file": "v5-incremental.pdf",
+      "description": "v5-objstm.pdf plus an incremental update that changes /Title; the newest revision wins",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "stream",
+      "objectStreams": true,
+      "revisions": 2,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "06ef0c6ae994ad45c5f9eb79230e4388a92ca172"
+      },
+      "fileKeyHex": "a51e98f6157a60b916cfa20ec24ae82133ee1d5447b8a5dc6c8db670f78eb48c",
+      "title": "Secret title",
+      "expectedTitle": "Updated secret title",
+      "pages": 2,
+      "pyhanko": "v5-objstm.pdf + IncrementalPdfFileWriter.encrypt_pubkey(alice), /Info rewritten (same object number)"
+    },
+    {
+      "file": "v5-nometa.pdf",
+      "description": "EncryptMetadata false: the XMP stream is plain text (no /Crypt filter), the file key hashes FF FF FF FF",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": false,
+      "seedHex": {
+        "alice": "cfc8111b0192d091013ef668851a8fdc14d4c5b0"
+      },
+      "fileKeyHex": "9ae46c78c11495c27ac4a332a17987b2154e12fbaf357dcd7e5fc76761cacc23",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], encrypt_metadata=False, pdf_mac=False); XMP stream written in clear without a /Crypt filter"
+    },
+    {
+      "file": "v5-two-recipients.pdf",
+      "description": "one envelope with two RecipientInfos: bob first, then alice",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Tëst CA Ünïcode ✓,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "00C702FE1F51EB78F7042245CFFD210279",
+          "ski": null,
+          "cert": "bob",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        },
+        {
+          "envelope": 0,
+          "index": 1,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice",
+        "bob"
+      ],
+      "permissions": {
+        "alice": 4294967295,
+        "bob": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "e9aa7d77c999fef6b9cf6f7d5ea7211ce86449ac",
+        "bob": "e9aa7d77c999fef6b9cf6f7d5ea7211ce86449ac"
+      },
+      "fileKeyHex": "b89c044a676a7510ee853124ea49293a23f256d8b71a34ffae06981a71fc7eb9",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([bob, alice], pdf_mac=False); envelope re-encoded with bob's RecipientInfo first (asn1crypto sorts the SET OF, which put alice first)"
+    },
+    {
+      "file": "v5-two-envelopes.pdf",
+      "description": "two envelopes: [bob] with all permissions, then [alice] with printing only",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Tëst CA Ünïcode ✓,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "00C702FE1F51EB78F7042245CFFD210279",
+          "ski": null,
+          "cert": "bob",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        },
+        {
+          "envelope": 1,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice",
+        "bob"
+      ],
+      "permissions": {
+        "alice": 4294965445,
+        "bob": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "6bf74e9fc926f1fd3a9cddee57e07a031dfc1dda",
+        "bob": "6bf74e9fc926f1fd3a9cddee57e07a031dfc1dda"
+      },
+      "fileKeyHex": "ff2b66e31fd7540c5fb0a64dbf29c21e532a1116b32fae794cd0096db62bb681",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([bob], pdf_mac=False); add_recipients([alice], perms=ALLOW_PRINTING | ALLOW_HIGH_QUALITY_PRINTING | TOLERATE_MISSING_PDF_MAC)"
+    },
+    {
+      "file": "v5-oaep.pdf",
+      "description": "RSAES-OAEP key transport (SHA-256, MGF1 SHA-256)",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.7",
+          "contentCipher": "2.16.840.1.101.3.4.1.42",
+          "oaepHash": "sha256"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "cf81f6932f18771e4eb25728e0be20060f072fce"
+      },
+      "fileKeyHex": "ce083e56d7245cf977981fdc8a95a09633ef392c27fe632e1bdf8617c8b7631d",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], policy=RecipientEncryptionPolicy(prefer_oaep=True), pdf_mac=False)"
+    },
+    {
+      "file": "v5-ski.pdf",
+      "description": "alice identified by SubjectKeyIdentifier (EnvelopedData and KeyTransRecipientInfo version 2)",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "subjectKeyIdentifier",
+          "issuer": null,
+          "serialHex": null,
+          "ski": "D7445486090C462D17C8AAFE207ECC1141FD9F4E",
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "36f5abdf44d22a64f3078c0410e92b8ebca934cc"
+      },
+      "fileKeyHex": "bd722a473ea79ea83f13523616f12cc08a0a110279776b2336decf6595deaf86",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], pdf_mac=False), envelope replaced by build_envelope(by_ski=True)"
+    },
+    {
+      "file": "v5-env-aes128.pdf",
+      "description": "envelope content encrypted with AES-128-CBC",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.2"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "68d84a1349ccf7b4e763afa4450b6259648deca2"
+      },
+      "fileKeyHex": "a634dea76ac69a4027fc1daa1bfcd12efe9187a7d53b6d3ae79ce9b7124701c4",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], pdf_mac=False), envelope replaced by build_envelope(aes128_cbc)"
+    },
+    {
+      "file": "v5-env-3des.pdf",
+      "description": "envelope content encrypted with des-ede3-cbc, as Acrobat 7 to X did",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "1.2.840.113549.3.7"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "23dd0c6a7e5f9353f1912620a6477b12deaab8d0"
+      },
+      "fileKeyHex": "c59fad8dbe394608b37e9224229b19eaff0076c39a89e4f03fe281f0a8cfb621",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], pdf_mac=False), envelope replaced by build_envelope(des-ede3-cbc)"
+    },
+    {
+      "file": "v4-aes128.pdf",
+      "description": "V4, AESV2 (AES-128), classic xref table",
+      "version": 4,
+      "cipher": "AESV2",
+      "keyBits": 128,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "d85a2767ae240357476476621407302798855f64"
+      },
+      "fileKeyHex": "717e3b703509bb92e4d1519df1fef701",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], keylen_bytes=16, version=RC4_OR_AES128, use_aes=True, pdf_mac=False)"
+    },
+    {
+      "file": "v4-aes128-objstm.pdf",
+      "description": "V4, AESV2, xref stream and object streams",
+      "version": 4,
+      "cipher": "AESV2",
+      "keyBits": 128,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "stream",
+      "objectStreams": true,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "e20adf28e38a960bcf3c2c81a267ffbd6d9814d8"
+      },
+      "fileKeyHex": "40d7347227f796155b33a81d84e44f1e",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "as v4-aes128.pdf; stream_xrefs=True, every non-stream object moved into one object stream"
+    },
+    {
+      "file": "v4-rc4.pdf",
+      "description": "V4 with a /V2 (RC4) crypt filter, 128-bit, classic xref table",
+      "version": 4,
+      "cipher": "RC4",
+      "keyBits": 128,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "a0132e61316f8f49b029c262afbff84fd50473e4"
+      },
+      "fileKeyHex": "a9353af36039f8ce39bf8e96771165be",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], keylen_bytes=16, version=RC4_OR_AES128, use_aes=False, pdf_mac=False)"
+    },
+    {
+      "file": "v5-mac.pdf",
+      "description": "pyHanko default: ISO/TS 32004 PDF MAC (/AuthCode, /KDFSalt), MAC-required permission bit cleared",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": true,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294963199
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "dc199c0752146a6d954e3101adb2c4184a6f2d5e"
+      },
+      "fileKeyHex": "17dfd37b71cfda6e6d08abfb7e816abb3c1bad40dd7cfdcd2108f4f07f2c15ef",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice]) (pyHanko defaults: pdf_mac=True)"
+    },
+    {
+      "file": "v5-signed.pdf",
+      "description": "certificate encrypted, then signed by alice in an incremental update (field Signature1)",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 2,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 1,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "d9c1b480d30b475af2058b627d402d44db4d57c7"
+      },
+      "fileKeyHex": "5b44c3eb00e783d88cb7ed4c1e80716236901a6b4610d4fdacdad582596cf0c4",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([alice], pdf_mac=False), then IncrementalPdfFileWriter.encrypt_pubkey(alice) + signers.sign_pdf(PdfSignatureMetadata(field_name=\"Signature1\", md_algorithm=\"sha256\"), SimpleSigner(alice.key, alice.crt, ca.crt))"
+    },
+    {
+      "file": "stranger-only.pdf",
+      "description": "only stranger can open it (\"not a recipient\" for alice)",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "5ED1DF360A29CBE543FF9A8BCC65133E",
+          "ski": null,
+          "cert": "stranger",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "stranger"
+      ],
+      "permissions": {
+        "stranger": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "stranger": "3f9c1284dc4915f6629096968408dce2c1cd4362"
+      },
+      "fileKeyHex": "be1ebf195a48327962c59fd661d491be53f040c1804722e873dd8b5565396299",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([stranger], pdf_mac=False)"
+    },
+    {
+      "file": "v5-ec.pdf",
+      "description": "EC recipient: KeyAgreeRecipientInfo, ECDH dhSinglePass-stdDH-sha256kdf, AES-128 key wrap",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "keyAgreement",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "234DEFAA00C3049BC5B66D47EE37F5B6",
+          "ski": null,
+          "cert": "ec",
+          "keyEncryption": "1.3.132.1.11.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "ec"
+      ],
+      "permissions": {
+        "ec": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "ec": "6b44bb6b44522de380ce595c780436450015b936"
+      },
+      "fileKeyHex": "aeddffb5a1607f5db223d4f5f7e65a4b5d8225dc508a49d2e7b093d9df786c12",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([ec], policy=RecipientEncryptionPolicy(ignore_key_usage=True), pdf_mac=False)"
+    },
+    {
+      "file": "v5-damaged-first.pdf",
+      "description": "two envelopes; the first (for bob) is truncated and not valid DER, the second is for alice",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": null,
+          "idType": null,
+          "issuer": null,
+          "serialHex": null,
+          "ski": null,
+          "cert": null,
+          "damaged": true
+        },
+        {
+          "envelope": 1,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "9bcc4ad192888352fa6b64de72d17c6f7ef7080f"
+      },
+      "fileKeyHex": "46561a2bac6ed2067f99623737c922322ae1758c4d9280f40572fdeb95d3b5e8",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "build_from_certs([bob], pdf_mac=False); add_recipients([alice]); first /Recipients entry truncated to half its length"
+    },
+    {
+      "file": "v5-direct-encrypt.pdf",
+      "description": "v5-classic.pdf with /Encrypt as a direct dictionary in the trailer (same seed and file key)",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": true,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice"
+      ],
+      "permissions": {
+        "alice": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "17d658e814e4fefa557c71cc48365c9785084be9"
+      },
+      "fileKeyHex": "e50de0e1687d1285462e2bd7df36e360513f41fcb7e52c79a57ec18aa6a3fb8f",
+      "title": "Secret title",
+      "expectedTitle": "Secret title",
+      "pages": 2,
+      "pyhanko": "v5-classic.pdf with the Encrypt object moved into the trailer (byte surgery)"
+    },
+    {
+      "file": "text-v5.pdf",
+      "description": "../text.pdf (5 pages, outline, links) for alice and bob in one envelope, for e2e tests",
+      "version": 5,
+      "cipher": "AESV3",
+      "keyBits": 256,
+      "subFilter": "adbe.pkcs7.s5",
+      "xref": "table",
+      "objectStreams": false,
+      "revisions": 1,
+      "encryptDirect": false,
+      "pdfMac": false,
+      "signatures": 0,
+      "recipients": [
+        {
+          "envelope": 0,
+          "index": 0,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Test CA,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "2BF5739A719BB028F20B38EB7F084141",
+          "ski": null,
+          "cert": "alice",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        },
+        {
+          "envelope": 0,
+          "index": 1,
+          "idType": "issuerAndSerialNumber",
+          "issuer": "CN=Fartcrobat Tëst CA Ünïcode ✓,OU=TEST KEYS ONLY - never use for anything real,O=Fartcrobat Test Keys",
+          "serialHex": "00C702FE1F51EB78F7042245CFFD210279",
+          "ski": null,
+          "cert": "bob",
+          "keyEncryption": "1.2.840.113549.1.1.1",
+          "contentCipher": "2.16.840.1.101.3.4.1.42"
+        }
+      ],
+      "opensWith": [
+        "alice",
+        "bob"
+      ],
+      "permissions": {
+        "alice": 4294967295,
+        "bob": 4294967295
+      },
+      "encryptMetadata": true,
+      "seedHex": {
+        "alice": "7b626c8a0cef0ee551cd196d0700bcc90434aa81",
+        "bob": "7b626c8a0cef0ee551cd196d0700bcc90434aa81"
+      },
+      "fileKeyHex": "7ebba0673fd82e3d43aadec52ea9dcea1701e33b95adb17810faae92800fee7f",
+      "title": "Fixture Text Document",
+      "expectedTitle": "Fixture Text Document",
+      "pages": 5,
+      "pyhanko": "tests/fixtures/text.pdf; build_from_certs([alice, bob], pdf_mac=False)"
+    }
+  ]
+}

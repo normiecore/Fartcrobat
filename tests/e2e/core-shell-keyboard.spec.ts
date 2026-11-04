@@ -3,7 +3,7 @@ import { activeDocState, fixturePath, launch, menuItem, openFile, runCommand, wa
 
 function appState(page: Page) {
   return page.evaluate(() => {
-    const s = (window as any).__fartcrobat.useApp.getState()
+    const s = (window as any).__inkmoor.useApp.getState()
     return { readMode: s.readMode, paletteOpen: s.paletteOpen, toolId: s.toolId, findBarOpen: s.findBarOpen, docs: s.docs.length, dialogs: s.dialogs.length }
   })
 }
@@ -36,7 +36,7 @@ test('Escape that closes the palette or a menu does nothing else', async () => {
     await expect.poll(async () => (await appState(page)).paletteOpen).toBe(false)
     expect((await appState(page)).readMode).toBe(true)
 
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState({ readMode: false }))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState({ readMode: false }))
     await runCommand(page, 'tools.hand')
     await page.locator('.shell-menu-btn').click()
     await expect(page.locator('.ui-menu')).toBeVisible()
@@ -70,7 +70,7 @@ test('Escape closes the innermost popup first and nothing else sees it', async (
 
     // A context menu opened over the menu closes alone.
     await page.evaluate(() =>
-      (window as any).__fartcrobat.useApp.setState({ contextMenu: { x: 300, y: 300, items: [{ id: 'only', label: 'Only item' }] } })
+      (window as any).__inkmoor.useApp.setState({ contextMenu: { x: 300, y: 300, items: [{ id: 'only', label: 'Only item' }] } })
     )
     await expect(menuItem(page, 'Only item')).toBeVisible()
     await page.keyboard.press('Escape')
@@ -79,7 +79,7 @@ test('Escape closes the innermost popup first and nothing else sees it', async (
     expect(await escapesSeen()).toBe(0)
 
     // A dialog opened over the menu keeps its Escape.
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('app.preferences'))
     await expect(page.locator('.ui-dialog')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.locator('.ui-dialog')).toHaveCount(0)
@@ -154,7 +154,7 @@ test('shortcuts are blocked while the progress modal is up', async () => {
   const { app, page } = await launch()
   try {
     await openFile(page, fixturePath('text.pdf'))
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState({ progress: { title: 'Working…', fraction: null } }))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState({ progress: { title: 'Working…', fraction: null } }))
     await page.keyboard.press('Control+w')
     await page.keyboard.press('Control+o')
     await page.waitForTimeout(300)

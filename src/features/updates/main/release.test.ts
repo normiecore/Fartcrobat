@@ -142,7 +142,7 @@ describe('latestRelease', () => {
 })
 
 describe('release pages', () => {
-  it('opens only pages of the Fartcrobat repository on github.com, or the test base', () => {
+  it('opens only pages of the Inkmoor repository on github.com, or the test base', () => {
     expect(releasePageAllowed(`${RELEASES_BASE}/releases/tag/v0.2.0`)).toBe(true)
     expect(releasePageAllowed(`${RELEASES_BASE}/releases`)).toBe(true)
     expect(releasePageAllowed('https://github.com/normiecore/fartcrobat/releases')).toBe(true)
@@ -179,7 +179,7 @@ describe('download errors', () => {
     )
     expect(downloadErrorMessage('something')).toBe(DOWNLOAD_FAILED)
     expect(downloadErrorMessage(new UpdateMismatchError(mismatchMessage('0.2.0')))).toBe(
-      "Fartcrobat 0.2.0 can't be installed from inside the app. Download it from GitHub instead."
+      "Inkmoor 0.2.0 can't be installed from inside the app. Download it from GitHub instead."
     )
   })
 })

@@ -29,6 +29,11 @@ export interface AgentCallRequest {
    * handle go there, and only its active document is reported as `active`.
    */
   currentWindow: boolean
+  /**
+   * Fixed at routing time so a list_documents fan-out cannot join multiple windows, and false for a
+   * shim that would drop the companion token (shimForwardsCompanion).
+   */
+  allowCompanionJoin?: boolean
   tool: string
   args: Record<string, unknown>
 }
@@ -65,6 +70,8 @@ export interface AgentProgress {
 export interface AgentConnectionInfo {
   id: number
   client: AgentClientInfo
+  /** The MCP helper's version: a Claude Desktop extension keeps the one it was added with. */
+  shimVersion: string
   /** ms since epoch */
   since: number
   /** Calls running now. */

@@ -12,7 +12,7 @@ import { useApp } from './store'
 import { toast } from './ui-services'
 import { promptMessage, unlock, type DocUnlock, type RememberOffer } from './unlock'
 
-export const NO_KEYRING_NOTE = 'To remember passwords on this computer, Fartcrobat needs GNOME Keyring or KWallet.'
+export const NO_KEYRING_NOTE = 'To remember passwords on this computer, Inkmoor needs GNOME Keyring or KWallet.'
 
 /** The prompt's "Remember password on this device" checkbox, or why it is missing. */
 export async function rememberOffer(): Promise<RememberOffer> {
@@ -25,7 +25,7 @@ export async function rememberOffer(): Promise<RememberOffer> {
 }
 
 /** The checkbox keeps the person's last choice. */
-function keepRememberChoice(checked: boolean) {
+export function keepRememberChoice(checked: boolean) {
   useApp.setState((s) => ({ prefs: { ...s.prefs, rememberPasswordChecked: checked } }))
   void invoke('prefs:set', { rememberPasswordChecked: checked }).catch(() => {})
 }
@@ -137,7 +137,10 @@ export async function forgetSavedPassword(doc: DocumentModel): Promise<number> {
   if (!target?.lock) return 0
   const n = await invoke('passwords:forgetFor', target)
   const u = doc.state.unlock
-  if (u?.savedRef) doc.set({ unlock: { method: u.method, access: u.access, lock: u.lock } })
+  if (u?.savedRef) {
+    const { savedRef: _forgotten, ...rest } = u
+    doc.set({ unlock: rest })
+  }
   return n
 }
 

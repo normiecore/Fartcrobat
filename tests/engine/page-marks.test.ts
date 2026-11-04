@@ -482,7 +482,7 @@ describe('resources after previews and undo', () => {
   it('keeps fonts and images valid when applying after a preview or an undo', async () => {
     const e = await openFixture('text.pdf')
     const api = marks(e)
-    const s = hf({}, { headerRight: 'Fartcrobat test' })
+    const s = hf({}, { headerRight: 'Inkmoor test' })
     await api.preview(0, s, { mode: 'add', scale: 0.3 })
     await api.apply(s, { mode: 'add' })
     checkResources(e, 0)

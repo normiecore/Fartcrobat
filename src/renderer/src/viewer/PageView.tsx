@@ -61,9 +61,9 @@ export const PageView = memo(function PageView({
       {registry.pageLayers
         .filter((l) => !l.when || l.when({ toolId, doc }))
         .map((L) => (
-          <L.component key={L.id} doc={doc} pageIndex={pageIndex} geometry={geometry} />
+          <L.component key={L.id} doc={doc} pageIndex={pageIndex} geometry={geometry} visibleRect={visibleRect} />
         ))}
-      {ToolLayer && <ToolLayer doc={doc} pageIndex={pageIndex} geometry={geometry} />}
+      {ToolLayer && <ToolLayer doc={doc} pageIndex={pageIndex} geometry={geometry} visibleRect={visibleRect} />}
     </div>
   )
 })

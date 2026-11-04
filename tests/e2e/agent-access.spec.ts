@@ -28,14 +28,14 @@ const HANDLE = /^w\d+-[a-z0-9]+-doc-\d+$/
 const shot = (page: Page, name: string) => page.screenshot({ path: `test-results/agent-access-${name}.png`, animations: 'disabled' })
 
 function workDir() {
-  return mkdtempSync(join(tmpdir(), 'fartcrobat-agent-'))
+  return mkdtempSync(join(tmpdir(), 'inkmoor-agent-'))
 }
 
 /** Selects text on a page of the active document, as dragging over it would. */
 async function selectText(page: Page, pageIndex: number, needle: string) {
   await page.evaluate(
     async ({ pageIndex, needle }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const t = await d.pageText(pageIndex)
       const start = t.text.indexOf(needle)
       if (start < 0) throw new Error('text not found: ' + needle)
@@ -101,7 +101,7 @@ test('an AI app lists the tools, opens a document and sees what the person is lo
     expect(withSelection.selection.pages[0].rects).toHaveLength(1)
 
     // The person goes to page 3.
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(2))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(2))
     await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
     const onPage3 = dataOf(await agent.call('get_context', { handle: opened.handle }))
     expect(onPage3.currentPage).toBe(3)
@@ -265,7 +265,7 @@ test('save_document: a new path saves without asking, overwriting asks first', a
     expect(readFileSync(copy).subarray(0, 5).toString()).toBe('%PDF-')
     expect(new mupdf.PDFDocument(new Uint8Array(readFileSync(copy))).getMetaData('info:Title')).toBe('Quarterly report')
     await expect.poll(async () => (await activeDocState(page))?.title).toBe('report copy.pdf')
-    expect(await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.filePath)).toBe(copy)
+    expect(await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.filePath)).toBe(copy)
     await expect(page.locator('.shell-tab', { hasText: 'report copy.pdf' })).toBeVisible()
     // The original is untouched.
     expect(readFileSync(source)).toEqual(readFileSync(fixturePath('text.pdf')))
@@ -334,13 +334,13 @@ test('open_document on a protected file waits for the person to type the passwor
 })
 
 test('a call still waiting for the person answers still_running; wait_for_result returns what the person chose', async () => {
-  // Packaged builds ignore FARTCROBAT_AGENT_WAIT_MS and always wait about 45 s.
-  test.skip(!!process.env.FARTCROBAT_EXECUTABLE, 'needs the shorter wait of an unpackaged build')
+  // Packaged builds ignore INKMOOR_AGENT_WAIT_MS and always wait about 45 s.
+  test.skip(!!process.env.INKMOOR_EXECUTABLE, 'needs the shorter wait of an unpackaged build')
   const dir = workDir()
   const source = join(dir, 'minutes.pdf')
   copyFileSync(fixturePath('text.pdf'), source)
   // The window answers still_running after 2.5 s instead of 45 s (AI apps give up after about 60 s).
-  const s = await startSession([source], { FARTCROBAT_AGENT_WAIT_MS: '2500' })
+  const s = await startSession([source], { INKMOOR_AGENT_WAIT_MS: '2500' })
   try {
     const { agent, page } = s
     await waitForRender(page)
@@ -409,7 +409,7 @@ test('handles from before the window reloaded are stale, even where the same tab
     const before = dataOf(await agent.call('open_document', { path: fixturePath('text.pdf') }))
     await waitForRender(page)
     await page.reload()
-    await expect.poll(() => page.evaluate(() => !!(window as any).__fartcrobat)).toBe(true)
+    await expect.poll(() => page.evaluate(() => !!(window as any).__inkmoor)).toBe(true)
     const after = dataOf(await agent.call('open_document', { path: fixturePath('form.pdf') }))
     expect(after.handle).toMatch(HANDLE)
     expect(after.handle).not.toBe(before.handle)
@@ -435,11 +435,11 @@ test('Disconnect keeps the AI app out until the person allows it again', async (
     await expect(indicator).toBeHidden()
 
     // The AI app is told why, and does not get back in on its next call.
-    expect(errorOf(await agent.call('list_documents'))).toContain('The person disconnected this AI app in Fartcrobat')
+    expect(errorOf(await agent.call('list_documents'))).toContain('The person disconnected this AI app in Inkmoor')
     await expect(indicator).toBeHidden()
 
     // Preferences lists it, and lets it back in.
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('app.preferences'))
     const prefs = page.getByRole('dialog', { name: 'Preferences' })
     await prefs.getByRole('button', { name: 'AI apps', exact: true }).click()
     const blocked = prefs.getByRole('list', { name: 'Disconnected AI apps' })
@@ -502,7 +502,7 @@ test('turning agent access off in Preferences refuses calls and removes the endp
     const indicator = page.getByRole('button', { name: /^Claude connected/ })
     await expect(indicator).toBeVisible()
 
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('app.preferences'))
     const prefs = page.getByRole('dialog', { name: 'Preferences' })
     await prefs.getByRole('button', { name: 'AI apps', exact: true }).click()
     const toggle = prefs.getByRole('switch', { name: 'Allow AI apps to work with your documents' })
@@ -520,7 +520,7 @@ test('turning agent access off in Preferences refuses calls and removes the endp
     await shot(page, 'preferences-off')
 
     const refused = errorOf(await agent.call('list_documents'))
-    expect(refused).toBe('[disabled] Agent access is turned off in Fartcrobat (Preferences > AI apps).')
+    expect(refused).toBe('[disabled] Agent access is turned off in Inkmoor (Preferences > AI apps).')
 
     await flip()
     await expect(toggle).toBeChecked()

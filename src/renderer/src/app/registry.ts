@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import type { DocumentModel, Selection } from '../document/DocumentModel'
-import type { PageGeometry } from '../viewer/geometry'
+import type { CssRect, PageGeometry } from '../viewer/geometry'
 
 export type Icon = LucideIcon | ComponentType<{ size?: number | string; className?: string; strokeWidth?: number }>
 
@@ -53,6 +53,8 @@ export interface PageLayerProps {
   doc: DocumentModel
   pageIndex: number
   geometry: PageGeometry
+  /** Visible part of the page in CSS px (relative to the page), e.g. for detail tiles. */
+  visibleRect?: CssRect | null
 }
 
 export interface ToolDefinition {

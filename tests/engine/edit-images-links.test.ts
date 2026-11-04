@@ -295,6 +295,27 @@ describe('images: editing', () => {
     await expect(o.probeImage(new TextEncoder().encode('not an image'))).rejects.toThrow(/not supported/)
   })
 
+  // MuPDF's per-document image cache is not part of the undo journal: after an undo it would hand
+  // back the image object the undo removed.
+  it('adds and replaces the same picture again after an undo', async () => {
+    const { e, o } = await setup()
+    await o.addImage(0, bytesOf('stamp.jpg'), [400, 650, 464, 714])
+    await e.doc.undo()
+    const again: PageImage = await o.addImage(0, bytesOf('stamp.jpg'), [400, 650, 464, 714])
+    expect(again.width).toBe(64)
+    expect((await regionColor(e, 0, [425, 675, 440, 690]))[0]).toBeLessThan(100)
+    const [, photo] = (await o.images(0)) as PageImage[]
+    await o.replaceImage(0, refOf(photo), bytesOf('replacement.png'))
+    await e.doc.undo()
+    const [, back] = (await o.images(0)) as PageImage[]
+    const repl: PageImage = await o.replaceImage(0, refOf(back), bytesOf('replacement.png'))
+    expect(repl.width).toBe(120)
+    const green = await regionColor(e, 0, [repl.bbox[0] + 2, repl.bbox[1] + 2, repl.bbox[0] + 8, repl.bbox[1] + 8])
+    expect(green[1]).toBeGreaterThan(140)
+    const list: PageImage[] = await (await roundTrip(e)).ops<typeof ops>('edit-images-links').images(0)
+    expect(list.map((i) => i.width).sort((a, b) => a - b)).toEqual([64, 120, 300])
+  })
+
   it('changes the stacking order', async () => {
     const { e, o } = await setup()
     // put a new image over the chart so the two overlap; [121,251,129,255] is white chart background
@@ -443,7 +464,7 @@ describe('links', () => {
     const { e, o } = await setup()
     const nav = e.ops<typeof navOps>('nav')
     const web = await o.createLink(0, [72, 100, 300, 120], {
-      action: { type: 'uri', uri: 'https://fartcrobat.org/docs' },
+      action: { type: 'uri', uri: 'https://inkmoor.org/docs' },
       appearance: { visible: true, width: 2, style: 'dashed', color: '#ff0000', highlight: 'outline' }
     })
     expect(e.lastChanges?.journal.undoLabel).toBe('Create Link')
@@ -452,7 +473,7 @@ describe('links', () => {
     expect(web.rect[1]).toBeCloseTo(100, 1)
     expect(web.appearance).toEqual({ visible: true, width: 2, style: 'dashed', color: '#ff0000', highlight: 'outline' })
     let links = await nav.links(0)
-    expect(links.map((l) => l.uri)).toContain('https://fartcrobat.org/docs')
+    expect(links.map((l) => l.uri)).toContain('https://inkmoor.org/docs')
     const toPage = await o.createLink(0, [72, 130, 300, 150], {
       action: { type: 'page', page: 1, x: 72, y: 100, zoom: 150, fit: 'XYZ' },
       appearance: { visible: false, width: 1, style: 'solid', color: '#000000', highlight: 'invert' }

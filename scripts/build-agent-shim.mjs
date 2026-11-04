@@ -18,7 +18,7 @@ const result = await build({
   publicDir: false,
   logLevel: 'warn',
   resolve: { alias: { '@shared': resolve(root, 'src/shared') } },
-  define: { __FARTCROBAT_VERSION__: JSON.stringify(pkg.version) },
+  define: { __INKMOOR_VERSION__: JSON.stringify(pkg.version) },
   // An SSR build resolves packages for Node; noExternal puts all of them in the bundle.
   ssr: { target: 'node', noExternal: true },
   build: {

@@ -23,6 +23,7 @@ import {
   findApp,
   installCandidates,
   launchMethod,
+  separateProfile,
   macBundle,
   parseAppInfo,
   parseRegQuery,
@@ -34,10 +35,13 @@ import {
 } from '../../src/agent-shim/launch'
 import { clientInfo, errorResult, mcpTools, toCallToolResult } from '../../src/agent-shim/result'
 
+/** The current name only (the legacy fallbacks are in rename-identity.test.ts). */
+const ONE_NAME = { current: 'Inkmoor', legacy: 'Inkmoor' }
+
 const token = (c: string) => c.repeat(64)
 const endpoint = (over: Partial<AgentEndpoint> = {}): AgentEndpoint => ({
   protocol: 1,
-  address: '/tmp/fartcrobat-agent-x/agent.sock',
+  address: '/tmp/inkmoor-agent-x/agent.sock',
   token: token('a'),
   pid: 1234,
   appVersion: '0.1.0',
@@ -48,7 +52,7 @@ describe('agent shim: MCP results', () => {
   it('lists every catalogue tool with its schema and hints, and nothing app-side', () => {
     const tools = mcpTools()
     expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name))
-    expect(tools).toHaveLength(31)
+    expect(tools).toHaveLength(AGENT_TOOLS.length)
     for (const [i, tool] of tools.entries()) {
       const def = AGENT_TOOLS[i]
       expect(tool).toEqual({
@@ -92,15 +96,15 @@ describe('agent shim: MCP results', () => {
     expect(
       toCallToolResult({
         data: { ignored: true },
-        error: { code: 'declined', message: 'The person declined in Fartcrobat.' }
+        error: { code: 'declined', message: 'The person declined in Inkmoor.' }
       })
     ).toEqual({
-      content: [{ type: 'text', text: '[declined] The person declined in Fartcrobat.' }],
+      content: [{ type: 'text', text: '[declined] The person declined in Inkmoor.' }],
       isError: true
     })
     expect(toCallToolResult(errorResult('disabled', MESSAGES.disabled))).toEqual({
       content: [
-        { type: 'text', text: '[disabled] Agent access is turned off in Fartcrobat (Preferences > AI apps).' }
+        { type: 'text', text: '[disabled] Agent access is turned off in Inkmoor (Preferences > AI apps).' }
       ],
       isError: true
     })
@@ -116,34 +120,34 @@ describe('agent shim: MCP results', () => {
       version: '0.14.0'
     })
     expect(clientInfo({ name: '  Claude  ', version: 3 })).toEqual({ name: 'Claude', version: '' })
-    // Fartcrobat words a nameless AI app itself ("AI app", "An AI agent"), so nothing is made up here.
+    // Inkmoor words a nameless AI app itself ("AI app", "An AI agent"), so nothing is made up here.
     for (const info of [undefined, null, 'claude', {}, { name: '' }, { name: '   ' }, { name: 7 }])
       expect(clientInfo(info)).toEqual({ name: '', version: '' })
   })
 })
 
 describe('agent shim: where the app is', () => {
-  it('uses FARTCROBAT_USER_DATA when set', () => {
+  it('uses INKMOOR_USER_DATA when set', () => {
     expect(
-      userDataDir({ FARTCROBAT_USER_DATA: '/tmp/profile', APPDATA: 'C:\\x' }, 'win32', 'C:\\Users\\me')
+      userDataDir({ INKMOOR_USER_DATA: '/tmp/profile', APPDATA: 'C:\\x' }, 'win32', 'C:\\Users\\me')
     ).toBe('/tmp/profile')
   })
 
-  it('follows Electron on Windows: %APPDATA%\\Fartcrobat', () => {
+  it('follows Electron on Windows: %APPDATA%\\Inkmoor', () => {
     expect(userDataDir({ APPDATA: 'C:\\Users\\me\\AppData\\Roaming' }, 'win32', 'C:\\Users\\me')).toBe(
-      'C:\\Users\\me\\AppData\\Roaming\\Fartcrobat'
+      'C:\\Users\\me\\AppData\\Roaming\\Inkmoor'
     )
-    expect(userDataDir({}, 'win32', 'C:\\Users\\me')).toBe('C:\\Users\\me\\AppData\\Roaming\\Fartcrobat')
+    expect(userDataDir({}, 'win32', 'C:\\Users\\me')).toBe('C:\\Users\\me\\AppData\\Roaming\\Inkmoor')
   })
 
   it('follows Electron on macOS and Linux', () => {
     expect(userDataDir({ XDG_CONFIG_HOME: '/x' }, 'darwin', '/Users/me')).toBe(
-      '/Users/me/Library/Application Support/Fartcrobat'
+      '/Users/me/Library/Application Support/Inkmoor'
     )
     expect(userDataDir({ XDG_CONFIG_HOME: '/home/me/.cfg' }, 'linux', '/home/me')).toBe(
-      '/home/me/.cfg/Fartcrobat'
+      '/home/me/.cfg/Inkmoor'
     )
-    expect(userDataDir({}, 'linux', '/home/me')).toBe('/home/me/.config/Fartcrobat')
+    expect(userDataDir({}, 'linux', '/home/me')).toBe('/home/me/.config/Inkmoor')
   })
 
   it('accepts only complete endpoint files', () => {
@@ -166,9 +170,9 @@ describe('agent shim: where the app is', () => {
   })
 
   it('reads app.json and finds the installed app on Windows', () => {
-    expect(parseAppInfo({ executable: '/opt/Fartcrobat/fartcrobat', args: [], appVersion: '0.1.0' })).toEqual(
+    expect(parseAppInfo({ executable: '/opt/Inkmoor/inkmoor', args: [], appVersion: '0.1.0' })).toEqual(
       {
-        executable: '/opt/Fartcrobat/fartcrobat',
+        executable: '/opt/Inkmoor/inkmoor',
         args: []
       }
     )
@@ -187,41 +191,45 @@ describe('agent shim: where the app is', () => {
     const reg = [
       '',
       'HKEY_CURRENT_USER\\Software\\bd977413-7ee9-5f76-80a8-7e980aa59bd1',
-      '    InstallLocation    REG_SZ    C:\\Users\\me\\AppData\\Local\\Programs\\Fartcrobat',
+      '    InstallLocation    REG_SZ    C:\\Users\\me\\AppData\\Local\\Programs\\Inkmoor',
       ''
     ].join('\r\n')
-    expect(parseRegQuery(reg)).toBe('C:\\Users\\me\\AppData\\Local\\Programs\\Fartcrobat')
+    expect(parseRegQuery(reg)).toBe('C:\\Users\\me\\AppData\\Local\\Programs\\Inkmoor')
     expect(
       parseRegQuery('ERROR: The system was unable to find the specified registry key or value.')
     ).toBeNull()
 
+    // Under one name here; installs from before the rename are in rename-identity.test.ts.
     expect(
       windowsInstallCandidates(
         { LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local', ProgramFiles: 'C:\\Program Files' },
-        ['D:\\Apps\\Fartcrobat', null]
+        ['D:\\Apps\\Inkmoor', null],
+        ONE_NAME
       )
     ).toEqual([
-      'D:\\Apps\\Fartcrobat\\Fartcrobat.exe',
-      'C:\\Users\\me\\AppData\\Local\\Programs\\Fartcrobat\\Fartcrobat.exe',
-      'C:\\Program Files\\Fartcrobat\\Fartcrobat.exe'
+      'D:\\Apps\\Inkmoor\\Inkmoor.exe',
+      'C:\\Users\\me\\AppData\\Local\\Programs\\Inkmoor\\Inkmoor.exe',
+      'C:\\Program Files\\Inkmoor\\Inkmoor.exe'
     ])
     // The per-user default without LOCALAPPDATA, and no duplicates.
     expect(
-      windowsInstallCandidates({ USERPROFILE: 'C:\\Users\\me' }, [
-        'C:\\Users\\me\\AppData\\Local\\Programs\\Fartcrobat'
-      ])
-    ).toEqual(['C:\\Users\\me\\AppData\\Local\\Programs\\Fartcrobat\\Fartcrobat.exe'])
+      windowsInstallCandidates(
+        { USERPROFILE: 'C:\\Users\\me' },
+        ['C:\\Users\\me\\AppData\\Local\\Programs\\Inkmoor'],
+        ONE_NAME
+      )
+    ).toEqual(['C:\\Users\\me\\AppData\\Local\\Programs\\Inkmoor\\Inkmoor.exe'])
   })
 
   it('knows where the installers put the app on each system', () => {
-    expect(installCandidates('win32', { LOCALAPPDATA: 'C:\\L' }, 'C:\\Users\\me', [null, null])).toEqual([
-      'C:\\L\\Programs\\Fartcrobat\\Fartcrobat.exe'
+    expect(installCandidates('win32', { LOCALAPPDATA: 'C:\\L' }, 'C:\\Users\\me', [null, null], ONE_NAME)).toEqual([
+      'C:\\L\\Programs\\Inkmoor\\Inkmoor.exe'
     ])
-    expect(installCandidates('darwin', {}, '/Users/me')).toEqual([
-      '/Applications/Fartcrobat.app/Contents/MacOS/Fartcrobat',
-      '/Users/me/Applications/Fartcrobat.app/Contents/MacOS/Fartcrobat'
+    expect(installCandidates('darwin', {}, '/Users/me', [], ONE_NAME)).toEqual([
+      '/Applications/Inkmoor.app/Contents/MacOS/Inkmoor',
+      '/Users/me/Applications/Inkmoor.app/Contents/MacOS/Inkmoor'
     ])
-    expect(installCandidates('linux', {}, '/home/me')).toEqual(['/opt/Fartcrobat/fartcrobat'])
+    expect(installCandidates('linux', {}, '/home/me', [], ONE_NAME)).toEqual(['/opt/Inkmoor/inkmoor', '/opt/Inkmoor/fartcrobat'])
   })
 })
 
@@ -247,26 +255,26 @@ describe('agent shim: files in userData', () => {
 
   it('starts the app from app.json only while its executable exists', async () => {
     // With its own profile the shim never falls back to an installed copy.
-    const env = { FARTCROBAT_USER_DATA: userData }
+    const env = { INKMOOR_USER_DATA: userData }
     expect(await findApp(userData, env, 'linux')).toBeNull()
     write(APP_FILE, { executable: process.execPath, args: ['app'], appVersion: '0.1.0' })
     expect(await findApp(userData, env, 'linux')).toEqual({ executable: process.execPath, args: ['app'] })
-    write(APP_FILE, { executable: join(userData, 'gone', 'fartcrobat'), args: [], appVersion: '0.1.0' })
+    write(APP_FILE, { executable: join(userData, 'gone', 'inkmoor'), args: [], appVersion: '0.1.0' })
     expect(await findApp(userData, env, 'linux')).toBeNull()
     // With agent access off it is not started anyway, so the shim can say so.
-    write(APP_FILE, { executable: join(userData, 'gone', 'fartcrobat'), args: [], enabled: false })
+    write(APP_FILE, { executable: join(userData, 'gone', 'inkmoor'), args: [], enabled: false })
     expect(await findApp(userData, env, 'linux')).toEqual({
-      executable: join(userData, 'gone', 'fartcrobat'),
+      executable: join(userData, 'gone', 'inkmoor'),
       args: [],
       enabled: false
     })
   })
 
   it('says agent access is off without starting anything when app.json says so', async () => {
-    const link = new AppLink({ shimVersion: 'test', env: { FARTCROBAT_USER_DATA: userData }, log: () => {} })
+    const link = new AppLink({ shimVersion: 'test', env: { INKMOOR_USER_DATA: userData }, log: () => {} })
     const client = { name: 'claude-ai', version: '1' }
-    // A program that does not exist: had the shim tried to start it, it would say Fartcrobat is not running.
-    const missing = join(userData, 'gone', 'fartcrobat')
+    // A program that does not exist: had the shim tried to start it, it would say Inkmoor is not running.
+    const missing = join(userData, 'gone', 'inkmoor')
     write(APP_FILE, { executable: missing, args: [], appVersion: '0.1.0', enabled: false })
     expect(await link.call('list_documents', {}, { client })).toEqual(
       errorResult('disabled', MESSAGES.disabled)
@@ -305,7 +313,7 @@ describe('agent shim: files in userData', () => {
     const crashed = { pid: 1, exited: Promise.resolve({ code: 3, signal: null }) }
     await expect(waitForEndpoint(userData, { app: crashed, intervalMs: 10 })).rejects.toMatchObject({
       code: 'failed',
-      message: 'Fartcrobat could not be started (it stopped with exit code 3).'
+      message: 'Inkmoor could not be started (it stopped with exit code 3).'
     })
     const silent = { pid: 1, exited: new Promise<never>(() => {}) }
     await expect(
@@ -403,11 +411,11 @@ function splitWindowsArgs(line: string): string[] {
 }
 
 describe('agent shim: starting the app', () => {
-  const winExe = String.raw`C:\Users\O'Brien $(calc); & x\AppData\Local\Programs\Fartcrobat\Fartcrobat.exe`
-  const winDir = String.raw`C:\Users\O'Brien $(calc); & x\AppData\Local\Programs\Fartcrobat`
+  const winExe = String.raw`C:\Users\O'Brien $(calc); & x\AppData\Local\Programs\Inkmoor\Inkmoor.exe`
+  const winDir = String.raw`C:\Users\O'Brien $(calc); & x\AppData\Local\Programs\Inkmoor`
   const winEnv = { SystemRoot: String.raw`C:\Windows`, APPDATA: String.raw`C:\Users\me\AppData\Roaming` }
   const powershell = String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`
-  const macExe = '/Applications/Fartcrobat.app/Contents/MacOS/Fartcrobat'
+  const macExe = '/Applications/Inkmoor.app/Contents/MacOS/Inkmoor'
 
   it('quotes Windows arguments so that programs read them back unchanged', () => {
     expect(quoteWindowsArg('plain')).toBe('plain')
@@ -438,7 +446,7 @@ describe('agent shim: starting the app', () => {
 
   it('builds the Windows command line with the program name always quoted', () => {
     expect(windowsCommandLine({ executable: winExe, args: [] })).toBe(`"${winExe}"`)
-    const args = [String.raw`D:\src\fartcrobat app`, '--flag', '']
+    const args = [String.raw`D:\src\inkmoor app`, '--flag', '']
     const line = windowsCommandLine({ executable: winExe, args })
     expect(line.startsWith(`"${winExe}" `)).toBe(true)
     expect(splitWindowsArgs(line.slice(winExe.length + 3))).toEqual(args)
@@ -452,22 +460,34 @@ describe('agent shim: starting the app', () => {
     expect(launchMethod({ executable: winExe, args: ['D:\\src'] }, winEnv, 'win32')).toBe('wmi')
     expect(launchMethod(packaged(macExe), {}, 'darwin')).toBe('launch-services')
     expect(
-      launchMethod(packaged('/Users/me/Applications/Fartcrobat.app/Contents/MacOS/Fartcrobat'), {}, 'darwin')
+      launchMethod(packaged('/Users/me/Applications/Inkmoor.app/Contents/MacOS/Inkmoor'), {}, 'darwin')
     ).toBe('launch-services')
-    expect(launchMethod(packaged('/opt/Fartcrobat/fartcrobat'), {}, 'linux')).toBe('direct')
+    expect(launchMethod(packaged('/opt/Inkmoor/inkmoor'), {}, 'linux')).toBe('direct')
     // Development builds on macOS start Electron with the app's path.
     expect(
       launchMethod({ executable: '/src/Electron.app/Contents/MacOS/Electron', args: ['/src'] }, {}, 'darwin')
     ).toBe('direct')
-    expect(launchMethod(packaged('/usr/local/bin/fartcrobat'), {}, 'darwin')).toBe('direct')
+    expect(launchMethod(packaged('/usr/local/bin/inkmoor'), {}, 'darwin')).toBe('direct')
     // A separate profile is named in the environment, which only a direct start passes on.
-    const profile = { FARTCROBAT_USER_DATA: '/tmp/profile' }
+    const profile = { INKMOOR_USER_DATA: '/tmp/profile' }
     expect(launchMethod(packaged(winExe), { ...winEnv, ...profile }, 'win32')).toBe('direct')
     expect(launchMethod(packaged(macExe), profile, 'darwin')).toBe('direct')
+    // The Connect ChatGPT Desktop setup names the usual folder: that is no separate profile, and
+    // the app starts as for the Claude extension (WMI keeps it out of ChatGPT's MSIX package).
+    const usualWin = { ...winEnv, INKMOOR_USER_DATA: 'c:\\users\\me\\appdata\\roaming\\inkmoor\\' }
+    expect(launchMethod(packaged(winExe), usualWin, 'win32', String.raw`C:\Users\me`)).toBe('wmi')
+    const usualMac = { INKMOOR_USER_DATA: '/Users/me/Library/Application Support/Inkmoor' }
+    expect(launchMethod(packaged(macExe), usualMac, 'darwin', '/Users/me')).toBe('launch-services')
+    expect(separateProfile({}, 'linux', '/home/me')).toBe(false)
+    // ChatGPT does not pass XDG_CONFIG_HOME on: the setup's folder then differs from the one the
+    // helper would guess, and is still the app's own.
+    expect(separateProfile({ INKMOOR_USER_DATA: '/home/me/.config/Inkmoor' }, 'linux', '/home/me')).toBe(false)
+    expect(separateProfile({ INKMOOR_USER_DATA: '/home/me/.cfg/Inkmoor' }, 'linux', '/home/me')).toBe(true)
+    expect(separateProfile({ ...winEnv, INKMOOR_USER_DATA: 'D:\\profile' }, 'win32', 'C:\\Users\\me')).toBe(true)
 
-    expect(macBundle(macExe)).toBe('/Applications/Fartcrobat.app')
-    expect(macBundle('/Applications/Fartcrobat.app/Contents/Frameworks/x')).toBeNull()
-    expect(macBundle('Fartcrobat.app/Contents/MacOS/Fartcrobat')).toBeNull()
+    expect(macBundle(macExe)).toBe('/Applications/Inkmoor.app')
+    expect(macBundle('/Applications/Inkmoor.app/Contents/Frameworks/x')).toBeNull()
+    expect(macBundle('Inkmoor.app/Contents/MacOS/Inkmoor')).toBeNull()
   })
 
   it('starts the app through WMI on Windows, passing the command line in the environment', async () => {
@@ -484,19 +504,19 @@ describe('agent shim: starting the app', () => {
     expect(ps.options).toMatchObject({ stdio: 'ignore', windowsHide: true })
     expect(ps.options.env).toEqual({
       ...winEnv,
-      FARTCROBAT_LAUNCH_COMMAND: `"${winExe}"`,
-      FARTCROBAT_LAUNCH_DIR: winDir
+      INKMOOR_LAUNCH_COMMAND: `"${winExe}"`,
+      INKMOOR_LAUNCH_DIR: winDir
     })
     // The script is always the same: nothing from the path is pasted into it.
     expect(WMI_LAUNCH_SCRIPT).toContain('Invoke-CimMethod -ClassName Win32_Process -MethodName Create')
-    expect(WMI_LAUNCH_SCRIPT).toContain('CommandLine = $env:FARTCROBAT_LAUNCH_COMMAND')
-    expect(WMI_LAUNCH_SCRIPT).toContain('CurrentDirectory = $env:FARTCROBAT_LAUNCH_DIR')
+    expect(WMI_LAUNCH_SCRIPT).toContain('CommandLine = $env:INKMOOR_LAUNCH_COMMAND')
+    expect(WMI_LAUNCH_SCRIPT).toContain('CurrentDirectory = $env:INKMOOR_LAUNCH_DIR')
     // No quotation marks, which Windows would have to escape on PowerShell's command line.
     expect(WMI_LAUNCH_SCRIPT).not.toContain('"')
     // WMI's process is not this helper's child: its exit says nothing about the app.
     expect(app.pid).toBeUndefined()
     expect(await settles(app.exited)).toBe(false)
-    expect(log).toEqual(['Started Fartcrobat through WMI.'])
+    expect(log).toEqual(['Started Inkmoor through WMI.'])
   })
 
   it('starts the app directly when WMI fails', async () => {
@@ -527,16 +547,16 @@ describe('agent shim: starting the app', () => {
         env: winEnv
       })
       expect(app.pid).toBe(4321)
-      expect(log).toEqual([`Could not start Fartcrobat through WMI (${failure}); starting it directly.`])
+      expect(log).toEqual([`Could not start Inkmoor through WMI (${failure}); starting it directly.`])
     }
 
     // A path WMI could not be given starts directly without trying.
     const { run, spawned } = fakeSpawn(starts)
     await startApp(
-      { executable: 'C:\\odd"name\\Fartcrobat.exe', args: [] },
+      { executable: 'C:\\odd"name\\Inkmoor.exe', args: [] },
       { env: winEnv, platform: 'win32', spawn: run }
     )
-    expect(spawned.map((s) => s.command)).toEqual(['C:\\odd"name\\Fartcrobat.exe'])
+    expect(spawned.map((s) => s.command)).toEqual(['C:\\odd"name\\Inkmoor.exe'])
   })
 
   it('waits for the app rather than start a second copy when WMI is slow to answer', async () => {
@@ -550,12 +570,12 @@ describe('agent shim: starting the app', () => {
     expect(spawned[0].child.killed).toBe(false)
     expect(app.pid).toBeUndefined()
     expect(await settles(app.exited)).toBe(false)
-    expect(log).toEqual(['WMI has not finished starting Fartcrobat after 0.02 seconds; waiting for it.'])
+    expect(log).toEqual(['WMI has not finished starting Inkmoor after 0.02 seconds; waiting for it.'])
   })
 
   it('starts a separate profile directly, with its environment', async () => {
     const { run, spawned } = fakeSpawn(startsAndExits(0))
-    const env = { ...winEnv, FARTCROBAT_USER_DATA: 'D:\\profile' }
+    const env = { ...winEnv, INKMOOR_USER_DATA: 'D:\\profile' }
     const app = await startApp(
       { executable: winExe, args: ['D:\\src'] },
       { env, platform: 'win32', spawn: run }
@@ -573,7 +593,7 @@ describe('agent shim: starting the app', () => {
       { env: {}, platform: 'darwin', spawn: opened.run }
     )
     expect(opened.spawned.map((s) => [s.command, s.args])).toEqual([
-      ['/usr/bin/open', ['-a', '/Applications/Fartcrobat.app']]
+      ['/usr/bin/open', ['-a', '/Applications/Inkmoor.app']]
     ])
     // open exits with 0 once the launch has begun: that is not a second instance handing over.
     expect(app.pid).toBeUndefined()
@@ -582,20 +602,20 @@ describe('agent shim: starting the app', () => {
     const failed = fakeSpawn((s) => (s.command === '/usr/bin/open' ? startsAndExits(1)(s) : starts(s)))
     await startApp({ executable: macExe, args: [] }, { env: {}, platform: 'darwin', spawn: failed.run })
     expect(failed.spawned.map((s) => s.command)).toEqual(['/usr/bin/open', macExe])
-    expect(failed.spawned[1].options.cwd).toBe('/Applications/Fartcrobat.app/Contents/MacOS')
+    expect(failed.spawned[1].options.cwd).toBe('/Applications/Inkmoor.app/Contents/MacOS')
   })
 
   it('starts the app directly on Linux, in its own folder and not as Node', async () => {
     const { run, spawned } = fakeSpawn(starts)
     const env = { HOME: '/home/me', ELECTRON_RUN_AS_NODE: '1' }
     const app = await startApp(
-      { executable: '/opt/Fartcrobat/fartcrobat', args: [] },
+      { executable: '/opt/Inkmoor/inkmoor', args: [] },
       { env, platform: 'linux', spawn: run }
     )
     expect(spawned).toHaveLength(1)
-    expect(spawned[0]).toMatchObject({ command: '/opt/Fartcrobat/fartcrobat', args: [] })
+    expect(spawned[0]).toMatchObject({ command: '/opt/Inkmoor/inkmoor', args: [] })
     expect(spawned[0].options).toEqual({
-      cwd: '/opt/Fartcrobat',
+      cwd: '/opt/Inkmoor',
       detached: true,
       stdio: 'ignore',
       windowsHide: false,

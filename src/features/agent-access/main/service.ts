@@ -102,6 +102,7 @@ export class AgentAccess {
       connections: (server?.list() ?? []).map((c) => ({
         id: c.id,
         client: c.client,
+        shimVersion: c.shimVersion,
         since: c.since,
         running: this.router.running(c.id)
       })),
@@ -201,6 +202,7 @@ export class AgentAccess {
           this.router.call({
             connectionId: conn.id,
             client: conn.client,
+            shimVersion: conn.shimVersion,
             id: call.id,
             tool: call.tool,
             args: call.args

@@ -10,7 +10,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `test-results
 /** Starts a command without waiting for it (commands that open a dialog finish when it closes). */
 async function startCommand(page: Page, id: string) {
   await page.evaluate((c) => {
-    void (window as any).__fartcrobat.runCommand(c)
+    void (window as any).__inkmoor.runCommand(c)
   }, id)
 }
 
@@ -18,7 +18,7 @@ async function startCommand(page: Page, id: string) {
 async function op<T = any>(page: Page, ns: string, name: string, ...args: unknown[]): Promise<T> {
   return page.evaluate(
     async ({ ns, name, args }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       return d.ops(ns)[name](...args)
     },
     { ns, name, args }
@@ -28,7 +28,7 @@ async function op<T = any>(page: Page, ns: string, name: string, ...args: unknow
 /** Screen position of a page-space point on a page (rotation 0). */
 async function toScreen(page: Page, pt: [number, number], pageIndex = 0): Promise<[number, number]> {
   const box = (await page.locator(`.viewer-page[data-page-index="${pageIndex}"]`).boundingBox())!
-  const width = await page.evaluate((i) => (window as any).__fartcrobat.getActiveDoc().state.info.pages[i].width, pageIndex)
+  const width = await page.evaluate((i) => (window as any).__inkmoor.getActiveDoc().state.info.pages[i].width, pageIndex)
   const s = box.width / width
   return [box.x + pt[0] * s, box.y + pt[1] * s]
 }
@@ -64,17 +64,17 @@ async function stubDialogs(app: ElectronApplication, save: string | null, open: 
 
 test('select, move, edit, reply, export and import comments', async () => {
   const { app, page } = await launch()
-  const tmp = mkdtempSync(join(tmpdir(), 'fartcrobat-comments-'))
+  const tmp = mkdtempSync(join(tmpdir(), 'inkmoor-comments-'))
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
     // Preferences > Commenting > name is used as the author of new comments
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, authorName: 'Alice Reviewer' } })))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, authorName: 'Alice Reviewer' } })))
     await page.waitForTimeout(500)
 
     // Comments made by the markup tools (created through the engine here).
     const ids = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const annots = d.ops('annots')
       const sq = await annots.create(0, { type: 'Square', rect: [100, 300, 220, 380], color: '#ff0000', borderWidth: 2, contents: 'Check this box' })
       const note = await annots.create(0, { type: 'Text', rect: [400, 120, 420, 140], contents: 'Please review this paragraph', color: '#ffeb3b', icon: 'Comment' })
@@ -179,8 +179,8 @@ test('select, move, edit, reply, export and import comments', async () => {
     // ---- a comment tool announces a new sticky note: its pop-up opens, ready for typing
     await page.evaluate(
       ({ id }) => {
-        const d = (window as any).__fartcrobat.getActiveDoc()
-        window.dispatchEvent(new CustomEvent('fartcrobat:edit-annotation', { detail: { docId: d.id, id, page: 0 } }))
+        const d = (window as any).__inkmoor.getActiveDoc()
+        window.dispatchEvent(new CustomEvent('inkmoor:edit-annotation', { detail: { docId: d.id, id, page: 0 } }))
       },
       { id: ids.note }
     )
@@ -312,10 +312,10 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
     // Preferences > Commenting > name: comments made from now on are by Bob
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, authorName: 'Bob' } })))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, authorName: 'Bob' } })))
     await page.waitForTimeout(500)
     const ids = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const annots = d.ops('annots')
       const ft = await annots.create(0, { type: 'FreeText', rect: [300, 500, 480, 530], contents: '', fontSize: 14, textColor: '#0000ff' })
       const line = await annots.create(0, { type: 'Line', line: [[80, 600], [260, 660]], color: '#e91e63', borderWidth: 3, lineEndings: { start: 'None', end: 'ClosedArrow' } })
@@ -326,8 +326,8 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     // a tool asks for the inline editor of a new text box (like markup-tools does)
     await page.evaluate(
       ({ id }) => {
-        const d = (window as any).__fartcrobat.getActiveDoc()
-        window.dispatchEvent(new CustomEvent('fartcrobat:edit-annotation', { detail: { docId: d.id, id, page: 0 } }))
+        const d = (window as any).__inkmoor.getActiveDoc()
+        window.dispatchEvent(new CustomEvent('inkmoor:edit-annotation', { detail: { docId: d.id, id, page: 0 } }))
       },
       { id: ids.ft }
     )
@@ -416,10 +416,10 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     await page.keyboard.press('Escape')
 
     // zoomed in: the selection box still sits on the comment
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(2))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(2))
     await page.waitForTimeout(500)
     await page.evaluate(({ id }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       d.setSelection({ kind: 'annotations', page: 0, ids: [id] })
       d.view.scrollToRect(0, [300, 500, 480, 530], { center: true })
     }, { id: ids.ft })
@@ -431,8 +431,8 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     await shot(page, 'zoomed')
 
     // rotated view: the selection box still sits on the comment
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().set({ viewRotation: 90 }))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom('fit-page'))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().set({ viewRotation: 90 }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom('fit-page'))
     await page.waitForTimeout(600)
     const hit = (await page.locator(`.fc-comments-hits [data-annot-id="${ids.ft}"]`).boundingBox())!
     const rsel = (await page.locator('.fc-comments-selbox').boundingBox())!
@@ -442,13 +442,13 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     expect(rsel.height).toBeGreaterThan(rsel.width)
     await page.waitForTimeout(300)
     await shot(page, 'rotated')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().set({ viewRotation: 0 }))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom('fit-width'))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().set({ viewRotation: 0 }))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom('fit-width'))
     await page.waitForTimeout(300)
 
     // Properties dialog
     await page.evaluate(({ id }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       d.setSelection({ kind: 'annotations', page: 0, ids: [id] })
     }, { id: ids.line })
     await runCommand(page, 'comments.properties')
@@ -489,26 +489,26 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     await waitForRender(page)
     await page.waitForTimeout(500)
     await shot(page, 'summary')
-    const text = await page.evaluate(async () => (window as any).__fartcrobat.getActiveDoc().core.text.all())
+    const text = await page.evaluate(async () => (window as any).__inkmoor.getActiveDoc().core.text.all())
     expect(text.join('\n')).toContain('Typed straight onto the page')
     expect(text.join('\n')).not.toContain('root')
 
     // Show/Hide comments
     await page.locator('.shell-tab, [role="tab"]').first().click().catch(() => {})
     await page.evaluate(() => {
-      const s = (window as any).__fartcrobat.useApp.getState()
+      const s = (window as any).__inkmoor.useApp.getState()
       const d = s.docs.find((x: any) => x.state.title === 'text.pdf')
-      ;(window as any).__fartcrobat.useApp.setState({ activeDocId: d.id })
+      ;(window as any).__inkmoor.useApp.setState({ activeDocId: d.id })
     })
     await waitForRender(page)
     await runCommand(page, 'comments.toggleVisibility')
-    expect(await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.showAnnotations)).toBe(false)
+    expect(await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.showAnnotations)).toBe(false)
     await expect(page.locator('.fc-comments-hits')).toHaveCount(0)
     await runCommand(page, 'comments.toggleVisibility')
 
     // a highlight (with a reply) shows the text it marks in the list
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const t = await d.pageText(0)
       const i = t.text.indexOf('quick brown fox')
       const q = t.quads
@@ -520,7 +520,7 @@ test('text boxes, lines, summaries, zoom and dark mode', async () => {
     })
 
     // dark mode: panel and pop-up
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
     await page.locator('button[aria-label="Comments"]').click()
     await expect(page.locator('.fc-comments-card .fc-comments-quote')).toHaveText('quick brown fox')
     await page.locator('button[aria-label="Expand all"]').click()
@@ -560,7 +560,7 @@ function savedComments(path: string): string[] {
 }
 
 test('File > Save from the menu bar saves the comment text being typed', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-comments-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-comments-'))
   const file = join(dir, 'review.pdf')
   copyFileSync(fixturePath('text.pdf'), file)
   const { app, page } = await launch()
@@ -568,15 +568,15 @@ test('File > Save from the menu bar saves the comment text being typed', async (
     await openFile(page, file)
     await waitForRender(page)
     const ids = await page.evaluate(async () => {
-      const annots = (window as any).__fartcrobat.getActiveDoc().ops('annots')
+      const annots = (window as any).__inkmoor.getActiveDoc().ops('annots')
       const ft = await annots.create(0, { type: 'FreeText', rect: [300, 500, 480, 530], contents: '', fontSize: 14 })
       const note = await annots.create(0, { type: 'Text', rect: [400, 120, 420, 140], contents: '', icon: 'Comment' })
       return { ft: ft.id as number, note: note.id as number }
     })
     const edit = (id: number) =>
       page.evaluate((i) => {
-        const d = (window as any).__fartcrobat.getActiveDoc()
-        window.dispatchEvent(new CustomEvent('fartcrobat:edit-annotation', { detail: { docId: d.id, id: i, page: 0 } }))
+        const d = (window as any).__inkmoor.getActiveDoc()
+        window.dispatchEvent(new CustomEvent('inkmoor:edit-annotation', { detail: { docId: d.id, id: i, page: 0 } }))
       }, id)
 
     // typing into a text box on the page

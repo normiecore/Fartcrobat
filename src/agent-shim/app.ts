@@ -1,4 +1,4 @@
-// The shim's side of the local pipe (see @shared/agent/protocol): finds the running Fartcrobat,
+// The shim's side of the local pipe (see @shared/agent/protocol): finds the running Inkmoor,
 // starting it when needed, authenticates both ways and carries calls, cancellations and progress.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -23,10 +23,10 @@ import {
   type RejectMessage,
   type ShimToApp
 } from '@shared/agent/protocol'
-import { findApp, startApp, type LaunchedApp } from './launch'
+import { defaultUserDataDir, findApp, startApp, type LaunchedApp } from './launch'
+import { userDataOverride } from '@shared/identity'
 import { errorResult } from './result'
 
-const APP_NAME = 'Fartcrobat'
 /** How long the app may take to appear after the shim starts it. */
 export const START_TIMEOUT_MS = 30_000
 /** How long a connected app may take to finish the handshake (the app allows 10 s). */
@@ -38,22 +38,22 @@ const HANDSHAKE_TIMEOUT_MS = 15_000
 const HANDOVER_GRACE_MS = 10_000
 
 export const MESSAGES = {
-  disabled: 'Agent access is turned off in Fartcrobat (Preferences > AI apps).',
-  notRunning: 'Fartcrobat is not running and could not be started. Open Fartcrobat, then try again.',
-  startTimeout: `Fartcrobat did not answer within ${START_TIMEOUT_MS / 1000} seconds. Check that it is open and that Preferences > AI apps allows AI apps to work with your documents, then try again.`,
+  disabled: 'Agent access is turned off in Inkmoor (Preferences > AI apps).',
+  notRunning: 'Inkmoor is not running and could not be started. Open Inkmoor, then try again.',
+  startTimeout: `Inkmoor did not answer within ${START_TIMEOUT_MS / 1000} seconds. Check that it is open and that Preferences > AI apps allows AI apps to work with your documents, then try again.`,
   handedOver:
-    'Fartcrobat is open but did not accept the connection. Check that Preferences > AI apps allows AI apps to work with your documents, then try again.',
+    'Inkmoor is open but did not accept the connection. Check that Preferences > AI apps allows AI apps to work with your documents, then try again.',
   closed:
-    'Fartcrobat closed before the call finished, so it may or may not have taken effect. Check the document in Fartcrobat before trying again.',
+    'Inkmoor closed before the call finished, so it may or may not have taken effect. Check the document in Inkmoor before trying again.',
   identity:
-    'Could not verify that the program answering is Fartcrobat, so nothing was sent to it. Restart Fartcrobat, then try again.',
-  handshake: 'Fartcrobat did not finish connecting. Try again in a moment.',
-  notSent: 'The connection to Fartcrobat closed before the call was sent. Try again.',
+    'Could not verify that the program answering is Inkmoor, so nothing was sent to it. Restart Inkmoor, then try again.',
+  handshake: 'Inkmoor did not finish connecting. Try again in a moment.',
+  notSent: 'The connection to Inkmoor closed before the call was sent. Try again.',
   aborted: 'The call was cancelled.',
   disconnected:
-    'The person disconnected this AI app in Fartcrobat, so the call was stopped and may or may not have taken effect. Do not use Fartcrobat again unless they ask.',
+    'The person disconnected this AI app in Inkmoor, so the call was stopped and may or may not have taken effect. Do not use Inkmoor again unless they ask.',
   blocked:
-    'The person disconnected this AI app in Fartcrobat. Do not use Fartcrobat again unless they ask; they can allow it again in Fartcrobat (Preferences > AI apps).'
+    'The person disconnected this AI app in Inkmoor. Do not use Inkmoor again unless they ask; they can allow it again in Inkmoor (Preferences > AI apps).'
 }
 
 /** A failure the agent sees as "[code] message". */
@@ -73,19 +73,16 @@ class Unreachable extends Error {}
 export type Log = (message: string) => void
 
 export const logToStderr: Log = (message) => {
-  process.stderr.write(`[fartcrobat] ${message}\n`)
+  process.stderr.write(`[inkmoor] ${message}\n`)
 }
 
-/** Electron's userData folder for Fartcrobat (the app may be pointed elsewhere with FARTCROBAT_USER_DATA). */
+/** The app's userData folder (the app may be pointed elsewhere with <NAME>_USER_DATA). */
 export function userDataDir(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
   home: string = homedir()
 ): string {
-  if (env.FARTCROBAT_USER_DATA) return env.FARTCROBAT_USER_DATA
-  if (platform === 'win32') return win32.join(env.APPDATA || win32.join(home, 'AppData', 'Roaming'), APP_NAME)
-  if (platform === 'darwin') return posix.join(home, 'Library', 'Application Support', APP_NAME)
-  return posix.join(env.XDG_CONFIG_HOME || posix.join(home, '.config'), APP_NAME)
+  return userDataOverride(env) || defaultUserDataDir(env, platform, home)
 }
 
 export function endpointPath(userData: string, platform: NodeJS.Platform = process.platform): string {
@@ -130,7 +127,7 @@ export interface WaitOptions {
 
 /**
  * Waits for a started app to publish a fresh endpoint.json. A started process that exits with 0
- * was a second instance handing over to a Fartcrobat that is already open; if that one still
+ * was a second instance handing over to an Inkmoor that is already open; if that one still
  * publishes no endpoint, it is not accepting AI apps (agent access is off there, or it is still
  * starting or on its way out). An app.json that says agent access is off is answered before
  * anything is started, so this is only the fallback for apps that do not record it.
@@ -148,7 +145,7 @@ export async function waitForEndpoint(userData: string, opts: WaitOptions = {}):
       if (code !== 0)
         throw new ShimError(
           'failed',
-          `Fartcrobat could not be started (it stopped with ${signal ?? `exit code ${code}`}).`
+          `Inkmoor could not be started (it stopped with ${signal ?? `exit code ${code}`}).`
         )
       handedOver = true
       deadline = Math.min(deadline, Date.now() + (opts.graceMs ?? HANDOVER_GRACE_MS))
@@ -186,9 +183,9 @@ function rejection(msg: RejectMessage): ShimError {
     case 'blocked':
       return new ShimError('disabled', MESSAGES.blocked)
     case 'busy':
-      return new ShimError('busy', appText(msg.message, 'Too many AI apps are connected to Fartcrobat.'))
+      return new ShimError('busy', appText(msg.message, 'Too many AI apps are connected to Inkmoor.'))
     default:
-      return new ShimError('failed', appText(msg.message, 'Fartcrobat refused the connection.'))
+      return new ShimError('failed', appText(msg.message, 'Inkmoor refused the connection.'))
   }
 }
 
@@ -224,7 +221,7 @@ export class AppSession {
   ) {
     const decoder = new LineDecoder<AppToShim>(
       (msg) => this.receive(msg),
-      () => this.fail(new ShimError('failed', 'Fartcrobat sent a message the extension does not understand.'))
+      () => this.fail(new ShimError('failed', 'Inkmoor sent a message the extension does not understand.'))
     )
     socket.setEncoding('utf8')
     socket.on('data', (chunk: string) => decoder.push(chunk))
@@ -303,12 +300,12 @@ export class AppSession {
         if (msg.t === 'reject') return this.fail(rejection(msg))
         if (msg.t === 'ping' || msg.t === 'pong' || msg.t === 'notice') return
         if (msg.t !== 'hello' || typeof msg.nonce !== 'string' || !msg.nonce)
-          return this.fail(new ShimError('failed', 'Fartcrobat did not greet the extension as expected.'))
+          return this.fail(new ShimError('failed', 'Inkmoor did not greet the extension as expected.'))
         if (msg.protocol !== AGENT_PROTOCOL_VERSION)
           return this.fail(
             new ShimError(
               'failed',
-              `This Fartcrobat extension (version ${this.shimVersion}) does not work with Fartcrobat ${appText(msg.appVersion, '(unknown version)')}. Update Fartcrobat, then add the extension again from Preferences > AI apps.`
+              `This Inkmoor extension (version ${this.shimVersion}) does not work with Inkmoor ${appText(msg.appVersion, '(unknown version)')}. Update Inkmoor, then add the extension again from Preferences > AI apps.`
             )
           )
         this.appVersion = appText(msg.appVersion, '')
@@ -346,7 +343,7 @@ export class AppSession {
             const result =
               msg.result && typeof msg.result === 'object'
                 ? msg.result
-                : errorResult('failed', 'Fartcrobat sent an empty result.')
+                : errorResult('failed', 'Inkmoor sent an empty result.')
             this.pending.get(msg.id)?.finish(result)
             return
           }
@@ -416,7 +413,7 @@ export interface AppLinkOptions {
 }
 
 export interface LinkCallOptions extends CallOptions {
-  /** The AI app as it introduced itself over MCP (shown in Fartcrobat). */
+  /** The AI app as it introduced itself over MCP (shown in Inkmoor). */
   client: AgentClientInfo
 }
 
@@ -449,7 +446,7 @@ export class AppLink {
       session = await untilAborted(this.connected(opts.client), signal)
     } catch (err) {
       if (err instanceof ShimError) return errorResult(err.code, err.message)
-      this.log(`Could not reach Fartcrobat: ${err instanceof Error ? err.message : String(err)}`)
+      this.log(`Could not reach Inkmoor: ${err instanceof Error ? err.message : String(err)}`)
       return errorResult('failed', MESSAGES.notRunning)
     }
     return session.call(tool, args, opts)
@@ -502,12 +499,12 @@ export class AppLink {
     if (!target) throw new ShimError('failed', MESSAGES.notRunning)
     // The app would only refuse (and a second instance would bring its window to the front).
     if (target.enabled === false) throw new ShimError('disabled', MESSAGES.disabled)
-    this.log(`Starting Fartcrobat: ${target.executable}`)
+    this.log(`Starting Inkmoor: ${target.executable}`)
     let app: LaunchedApp
     try {
       app = await startApp(target, { env: this.env, platform: this.platform, log: this.log })
     } catch (err) {
-      this.log(`Could not start Fartcrobat: ${err instanceof Error ? err.message : String(err)}`)
+      this.log(`Could not start Inkmoor: ${err instanceof Error ? err.message : String(err)}`)
       throw new ShimError('failed', MESSAGES.notRunning)
     }
     const endpoint = await waitForEndpoint(userData, {
@@ -530,9 +527,9 @@ export class AppLink {
       if (this.session === closed) this.session = null
       const reason = closed.closedBy && CLOSED_BY[closed.closedBy]
       const why = reason ? `: ${reason}` : ''
-      this.log(`Disconnected from Fartcrobat (connection ${closed.connectionId})${why}.`)
+      this.log(`Disconnected from Inkmoor (connection ${closed.connectionId})${why}.`)
     })
-    this.log(`Connected to Fartcrobat ${session.appVersion} (connection ${session.connectionId}).`)
+    this.log(`Connected to Inkmoor ${session.appVersion} (connection ${session.connectionId}).`)
     return session
   }
 }

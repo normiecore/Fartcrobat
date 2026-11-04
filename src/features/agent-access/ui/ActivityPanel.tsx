@@ -1,8 +1,12 @@
 /** Right panel "Agent activity" (also shown in a popover on Home): connections and recent calls. */
+import { memo } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { Ban, Bot, Check, CircleAlert, Loader2, Settings, ShieldX, Unplug } from 'lucide-react'
 import type { AgentConnectionInfo } from '@shared/agent/bridge'
+import { shimForwardsCompanion } from '@shared/agent/protocol'
 import { Button, EmptyState, invoke, openPreferences, Section, showError, type DocumentModel } from '@renderer/sdk'
 import { appLabel, documentLabel, durationLabel, timeLabel, useAgentUi, type CallRecord } from './store'
+import { useCompanion } from './companionStore'
 import '../ipc'
 
 const P = 'fc-agent-access'
@@ -25,7 +29,8 @@ const OUTCOME: Record<CallRecord['outcome'], { label: string; icon: typeof Check
   pending: { label: 'Still running', icon: Loader2 }
 }
 
-function CallRow({ call }: { call: CallRecord }) {
+// A record keeps its identity until its call changes, so only that row renders again.
+const CallRow = memo(function CallRow({ call }: { call: CallRecord }) {
   const o = OUTCOME[call.outcome]
   const doc = documentLabel(call.document)
   return (
@@ -49,7 +54,7 @@ function CallRow({ call }: { call: CallRecord }) {
       </div>
     </li>
   )
-}
+})
 
 export function ConnectionList({ connections, compact }: { connections: AgentConnectionInfo[]; compact?: boolean }) {
   if (!connections.length) return <p className={`shell-muted ${P}-none`}>No AI app is connected.</p>
@@ -67,6 +72,9 @@ export function ConnectionList({ connections, compact }: { connections: AgentCon
               Connected since {timeLabel(c.since, false)}
               {c.running ? ` · ${c.running} running` : ''}
             </span>
+            {!shimForwardsCompanion(c.shimVersion) && (
+              <span className="shell-muted">Uses the extension from an older Inkmoor: add it again to chat in Inkmoor.</span>
+            )}
           </div>
           <Button size="sm" icon={Unplug} title="It cannot connect again until you allow it." onClick={() => disconnect(c.id)}>
             Disconnect
@@ -103,12 +111,13 @@ export function BlockedList({ blocked }: { blocked: string[] }) {
 
 /** Connections, recent calls and a way to the settings. `onLeave` closes a popover around it. */
 export function ActivityView({ onLeave }: { onLeave?: () => void }) {
-  const status = useAgentUi((s) => s.status)
+  const status = useAgentUi(useShallow((s) => ({ off: s.status?.enabled === false, connections: s.status?.connections, blocked: s.status?.blocked })))
   const calls = useAgentUi((s) => s.calls)
-  const connections = status?.connections ?? []
+  const connections = status.connections ?? []
   return (
     <div className={`${P}-activity`}>
-      {status && !status.enabled && (
+      <Button size="sm" onClick={() => { useCompanion.setState({ minimized: false, revealed: true }); onLeave?.() }}>Show companion</Button>
+      {status.off && (
         <p className={`${P}-note`}>Agent access is turned off. AI apps cannot work with your documents.</p>
       )}
       <Section
@@ -122,7 +131,7 @@ export function ActivityView({ onLeave }: { onLeave?: () => void }) {
         }
       >
         <ConnectionList connections={connections} compact />
-        <BlockedList blocked={status?.blocked ?? []} />
+        <BlockedList blocked={status.blocked ?? []} />
       </Section>
       <Section title="Recent activity">
         {calls.length ? (

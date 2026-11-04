@@ -4,6 +4,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { PrintJob } from '@shared/types'
+import { regExe } from '@shared/winSystem'
 import { sessionTemp } from './temp'
 import { sheetStyle } from './util/printSheet'
 import { parseLpstatDefault, parseWindowsDevice } from './util/systemDefaults'
@@ -28,7 +29,7 @@ export async function printImages(job: PrintJob): Promise<{ ok: boolean; error?:
       writeFileSync(join(dir, name), Buffer.from(p.data), { mode: 0o600 })
       imgs.push(`<div class="page"><img src="${name}" style="${sheetStyle(job.fit, p.widthPt, p.heightPt)}"></div>`)
     })
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(job.jobName ?? 'Fartcrobat')}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(job.jobName ?? 'Inkmoor')}</title>
 <style>
 @page { margin: 0; }
 html, body { margin: 0; padding: 0; background: white; }
@@ -87,7 +88,7 @@ function run(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<stri
 /** The name of the system's default printer, or null when there is none or it cannot be told. */
 export async function defaultPrinterName(): Promise<string | null> {
   if (process.platform === 'win32') {
-    return parseWindowsDevice(await run('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows', '/v', 'Device']))
+    return parseWindowsDevice(await run(regExe(process.env), ['query', 'HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows', '/v', 'Device']))
   }
   // CUPS (Linux, macOS); the C locale keeps the output in English.
   return parseLpstatDefault(await run('lpstat', ['-d'], { ...process.env, LC_ALL: 'C', LANG: 'C' }))

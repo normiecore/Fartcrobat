@@ -143,7 +143,7 @@ describe('network locations', () => {
     expect(channels()).toEqual(['file:exists'])
     expect((await errorOf(call('open_document', { path: '//fileserver/other/x.pdf' }))).code).toBe('file_error')
     expect(useApp.getState().dialogs).toHaveLength(0)
-    expect(invoked.at(-1)).toEqual({ channel: 'file:exists', args: ['\\\\fileserver\\other\\x.pdf'] })
+    expect(invoked.at(-1)).toEqual({ channel: 'file:exists', args: ['\\\\fileserver\\other\\x.pdf', { allowRemote: true }] })
 
     // The OK is for that AI app: another connection (or the same app connecting again) asks anew.
     invoked.length = 0
@@ -293,7 +293,7 @@ describe('copy-restricted documents', () => {
 
     const err = await errorOf(call('export_document', { handle, format: 'text', path: 'C:\\out\\restricted.txt' }))
     expect(err.code).toBe('failed')
-    expect(err.message).toMatch(/don't allow copying or exporting its content, so Fartcrobat does not export it. You can still read it with get_page_text/)
+    expect(err.message).toMatch(/don't allow copying or exporting its content, so Inkmoor does not export it. You can still read it with get_page_text/)
     expect(invoked).toEqual([])
 
     const plain = modelFor(await openFixture('text.pdf'), 'text.pdf')
@@ -336,5 +336,165 @@ describe('initial view', () => {
     await expect(initialView.applyInitialView(failing)).rejects.toThrow('broken')
     await initialView.initialViewSettled(failing)
     await initialView.initialViewSettled({} as any)
+  })
+})
+
+
+describe('native text editing review', () => {
+  async function nextReview() {
+    const { useInlineReview } = await import('@features/agent-access/ui/reviewState')
+    await vi.waitFor(() => expect(useInlineReview.getState().review).not.toBeNull())
+    return useInlineReview.getState().review!
+  }
+  async function proposal() {
+    const e = await openFixture('text.pdf')
+    const doc = modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const b = snap.blocks.find((b: any) => b.text.includes('quick brown fox'))
+    return { e, doc, args: { revision: snap.revision, edits: [{ page: 1, block_id: b.block_id, original_text: b.text, text: b.text.replace('quick', 'swift') }] } }
+  }
+  it('preview does not ask or change text; Decline leaves the PDF alone', async () => {
+    const { e, args } = await proposal()
+    const preview = await call('edit_text', { ...args, preview_only: true })
+    expect(preview.data.applied).toBe(false)
+    expect(preview.images).toHaveLength(1)
+    expect(useApp.getState().dialogs).toHaveLength(0)
+    const pending = call('edit_text', args)
+    const review = await nextReview()
+    expect(review.title).toBe('Review text changes')
+    expect(useApp.getState().dialogs).toHaveLength(0)
+    review.cancel()
+    expect((await errorOf(pending)).code).toBe('declined')
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
+  })
+  it('Apply creates one Agent undo step and stale proposals never overwrite person changes', async () => {
+    const { e, doc, args } = await proposal()
+    const pending = call('edit_text', args)
+    await (await nextReview()).decide([0], true)
+    expect((await pending).data).toMatchObject({ applied: true, saved: false, undoLabel: 'Agent: Edit Text Batch' })
+    expect(await e.call('edit-text.text', 0)).toContain('swift brown fox')
+    await e.doc.undo()
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const stale = call('edit_text', { ...args, revision: snap.revision })
+    await nextReview()
+    await e.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [10,10,20,20], contents: 'Person note' })
+    await (doc as any).applyChanges(e.lastChanges)
+    expect((await errorOf(stale)).message).toContain('document changed')
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
+  })
+  it('saving during review keeps it open: a save is not a change to review against', async () => {
+    const { e, doc, args } = await proposal()
+    const pending = call('edit_text', args)
+    const review = await nextReview()
+    const { version } = await e.doc.saveWithVersion({})
+    await (doc as any).applyChanges(e.lastChanges)
+    await e.doc.markSaved('CV.pdf', version)
+    await (doc as any).applyChanges(e.lastChanges)
+    expect(e.lastChanges?.document).toBe(true)
+    const { useInlineReview } = await import('@features/agent-access/ui/reviewState')
+    expect(useInlineReview.getState().review).toBe(review)
+    await review.decide([0], true)
+    expect((await pending).data).toMatchObject({ applied: true })
+    expect(await e.call('edit-text.text', 0)).toContain('swift brown fox')
+  })
+  it('issues name the edit as the call numbers it, also after the person rejected some', async () => {
+    const e = await openFixture('text.pdf')
+    modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const edit = (start: string, text: (t: string) => string) => {
+      const b = snap.blocks.find((b: any) => b.text.startsWith(start))
+      return { page: 1, block_id: b.block_id, original_text: b.text, text: text(b.text) }
+    }
+    const edits = [
+      edit('Hello', (t) => t.replace('quick', 'swift')),
+      edit('Visit', (t) => t + ' and read the full documentation of the product there')
+    ]
+    const grew = (issues: any[]) => issues.find((i) => i.code === 'text_grew')
+    const preview = (await call('edit_text', { revision: snap.revision, edits, preview_only: true })).data
+    expect(grew(preview.issues)).toMatchObject({ edit: 2 })
+    expect(preview.issues.some((i: any) => 'change' in i)).toBe(false)
+    const pending = call('edit_text', { revision: snap.revision, edits })
+    const review = await nextReview()
+    await review.decide([0], false)
+    await review.decide([1], true)
+    const result = (await pending).data
+    expect(result).toMatchObject({ acceptedEdits: [2], rejectedEdits: [1] })
+    // The engine ran on the accepted edit alone; the AI app still hears about its edit 2.
+    expect(grew(result.issues)).toMatchObject({ edit: 2 })
+  })
+  it('a second proposal while a review is open is refused before it switches tabs', async () => {
+    const { args } = await proposal()
+    const pending = call('edit_text', args)
+    const review = await nextReview()
+    const active = useApp.getState().activeDocId
+    expect((await errorOf(call('edit_text', args))).code).toBe('busy')
+    expect(useApp.getState().activeDocId).toBe(active)
+    review.cancel()
+    expect((await errorOf(pending)).code).toBe('declined')
+  })
+  it('the review shows a proposal held in the worker and releases it when it ends', async () => {
+    const { e, args } = await proposal()
+    const pending = call('edit_text', args)
+    const review = await nextReview()
+    const { id, version } = review.report.proposal!
+    expect(review.report.previews).toEqual([])
+    await expect(e.call('agent-text.renderProposal', id, version, 0, { scale: 1 })).resolves.toMatchObject({ width: 612 })
+    await review.decide([0], true)
+    expect((await pending).data).toMatchObject({ applied: true, acceptedEdits: [1], rejectedEdits: [] })
+    await expect(e.call('agent-text.renderProposal', id, version, 0, { scale: 1 })).rejects.toMatchObject({ code: 'STALE_PROPOSAL' })
+  })
+  it('reflow: a rejected paragraph keeps its original wording and the result lists the items', async () => {
+    const e = await openFixture('text.pdf')
+    modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const hello = snap.blocks.find((b: any) => b.text.startsWith('Hello'))
+    const lorem = snap.blocks.find((b: any) => b.text.startsWith('Lorem'))
+    const pending = call('reflow_text', {
+      revision: snap.revision,
+      regions: [{ page: 1, rect: [72, 112, 280, 280] }, { page: 1, rect: [300, 112, 520, 280] }],
+      paragraphs: [
+        { page: 1, block_id: hello.block_id, original_text: hello.text, text: 'A rewritten opening.' },
+        { page: 1, block_id: lorem.block_id, original_text: lorem.text, text: 'A short closing paragraph.' }
+      ]
+    })
+    const review = await nextReview()
+    expect(review.mode).toBe('flow')
+    expect(review.original.changes.map((c) => c.label)).toEqual(['Paragraph 1', 'Paragraph 2'])
+    await review.decide([0], false)
+    await review.decide([1], true)
+    const result = (await pending).data
+    expect(result.acceptedItems).toEqual([{ item: 2, label: 'Paragraph 2' }])
+    expect(result.rejectedItems).toEqual([{ item: 1, label: 'Paragraph 1' }])
+    expect(result.undoLabel).toBe('Agent: Reflow Text')
+    const text = (await e.call('edit-text.text', 0)) as string
+    // Still flowed (so wrapped at the column width), in its original words.
+    expect(text.replace(/\s+/g, ' ')).toContain(hello.text.replace(/\s+/g, ' '))
+    expect(text).toContain('A short closing paragraph.')
+    expect(text).not.toContain('A rewritten opening')
+  })
+  it('rebuild: rejecting every section declines the new design', async () => {
+    const e = await openFixture('text.pdf')
+    modelFor(e, 'CV.pdf')
+    const snap = (await call('get_editable_text', { page: 1 })).data
+    const pending = call('rebuild_document', {
+      revision: snap.revision, title: 'Darren Wong',
+      sections: [{ heading: 'Summary', paragraphs: ['Analyst.'] }, { heading: 'Skills', bullets: ['SQL'] }]
+    })
+    const review = await nextReview()
+    expect(review.decisions).toEqual(['accepted', 'pending', 'pending', 'accepted'])
+    await review.decide([1, 2], false)
+    expect((await errorOf(pending)).code).toBe('declined')
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
+  })
+  it('cancellation during review closes the proposal without changing text', async () => {
+    const { e, args } = await proposal()
+    const abort = new AbortController()
+    const ctx = { ...ctxFor(), signal: abort.signal }
+    const pending = call('edit_text', args, ctx)
+    await nextReview()
+    abort.abort()
+    expect((await errorOf(pending)).code).toBe('aborted')
+    expect(useApp.getState().dialogs).toHaveLength(0)
+    expect(await e.call('edit-text.text', 0)).toContain('quick brown fox')
   })
 })

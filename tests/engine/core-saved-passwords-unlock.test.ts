@@ -87,7 +87,7 @@ describe('unlock', () => {
     expect(a.log).not.toContain('remember:right:user')
 
     const b = ports({ correct: { right: 'user' }, answers: [{ password: 'right', remember: true }] })
-    const off = { offer: false as const, reason: 'To remember passwords on this computer, Fartcrobat needs GNOME Keyring or KWallet.' }
+    const off = { offer: false as const, reason: 'To remember passwords on this computer, Inkmoor needs GNOME Keyring or KWallet.' }
     expect(await unlock(b.p, { trySaved: true, remember: async () => off, prompt: true })).toMatchObject({ remembered: false })
     expect(b.asked[0].remember).toEqual(off)
   })

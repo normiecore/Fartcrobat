@@ -420,7 +420,7 @@ export function toggleCommentVisibility(doc: DocumentModel) {
   }
 }
 
-/** Handles 'fartcrobat:edit-annotation' from the comment tools: open the pop-up or the text editor. */
+/** Handles 'inkmoor:edit-annotation' from the comment tools: open the pop-up or the text editor. */
 export async function editNewAnnotation(doc: DocumentModel, id: number, page: number) {
   try {
     const a = await annotsOf(doc).get(id, page)

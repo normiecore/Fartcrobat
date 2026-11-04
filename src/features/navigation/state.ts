@@ -103,4 +103,4 @@ export function setReadingSettings(patch: Partial<ReadingSettings>) {
 
 // ---- search panel focus request -----------------------------------------------------------------------
 
-export const SEARCH_FOCUS_EVENT = 'fartcrobat:navigation:focus-search'
+export const SEARCH_FOCUS_EVENT = 'inkmoor:navigation:focus-search'

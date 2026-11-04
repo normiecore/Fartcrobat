@@ -19,7 +19,7 @@ import { ocrOpsOf } from '@features/ocr/run'
 import { markRecognized } from '@features/ocr/scanBar'
 import { loadOcrSettings, ocrSettings } from '@features/ocr/settings'
 import { startTesseract, type TesseractSession } from '@features/ocr/tesseract'
-import { loadFile, orgOps, withPassword } from '@features/organize-pages/files'
+import { loadFile, orgOps, withUnlock } from '@features/organize-pages/files'
 import { findOnPage, type FindQuery, type PatternId } from '@features/redact/patterns'
 import type { MarkSpec } from '@features/redact/shared'
 import { currentProps, loadProps, redactOps } from '@features/redact/store'
@@ -37,7 +37,7 @@ import {
 } from './common'
 import { idList, optBoolean, optString, pagesPhrase, plural } from './act-common'
 import { AGENT_ANNOT_TYPES, NOT_COMMENTS, buildAnnotation, buildUpdate, type AgentAnnotType } from './act-annots'
-import { openErrorCode } from './act-files'
+import { certificateFailure, openErrorCode } from './act-files'
 import { formFields, planFill, resolveValues } from './act-forms'
 import { duplicatedIndices, insertedIndices, planOrganize } from './act-pages'
 import { markProps, markSpecsFromItems } from './act-redact'
@@ -140,7 +140,7 @@ const updateAnnotations: ToolHandler = async (args, ctx) => {
     if (NOT_COMMENTS.has(a.type)) throw new ToolError('invalid_args', `${id} is a ${a.type === 'Widget' ? 'form field' : a.type.toLowerCase()}, not a comment`)
   }
   for (const id of ids) {
-    if (found.get(id)?.locked) throw new ToolError('invalid_args', `Comment ${id} is locked. Ask the person to unlock it in Fartcrobat first.`)
+    if (found.get(id)?.locked) throw new ToolError('invalid_args', `Comment ${id} is locked. Ask the person to unlock it in Inkmoor first.`)
   }
   const ops = annots(doc)
   await engineTask('Could not change the comments', () =>
@@ -289,7 +289,7 @@ const markRedactions: ToolHandler = async (args, ctx) => {
       ids: marks.map((m) => m.id),
       pages: pages.map((p) => p + 1),
       undoLabel: await undoLabel(doc),
-      next: 'Marks remove nothing until apply_redactions; the person can review them in Fartcrobat.'
+      next: 'Marks remove nothing until apply_redactions; the person can review them in Inkmoor.'
     }
   }
 }
@@ -335,12 +335,17 @@ const organizePages: ToolHandler = async (args, ctx) => {
       const file = await loadFile(plan.path).catch((err) => {
         throw new ToolError(openErrorCode(String(err?.message ?? err)) === 'unsupported' ? 'unsupported' : 'file_error', `Could not read ${plan.path}: ${err?.message ?? err}`)
       })
-      const probe = await handoff(ctx, () => withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))).catch((err) => {
+      // The key of a certificate-encrypted file goes to this document's engine, so insertFiles opens it too.
+      const probe = await handoff(ctx, () =>
+        withUnlock(file, doc, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw), { actor: 'agent', failWithoutKey: true })
+      ).catch((err) => {
         if (err instanceof ToolError) throw err
+        const certificate = certificateFailure(file.name, err)
+        if (certificate) throw new ToolError(certificate.code, certificate.message)
         const message = String(err?.message ?? err)
         throw new ToolError(openErrorCode(message), `Could not open ${plan.path}: ${message}`)
       })
-      if (!probe) throw cancelled(ctx, doc, `password prompt for ${plan.path} cancelled`, `Nothing was inserted: the person cancelled the password prompt for ${file.name}.`)
+      if (!probe) throw cancelled(ctx, doc, `unlocking ${plan.path} cancelled`, `Nothing was inserted: the person cancelled unlocking ${file.name} in Inkmoor.`)
       changed = await engineTask('Could not insert the pages', () =>
         runAsAgent(doc, () =>
           orgOps(doc).insertFiles(plan.gap, [{ data: file.bytes, fileName: file.engineName, password: probe.password }])

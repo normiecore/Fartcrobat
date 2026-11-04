@@ -11,10 +11,10 @@ export const CHECK_FAILED_MESSAGE =
 export const CHECKS_ABOUT =
   'Checking asks GitHub for the latest release. Nothing about you or your documents is sent.'
 export const NOTIFY_ONLY_NOTE =
-  'On this system Fartcrobat tells you about new versions, and you download them from GitHub.'
+  'On this system Inkmoor tells you about new versions, and you download them from GitHub.'
 
 export function upToDateMessage(version: string): string {
-  return `Fartcrobat ${version} is up to date.`
+  return `Inkmoor ${version} is up to date.`
 }
 
 /** The notification card a window shows. */
@@ -45,13 +45,13 @@ export function cardView(status: UpdateStatus | null): CardView | null {
 export function cardTitle(view: CardView, version: string): string {
   switch (view) {
     case 'available':
-      return `Fartcrobat ${version} is available.`
+      return `Inkmoor ${version} is available.`
     case 'downloading':
-      return `Downloading Fartcrobat ${version}…`
+      return `Downloading Inkmoor ${version}…`
     case 'ready':
-      return `Fartcrobat ${version} is ready to install.`
+      return `Inkmoor ${version} is ready to install.`
     case 'downloadError':
-      return `Couldn't download Fartcrobat ${version}.`
+      return `Couldn't download Inkmoor ${version}.`
   }
 }
 
@@ -133,13 +133,13 @@ export function statusLine(status: UpdateStatus): string | null {
     case 'upToDate':
       return upToDateMessage(status.currentVersion)
     case 'available':
-      return `Fartcrobat ${v} is available.`
+      return `Inkmoor ${v} is available.`
     case 'downloading':
-      return `Downloading Fartcrobat ${v}… ${progressLabel(status.progress)}`
+      return `Downloading Inkmoor ${v}… ${progressLabel(status.progress)}`
     case 'ready':
-      return `Fartcrobat ${v} is ready to install. Restart Fartcrobat to finish.`
+      return `Inkmoor ${v} is ready to install. Restart Inkmoor to finish.`
     case 'error':
-      if (status.errorDuring === 'download') return `Couldn't download Fartcrobat ${v}.`
+      if (status.errorDuring === 'download') return `Couldn't download Inkmoor ${v}.`
       return status.manual ? (status.error ?? CHECK_FAILED_MESSAGE) : null
     default:
       return null

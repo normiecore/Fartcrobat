@@ -132,15 +132,19 @@ export default defineOps('compare', {
     return sessionProtection(s)?.summary ?? null
   },
 
-  /** Report bytes with this document's encryption, permissions and passwords. */
+  /**
+   * Report bytes with this document's encryption, permissions and passwords, or its certificate
+   * security (the same seed and envelopes, V5 AES-256).
+   */
   protectReport(s, bytes: Uint8Array) {
     const out = protectBytes(s.mupdf, bytes, sessionProtection(s))
     return withTransfer(out, [out.buffer as ArrayBuffer])
   },
 
   /**
-   * The password that opens a report protected like this document, or null when none is needed.
-   * Only for opening the report in a new tab: never show it or pass it on.
+   * The password that opens a report protected like this document, or null when none is needed
+   * (certificate security: the report opens with the same keys as the document). Only for opening
+   * the report in a new tab: never show it or pass it on.
    */
   openPassword(s): string | null {
     return sessionProtection(s)?.password ?? null

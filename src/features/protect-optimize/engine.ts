@@ -1,4 +1,5 @@
 import type { Permission } from '@shared/types'
+import { certificateEncryptionLabel, certificatePermissions } from '@engine/crypt'
 import { defineOps, EngineError, withTransfer } from '@engine/define'
 import type { Session } from '@engine/session'
 import { isNull } from '@engine/util/pdf'
@@ -35,6 +36,8 @@ function withSourceCopy<T>(s: Session, fn: (doc: InstanceType<Session['mupdf']['
 }
 
 function needsOpenPassword(s: Session): boolean {
+  // Certificate-encrypted documents open with a key, never a password.
+  if (s.pubsec) return false
   const bytes = s.sourceBytes
   if (!bytes) return false
   const key = `${FEATURE_ID}:needsOpenPassword`
@@ -56,6 +59,20 @@ function passwordLevel(auth: number): PasswordLevel {
 export default defineOps('protect-optimize', {
   /** Encryption, the permissions this session has, and those the file grants to everyone else. */
   security(s): SecurityStatus & { filePermissions: Record<Permission, boolean> } {
+    if (s.pubsec) {
+      // Certificate security: what the envelope that opened it allows. MuPDF sees the temporary
+      // bridge (or no encryption at all), so neither it nor the source bytes are asked. Each
+      // recipient's envelope has its own permissions; the file grants this one these.
+      const { access, permissions } = certificatePermissions(s.pubsec.permissions)
+      return {
+        encrypted: true,
+        method: encryptionLabel(certificateEncryptionLabel(s.pubsec.source)),
+        needsOpenPassword: false,
+        ownerAccess: access === 'owner',
+        permissions: { ...permissions },
+        filePermissions: { ...permissions }
+      }
+    }
     const doc = s.pdf
     let raw: string | null = null
     try {
@@ -92,6 +109,8 @@ export default defineOps('protect-optimize', {
    * permissions (owner) password also lifts the restrictions for this session.
    */
   checkPassword(s, password: string, opts: { apply?: boolean } = {}): { level: PasswordLevel } {
+    // No password opens a certificate-encrypted document, and the bridge's passwords are never tried.
+    if (s.pubsec) return { level: 'none' }
     const level = withSourceCopy(s, (d) => passwordLevel(d.authenticatePassword(password)))
     if (level === 'owner' && opts.apply) {
       // The same password derives the same file key, so this is safe on the live document.

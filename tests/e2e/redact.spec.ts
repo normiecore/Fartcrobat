@@ -10,27 +10,27 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `test-results
 /** Starts a command without waiting for it (commands that open dialogs resolve when they close). */
 async function startCommand(page: Page, id: string) {
   await page.evaluate((c) => {
-    void (window as any).__fartcrobat.runCommand(c)
+    void (window as any).__inkmoor.runCommand(c)
   }, id)
 }
 
 async function marks(page: Page): Promise<{ id: number; page: number; kind: string; rect: number[]; overlay: string }[]> {
   return page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const list = await d.ops('redact').list()
     return list.map((m: any) => ({ id: m.id, page: m.page, kind: m.kind, rect: m.rect, overlay: m.props.overlay === 'custom' ? m.props.customText : '' }))
   })
 }
 
 async function pageText(page: Page, index: number): Promise<string> {
-  return page.evaluate(async (i) => (await (window as any).__fartcrobat.getActiveDoc().pageText(i)).text, index)
+  return page.evaluate(async (i) => (await (window as any).__inkmoor.getActiveDoc().pageText(i)).text, index)
 }
 
 /** Client coordinates of a page-space point on a page. */
 async function clientPoint(page: Page, pageIndex: number, x: number, y: number): Promise<{ x: number; y: number }> {
   return page.evaluate(
     ({ pageIndex, x, y }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const el = document.querySelector(`.viewer-page[data-page-index="${pageIndex}"]`)!
       const b = el.getBoundingClientRect()
       const pg = d.state.info.pages[pageIndex]
@@ -45,7 +45,7 @@ async function clientPoint(page: Page, pageIndex: number, x: number, y: number):
 async function textRect(page: Page, pageIndex: number, needle: string): Promise<number[]> {
   return page.evaluate(
     async ({ pageIndex, needle }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const t = await d.pageText(pageIndex)
       const i = t.text.indexOf(needle)
       if (i < 0) throw new Error('text not found: ' + needle)
@@ -81,7 +81,7 @@ function streamsOf(bytes: Buffer): string[] {
 
 test('redact: find & redact emails, mark text and areas, properties, apply, remove hidden information, save', async () => {
   const { app, page } = await launch()
-  const outDir = mkdtempSync(join(tmpdir(), 'fartcrobat-redact-'))
+  const outDir = mkdtempSync(join(tmpdir(), 'inkmoor-redact-'))
   // work on a copy: saving writes back to the opened file
   const source = join(outDir, 'text.pdf')
   copyFileSync(fixturePath('text.pdf'), source)
@@ -121,7 +121,7 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     await shot(page, 'message-bar')
 
     // ---- Redact text & images tool: drag across text on page 1
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(0))
     await page.waitForTimeout(300)
     const fox = await textRect(page, 0, 'quick brown fox')
     const a = await clientPoint(page, 0, fox[0] + 1, (fox[1] + fox[3]) / 2)
@@ -234,7 +234,7 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
     // zoomed in, marks and previews still line up with the text
     await runCommand(page, 'view.zoomIn')
     await runCommand(page, 'view.zoomIn')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.goToPage(0))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.goToPage(0))
     await page.waitForTimeout(600)
     const fox2 = await textRect(page, 0, 'quick brown fox')
     const h = await clientPoint(page, 0, (fox2[0] + fox2[2]) / 2, (fox2[1] + fox2[3]) / 2)
@@ -301,7 +301,7 @@ test('redact: find & redact emails, mark text and areas, properties, apply, remo
 
     // ---- dark theme
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
     })
     await page.getByRole('button', { name: /Find text & redact/ }).click()
@@ -381,7 +381,7 @@ test('redact: remove hidden information on its own, from the Tools menu command'
     await expect(crop.locator('.fc-redact-done-list')).toContainText('Cropped content')
     await crop.locator('.ui-dialog-footer').getByRole('button', { name: 'Close' }).click()
     await expect
-      .poll(async () => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[0].mediaBox))
+      .poll(async () => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.pages[0].mediaBox))
       .toEqual([100, 100, 512, 692])
     expect(await pageText(page, 0)).toContain('Visible text inside')
   } finally {

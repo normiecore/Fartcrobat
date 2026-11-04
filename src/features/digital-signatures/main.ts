@@ -6,7 +6,7 @@ import type { MainContext } from '@main/context'
 // Same channels as ipc.ts (that file is part of the renderer project, this one of the main one).
 declare module '@shared/ipc' {
   interface IpcApi {
-    /** Folder holding Digital IDs created or imported by Fartcrobat (created if missing). */
+    /** Folder holding Digital IDs created or imported by Inkmoor (created if missing). */
     'feature:digital-signatures:idsDir': () => string
     /** Deletes a Digital ID file; only files inside the Digital IDs folder can be deleted. */
     'feature:digital-signatures:deleteId': (path: string) => boolean
@@ -24,7 +24,7 @@ export function register(ctx: MainContext) {
   ctx.handle('feature:digital-signatures:deleteId', (_e, path) => {
     const dir = resolve(idsDir())
     const target = resolve(String(path))
-    if (!target.startsWith(dir + sep)) throw new Error('Only Digital IDs stored by Fartcrobat can be deleted')
+    if (!target.startsWith(dir + sep)) throw new Error('Only Digital IDs stored by Inkmoor can be deleted')
     if (existsSync(target)) unlinkSync(target)
     return true
   })

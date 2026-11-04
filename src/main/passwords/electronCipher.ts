@@ -44,7 +44,7 @@ export function electronCipher(safeStorage: SafeStorage, o: ElectronCipherOption
   let linuxProtected: Promise<boolean> | null = null
   const probeLinux = () =>
     (linuxProtected ??= safeStorage
-      .encryptStringAsync('fartcrobat-keyring-probe')
+      .encryptStringAsync('inkmoor-keyring-probe')
       .then((b) => prefixOf(new Uint8Array(b)) !== LINUX_UNPROTECTED)
       .catch(() => false))
   let lastLinuxResult: boolean | null = null

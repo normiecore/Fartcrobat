@@ -6,10 +6,13 @@ on:
   pull_request:
   # Run it by hand from the Actions tab.
   workflow_dispatch:
+  # The release workflow runs it before publishing (release.yml, checks).
+  workflow_call:
 
-# A newer push to the same branch replaces the run still in progress.
+# A newer push to the same branch replaces the run still in progress. github.workflow is the
+# caller's name when called, so the release's run never cancels main's own CI, nor the reverse.
 concurrency:
-  group: ci-${{ github.event_name }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -24,9 +27,10 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      # Independent tools the tests use to check the files Fartcrobat writes: pypdf and poppler's
-      # pdfsig read signed PDFs, LibreOffice opens exported Word/Excel/PowerPoint files and
-      # converts Office files. Without them those checks are skipped, so CI installs them.
+      # Independent tools the tests use to check the files Inkmoor writes: pypdf and poppler's
+      # pdfsig read signed PDFs, pyHanko reads certificate-encrypted ones, LibreOffice opens
+      # exported Word/Excel/PowerPoint files and converts Office files. Without them those checks
+      # are skipped, so CI installs them.
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -41,12 +45,45 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+        env:
+          # The pyHanko checks of certificate encryption fail instead of skipping (tests/engine/pyhanko.ts).
+          INKMOOR_REQUIRE_PYHANKO: '1'
       - run: npm run build
       - name: End-to-end tests
         run: xvfb-run -a npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: agent-review-screenshots
+          path: |
+            test-results/agent-text-review.png
+            test-results/agent-text-flow-review.png
+            test-results/agent-companion.png
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: e2e-results
           path: test-results/
           retention-days: 7
+
+  # The Windows certificate store helper (src/main/certkeys/) against the stock Windows PowerShell 5.1
+  # and .NET Framework EnvelopedCms, which only Windows has. The test file imports test certificates
+  # into the runner's CurrentUser\My and AddressBook stores and removes them afterwards.
+  windows-helper:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      # vitest does not need Electron itself.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+    steps:
+      # Keep the fixtures byte for byte (git counts PDFs without NUL bytes as text).
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run tests/engine/certkeys-winstore.test.ts

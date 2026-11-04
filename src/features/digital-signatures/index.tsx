@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BadgeCheck, FileSignature, KeyRound, PenTool, ShieldCheck, Stamp } from 'lucide-react'
 import {
+  ADD_DIGITAL_ID_COMMAND,
   defineFeature,
   openPreferences,
   openRightPanel,
@@ -12,8 +13,10 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import { validateAll } from './ui/actions'
+import { isCertificateEncrypted } from './ui/encrypted'
 import { beginBox, BOX_TOOL, CertificateBoxLayer, CertificateBoxToolbar, CertificatePanel } from './ui/CertificateTool'
 import { DigitalIdsSettings } from './ui/DigitalIdsSettings'
+import { importDigitalIdFlow } from './ui/IdDialogs'
 import { SignatureFieldLayer } from './ui/FieldLayer'
 import { startSigning } from './ui/flow'
 import { ActiveDocValidator, SignatureMessageBar } from './ui/MessageBar'
@@ -29,7 +32,7 @@ interface SignFieldEvent {
   rect?: [number, number, number, number]
 }
 
-/** Always mounted: loads IDs and trust, answers forms-fill's 'fartcrobat:sign-field', tidies up. */
+/** Always mounted: loads IDs and trust, answers forms-fill's 'inkmoor:sign-field', tidies up. */
 function SignatureGlobals() {
   useEffect(() => {
     void loadIds()
@@ -51,14 +54,14 @@ function SignatureGlobals() {
         await startSigning(doc, { mode: 'sign', target: { kind: 'field', name } })
       })().catch((err) => showError(err, 'Could not start signing'))
     }
-    window.addEventListener('fartcrobat:sign-field', onSignField)
+    window.addEventListener('inkmoor:sign-field', onSignField)
     const unsub = useApp.subscribe((s, prev) => {
       if (s.docs === prev.docs) return
       const open = new Set(s.docs.map((d) => d.id))
       for (const id of Object.keys(useSigStore.getState().byDoc)) if (!open.has(id)) forgetDocument(id)
     })
     return () => {
-      window.removeEventListener('fartcrobat:sign-field', onSignField)
+      window.removeEventListener('inkmoor:sign-field', onSignField)
       unsub()
     }
   }, [])
@@ -78,7 +81,7 @@ function contextItems(doc: DocumentModel, pageIndex: number, point: [number, num
         id: 'dsig-sign-field',
         label: 'Sign Document…',
         icon: FileSignature,
-        disabled: report.locked,
+        disabled: report.locked || isCertificateEncrypted(doc),
         run: () => void startSigning(doc, { mode: 'sign', target: { kind: 'field', name: unsigned.name } })
       }
     ]
@@ -137,6 +140,17 @@ export default defineFeature({
       requiresDocument: false,
       keywords: ['digital id', 'certificate', 'pfx', 'p12', 'trusted certificates'],
       run: () => openPreferences('digital-ids')
+    },
+    {
+      // "Add Digital ID..." when no key opens a certificate-encrypted file (src/renderer/src/app/certificates.ts).
+      id: ADD_DIGITAL_ID_COMMAND,
+      label: 'Add Digital ID…',
+      icon: KeyRound,
+      requiresDocument: false,
+      keywords: ['import', 'digital id', 'certificate', 'pfx', 'p12'],
+      run: async () => {
+        await importDigitalIdFlow()
+      }
     }
   ],
   menus: [

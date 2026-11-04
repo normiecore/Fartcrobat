@@ -106,7 +106,7 @@ export function loadImage(bytes: Uint8Array, mime: string): Promise<HTMLImageEle
     }
     img.onerror = () => {
       URL.revokeObjectURL(url)
-      reject(new Error('This file is not an image Fartcrobat can read. Use a PNG or JPEG file.'))
+      reject(new Error('This file is not an image Inkmoor can read. Use a PNG or JPEG file.'))
     }
     img.src = url
   })

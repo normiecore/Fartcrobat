@@ -89,7 +89,7 @@ function DocMessageBar({ doc }: { doc: DocumentModel }) {
   if (!summary || summary.fillable === 0) return null
   const canFill = info.permissions.form !== false || info.permissions.annotate !== false
   const message = info.hasXfa
-    ? 'This form uses dynamic XFA, which Fartcrobat does not support. Its static form fields are shown and can be filled in.'
+    ? 'This form uses dynamic XFA, which Inkmoor does not support. Its static form fields are shown and can be filled in.'
     : canFill
       ? 'This document contains interactive form fields.'
       : "This document contains interactive form fields, but its security settings don't allow filling them in."

@@ -18,6 +18,7 @@ import {
   type DocumentModel
 } from '@renderer/sdk'
 import type { SignRequest, SignTarget } from '../types'
+import { refuseCertificateEncrypted } from './encrypted'
 import { SignDialog, type SignDialogResult } from './SignDialog'
 import { loadIds, loadTrusted, sigOps, useSigStore, validateDocument } from './store'
 
@@ -41,6 +42,8 @@ function suggestedPath(doc: DocumentModel): string {
 
 /** Signs or certifies the document. Resolves true when a signed copy was written and opened. */
 export async function startSigning(doc: DocumentModel, opts: StartSigningOptions): Promise<boolean> {
+  // Every way to sign ends here (tools, commands, clicks on signature fields, agents).
+  if (await refuseCertificateEncrypted(doc)) return false
   let cap
   try {
     cap = await sigOps(doc).capability()

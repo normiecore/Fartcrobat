@@ -104,7 +104,7 @@ test('compares compare-a.pdf with compare-b.pdf from an open document', async ()
 
     // Editing a compared document marks the results as out of date; Compare again refreshes them.
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       await d.ops('annots').create(0, { type: 'Square', rect: [300, 300, 400, 400], color: '#ff0000' })
     })
     const stale = pane.locator('.fc-compare-stale')
@@ -128,10 +128,10 @@ test('compares compare-a.pdf with compare-b.pdf from an open document', async ()
     await page.getByRole('radio', { name: /Side by side/ }).click()
 
     // Export report: a new tab with the summary and the annotated new page.
-    const before = await page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length)
+    const before = await page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.length)
     await page.locator('.shell-leftpane').getByRole('button', { name: 'Export report' }).click()
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.length))
       .toBe(before + 1)
     const st = await activeDocState(page)
     expect(st?.title).toMatch(/^Compare report/)
@@ -140,7 +140,7 @@ test('compares compare-a.pdf with compare-b.pdf from an open document', async ()
     await page.waitForTimeout(500)
     await page.screenshot({ path: 'test-results/compare-report.png' })
     const annots = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       return (await d.ops('annots').list(1)).map((a: any) => `${a.type}: ${a.contents}`)
     })
     expect(annots).toEqual(['Highlight: Replaced “$1,234.56” with “$9,876.54”', 'Highlight: Replaced “finance” with “audit”'])
@@ -222,7 +222,7 @@ test('compares two files from Home: page changes, filters, keyboard and dark the
 
     // Dark theme.
     await page.evaluate(() => {
-      const { useApp } = (window as any).__fartcrobat
+      const { useApp } = (window as any).__inkmoor
       useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
     })
     await items.nth(3).click()

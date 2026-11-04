@@ -15,7 +15,8 @@ import {
   userApplicationsDir
 } from '@main/util/linuxDesktop'
 import { sheetStyle } from '@main/util/printSheet'
-import { isFartcrobatProgId, parseLpstatDefault, parseWindowsDevice, regValue, WINDOWS_PROG_ID } from '@main/util/systemDefaults'
+import { keepSpellCheckOffline, NO_DICTIONARY_DOWNLOADS, spellCheckInWindows } from '@main/util/spellcheck'
+import { isInkmoorProgId, parseLpstatDefault, parseWindowsDevice, regValue, WINDOWS_PROG_ID } from '@main/util/systemDefaults'
 
 const ROOT = resolve(__dirname, '../..')
 
@@ -37,10 +38,10 @@ describe('default PDF app on Windows', () => {
   it('reads the whole UserChoice ProgId, spaces included', () => {
     const out = '\r\nHKEY_CURRENT_USER\\...\\.pdf\\UserChoice\r\n    ProgId    REG_SZ    PDF Document\r\n'
     expect(regValue(out, 'ProgId')).toBe('PDF Document')
-    expect(isFartcrobatProgId('PDF Document')).toBe(false)
-    expect(isFartcrobatProgId('Acrobat.Document.DC')).toBe(false)
-    expect(isFartcrobatProgId(regValue(`    ProgId    REG_SZ    ${WINDOWS_PROG_ID}`, 'ProgId')!)).toBe(true)
-    expect(isFartcrobatProgId('Applications\\Fartcrobat.exe')).toBe(true)
+    expect(isInkmoorProgId('PDF Document')).toBe(false)
+    expect(isInkmoorProgId('Acrobat.Document.DC')).toBe(false)
+    expect(isInkmoorProgId(regValue(`    ProgId    REG_SZ    ${WINDOWS_PROG_ID}`, 'ProgId')!)).toBe(true)
+    expect(isInkmoorProgId('Applications\\Inkmoor.exe')).toBe(true)
   })
 
   it('matches the ProgId the installer registers', () => {
@@ -50,7 +51,7 @@ describe('default PDF app on Windows', () => {
     expect(yml).not.toMatch(/^fileAssociations:/m)
     const nsh = readFileSync(join(ROOT, 'build/installer.nsh'), 'utf8')
     expect(nsh).toContain(`".pdf" "${WINDOWS_PROG_ID}"`)
-    expect(nsh).toContain('Software\\RegisteredApplications" "Fartcrobat"')
+    expect(nsh).toContain('Software\\RegisteredApplications" "Inkmoor"')
   })
 })
 
@@ -74,8 +75,8 @@ describe('Linux desktop entry', () => {
   })
 
   it('writes an entry that starts the AppImage with the files, marked as generated', () => {
-    const entry = desktopEntry('/home/me/Apps/Fartcrobat 0.1.0.AppImage', 'fartcrobat')
-    expect(entry).toContain('Exec="/home/me/Apps/Fartcrobat 0.1.0.AppImage" %F\n')
+    const entry = desktopEntry('/home/me/Apps/Inkmoor 0.1.0.AppImage', 'inkmoor')
+    expect(entry).toContain('Exec="/home/me/Apps/Inkmoor 0.1.0.AppImage" %F\n')
     expect(entry).toContain('MimeType=application/pdf;')
     expect(entry).toContain(GENERATED_MARKER)
     const p = join(home, 'x.desktop')
@@ -86,37 +87,37 @@ describe('Linux desktop entry', () => {
   it('escapes special characters in the program path', () => {
     expect(desktopExecQuote('/opt/a"b`c$d\\e%f')).toBe('"/opt/a\\\\"b\\\\`c\\\\$d\\\\\\\\e%%f"')
   })
-  it('follows an AppImage an update renamed, only in entries Fartcrobat wrote for that file', () => {
-    const from = '/home/me/Apps/Fartcrobat-0.2.0.AppImage'
-    const to = '/home/me/Apps/Fartcrobat-0.2.1.AppImage'
-    const entry = desktopEntry(from, 'fartcrobat')
-    expect(retargetDesktopEntry(entry, from, to)).toBe(desktopEntry(to, 'fartcrobat'))
+  it('follows an AppImage an update renamed, only in entries Inkmoor wrote for that file', () => {
+    const from = '/home/me/Apps/Inkmoor-0.2.0.AppImage'
+    const to = '/home/me/Apps/Inkmoor-0.2.1.AppImage'
+    const entry = desktopEntry(from, 'inkmoor')
+    expect(retargetDesktopEntry(entry, from, to)).toBe(desktopEntry(to, 'inkmoor'))
     // Another install the person made the default, or an entry a package installed.
-    expect(retargetDesktopEntry(desktopEntry('/opt/Fartcrobat/fartcrobat', 'fartcrobat'), from, to)).toBeNull()
+    expect(retargetDesktopEntry(desktopEntry('/opt/Inkmoor/inkmoor', 'inkmoor'), from, to)).toBeNull()
     expect(retargetDesktopEntry(entry.replace(GENERATED_MARKER, ''), from, to)).toBeNull()
   })
 })
 
 describe('AppImage', () => {
   const mount = '/tmp/.mount_FartcrAb12'
-  const own = { APPIMAGE: '/home/me/Apps/Fartcrobat.AppImage', APPDIR: mount }
+  const own = { APPIMAGE: '/home/me/Apps/Inkmoor.AppImage', APPDIR: mount }
   const none = () => null
 
   it('is the file this process runs from only when execPath is inside APPDIR', () => {
-    expect(appImageFile(`${mount}/fartcrobat`, own, none)).toBe(own.APPIMAGE)
-    expect(appImageFile(`${mount}/fartcrobat`, { ...own, APPDIR: `${mount}/` }, none)).toBe(own.APPIMAGE)
+    expect(appImageFile(`${mount}/inkmoor`, own, none)).toBe(own.APPIMAGE)
+    expect(appImageFile(`${mount}/inkmoor`, { ...own, APPDIR: `${mount}/` }, none)).toBe(own.APPIMAGE)
     // Passed on by another AppImage that started this copy.
-    expect(appImageFile('/opt/Fartcrobat/fartcrobat', own, none)).toBeNull()
-    expect(appImageFile(`${mount}x/fartcrobat`, own, none)).toBeNull()
-    expect(appImageFile(`${mount}/fartcrobat`, { APPIMAGE: own.APPIMAGE }, none)).toBeNull()
-    expect(appImageFile(`${mount}/fartcrobat`, { APPDIR: mount }, none)).toBeNull()
-    expect(appImageFile('/fartcrobat', { ...own, APPDIR: '/' }, none)).toBeNull()
+    expect(appImageFile('/opt/Inkmoor/inkmoor', own, none)).toBeNull()
+    expect(appImageFile(`${mount}x/inkmoor`, own, none)).toBeNull()
+    expect(appImageFile(`${mount}/inkmoor`, { APPIMAGE: own.APPIMAGE }, none)).toBeNull()
+    expect(appImageFile(`${mount}/inkmoor`, { APPDIR: mount }, none)).toBeNull()
+    expect(appImageFile('/inkmoor', { ...own, APPDIR: '/' }, none)).toBeNull()
     // A mount under a linked temporary folder: execPath is the resolved path.
     const linked = { ...own, APPDIR: '/home/me/tmp/.mount_FartcrAb12' }
-    expect(appImageFile(`${mount}/fartcrobat`, linked, (p) => (p === linked.APPDIR ? mount : null))).toBe(
+    expect(appImageFile(`${mount}/inkmoor`, linked, (p) => (p === linked.APPDIR ? mount : null))).toBe(
       own.APPIMAGE
     )
-    expect(appImageFile(`${mount}/fartcrobat`, linked, none)).toBeNull()
+    expect(appImageFile(`${mount}/inkmoor`, linked, none)).toBeNull()
   })
 })
 
@@ -136,5 +137,42 @@ describe('Content Security Policy', () => {
     expect(meta).toBe(RENDERER_CSP)
     expect(RENDERER_CSP).toContain("connect-src 'self' blob: data:")
     expect(RENDERER_CSP).not.toContain("'unsafe-eval'")
+  })
+})
+
+describe('spell checking stays offline', () => {
+  const session = () => {
+    const languages: string[][] = []
+    const urls: string[] = []
+    return {
+      languages,
+      urls,
+      setSpellCheckerLanguages: (l: string[]) => languages.push(l),
+      setSpellCheckerDictionaryDownloadURL: (u: string) => urls.push(u)
+    }
+  }
+
+  it('gives every session on Linux no languages, so Chromium downloads no dictionary', () => {
+    const s = session()
+    keepSpellCheckOffline(s, 'linux')
+    expect(s.languages).toEqual([[]])
+    expect(s.urls).toEqual([])
+    expect(spellCheckInWindows('linux')).toBe(false)
+  })
+
+  it('keeps the system checker on Windows, with dictionary downloads pointed at this computer', () => {
+    const s = session()
+    keepSpellCheckOffline(s, 'win32')
+    expect(s.languages).toEqual([])
+    expect(s.urls).toEqual([NO_DICTIONARY_DOWNLOADS])
+    expect(new URL(NO_DICTIONARY_DOWNLOADS).hostname).toBe('127.0.0.1')
+    expect(spellCheckInWindows('win32')).toBe(true)
+  })
+
+  it('leaves macOS on its own checker, which downloads nothing', () => {
+    const s = session()
+    keepSpellCheckOffline(s, 'darwin')
+    expect([s.languages, s.urls]).toEqual([[], []])
+    expect(spellCheckInWindows('darwin')).toBe(true)
   })
 })

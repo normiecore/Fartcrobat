@@ -202,7 +202,7 @@ describe('remember password flow (MuPDF, the store on disk, a fake cipher)', () 
     await app.open(original)
     app.answers = [{ password: 'u1', remember: true }]
     app.cipher.state.unavailable = 'no-keyring'
-    app.rememberOffer = { offer: false, reason: 'To remember passwords on this computer, Fartcrobat needs GNOME Keyring or KWallet.' }
+    app.rememberOffer = { offer: false, reason: 'To remember passwords on this computer, Inkmoor needs GNOME Keyring or KWallet.' }
     await app.open(original)
     app.answers = [null]
     expect(await app.open(original)).toBeNull()

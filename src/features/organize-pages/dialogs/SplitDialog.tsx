@@ -91,7 +91,7 @@ export async function runSplit(
           Array.from({ length: p.end - p.start + 1 }, (_, k) => p.start + k)
         )
         const name = settings.noOverwrite
-          ? await uniqueName(names[i], (n) => invoke('file:exists', joinPath(settings.folder, n)))
+          ? await uniqueName(names[i], (n) => invoke('file:exists', joinPath(settings.folder, n), { allowRemote: true }))
           : names[i]
         await writeFile(joinPath(settings.folder, name), bytes)
         written.push(name)

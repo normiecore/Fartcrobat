@@ -265,7 +265,7 @@ export default defineOps('page-marks', {
       const pages = removeMarks(s, type)
       if (!pages.length)
         throw new EngineError(
-          `This document has no ${MARK_NAMES[type].toLowerCase()} made with Fartcrobat`,
+          `This document has no ${MARK_NAMES[type].toLowerCase()} made with Inkmoor`,
           'NO_MARKS'
         )
       s.touch(...pages)

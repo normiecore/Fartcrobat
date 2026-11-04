@@ -15,7 +15,7 @@ declare module '@shared/ipc' {
     'feature:agent-access:allow': (clientName?: string) => void
     /**
      * The window's runner listens for calls now. Returns how long a call may run before it answers
-     * still_running, when a test shortens it (FARTCROBAT_AGENT_WAIT_MS, unpackaged builds only).
+     * still_running, when a test shortens it (INKMOOR_AGENT_WAIT_MS, unpackaged builds only).
      */
     'feature:agent-access:ready': () => { waitMs?: number }
     /** Brings the calling window to the front (a confirmation is waiting for the person). */
@@ -27,6 +27,7 @@ declare module '@shared/ipc' {
      * it in Claude Desktop. Returns '' on success, else the message to show.
      */
     'feature:agent-access:installExtension': () => string
+    'feature:agent-access:chatgptConfig': () => { command: string; args: string[]; env: Record<string, string>; toml: string }
   }
 }
 

@@ -1,11 +1,27 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { LEGACY, PRODUCT_NAME, productNames } from '@shared/identity'
 
-/** The desktop entry name the .deb package installs (package.json desktopName). */
-export const DESKTOP_FILE = 'fartcrobat.desktop'
-/** Marks desktop entries Fartcrobat wrote itself (AppImage / tar.gz installs), so it may update them. */
-export const GENERATED_MARKER = 'X-Fartcrobat-Generated=true'
+/**
+ * The desktop entry name the .deb package installs (package.json desktopName). It keeps its first
+ * name for good (src/shared/identity.ts): xdg-mime defaults point at it.
+ */
+export const DESKTOP_FILE = LEGACY.desktopFile
+const markerFor = (name: string) => `X-${name.replace(/[^A-Za-z0-9-]/g, '')}-Generated=true`
+/**
+ * Marks desktop entries the app wrote itself (AppImage / tar.gz installs), so it may update them.
+ * The key carries the product name; entries written before a rename carry the old one.
+ */
+export const GENERATED_MARKER = markerFor(PRODUCT_NAME)
+/** The marker of entries written before the rename (src/shared/identity.ts). */
+export const LEGACY_GENERATED_MARKER = markerFor(LEGACY.productName)
+/** Every marker an entry this app wrote may carry, current first. */
+export const GENERATED_MARKERS: readonly string[] = [...new Set(productNames().map(markerFor))]
+
+/** Whether desktop entry text was written by this app (under any of its names). */
+export const hasGeneratedMarker = (content: string): boolean =>
+  content.split('\n').some((line) => GENERATED_MARKERS.includes(line.trim()))
 
 type Env = Record<string, string | undefined>
 
@@ -30,10 +46,10 @@ export function findDesktopFile(env: Env = process.env, home = homedir()): strin
   return null
 }
 
-/** Whether the desktop entry at `path` was written by Fartcrobat (not by a package). */
+/** Whether the desktop entry at `path` was written by Inkmoor (not by a package). */
 export function isGeneratedDesktopFile(path: string): boolean {
   try {
-    return readFileSync(path, 'utf8').includes(GENERATED_MARKER)
+    return hasGeneratedMarker(readFileSync(path, 'utf8'))
   } catch {
     return false
   }
@@ -48,12 +64,12 @@ export function desktopExecQuote(path: string): string {
   return quoted.replace(/\\/g, '\\\\')
 }
 
-/** A desktop entry that opens PDFs (and the other types Fartcrobat reads) with `executable`. */
+/** A desktop entry that opens PDFs (and the other types Inkmoor reads) with `executable`. */
 export function desktopEntry(executable: string, icon: string): string {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=Fartcrobat',
+    `Name=${PRODUCT_NAME}`,
     'GenericName=PDF Editor',
     'Comment=Read, edit, comment on and sign PDF documents',
     `Exec=${desktopExecQuote(executable)} %F`,
@@ -62,18 +78,30 @@ export function desktopEntry(executable: string, icon: string): string {
     'Categories=Office;Viewer;',
     'MimeType=application/pdf;',
     'Keywords=pdf;acrobat;reader;editor;sign;forms;',
-    'StartupWMClass=Fartcrobat',
+    `StartupWMClass=${PRODUCT_NAME}`,
     GENERATED_MARKER,
     ''
   ].join('\n')
 }
 
 /**
+ * The entry this app writes for `executable`, when `content` is an entry it wrote earlier for the
+ * same executable that differs (written under the name it had before a rename, say); null when
+ * there is nothing to change or the entry is not this install's.
+ */
+export function refreshedDesktopEntry(content: string, executable: string, icon: string): string | null {
+  if (!hasGeneratedMarker(content)) return null
+  if (!content.split('\n').includes(`Exec=${desktopExecQuote(executable)} %F`)) return null
+  const fresh = desktopEntry(executable, icon)
+  return content === fresh ? null : fresh
+}
+
+/**
  * A generated entry that starts `from`, changed to start `to` instead; null when `content` is not
- * a generated entry or starts something else (another Fartcrobat install the person chose).
+ * a generated entry or starts something else (another Inkmoor install the person chose).
  */
 export function retargetDesktopEntry(content: string, from: string, to: string): string | null {
-  if (!content.includes(GENERATED_MARKER)) return null
+  if (!hasGeneratedMarker(content)) return null
   const lines = content.split('\n')
   const exec = `Exec=${desktopExecQuote(from)} %F`
   if (!lines.includes(exec)) return null

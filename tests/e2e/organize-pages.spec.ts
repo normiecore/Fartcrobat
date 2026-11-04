@@ -14,7 +14,7 @@ async function stubOpenDialog(app: ElectronApplication, paths: string[]) {
 
 async function pageTexts(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const out: string[] = []
     for (let i = 0; i < d.pageCount; i++) out.push(await d.core.text.plain(i))
     return out
@@ -24,7 +24,7 @@ async function pageTexts(page: Page): Promise<string[]> {
 /** Chapter numbers (or a short tag) of every page of the active document, from its text. */
 async function pageOrder(page: Page): Promise<string[]> {
   return page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const out: string[] = []
     for (let i = 0; i < d.pageCount; i++) {
       const t: string = await d.core.text.plain(i)
@@ -37,7 +37,7 @@ async function pageOrder(page: Page): Promise<string[]> {
 
 async function rotations(page: Page): Promise<number[]> {
   return page.evaluate(() =>
-    (window as any).__fartcrobat.getActiveDoc().state.info.pages.map((p: any) => p.rotation)
+    (window as any).__inkmoor.getActiveDoc().state.info.pages.map((p: any) => p.rotation)
   )
 }
 
@@ -212,7 +212,7 @@ test('combine files into a new document with one bookmark per file', async () =>
     expect(st?.pageCount).toBe(3)
     expect(st?.dirty).toBe(true)
     const outline = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const o = await d.core.nav.outline()
       return o.map((b: any) => [b.title, b.dest?.page])
     })
@@ -276,7 +276,7 @@ test('organize dialogs: rotate, page labels, insert from file, replace, split, c
     await expect
       .poll(() =>
         page.evaluate(() =>
-          (window as any).__fartcrobat.getActiveDoc().state.info.pages.map((p: any) => p.label)
+          (window as any).__inkmoor.getActiveDoc().state.info.pages.map((p: any) => p.label)
         )
       )
       .toEqual(['i', 'ii', '3', '4', '5', '6'])
@@ -328,7 +328,7 @@ test('organize dialogs: rotate, page labels, insert from file, replace, split, c
     await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(7)
 
     // Split into files of 4 pages in a folder.
-    const outDir = mkdtempSync(join(tmpdir(), 'fartcrobat-split-'))
+    const outDir = mkdtempSync(join(tmpdir(), 'inkmoor-split-'))
     await stubOpenDialog(app, [outDir])
     await page.locator('.fc-organize-pages-toolbar').getByRole('button', { name: 'Split' }).click()
     dialog = page.getByRole('dialog')
@@ -459,7 +459,7 @@ test('organize pages: keyboard moves, copy by dragging, clipboard and Delete Pag
     await cell(page, 3).dblclick()
     await expect(page.locator('.fc-organize-pages-view')).toHaveCount(0)
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view?.visiblePages().includes(3)))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view?.visiblePages().includes(3)))
       .toBe(true)
   } finally {
     await app.close()
@@ -504,7 +504,7 @@ test('combine files: page ranges, open documents and sorting', async () => {
     // (the third page of mixed-sizes.pdf has no extractable text)
     expect(await pageOrder(page)).toEqual(['C2', 'other', 'other', 'blank'])
     const outline = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const o = await d.core.nav.outline()
       return o.map((b: any) => [b.title, b.dest?.page, b.children.map((c: any) => c.title)])
     })
@@ -563,7 +563,7 @@ test('organize pages: narrow window, copy pages to another document, 640 pages',
     await page.mouse.up()
     const docsState = () =>
       page.evaluate(() =>
-        (window as any).__fartcrobat.useApp
+        (window as any).__inkmoor.useApp
           .getState()
           .docs.map((d: any) => ({ title: d.state.title, pages: d.pageCount, dirty: d.state.dirty }))
       )
@@ -584,7 +584,7 @@ test('organize pages: narrow window, copy pages to another document, 640 pages',
     await page.locator('.shell-tab', { hasText: 'text.pdf' }).click()
     await waitForThumbs(page, 5)
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       for (let k = 0; k < 7; k++) {
         const n = (await d.core.doc.info()).pageCount
         await d.ops('pages').duplicate([...Array(n).keys()], n)
@@ -616,7 +616,7 @@ test('extract pages as separate files and split by bookmarks', async () => {
     await waitForThumbs(page, 5)
 
     // Extract pages 2-3 as separate files, deleting them afterwards.
-    const extractDir = mkdtempSync(join(tmpdir(), 'fartcrobat-extract-'))
+    const extractDir = mkdtempSync(join(tmpdir(), 'inkmoor-extract-'))
     await stubOpenDialog(app, [extractDir])
     await cell(page, 1).click()
     await cell(page, 2).click({ modifiers: ['Shift'] })
@@ -634,7 +634,7 @@ test('extract pages as separate files and split by bookmarks', async () => {
     await expect.poll(() => pageOrder(page)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5'])
 
     // Split at the top-level bookmarks, naming the files after them.
-    const splitDir = mkdtempSync(join(tmpdir(), 'fartcrobat-split-'))
+    const splitDir = mkdtempSync(join(tmpdir(), 'inkmoor-split-'))
     await stubOpenDialog(app, [splitDir])
     await page.locator('.fc-organize-pages-toolbar').getByRole('button', { name: 'Split' }).click()
     dialog = page.getByRole('dialog')

@@ -1,9 +1,9 @@
 # Feature: updates (find, download and install new releases)
 
-Fartcrobat checks GitHub for a newer release, tells the person with a notification in the bottom
+Inkmoor checks GitHub for a newer release, tells the person with a notification in the bottom
 right corner, downloads the update with a progress bar when they click Download, and installs it
 when they restart (or the next time they quit). The current version is shown in Help > About
-Fartcrobat and in Preferences > Updates.
+Inkmoor and in Preferences > Updates.
 
 Contracts: `src/shared/updates.ts` (status, phases, IPC channels), the event `updates:status` in
 `src/shared/ipc.ts`, the preference `checkForUpdates`. Code: `src/features/updates/` (`main.ts` owns
@@ -41,7 +41,7 @@ On 'notify', Download opens the release page in the browser.
 AppImages, in detail:
 
 - The AppImage runtime sets `APPIMAGE` (the file) and `APPDIR` (its temporary mount), and every
-  program an AppImage starts inherits both: a .deb or .tar.gz Fartcrobat opened from an AppImage
+  program an AppImage starts inherits both: a .deb or .tar.gz Inkmoor opened from an AppImage
   app (xdg-open), or started by an AI app shipped as an AppImage through the agent shim, would see
   that other app's file, and an update would delete it. So an install counts as an AppImage only
   when `process.execPath` is inside `APPDIR` (`src/main/util/appImage.ts`, shared with agent
@@ -50,7 +50,7 @@ AppImages, in detail:
   person cannot write to (an administrator put it in /opt), that fails, so it is 'notify' there.
   Should the installer still fail to start at Restart now, the app starts again rather than
   closing with no update.
-- Release AppImages have no version in their file name (`Fartcrobat-x86_64.AppImage`,
+- Release AppImages have no version in their file name (`Inkmoor-x86_64.AppImage`,
   `electron-builder.yml` `appImage.artifactName`), so the update replaces the file in place. For a
   file whose name has a version in it, electron-updater names the new file after the new version
   and deletes the old one; the app then points the desktop entry it wrote as the default PDF app
@@ -61,19 +61,19 @@ AppImages, in detail:
 
 - First automatic check 30 s after start-up, then every 6 hours while the app runs, when the
   preference and the machine policy allow it. Help > Check for Updates... checks at once.
-- New version found: a card in the bottom right corner of every window: "Fartcrobat 0.2.0 is
+- New version found: a card in the bottom right corner of every window: "Inkmoor 0.2.0 is
   available. You have 0.1.0." Buttons: Download (primary), What's new (opens the release page),
   and a close button (hides it until the next start, or until a newer version turns up).
 - Download: the card shows a progress bar, percentage and size ("52 of 115 MB") and Cancel. The
   download continues if the card is closed; the card comes back when it is ready. A download that
   was cancelled, even just as it finished, never installs when the app quits.
-- Downloaded: "Fartcrobat 0.2.0 is ready to install. Restart to finish." Buttons: Restart now,
-  Later. Later: the update installs silently the next time Fartcrobat quits.
+- Downloaded: "Inkmoor 0.2.0 is ready to install. Restart to finish." Buttons: Restart now,
+  Later. Later: the update installs silently the next time Inkmoor quits.
 - Restart now goes through the normal quit flow first: every window asks about its unsaved
   documents, and Cancel stops the restart (the update stays ready). Only once every window has
   closed does the installer run, so it never closes the app over unsaved work. Then the new
   version starts.
-- Manual check: "Fartcrobat 0.1.0 is up to date." as a toast, or the card when there is an update.
+- Manual check: "Inkmoor 0.1.0 is up to date." as a toast, or the card when there is an update.
   Automatic checks that fail stay silent; manual ones say "Couldn't check for updates. Check your
   internet connection and try again."
 - Download failure: the card says so, with Try again and Download from GitHub.
@@ -88,7 +88,7 @@ AppImages, in detail:
 - Preferences > Updates: "Check for updates automatically" (default on), the current version,
   when it last checked, and Check Now.
 - Machine policy (`src/main/policy.ts`, section `autoUpdate`): Windows REG_DWORD `AutoUpdate` under
-  `HKLM\SOFTWARE\Policies\Fartcrobat` (0 off, 1 on), `policy.json`
+  `HKLM\SOFTWARE\Policies\Inkmoor` (0 off, 1 on), `policy.json`
   `{"autoUpdate":{"enabled":false}}` on macOS and Linux. Off (or unreadable) means no checks at all,
   manual ones included; the switch is read-only and Help > Check for Updates... says updates are
   managed by the organisation. On forces automatic checks on: the switch shows on and read-only,
@@ -108,6 +108,16 @@ AppImages, in detail:
   builds with `--publish never`; its publish job uploads `latest.yml`, `latest-mac.yml`,
   `latest-linux.yml` and the `.blockmap` files with the installers, and fails if one is missing.
 - v0.1.0 has no updater: people on it install the next version by hand once.
+- One file per kind of computer, named in README.md (Install) and at the top of each release's
+  notes: `Inkmoor-Setup-<v>-x64.exe` and `-arm64.exe`, `Inkmoor-<v>-arm64.dmg` and
+  `-x64.dmg`, `inkmoor_<v>_amd64.deb`, `Inkmoor-x86_64.AppImage`.
+  `scripts/release-downloads.mjs` keeps that table, and each release build checks its files against
+  it (and that it made no other installer). 0.2.0 also shipped one Windows installer for both
+  processors; from 0.2.1 on `nsis.buildUniversalInstaller` is off. An install keeps the installer it
+  ran for its next update's differential download, and the updater picks the installer for its own
+  processor, so an install made with the combined installer gets a full download once. The arm64
+  installer stops on an x64 PC and names the x64 file (`build/installer.nsh`, `customInit`): it
+  would otherwise unpack nothing there.
 - A release written on GitHub first must be saved as a draft, not published, until the workflow
   has attached the installers: installed copies offer the latest published release at once, and
   would find no update metadata (or, while files are being replaced, metadata for files that are
@@ -122,12 +132,24 @@ AppImages, in detail:
   electron-updater with a stand-in for it (`main/electronUpdater.test.ts`: the staging ID, a late
   Cancel, an install that fails, the AppImage rename).
 - End to end: `tests/e2e/updates.spec.ts` against an unpackaged build with
-  `FARTCROBAT_UPDATE_URL` (a local server standing in for github.com) and `FARTCROBAT_FAKE_UPDATER`
+  `INKMOOR_UPDATE_URL` (a local server standing in for github.com) and `INKMOOR_FAKE_UPDATER`
   (a stand-in for electron-updater that reports progress and records the install call). Both work
-  only in unpackaged builds, so the spec skips itself when `FARTCROBAT_EXECUTABLE` points at a
+  only in unpackaged builds, so the spec skips itself when `INKMOOR_EXECUTABLE` points at a
   packaged build. Every other spec runs with checks off (`launch` sets
-  `FARTCROBAT_UPDATE_CHECKS=0`, the one test variable packaged builds honour, and only to turn
+  `INKMOOR_UPDATE_CHECKS=0`, the one test variable packaged builds honour, and only to turn
   automatic checks off, so runs against a packaged build ask github.com nothing either).
-- Manual, before relying on it: publish 0.2.0 with this feature, then 0.2.1, and update a Windows
-  per-user install, a Windows per-machine install and an AppImage from 0.2.0 to 0.2.1; check that a
-  restart with unsaved changes asks first, and that the policy value hides everything.
+- Update rehearsal (`tests/update-rehearsal/README.md`): the released previous version, installed
+  for real from each kind of download, finds the next version on a fake GitHub (an HTTPS proxy that
+  answers for github.com). The AppImage and the Windows installer update to a build of it: Restart
+  now asks about unsaved changes first, Later installs on quit, the download is differential, a
+  download that does not match its checksum is refused. The Mac app and the `.deb` (on Ubuntu 24.04
+  with AppArmor limiting user namespaces, as desktops have it) offer it and open its release page.
+  The policy stops every request. Linux AppImage with `linux.sh` (root, throwaway machine);
+  everything in `.github/workflows/update-rehearsal.yml`. On 20 Oct 2026 the released 0.2.0 passed
+  all of it: the AppImage, the Windows installer (per user and per machine, x64 and combined), the
+  Mac `.dmg` and the `.deb`.
+  The Windows runners elevate without asking, so a per-machine update's UAC prompt is not covered.
+- Manual, after publishing a release: start the previous version once on each platform and let it
+  update from the real github.com, including a Windows per-machine install on a machine with UAC
+  on, once as an administrator and once as a standard user (and cancel the prompt once: the
+  installer quits and Inkmoor stays closed).

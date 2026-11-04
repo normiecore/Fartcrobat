@@ -529,7 +529,7 @@ export async function buildDocx(layout: DocLayout, opts: WordOptions, meta: { ti
       : flowingSections(layout, opts, numbering, comments)
   const font = bodyFont(layout)
   const doc = new Document({
-    creator: 'Fartcrobat',
+    creator: 'Inkmoor',
     title: meta.title,
     ...(meta.author ? { lastModifiedBy: meta.author } : {}),
     styles: {

@@ -470,12 +470,17 @@ describe('list_signatures output', () => {
     expect(unknown.checkedSavedFile).toBe(true)
     const trusted = signaturesOut(report, new Set(['AB']))
     expect(trusted.signatures[0]).toMatchObject({ status: 'valid', identityTrusted: true })
+
+    // Anything but later signatures written after the signature caps it, also for agents.
+    const later = (extra: Partial<SignatureReport>) => signaturesOut({ ...report, signatures: [{ ...r, coversWholeFile: false, revisionEnd: 500, ...extra }] }, new Set(['AB'])).signatures[0]
+    expect(later({ laterUpdates: 'other' })).toMatchObject({ status: 'warning', summary: 'The document was changed after it was signed.', changedAfterSigning: true })
+    expect(later({ laterUpdates: 'signing' })).toMatchObject({ status: 'valid', changedAfterSigning: false, signedAgainLater: true })
   })
 })
 
 describe('activity panel state', () => {
   it('names AI apps and their connection', () => {
-    const conn = (id: number, name: string): AgentConnectionInfo => ({ id, client: { name, version: '1.0' }, since: 0, running: 0 })
+    const conn = (id: number, name: string): AgentConnectionInfo => ({ id, client: { name, version: '1.0' }, shimVersion: '0.2.1', since: 0, running: 0 })
     expect(appLabel('claude-ai')).toBe('Claude')
     expect(appLabel('Claude Code')).toBe('Claude')
     expect(appLabel('cursor')).toBe('cursor')

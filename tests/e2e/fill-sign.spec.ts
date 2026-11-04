@@ -16,7 +16,7 @@ interface Item {
 }
 
 async function items(page: Page, pageIndex = 0): Promise<Item[]> {
-  return page.evaluate((p) => (window as any).__fartcrobat.getActiveDoc().ops('fill-sign').list(p), pageIndex)
+  return page.evaluate((p) => (window as any).__inkmoor.getActiveDoc().ops('fill-sign').list(p), pageIndex)
 }
 
 /** Client coordinates of a page-space point. */
@@ -25,7 +25,7 @@ async function toClient(page: Page, pageIndex: number, pt: [number, number]): Pr
     ({ i, pt }) => {
       const el = document.querySelector(`.viewer-page[data-page-index="${i}"]`)!
       const r = el.getBoundingClientRect()
-      const info = (window as any).__fartcrobat.getActiveDoc().state.info.pages[i]
+      const info = (window as any).__inkmoor.getActiveDoc().state.info.pages[i]
       const s = r.width / info.width
       return [r.left + pt[0] * s, r.top + pt[1] * s] as [number, number]
     },
@@ -37,7 +37,7 @@ async function toClient(page: Page, pageIndex: number, pt: [number, number]): Pr
 async function clientRect(page: Page, pageIndex: number, r: [number, number, number, number]) {
   return page.evaluate(
     ({ i, r }) => {
-      const doc = (window as any).__fartcrobat.getActiveDoc()
+      const doc = (window as any).__inkmoor.getActiveDoc()
       const el = document.querySelector(`.viewer-page[data-page-index="${i}"]`)!
       const b = el.getBoundingClientRect()
       const info = doc.state.info.pages[i]
@@ -63,13 +63,13 @@ async function clientRect(page: Page, pageIndex: number, r: [number, number, num
 }
 
 async function toolId(page: Page): Promise<string> {
-  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)
+  return page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)
 }
 
 async function cssPerPoint(page: Page, pageIndex = 0): Promise<number> {
   return page.evaluate((i) => {
     const el = document.querySelector(`.viewer-page[data-page-index="${i}"]`)!
-    const info = (window as any).__fartcrobat.getActiveDoc().state.info.pages[i]
+    const info = (window as any).__inkmoor.getActiveDoc().state.info.pages[i]
     return el.getBoundingClientRect().width / info.width
   }, pageIndex)
 }
@@ -85,7 +85,7 @@ async function settle(page: Page, ms = 400) {
 
 test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
   const { app, page } = await launch()
-  const savePath = join(mkdtempSync(join(tmpdir(), 'fartcrobat-fill-sign-')), 'signed.pdf')
+  const savePath = join(mkdtempSync(join(tmpdir(), 'inkmoor-fill-sign-')), 'signed.pdf')
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
@@ -174,7 +174,7 @@ test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
     await page.screenshot({ path: 'test-results/fill-sign-dialog-type.png' })
     await dialog.getByRole('button', { name: 'Done' }).click()
     await expect(dialog).toHaveCount(0)
-    await expect.poll(async () => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('fillsign.place')
+    await expect.poll(async () => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)).toBe('fillsign.place')
     const [gx, gy] = await toClient(page, 0, [400, 700])
     await page.mouse.move(gx - 20, gy - 20)
     await page.mouse.move(gx, gy)
@@ -188,7 +188,7 @@ test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
     expect((sig.rect[1] + sig.rect[3]) / 2).toBeCloseTo(700, 0)
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Add Signature')
     // the tool goes back to the one used before (Check mark), and the new signature is selected
-    await expect.poll(async () => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('fillsign.check')
+    await expect.poll(async () => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)).toBe('fillsign.check')
     await expect(page.locator('.fc-fill-sign-frame')).toBeVisible()
     await settle(page)
     await page.screenshot({ path: 'test-results/fill-sign-placed.png' })
@@ -249,10 +249,10 @@ test('Fill & Sign: type, tick, sign, move, save and reopen', async () => {
 
     // ---- Double-click text to edit it at a different zoom ------------------------------------
     await runCommand(page, 'tools.select')
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.5))
     await settle(page, 400)
     const t = (await items(page))[0]
-    await page.evaluate((r) => (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(0, r, { center: true }), t.rect)
+    await page.evaluate((r) => (window as any).__inkmoor.getActiveDoc().view.scrollToRect(0, r, { center: true }), t.rect)
     await settle(page, 600)
     const [tx, ty] = await toClient(page, 0, [(t.rect[0] + t.rect[2]) / 2, (t.rect[1] + t.rect[3]) / 2])
     await page.mouse.dblclick(tx, ty)
@@ -308,11 +308,11 @@ test('Fill & Sign: panel, draw and image signatures, preferences, dark theme', a
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
-    await page.evaluate(() => (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
+    await page.evaluate(() => (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } })))
     // Open Fill & Sign from All tools
     await page.locator('.shell-alltools-item', { hasText: 'Fill & Sign' }).click()
     await expect(page.locator('.ui-panel-header h3', { hasText: 'Fill & Sign' })).toBeVisible()
-    await expect.poll(async () => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('fillsign.text')
+    await expect.poll(async () => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)).toBe('fillsign.text')
     await settle(page)
     await page.screenshot({ path: 'test-results/fill-sign-panel-dark.png' })
 
@@ -418,7 +418,7 @@ test('Fill & Sign: panel, draw and image signatures, preferences, dark theme', a
       ipcMain.handle('file:openDialog', () => [path])
     }, fixturePath('fill-sign/signature-photo.jpg'))
     // (not awaited: the command resolves when the dialog closes)
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('fillsign.addSignature'))
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('fillsign.addSignature'))
     await dialog.getByRole('tab', { name: 'Image' }).click()
     await dialog.getByRole('button', { name: 'Choose image…' }).click()
     await expect(dialog.locator('.fc-fill-sign-picked')).toBeVisible()
@@ -499,7 +499,7 @@ test('Fill & Sign: printed form, signature field, narrow window', async () => {
 
     // ---- Click the signature field: no certificate signing here, so "Fill & Sign instead" ----
     const hasForms = await page.evaluate(() => {
-      const r = (window as any).__fartcrobat.registry
+      const r = (window as any).__inkmoor.registry
       return r.features.some((f: any) => f.id === 'forms-fill') && !r.features.some((f: any) => f.id === 'digital-signatures')
     })
     // field rectangle in page space (the PDF has it at 140,410 - 380,460 on a 792pt page)
@@ -549,7 +549,7 @@ test('Fill & Sign: printed form, signature field, narrow window', async () => {
       await runCommand(page, 'fillsign.placeSignature') // the one saved above
     } else {
       // (not awaited: the command resolves when the dialog closes)
-      await page.evaluate(() => void (window as any).__fartcrobat.runCommand('fillsign.addSignature'))
+      await page.evaluate(() => void (window as any).__inkmoor.runCommand('fillsign.addSignature'))
       const dialog = page.getByRole('dialog')
       await dialog.getByLabel('Your name').fill('Jane Doe')
       await dialog.getByRole('button', { name: 'Done' }).click()

@@ -12,6 +12,8 @@ export interface CompressResult {
   path: string | null
   /** The compressed copy was opened as a new, unsaved tab. */
   openedInTab: boolean
+  /** The document has certificate security (kept in the compressed copy, see report.keptEncryption). */
+  certificate?: boolean
   name: string
   report: OptimizeReport
 }

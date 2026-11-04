@@ -1,6 +1,6 @@
-# Fartcrobat architecture and feature guide
+# Inkmoor architecture and feature guide
 
-Fartcrobat is an Electron desktop app. Every PDF operation runs in **MuPDF** (WASM), inside one Web
+Inkmoor is an Electron desktop app. Every PDF operation runs in **MuPDF** (WASM), inside one Web
 Worker per open document. The UI is React 19 + TypeScript and copies the layout of current Adobe
 Acrobat so people can switch without relearning anything.
 
@@ -174,6 +174,14 @@ export default defineOps('stamps', {
   numbers and feature state stay, undo history is cleared), because MuPDF builds every
   incremental save on the bytes it was opened from. Never call `s.pdf.saveToBuffer('incremental')`
   on the live document; use `saveDocument(s, { mode: 'incremental' })` outside mutations.
+- Certificate-encrypted documents (`s.pubsec`, see `docs/features/passwordless.md`) are held by
+  MuPDF either behind a temporary Standard security dictionary (the "bridge") or decrypted in
+  memory, so `s.pdf.saveToBuffer()` gives bytes that must never be written anywhere. Save with
+  `saveDocument`, and write outputs with the helpers in `src/engine/util/protection.ts`
+  (`saveWithProtection`, `protectBytes`), which keep the source's certificate security; for
+  anything else use `src/engine/crypt/` (`openPlainSessionCopy`, `writePubSecDocument`,
+  `assertNoBridge`). `tests/engine/passwordless-guard.test.ts` fails when a new `saveToBuffer(`
+  call appears outside its allow-list.
 - Copy pages with `graftPages(dst, src, pages, at)` from `@engine/ops/pages` (annotations, links
   and form fields come along) and delete them with `deletePage(doc, index)` (detaches their
   form fields). Reorder with `permutePages(doc, order)`, never `rearrangePages` (it drops the
@@ -214,6 +222,9 @@ its own package folder at runtime.
 
 Core channels worth knowing: `passwords:*` (passwords remembered on this device; the store and
 safeStorage live in `src/main/passwords/`, and only the top frame of an app window may call them),
+`certkeys:*` (the person's keys for certificate-encrypted files: Digital IDs and the Windows
+certificate store, in `src/main/certkeys/`; private keys, passwords and PINs never leave main, and
+the main process never bundles `@noble/*`, see `tests/engine/main-bundle.test.ts`),
 `file:tempPath(name)` gives a path in a new private folder (only the
 user can read it; removed when the app quits) and `file:write` there marks the file as downloaded
 on Windows; `shell:openPath(path)` refuses programs and scripts (.exe, .js, .app, .desktop...) and
@@ -235,14 +246,19 @@ added. Quitting (`app:quit`) asks every window about unsaved documents, one at a
 npm run build && xvfb-run -a npx playwright test tests/e2e/<feature>.spec.ts
 ```
 
-  `window.__fartcrobat` exposes `registry`, `useApp`, `getActiveDoc`, `openPaths`, `runCommand`
-  for tests. Set `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` to run specs against a
+  `window.__inkmoor` exposes `registry`, `useApp`, `getActiveDoc`, `openPaths`, `runCommand`
+  for tests. Set `INKMOOR_EXECUTABLE=release/linux-unpacked/inkmoor` to run specs against a
   packaged build instead (the release workflow does this for its smoke test). `launch` turns
   remembering passwords off (so specs behave the same with or without a keyring and never use the
-  developer's); pass `launch(files, env, { rememberPasswords: true })` to test it.
+  developer's); pass `launch(files, env, { rememberPasswords: true })` to test it, and `kv` (and
+  `prefs`) to seed the settings store, e.g. Digital IDs for `certificate-encryption.spec.ts`.
+  Certificate-encrypted fixtures and test keys are in `tests/fixtures/passwordless/` (see its
+  README; `expected.json` gives each recipient's seed, so engine tests can open them without RSA).
 - Tests that check output with outside tools (pypdf, poppler `pdfsig`, LibreOffice, openssl) must
   skip cleanly when the tool is missing; CI installs them (see `.github/workflows/ci.yml` and
-  `tests/requirements.txt`). Generate fixtures ahead of time and commit them rather than building
+  `tests/requirements.txt`). CI sets `INKMOOR_REQUIRE_PYHANKO=1`, which turns a missing pyHanko
+  into a failure instead of a skip (`tests/engine/pyhanko.ts`), so the cross-checks of what
+  Inkmoor writes for certificate encryption cannot quietly stop running there. Generate fixtures ahead of time and commit them rather than building
   them with Python at test time.
 - Wait for observable state (`expect(...)`, `expect.poll`) rather than fixed sleeps: CI runners are
   slower than a development machine. Take screenshots (`page.screenshot({ path: 'test-results/<name>.png' })`) and look at
@@ -257,5 +273,9 @@ npm run build && xvfb-run -a npx playwright test tests/e2e/<feature>.spec.ts
   everything, plain-language messages. Destructive steps (apply redactions, remove security) get a
   clear confirmation.
 - Everything works offline. No telemetry, no accounts. The only request the app makes on its own
-  is the update check (`docs/features/updates.md`); don't add others.
+  is the update check (`docs/features/updates.md`); don't add others. Chromium makes some by
+  itself unless told not to: on Linux, where there is no system spell checker, it downloads
+  dictionaries from Google, so every session starts with no spell-check languages there
+  (`src/main/util/spellcheck.ts`).
+  The update rehearsal fails when a new build contacts any host but GitHub.
 - Every change to a document must be undoable (use `mutation`) and mark the document dirty.

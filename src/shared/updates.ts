@@ -7,8 +7,14 @@
  * it changes. Windows never keep their own copy of the flow; every button calls main.
  */
 
-/** Where releases are published. Checks use github.com pages, never api.github.com (rate limits). */
-export const UPDATE_REPO = { owner: 'normiecore', repo: 'Fartcrobat' } as const
+import { LEGACY } from './identity'
+
+/**
+ * Where releases are published. Checks use github.com pages, never api.github.com (rate limits).
+ * The repository keeps its first name (src/shared/identity.ts): installed copies only follow
+ * redirects within it.
+ */
+export const UPDATE_REPO = { owner: LEGACY.githubOwner, repo: LEGACY.githubRepo } as const
 
 /** First automatic check after start-up, then every UPDATE_CHECK_INTERVAL_MS while the app runs. */
 export const UPDATE_FIRST_CHECK_DELAY_MS = 30_000

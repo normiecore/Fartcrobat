@@ -72,7 +72,7 @@ export function convertedFrom(doc: DocumentModel): { convertedFrom?: string } {
 /**
  * Set on results that hold document text when the document's security settings don't allow
  * copying. The agent may read it, as the person can on screen, but should not copy it elsewhere;
- * export_document refuses such documents, like Fartcrobat's own Export.
+ * export_document refuses such documents, like Inkmoor's own Export.
  */
 export function copyRestriction(doc: DocumentModel): { copyRestricted?: true } {
   return doc.state.info.permissions.copy === false ? { copyRestricted: true } : {}
@@ -385,7 +385,7 @@ async function listFormFields(args: Record<string, unknown>, ctx: ToolContext) {
   const info = doc.state.info
   if (!info.hasForm) return { data: { count: 0, fields: [], note: 'This document has no form fields.' } }
   const fields = fieldsOut(await forms(doc).listAll(), pages)
-  return { data: { ...copyRestriction(doc), count: fields.length, fields, ...(info.hasXfa ? { note: 'This form also has an XFA (dynamic) version, which Fartcrobat does not show.' } : {}) } }
+  return { data: { ...copyRestriction(doc), count: fields.length, fields, ...(info.hasXfa ? { note: 'This form also has an XFA (dynamic) version, which Inkmoor does not show.' } : {}) } }
 }
 
 async function listSignatures(args: Record<string, unknown>, ctx: ToolContext) {

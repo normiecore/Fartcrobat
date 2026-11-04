@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BadgeCheck, FileKey2, FileSignature, KeyRound, PenTool, ShieldCheck, Stamp } from 'lucide-react'
 import {
   Button,
+  getActiveDoc,
   openPreferences,
   setTool,
   ToolPanelFrame,
@@ -14,6 +15,7 @@ import {
 import { rectFromPoints, type Point, type Rect } from '@shared/geometry'
 import type { MdpPermission } from '../types'
 import { validateAll } from './actions'
+import { CERTIFICATE_ENCRYPTED_SIGNING, refuseCertificateEncrypted, useCertificateEncrypted } from './encrypted'
 import { startSigning } from './flow'
 import { StatusIcon } from './StatusIcon'
 import { loadIds, useDocSignatures, useSigStore } from './store'
@@ -21,10 +23,13 @@ import { loadIds, useDocSignatures, useSigStore } from './store'
 export const BOX_TOOL = 'sign.certificateBox'
 const DEFAULT_BOX = { w: 180, h: 54 }
 
-/** Activates the "drag a signature box" tool for signing or certifying. */
+/** Activates the "drag a signature box" tool for signing or certifying (refused for certificate-encrypted documents). */
 export function beginBox(mode: 'sign' | 'certify', permission: MdpPermission = 2) {
-  useSigStore.setState({ boxMode: { mode, permission } })
-  setTool(BOX_TOOL)
+  void (async () => {
+    if (await refuseCertificateEncrypted(getActiveDoc())) return
+    useSigStore.setState({ boxMode: { mode, permission } })
+    setTool(BOX_TOOL)
+  })()
 }
 
 /** Tool layer: drag a rectangle (or click for a default-size box) where the signature goes. */
@@ -133,10 +138,11 @@ export function CertificatePanel({ doc }: { doc: DocumentModel | null }) {
   const ids = useSigStore((s) => s.ids)
   const idsLoaded = useSigStore((s) => s.idsLoaded)
   const { report } = useDocSignatures(doc)
+  const encrypted = useCertificateEncrypted(doc)
   useEffect(() => {
     if (!idsLoaded) void loadIds()
   }, [idsLoaded])
-  const locked = !!report?.locked
+  const locked = !!report?.locked || encrypted
   const certified = report?.certified ?? null
   const signed = (report?.signatures.length ?? 0) > 0
   return (
@@ -155,14 +161,14 @@ export function CertificatePanel({ doc }: { doc: DocumentModel | null }) {
           label="Certify (visible signature)"
           description="Sign as the author and choose which changes stay allowed"
           active={toolId === BOX_TOOL && boxMode === 'certify'}
-          disabled={!doc || signed || !!certified}
+          disabled={!doc || signed || !!certified || encrypted}
           onClick={() => beginBox('certify')}
         />
         <ToolRow
           icon={ShieldCheck}
           label="Certify (invisible signature)"
           description="Certify without anything drawn on the page"
-          disabled={!doc || signed || !!certified}
+          disabled={!doc || signed || !!certified || encrypted}
           onClick={() => doc && void startSigning(doc, { mode: 'certify', target: { kind: 'invisible' } })}
         />
         <ToolRow
@@ -211,7 +217,9 @@ export function CertificatePanel({ doc }: { doc: DocumentModel | null }) {
           </p>
         )}
       </Section>
-      {certified === 1 ? (
+      {encrypted ? (
+        <p className="fc-digital-signatures-note">{CERTIFICATE_ENCRYPTED_SIGNING}</p>
+      ) : certified === 1 ? (
         <p className="fc-digital-signatures-note">This document is certified and the certifier allowed no changes, so it cannot be signed again.</p>
       ) : locked ? (
         <p className="fc-digital-signatures-note">This document is locked by a signature and cannot be signed again.</p>

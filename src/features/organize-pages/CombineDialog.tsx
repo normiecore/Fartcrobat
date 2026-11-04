@@ -35,7 +35,7 @@ import {
 import type { ClientOps } from '@engine/define'
 import type organizeOps from './engine'
 import { openAsNewDocument } from './actions'
-import { chooseFiles, loadFile, loadOpenDocument, withPassword, type LoadedFile } from './files'
+import { chooseFiles, loadFile, loadOpenDocument, withUnlock, type LoadedFile } from './files'
 import { protectionNote } from './protection'
 import { countLabel, formatPageRange, parsePageRange } from './ranges'
 
@@ -209,7 +209,7 @@ function CombineFiles({ close }: { close: () => void }) {
     ])
     try {
       const file = await load()
-      const opened = await withPassword(file, (pw) =>
+      const opened = await withUnlock(file, engineRef.current!, (pw) =>
         ops.openScratch(id, file.bytes, file.engineName, pw)
       )
       if (!opened) {

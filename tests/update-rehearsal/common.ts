@@ -1,0 +1,206 @@
+// Shared parts of the update rehearsals (README.md): the fake GitHub, what it was asked, and the
+// update card. The rehearsals drive a packaged app that is installed for real: a release called
+// Fartcrobat (up to 0.3) or Inkmoor (0.4.0 on), updated to a build that may have the other name.
+// Which names each side has comes from its version (names.mjs).
+import { expect, type ElectronApplication, type Page } from '@playwright/test'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { createReadStream, existsSync, readFileSync, rmSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { productFor } from './names.mjs'
+
+export { ALL_NAMES, DEB_PACKAGE, productFor, type ProductNames } from './names.mjs'
+
+export const HERE = dirname(fileURLToPath(import.meta.url))
+
+/** The rehearsal's settings, from the environment the runner script sets. */
+export function env(name: string): string {
+  const v = process.env[name]
+  if (!v) throw new Error(`${name} is not set: run the rehearsal through its runner script (README.md)`)
+  return v
+}
+
+export interface GitHubRequest {
+  method: string
+  host: string | null
+  path: string | null
+  accept?: string | null
+  status: number
+  range?: string
+  bytes?: number
+  location?: string
+  refused?: boolean
+}
+
+export interface FakeGitHub {
+  /** http://127.0.0.1:<port>, for the app's proxy setting. */
+  proxy: string
+  setLatest(tag: string): Promise<void>
+  requests(): Promise<GitHubRequest[]>
+  stop(): void
+}
+
+/** Starts fake-github.mjs over `releases` (one folder per tag) with `latest` as the newest release. */
+export async function startFakeGitHub(opts: { releases: string; latest: string; cert: string; key: string; log?: string }): Promise<FakeGitHub> {
+  if (opts.log && existsSync(opts.log)) rmSync(opts.log)
+  const child: ChildProcess = spawn(
+    process.execPath,
+    [join(HERE, 'fake-github.mjs'), '--releases', opts.releases, '--latest', opts.latest, '--cert', opts.cert, '--key', opts.key, ...(opts.log ? ['--log', opts.log] : [])],
+    { stdio: ['ignore', 'pipe', 'inherit'] }
+  )
+  const port = await new Promise<number>((resolve, reject) => {
+    let out = ''
+    child.stdout!.on('data', (d) => {
+      out += String(d)
+      const m = /listening (\d+)/.exec(out)
+      if (m) resolve(Number(m[1]))
+    })
+    child.once('exit', (code) => reject(new Error(`fake-github exited (${code})`)))
+  })
+  const proxy = `http://127.0.0.1:${port}`
+  const control = (path: string) => fetch(`${proxy}${path}`).then((r) => r.text())
+  return {
+    proxy,
+    async setLatest(tag) {
+      await control(`/__control/latest?tag=${encodeURIComponent(tag)}`)
+    },
+    async requests() {
+      return (await control('/__control/requests'))
+        .split('\n')
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l) as GitHubRequest)
+    },
+    stop() {
+      child.kill()
+    }
+  }
+}
+
+/** The hosts other than GitHub that the app tried to reach (the fake refuses them). */
+export function otherHosts(requests: GitHubRequest[]): string[] {
+  return [...new Set(requests.filter((r) => r.refused).map((r) => r.host ?? '(none)'))]
+}
+
+/**
+ * Whether a release keeps to "no network request besides the update check". 0.2.0 still asks
+ * Google for spell-check dictionaries at start on Linux (src/main/util/spellcheck.ts),
+ * so its runs only report other hosts; later releases must not contact any.
+ */
+export function contactsOnlyGitHub(release: string): boolean {
+  const [a, b, c] = release.split('.').map(Number)
+  return a > 0 || b > 2 || (b === 2 && c > 0)
+}
+
+/**
+ * The hosts other than GitHub contacted from `from` on, after letting the app run until `sinceStart`
+ * ms have passed since it started: what Chromium fetches by itself it fetches in its first seconds,
+ * and the absence of a request can only be seen by waiting.
+ */
+export async function otherHostsAfter(gh: FakeGitHub, from: number, startedAt: number, sinceStart = 15_000): Promise<string[]> {
+  const left = startedAt + sinceStart - Date.now()
+  if (left > 0) await new Promise((r) => setTimeout(r, left))
+  return otherHosts((await gh.requests()).slice(from))
+}
+
+/** What the app asked GitHub, in a few words per request (for the report). */
+export function describe(requests: GitHubRequest[]): string[] {
+  return requests.map((r) => `${r.status} ${r.method} ${r.host ?? ''}${r.path ?? ''}${r.range ? ` [${r.range}]` : ''}${r.accept?.includes('json') ? ' (json)' : ''}`)
+}
+
+/**
+ * How the update was fetched from the asset host. A differential download makes only range
+ * requests; when it fails, electron-updater quietly downloads the whole file instead (a 200).
+ */
+export function downloadSummary(parts: GitHubRequest[]): { differential: boolean; text: string } {
+  const files = [...new Set(parts.map((r) => r.path?.split('/').pop()))].join(', ')
+  const bytes = parts.reduce((n, r) => n + (r.bytes ?? 0), 0)
+  const full = parts.filter((r) => r.status === 200 && !r.range).length
+  const differential = parts.length > 0 && parts.every((r) => r.status === 206 && !!r.range)
+  const how = differential
+    ? 'differential (byte ranges only)'
+    : full
+      ? `full download, after ${parts.length - full} range requests`
+      : `statuses ${[...new Set(parts.map((r) => r.status))].join(',')}`
+  return { differential, text: `${files || 'nothing'}: ${parts.length} requests, ${bytes} bytes, ${how}` }
+}
+
+/** Base64 SHA-512 of a file, as latest*.yml writes it. */
+export function sha512(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const h = createHash('sha512')
+    createReadStream(file)
+      .on('data', (d) => h.update(d))
+      .on('end', () => resolve(h.digest('base64')))
+      .on('error', reject)
+  })
+}
+
+/** The sha512 a release's latest*.yml gives for its installer. */
+export function ymlSha512(yml: string): string {
+  const m = /^sha512: (\S+)$/m.exec(readFileSync(yml, 'utf8'))
+  if (!m) throw new Error(`no sha512 in ${yml}`)
+  return m[1]
+}
+
+export const updateCard = (page: Page) => page.getByRole('region', { name: 'Update' })
+
+export async function version(app: ElectronApplication): Promise<string> {
+  return app.evaluate(({ app }) => app.getVersion())
+}
+
+/** Help > Check for Updates..., the way a person finds it. */
+export async function checkFromHelpMenu(page: Page) {
+  await page.getByRole('button', { name: 'Menu' }).click()
+  await page.getByRole('menuitem', { name: /^Help$/ }).hover()
+  await page.getByRole('menuitem', { name: 'Check for Updates...' }).click()
+}
+
+/**
+ * What the update card of the running app (version `running`) says about the offered version:
+ * the running app's own name, so a Fartcrobat release offering Inkmoor 0.4.0 says
+ * "Fartcrobat 0.4.0 is available.".
+ */
+export function cardText(running: string, offered: string, state: 'available' | 'ready'): string {
+  return `${productFor(running).name} ${offered} is ${state === 'available' ? 'available' : 'ready to install'}.`
+}
+
+/** Downloads the offered version from the card of the running app and waits until it is ready to install. */
+export async function downloadUpdate(page: Page, running: string, offered: string) {
+  const card = updateCard(page)
+  await expect(card).toContainText(cardText(running, offered, 'available'), { timeout: 60_000 })
+  await card.getByRole('button', { name: 'Download' }).click()
+  await expect(card).toContainText(cardText(running, offered, 'ready'), { timeout: 240_000 })
+}
+
+/** Opens a document in the running app (version `running`) and gives it unsaved changes, through its test hook. */
+export async function openUnsavedDocument(page: Page, running: string, file: string) {
+  const hook = productFor(running).windowGlobal
+  await page.evaluate(([hook, file]) => (window as any)[hook].openPaths([file]), [hook, file])
+  await page.waitForSelector('.viewer-page canvas')
+  await page.evaluate((hook) => (window as any)[hook].getActiveDoc().core.doc.markDirty(), hook)
+}
+
+/** The running app's userData folder. */
+export async function userDataPath(app: ElectronApplication): Promise<string> {
+  return app.evaluate(({ app }) => app.getPath('userData'))
+}
+
+/** The machine policy has turned updates off: Help > Check for Updates... says so. */
+export async function expectUpdatesManaged(page: Page) {
+  await checkFromHelpMenu(page)
+  await expect(page.locator('.toast', { hasText: 'Updates are managed by your organization.' })).toBeVisible()
+}
+
+/** Writes (or with null, deletes) a file only an administrator may change. The runners have sudo without a password. */
+export function asAdministrator(file: string, text: string | null) {
+  const root = process.getuid?.() === 0
+  const run = (cmd: string, args: string[], input?: string) =>
+    execFileSync(root ? cmd : 'sudo', root ? args : ['-n', cmd, ...args], { input, stdio: ['pipe', 'ignore', 'inherit'] })
+  if (text === null) return run('rm', ['-f', file])
+  run('mkdir', ['-p', dirname(file)])
+  run('tee', [file], text)
+}
+
+export const shot = (page: Page, name: string) =>
+  page.screenshot({ path: join(process.env.REHEARSAL_OUT ?? 'test-results', `rehearsal-${name}.png`), animations: 'disabled' }).catch(() => {})

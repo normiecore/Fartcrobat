@@ -85,6 +85,16 @@ const emptySearch = (): SearchState => ({
   pagesSearched: 0
 })
 
+function sameJournal(a: JournalState, b: JournalState): boolean {
+  return (
+    a.canUndo === b.canUndo &&
+    a.canRedo === b.canRedo &&
+    a.undoLabel === b.undoLabel &&
+    a.redoLabel === b.redoLabel &&
+    a.position === b.position
+  )
+}
+
 /** Hits of both lists in document order (the inputs keep their object identity). */
 function mergeHits(a: SearchHit[], b: SearchHit[]): SearchHit[] {
   return [...a, ...b].sort((x, y) => x.page - y.page || x.start - y.start)
@@ -216,8 +226,20 @@ export class DocumentModel {
     for (const p of cs.pages) this.textCache.delete(p)
     const newest = seq > this.journalSeq
     if (newest) this.journalSeq = seq
-    this.set((s) => {
-      const pageVersions = { ...s.pageVersions }
+    const before = this.state
+    // An equal journal keeps its identity, so its subscribers (toolbar, window title, menu) skip it.
+    const journal = newest && !sameJournal(before.journal, cs.journal) ? cs.journal : before.journal
+    // Most replies (renders, reads) change nothing: then nobody is notified.
+    const unchanged =
+      !cs.pages.length &&
+      !cs.all &&
+      !cs.structure &&
+      !cs.document &&
+      journal === before.journal &&
+      (!newest || cs.dirty === before.dirty) &&
+      before.currentPage <= Math.max(0, info.pageCount - 1)
+    if (!unchanged) this.set((s) => {
+      const pageVersions = cs.pages.length ? { ...s.pageVersions } : s.pageVersions
       for (const p of cs.pages) {
         const id = info.pages[p]?.id
         if (id !== undefined) pageVersions[id] = (pageVersions[id] ?? 0) + 1
@@ -228,7 +250,7 @@ export class DocumentModel {
         globalVersion: cs.all ? s.globalVersion + 1 : s.globalVersion,
         docVersion: cs.document || cs.structure ? s.docVersion + 1 : s.docVersion,
         // The engine owns the dirty flag (documents that only exist in memory are opened dirty).
-        ...(newest ? { journal: cs.journal, dirty: cs.dirty } : {}),
+        ...(newest ? { journal, dirty: cs.dirty } : {}),
         currentPage
       }
     })

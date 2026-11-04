@@ -21,11 +21,11 @@ const currentPage = async (page: Page) => (await activeDocState(page))!.currentP
 const zoomOf = async (page: Page) => (await activeDocState(page))!.zoom
 
 function goToPage(page: Page, index: number) {
-  return page.evaluate((i) => (window as any).__fartcrobat.getActiveDoc().view.goToPage(i), index)
+  return page.evaluate((i) => (window as any).__inkmoor.getActiveDoc().view.goToPage(i), index)
 }
 
 function setZoom(page: Page, z: number) {
-  return page.evaluate((zz) => (window as any).__fartcrobat.getActiveDoc().view.setZoom(zz), z)
+  return page.evaluate((zz) => (window as any).__inkmoor.getActiveDoc().view.setZoom(zz), z)
 }
 
 function scrollState(page: Page) {
@@ -54,7 +54,7 @@ function countZoomChanges(page: Page) {
     const w = window as any
     w.__zoomChanges = 0
     w.__zoomUnsub?.()
-    w.__zoomUnsub = w.__fartcrobat.getActiveDoc().store.subscribe((s: any, p: any) => {
+    w.__zoomUnsub = w.__inkmoor.getActiveDoc().store.subscribe((s: any, p: any) => {
       if (s.zoom !== p.zoom) w.__zoomChanges++
     })
   })
@@ -144,7 +144,7 @@ test('revealing a rect on the right page of a spread is not undone by the layout
     await page.waitForTimeout(200)
     expect(await currentPage(page)).toBe(0)
     const at = await page.evaluate(() => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       d.view.scrollToRect(1, [400, 700, 450, 712], { center: true })
       const el = document.querySelector<HTMLElement>('.viewer-scroll')!
       return { top: el.scrollTop, left: el.scrollLeft }
@@ -170,7 +170,7 @@ test('Last Page makes the last page current even when it cannot scroll to the to
     await page.waitForTimeout(400)
     expect(await currentPage(page)).toBe(4)
     const nextEnabled = await page.evaluate(() => {
-      const fc = (window as any).__fartcrobat
+      const fc = (window as any).__inkmoor
       return fc.registry.commands.get('nav.next')?.enabled?.({ doc: fc.getActiveDoc() })
     })
     expect(nextEnabled).toBe(false)
@@ -194,7 +194,7 @@ test('Find in Single Page View scrolls to a hit on another page', async () => {
     await runCommand(page, 'view.layout.single')
     await setZoom(page, 3)
     await page.waitForTimeout(500)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().search('Invoice #1002'))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().search('Invoice #1002'))
     await expect.poll(() => currentPage(page)).toBe(2)
     await expect
       .poll(() =>
@@ -267,7 +267,7 @@ test('in a spread, the pointer beyond the right page hits the right page', async
     await page.waitForTimeout(600)
     const p1 = await pageBox(page, 1)
     const hit = await page.evaluate(
-      ([x, y]) => (window as any).__fartcrobat.getActiveDoc().view.hitTest(x, y),
+      ([x, y]) => (window as any).__inkmoor.getActiveDoc().view.hitTest(x, y),
       [p1.right + 40, p1.top + 100]
     )
     expect(hit.pageIndex).toBe(1)
@@ -304,7 +304,7 @@ test('the high-zoom detail tile is hidden as soon as the zoom changes', async ()
     const during = await page.evaluate(
       () =>
         new Promise<{ display: string }[]>((resolve) => {
-          const d = (window as any).__fartcrobat.getActiveDoc()
+          const d = (window as any).__inkmoor.getActiveDoc()
           const vp = document.querySelector('.viewer-scroll')!.getBoundingClientRect()
           const seen: { display: string }[] = []
           let n = 0

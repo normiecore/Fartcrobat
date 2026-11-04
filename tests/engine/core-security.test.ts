@@ -71,7 +71,7 @@ describe('saving password-protected documents', () => {
     expect(e.session.fileName).toBe('text.pdf')
     expect((await e.doc.info()).pageCount).toBe(5)
     const wrong = await e.doc.reload(locked, { password: 'nope' })
-    expect(wrong).toEqual({ ok: false, needsPassword: true, wrongPassword: true, lock: res.ok ? null : res.lock })
+    expect(wrong).toEqual({ ok: false, needsPassword: true, wrongPassword: true, lock: res.ok || res.needsCertificate ? null : res.lock })
     const ok = await e.doc.reload(locked, { password: 'other' })
     expect(ok.ok).toBe(true)
     expect(e.session.fileName).toBe('text.pdf')

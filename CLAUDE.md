@@ -1,4 +1,4 @@
-# Fartcrobat: notes for Claude sessions
+# Inkmoor: notes for Claude sessions
 
 Open-source (AGPL) desktop PDF reader, editor and signer for Windows, macOS and Linux. The layout
 follows current Adobe Acrobat Pro. Works offline, no built-in AI: its only network request of its
@@ -9,21 +9,47 @@ Office conversion when installed, with a built-in fallback.
 
 ## State
 
+- **Renamed: Fartcrobat is now Inkmoor from 0.4.0** (PR #26, owner's choice 3 Nov 2026). Releases up
+  to 0.3.0 are Fartcrobat. Installed copies update into Inkmoor, which only works because some ids
+  keep the old name for good: everything in `LEGACY` in `src/shared/identity.ts`, the GitHub repo
+  `normiecore/Fartcrobat`, the PDF keys (`/FartcrobatData`, `/FartcrobatMark`, ...), the XFDF and
+  form-data formats, `fartcrobat-settings.json` and the saved-password key domain. Never rename
+  these. Fixtures still contain the old name ("Hello Fartcrobat page 1"). See
+  `docs/features/rename.md`.
+- 0.4.0 (3 Nov 2026) is the first Inkmoor release and carries the fixes from a security review of
+  0.3.0 (HTML conversion, signature validation, sign after sanitize, links and attachments, form
+  scripts, Office conversion). They were prepared privately in `normiecore/inkmoor-security`
+  (PRs #1 and #2 there, with the findings and review notes); publish a GitHub security advisory
+  for them after the release.
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`). It has no updater.
+- v0.2.0 (17 Oct 2026) is the first release with the in-app updater and its `latest*.yml` files,
+  and with certificate encryption and native MCP editing.
+- From 0.2.1 on a release has one file per kind of computer (Windows x64 and arm64 installers, no
+  combined one; Mac `.dmg` for arm64 and x64, both named; Ubuntu/Debian `.deb`; AppImage for other
+  Linux). `scripts/release-downloads.mjs` holds the table that README.md (Install) and the top of
+  the release notes show, and each release build checks its files against it.
 - Merged into `main`: #1 (the app), #2 (fixes), #3 (release publishing), #4, #5 and #9 (agent
-  access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords).
-  Open: #12 (in-app updates). #11 is a stray PR from `main` into the session branch; close
-  it.
+  access and its review fixes), #6, #8 and #10 (passwordless design, then remembered passwords),
+  #12 (in-app updates), #13 (certificate encryption contracts and fixtures), #14 (certificate
+  encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
+  per computer, update rehearsal for every download), #19 (no request to Google for spell-check
+  dictionaries), #17 (release 0.2.1: companion joining and on-document review), #21 (release
+  0.2.2), #23 (live edit review, see below). #11 merged main into the old session branch. Open:
+  the 0.3.0 release PR from `claude/laughing-tesla-83pgov`; merging it publishes 0.3.0.
+- 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
+  turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
+  0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
+  nothing (update rehearsal, 20 Oct 2026); Linux has no spell checking, as before (backlog 21).
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
-  (Settings > General). Everything on that branch is already in `main` once #12 merges.
-- About 1110 unit tests (vitest) and 155 end-to-end tests (Playwright on Electron).
+  (Settings > General). Everything on that branch is already in `main`.
+- About 1640 unit tests (vitest) and 179 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
-- **In-app updates** (`docs/features/updates.md`, #12): checks
+- **In-app updates** (`docs/features/updates.md`, merged in #12): checks
   `github.com/normiecore/Fartcrobat/releases/latest` 30 s after start and every 6 hours, shows a
   card in the bottom right (Download with a progress bar, then Restart now or Later), and installs
   silently through electron-updater 6.8.10 after the normal quit flow has asked about unsaved
@@ -34,25 +60,67 @@ Office conversion when installed, with a built-in fallback.
   more, so updates replace it in place. A review (install safety, security, release pipeline, UI)
   found 15 issues, all fixed in the PR, among them an inherited `APPIMAGE` variable that would
   have made a .deb install replace another app's AppImage.
-  - Not yet tried for real: no release has latest*.yml yet. Next step after merging: bump to
-    0.2.0 (PR), run the Release workflow, install 0.2.0 by hand on Windows (per user and per
-    machine) and as an AppImage, then release 0.2.1 and check that each updates itself, that
-    Restart now with unsaved changes asks first, and that `AutoUpdate`=0 hides everything.
+  - The update rehearsal (`tests/update-rehearsal/README.md`) tries it without publishing, from
+    each kind of download: on 20 Oct 2026 the released 0.2.0 AppImage and Windows installer (per
+    user and per machine) updated themselves to a test 0.2.1 from a fake GitHub (Restart now,
+    Later, a wrong checksum, the policy off), and the released Mac app and `.deb` (with Ubuntu
+    24.04's AppArmor setting) offered it and opened its release page.
+    `.github/workflows/update-rehearsal.yml` runs all of it, and every release runs it before
+    publishing (release.yml); now that releases are out, let an installed 0.2.0 or 0.2.1 update
+    from the real github.com once per platform, and try a Windows per-machine install with UAC on
+    (as an administrator and as a standard user): the runners elevate without asking, so the
+    rehearsal cannot show the UAC prompt.
 - **Agent access** (`docs/features/agent-access.md`): merged with the review fixes from #9. Known
   gaps are listed in #9 and backlog items 15 and 16. Nothing has been tried on Windows or with a
   real Claude Desktop yet.
 - **Passwordless** (`docs/features/passwordless.md`): phases 0 and 1 (remembered passwords with
-  safeStorage, also for Digital IDs, silent unlock for agents) are merged (#10). Next: certificate
-  encryption (phases 2 to 5: open Adobe.PubSec files, save them back, the Windows certificate
-  store and smart cards through PowerShell/.NET with the PIN kept for the session, create
-  certificate-encrypted files), then the `windows-latest` CI job and the owner's manual Windows
-  checklist. Prototypes for all of it are in `prototypes/passwordless/`.
+  safeStorage, also for Digital IDs, silent unlock for agents) are merged (#10). Certificate
+  encryption (phases 2 to 6) is built in #14; "Certificate encryption as built" in the note says
+  where the code is and where it differs from the plan. It opens V2, V4 and V5 /Adobe.PubSec
+  files with a Digital ID (.p12) or the Windows certificate store and smart cards (one
+  PowerShell 5.1 helper per app session, so a PIN is asked once per session), saves them back as
+  V5 AES-256 with the original seed and envelopes, and creates them (Protect > Encrypt with
+  Certificate). Agents open them silently, except that a smart card PIN is typed by the person.
+  Three adversarial review rounds (each finding verified independently) are fixed in the PR.
+  - Nothing has run on Windows, a smart card or Acrobat. Next: the owner's team runs the manual
+    Windows checklist in the note (25 items); the `windows-helper` CI job already runs the helper
+    tests against stock PowerShell 5.1 on `windows-latest`.
+  - The prototypes in `prototypes/passwordless/` are ported and were removed (git history has
+    them).
 - The machine policy for all three features is `src/main/policy.ts`: REG_DWORDs `AgentAccess`,
-  `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Fartcrobat` on Windows,
+  `RememberPasswords` and `AutoUpdate` under `HKLM\SOFTWARE\Policies\Inkmoor` on Windows,
   `policy.json` (`agentAccess`, `rememberPasswords`, `autoUpdate`) on macOS and Linux.
 - Owner decisions so far are recorded at the top of each feature note.
-- Suggested order for the next session: merge #12 and cut 0.2.0 (so people get the
-  updater), then certificate encryption.
+- 0.2.1 and 0.2.2 were published on 20 Oct 2026. Next: let an installed 0.2.0 or 0.2.1 update from
+  the real github.com once per platform, try a Windows per-machine update with UAC on, run the Windows certificate checklist,
+  and try agent access and the companion with a real Claude Desktop and ChatGPT Desktop (backlog
+  16).
+
+
+### Native MCP editing (16 Oct 2026)
+
+- Branch codex/live-mcp-text-editing adds get_editable_text, edit_text, get_document_layout,
+  reflow_text and rebuild_document. See docs/features/agent-text-editing.md.
+- Native edits and linked column/page flows happen in the open PDF, with an on-document review,
+  revision guards and one undo step. Flow templates keep artwork and unmanaged content; static
+  page labels and link/comment anchors need review. A clean new design is a separate tool.
+- The MCP client performs semantic/visual interpretation using the exposed structure and renders.
+  The app does not contain a model or guarantee perfect reconstruction of arbitrary PDFs.
+- Update the installed app AND reinstall its bundled Claude Desktop extension before testing.
+- Local Windows UI verification used a cached Electron 40 runtime and a generated-bundle-only
+  shim for the existing ClipboardItem import; no compatibility change is in the source. CI
+  should validate the actual pinned Electron 44 runtime. Local Linux CI simulation is unavailable.
+
+### Companion follow-up (16 Oct 2026)
+
+- See docs/features/agent-companion.md. Draggable provider sprites, observed activity bubbles,
+  compact in-app MCP conversation, and installation-specific ChatGPT Desktop setup are added.
+- companion_chat is client-initiated: the person opens the chat (Chat here) and the next successful
+  tool call of a conversation hands it the session (0.2.1); it cannot wake an idle AI session. No
+  API provider, credentials or automatic model is added.
+- Chat history stays in memory. Position only is persisted. MCP now exposes 37 tools.
+- The agent e2e specs (`tests/e2e/agent-*.spec.ts`) run in a Claude cloud session like the others
+  (Unix sockets work there, checked 20 Oct 2026), also against a packaged build.
 
 ## Where things are
 
@@ -69,7 +137,11 @@ Office conversion when installed, with a built-in fallback.
 - Agent access: contracts in `src/shared/agent/` (tool catalogue, pipe protocol, main/window
   messages), the feature in `src/features/agent-access/` (main process pipe server, window runner
   and tool handlers, UI), the MCP shim in `src/agent-shim/` (built to `out/agent/shim.mjs` and the
-  Claude Desktop extension `out/agent/fartcrobat.mcpb`, shipped as `<resources>/agent/`).
+  Claude Desktop extension `out/agent/inkmoor.mcpb`, shipped as `<resources>/agent/`).
+- Certificate encryption: contracts in `src/shared/certkeys.ts`, the engine side in
+  `src/engine/crypt/` (reader, bridge, writer; `index.ts` describes it), key sources and the
+  PowerShell helper in `src/main/certkeys/`, the open flow in `src/renderer/src/app/unlock.ts` and
+  `certificates.ts`, Encrypt with Certificate in `src/features/protect-optimize/`.
 - `tests/engine/*.test.ts` (vitest), `tests/e2e/*.spec.ts` (Playwright), `tests/fixtures/`.
 
 Stack: Electron 44, electron-vite 5, React 19, zustand, TypeScript 6, mupdf 1.28 (WASM),
@@ -97,8 +169,10 @@ outputs are committed; tests never generate them at run time.
   `--keep-tools` to only limit CPUs, which matches the CI job after it installs the tools. Run
   both before pushing anything that touches tests: most past CI failures were races that only
   showed up on 2 CPUs, or tool checks that behaved differently when a tool was missing.
-- `FARTCROBAT_EXECUTABLE=release/linux-unpacked/fartcrobat` runs e2e specs against a packaged
+- `INKMOOR_EXECUTABLE=release/linux-unpacked/inkmoor` runs e2e specs against a packaged
   build (the release workflow smoke-tests this way).
+- `sudo env "PATH=$PATH" tests/update-rehearsal/linux.sh` updates the latest released AppImage to a
+  build of this checkout from a fake GitHub (root, throwaway machines only; README there).
 - Every push to any branch runs CI and failures email the owner. Verify locally first, and put
   `[skip ci]` in intermediate commits that don't need a run. But make sure a PR's head commit runs
   CI before it is merged: #5 was merged with `[skip ci]` on every commit and turned `main` red.
@@ -108,24 +182,32 @@ outputs are committed; tests never generate them at run time.
 - `.github/workflows/ci.yml`: ubuntu-24.04, Node 22, installs pypdf (`tests/requirements.txt`),
   poppler-utils and LibreOffice, then typecheck, lint, unit tests, build, e2e under xvfb.
 - `.github/workflows/release.yml`: builds installers on Windows, macOS and Linux.
-- To release: bump `version` in `package.json` on `main` (via a PR), then Actions > Release > Run
-  workflow on `main` with that version. The publish job checks the version matches, creates the
-  tag on the built commit and attaches the installers. Pushing a `v*` tag also works, but the
-  Claude session git proxy refuses tag pushes, so use the manual run.
+- To release: merge a PR that bumps `version` in `package.json` into `main`, with "Create a merge
+  commit" (a squash can carry a `[skip ci]` from one of its commits, and GitHub then skips the
+  workflow). That push publishes: the release workflow builds the installers, runs the full CI
+  suite (`ci.yml`) and the update rehearsal (`update-rehearsal.yml`) on the same commit, and only
+  then creates the tag and the release, with the download table and `docs/releases/v<version>.md`
+  as notes. When a job of that run fails for a reason outside the code (a runner, the network),
+  use "Re-run failed jobs" on the same run, which keeps the merged commit. For a fix in the code,
+  merge the fix and run the workflow by hand on `main` with the version: that publishes main's head
+  as it is then, so only while it is the version bump plus that fix, and never in addition to a
+  run that can still publish. A `v*` tag push also publishes (the Claude session git proxy refuses tag
+  pushes), and a tag that already names another commit stops the publish.
 - In-app updates (`docs/features/updates.md`) download from the latest GitHub release, so every
   release must carry `latest.yml`, `latest-mac.yml`, `latest-linux.yml` and the `.blockmap` files
   (electron-builder writes them; the publish job fails without them). v0.1.0 has no updater: people
   on it install the next version by hand once. To write release notes on GitHub first, save the
-  release as a draft and do not publish it until the workflow has attached the installers
-  (installed copies offer a published release at once); the publish job refuses to add files to a
-  published release.
+  release as a draft and do not publish it until the workflow has attached the installers and
+  pointed its tag at the built commit (installed copies offer a published release at once); the
+  publish job refuses to add files to a published release. Publishing the draft pushes the tag;
+  that run sees the release is out and stops.
 - Windows installers are unsigned and macOS builds are only ad-hoc signed. Signing uses the
   `CSC_LINK` and `CSC_KEY_PASSWORD` repository secrets when they exist.
 
 ## Conventions and gotchas
 
 - e2e tests wait on observable state (`expect`, `expect.poll`), never fixed sleeps. To force a
-  race in a test, monkeypatch `window.__fartcrobat.getActiveDoc().engine.call` to delay or gate a
+  race in a test, monkeypatch `window.__inkmoor.getActiveDoc().engine.call` to delay or gate a
   specific call.
 - Dialogs are named via `aria-labelledby`, so `getByLabel('Password')` can match the dialog itself.
   Use role-based, `exact`, or dialog-scoped locators. Checkable menu items have role
@@ -144,6 +226,13 @@ outputs are committed; tests never generate them at run time.
     `walkStructuredText` (`src/engine/util/stext.ts`).
   - Saves beyond a plain save (compaction, recompression, security changes) run on a copy so the
     live document keeps its undo history. See `saveDocument` in `src/engine/ops/doc.ts`.
+- The main process must never import `@noble/*` (electron-vite's `__dirname` shim lands inside
+  their doc comments and the app does not start), and imports node-forge only with `import()`.
+  `tests/engine/main-bundle.test.ts` checks both.
+- Certificate-encrypted sessions must never write `s.pdf.saveToBuffer()` output (it holds the
+  temporary bridge dictionary); `tests/engine/passwordless-guard.test.ts` allow-lists the calls.
+- Tests that use outside tools (pyHanko, pwsh) skip without them; CI sets
+  `INKMOOR_REQUIRE_PYHANKO=1` so the pyHanko cross-checks cannot skip there.
 - Worktree-isolated agents have been based on an old commit before. Check the base with
   `git log` before merging their work.
 - Git: work on the branch the session names, open a draft PR, and let the owner merge.
@@ -178,6 +267,74 @@ Roughly in priority order:
     `MAC_INSTALLS_UPDATES` in `src/features/updates/main/settings.ts` and test Squirrel.Mac.
 18. Updates for .deb installs only notify: electron-updater can install them, but only through a
     root password prompt (`pkexec dpkg -i`).
+19. Password security leaves a direct `/Info` dictionary (in the trailer, not an object) in clear
+    text: MuPDF's writer does not encrypt it. Certificate security already moves it into an
+    object first (`src/engine/crypt/pubsecWrite.ts`); the password save path in
+    `src/engine/ops/doc.ts` needs the same.
+20. Certificate encryption gaps (see "Known limits" in `docs/features/passwordless.md`): saved
+    files drop a PDF MAC (ISO/TS 32004), so pyHanko refuses them; no Active Directory lookup of
+    recipients; no macOS Keychain or Linux PKCS#11 smart cards; no EC (ECDH) recipients; signing
+    certificate-encrypted files needs a PubSec-aware incremental save; Constrained Language Mode
+    machines need an Authenticode-signed helper script (backlog 1).
+21. Spell check on Linux: Chromium's checker there needs Hunspell dictionaries, which it would
+    download from Google, so it is off (`src/main/util/spellcheck.ts`). Bundling
+    dictionaries (Electron publishes `hunspell_dictionaries.zip` per release) and pointing
+    `setSpellCheckerDictionaryDownloadURL` at a local copy would bring it back offline.
+22. Live review across calls: each edit_text call is reviewed on its own. Letting later calls of the
+    same conversation append to an open review (so an AI can send one edit per call while the
+    person decides) needs a review id, a "done" signal and per-call tickets; the notes are in
+    `docs/features/agent-live-review.md` (Protocol).
+23. In Claude Desktop on Windows (20 Oct 2026, 0.2.2) one render_page call ("Look at a page") showed
+    as failed; the error text was not captured. Ask for it, or reproduce on Windows.
 
 Out of scope by design: XFA dynamic forms, timestamp authorities and OCSP for signatures, web
 capture, scanner input.
+
+### 0.2.1 (#17, 20 Oct 2026)
+
+- Companion: opening the chat lets the next conversation that uses Inkmoor join, without an
+  invitation. Closing or minimizing it before one joins takes that back until it is opened again;
+  End & clear, or a disconnect of the joined conversation, ends it until the person allows a new
+  conversation. Shims older than 0.2.1 drop the token, so their calls never join by themselves
+  (`shimForwardsCompanion`; an explicit `companion_chat` still joins), and the chat and
+  Preferences ask for the extension to be added again. Conversation-token isolation, on-document edit review (a save keeps it open, any edit
+  ends it) and three working poses. See the agent-companion and agent-text-editing notes.
+- Connect ChatGPT Desktop works in installed builds: `shim.mjs` ships next to app.asar and the
+  setup points at a copy in `<userData>/agent-helper/`, refreshed at each start. The setup's
+  `INKMOOR_USER_DATA` names the usual folder, which the helper does not take for a separate
+  profile (`separateProfile` in `src/agent-shim/launch.ts`): it starts the app through WMI or
+  LaunchServices, as for the Claude extension.
+- #17 was merged on 20 Oct 2026 with a merge commit, and its Release run published 0.2.1.
+
+### 0.2.2 (20 Oct 2026)
+
+- Fixes the two findings of the last review of #17, both minor. Opening the companion chat keeps
+  the companion on screen (`armCompanion` sets `revealed`): in 0.2.1, when every AI app disconnected
+  before a conversation joined, the companion hid with its chat still open and armed, and the next
+  AI app's first call joined it as the companion reappeared. The rehearsal's Windows build is kept
+  30 days, so "Re-run failed jobs" on a release still finds it (it was 3 days), and the rehearsal's
+  diagnostic uploads overwrite an earlier attempt's, so a re-run cannot stop at a name conflict.
+- `docs/releases/v0.2.2.md` repeats what people coming from 0.2.0 must do (add the Claude
+  extension again), since many will update from 0.2.0 straight to 0.2.2.
+
+### Live edit review (#23, merged 21 Oct 2026; ships in 0.3.0)
+
+- Owner request after trying 0.2.2 with Claude Desktop: edits appear one by one with markup and
+  are accepted or rejected each on its own, sharp at any zoom, draggable companion, lower footprint.
+  Design and behaviour: `docs/features/agent-live-review.md`.
+- The proposal copy stays in the worker for the whole review (`propose*`, `renderProposal`,
+  `checkProposal`, `reviseProposal`, `closeProposal` in `src/features/agent-access/engine.ts`) and is
+  drawn by `PageCanvas` with a `source` through the shared render queue. Changes are revealed by
+  one timer in `ui/reviewState.ts`; reject on edit_text only clips the overlay, and the kept subset
+  is checked once. reflow_text items are paragraphs (reject keeps the original wording), and
+  rebuild_document items are sections (reject leaves the section out).
+- `DocumentModel.applyChanges` no longer updates state for replies that changed nothing. Anything
+  that must react to state outside the ChangeSet (the native menu: Show Annotations, document info,
+  redaction marks) refreshes itself explicitly.
+- MuPDF's per-document font and image caches are not journalled: after an Undo, `addFont`,
+  `addSimpleFont` and `addImage` on the live document can return a removed object. Make such
+  objects on a scratch `PDFDocument` and `graftObject` them (edit-text `FontBook`, Edit Images,
+  page marks).
+- 0.3.0 changes tool descriptions only (no arguments), so a Claude Desktop extension added from an
+  older version keeps working; adding it again gives Claude the new descriptions. Release notes:
+  `docs/releases/v0.3.0.md`.

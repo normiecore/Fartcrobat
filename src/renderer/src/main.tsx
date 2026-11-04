@@ -70,7 +70,7 @@ async function boot() {
   const refreshChrome = () => {
     const doc = getActiveDoc()
     const s = doc?.state
-    void invoke('window:setTitle', s ? `${s.dirty ? '• ' : ''}${s.title} - Fartcrobat` : 'Fartcrobat')
+    void invoke('window:setTitle', s ? `${s.dirty ? '• ' : ''}${s.title} - Inkmoor` : 'Inkmoor')
     scheduleMenuUpdate()
   }
   useApp.subscribe((s, prev) => {
@@ -84,7 +84,9 @@ async function boot() {
       const doc = getActiveDoc()
       unsubDoc = doc
         ? doc.store.subscribe((ds, dp) => {
-            if (ds.dirty !== dp.dirty || ds.title !== dp.title || ds.journal !== dp.journal || ds.selection !== dp.selection || ds.layout !== dp.layout || ds.zoomMode !== dp.zoomMode)
+            // Everything the native menu reads (enabled states, check marks): replies that change
+            // nothing no longer notify (applyChanges). Back/forward history moves with currentPage.
+            if (ds.dirty !== dp.dirty || ds.title !== dp.title || ds.journal !== dp.journal || ds.selection !== dp.selection || ds.layout !== dp.layout || ds.zoomMode !== dp.zoomMode || ds.showAnnotations !== dp.showAnnotations || ds.info !== dp.info || ds.currentPage !== dp.currentPage || ds.search !== dp.search || ds.coverPage !== dp.coverPage)
               refreshChrome()
           })
         : null
@@ -103,7 +105,7 @@ async function boot() {
   void refreshRecent()
   const launch = await invoke('app:launchFiles').catch(() => [] as string[])
   if (launch.length) await openPaths(launch)
-  ;(window as any).__fartcrobat = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes }
+  ;(window as any).__inkmoor = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes }
 }
 
 void boot()

@@ -370,3 +370,13 @@ export const KIND_SUBJECTS: Record<MeasureKind, string> = {
   perimeter: 'Perimeter Measurement',
   area: 'Area Measurement'
 }
+
+/**
+ * One CSV cell. Text that a spreadsheet would read as a formula (starting with = + - @, a tab or
+ * a carriage return) gets a leading apostrophe; plain numbers are left as they are.
+ */
+export function csvCell(v: string | number): string {
+  let s = String(v)
+  if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?\d+(\.\d+)?$/.test(s)) s = `'${s}`
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}

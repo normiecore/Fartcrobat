@@ -41,7 +41,7 @@ export function FormsSettingsSection() {
         <span>Required fields outline colour</span>
       </div>
       <p className="fc-forms-fill-settings-note">
-        Form scripts (number, date and phone formats, validation and calculations) run inside Fartcrobat with no
+        Form scripts (number, date and phone formats, validation and calculations) run inside Inkmoor with no
         access to your computer or the internet.
       </p>
       <Button

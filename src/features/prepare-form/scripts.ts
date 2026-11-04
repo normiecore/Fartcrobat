@@ -36,7 +36,7 @@ export function formatScripts(f: FormatSpec): { format: string; keystroke: strin
       }
     case 'time': {
       // Acrobat's AFTime_* functions are AFDate_* with a time pattern; writing AFDate_FormatEx keeps
-      // the field within the AF* subset every viewer (and Fartcrobat's form filling) supports
+      // the field within the AF* subset every viewer (and Inkmoor's form filling) supports
       const pattern = jsString(TIME_PATTERNS[int(f.style, 0, 3)])
       return { format: `AFDate_FormatEx(${pattern});`, keystroke: `AFDate_KeystrokeEx(${pattern});` }
     }

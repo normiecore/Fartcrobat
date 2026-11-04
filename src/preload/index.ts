@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { ALLOWED_EVENT_CHANNELS, type PreloadApi } from '@shared/ipc'
 
-const CHANNEL = /^(file|app|prefs|store|recent|menu|window|shell|defaultApp|print|clipboard|passwords):[A-Za-z]+$|^feature:[a-z0-9-]+:[A-Za-z0-9]+$/
+const CHANNEL = /^(file|app|prefs|store|recent|menu|window|shell|defaultApp|print|clipboard|passwords|certkeys):[A-Za-z]+$|^feature:[a-z0-9-]+:[A-Za-z0-9]+$/
 
 const api: PreloadApi = {
   invoke(channel, ...args) {

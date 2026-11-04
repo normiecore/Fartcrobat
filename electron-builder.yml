@@ -1,7 +1,8 @@
 # Installer configuration (electron-builder). Build with: npm run dist (or dist:win / dist:mac / dist:linux)
+# Keeps its first value for good (src/shared/identity.ts): installed copies update by it.
 appId: org.fartcrobat.app
-productName: Fartcrobat
-copyright: Copyright © 2026 Fartcrobat contributors. Licensed under the GNU AGPL v3 or later.
+productName: Inkmoor
+copyright: Copyright © 2026 Inkmoor contributors. Licensed under the GNU AGPL v3 or later.
 directories:
   output: release
   buildResources: build
@@ -13,13 +14,16 @@ files:
   # The renderer, preload and main bundles contain all code (electron.vite.config.ts bundles
   # every dependency; only Electron and Node built-ins are external), so node_modules is not needed.
   - '!node_modules/**'
-  # The agent helper (npm run build:agent) only ships inside the extension below.
+  # The agent helper (npm run build:agent) ships as the two plain files below, not in app.asar.
   - '!out/agent/**'
-# The Claude Desktop extension, a plain file next to app.asar that the system can open
-# (Preferences > AI apps > Add to Claude Desktop).
+# Next to app.asar: the Claude Desktop extension, which the system opens (Preferences > AI apps >
+# Add to Claude Desktop), and the MCP helper that AI apps set up by hand run with Node (Connect
+# ChatGPT Desktop; the app gives them a copy in userData, src/features/agent-access/main/helperCopy.ts).
 extraResources:
-  - from: out/agent/fartcrobat.mcpb
-    to: agent/fartcrobat.mcpb
+  - from: out/agent/inkmoor.mcpb
+    to: agent/inkmoor.mcpb
+  - from: out/agent/shim.mjs
+    to: agent/shim.mjs
 asar: true
 asarUnpack:
   - resources/**
@@ -32,8 +36,8 @@ publish:
   repo: Fartcrobat
   releaseType: release
 # File associations are per platform: on Windows the name is the registry ProgId, which must be
-# unique to Fartcrobat (src/main/util/systemDefaults.ts WINDOWS_PROG_ID checks it to tell whether
-# Fartcrobat is the default PDF app); on macOS it is the document type's display name.
+# unique to Inkmoor (src/main/util/systemDefaults.ts WINDOWS_PROG_ID checks it to tell whether
+# Inkmoor is the default PDF app); on macOS it is the document type's display name.
 win:
   fileAssociations:
     - ext: pdf
@@ -45,15 +49,23 @@ win:
       arch: [x64, arm64]
   icon: build/icon.ico
   artifactName: ${productName}-Setup-${version}-${arch}.${ext}
+# One file per kind of computer (scripts/release-downloads.mjs checks each build against the table
+# in README.md and the release notes): installers for x64 and for arm64, not also one for both. An
+# install keeps the installer it ran for its next update's differential download, which only
+# matches when it is the file the updater picks for its processor.
 nsis:
-  # build/installer.nsh registers Fartcrobat under Default apps (RegisteredApplications).
+  # Pinned to UUID v5 of the first appId (org.fartcrobat.app) so the installer keeps updating the
+  # same install whatever the product is called (src/shared/identity.ts, LEGACY.nsisGuid).
+  guid: bd977413-7ee9-5f76-80a8-7e980aa59bd1
+  buildUniversalInstaller: false
+  # build/installer.nsh registers Inkmoor under Default apps (RegisteredApplications).
   include: build/installer.nsh
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: Fartcrobat
+  shortcutName: Inkmoor
   license: build/license.txt
   runAfterFinish: true
   deleteAppDataOnUninstall: false
@@ -73,6 +85,8 @@ mac:
       arch: [x64, arm64]
   category: public.app-category.productivity
   icon: build/icon.png
+  # The processor in every name: x64 (Intel) or arm64 (Apple silicon). The .zip is for updates.
+  artifactName: ${productName}-${version}-${arch}-mac.${ext}
   darkModeSupport: true
   # Ad-hoc signed by default ("-"): unsigned apps that electron-builder modified are reported as
   # "damaged" on Apple Silicon, while ad-hoc signed ones get the normal "Open Anyway" path. The
@@ -80,9 +94,10 @@ mac:
   identity: '-'
   hardenedRuntime: false
   extendInfo:
-    NSHumanReadableCopyright: Fartcrobat is free software under the GNU AGPL v3 or later.
+    NSHumanReadableCopyright: Inkmoor is free software under the GNU AGPL v3 or later.
 dmg:
-  title: Fartcrobat ${version}
+  title: Inkmoor ${version}
+  artifactName: ${productName}-${version}-${arch}.${ext}
 linux:
   target:
     - AppImage
@@ -90,7 +105,7 @@ linux:
     - tar.gz
   category: Office
   icon: build/icons
-  executableName: fartcrobat
+  executableName: inkmoor
   syncDesktopName: true
   synopsis: PDF reader, editor and signer
   description: Free, open-source PDF reader, editor and signer for people coming from Adobe Acrobat Pro.
@@ -98,12 +113,12 @@ linux:
     - application/pdf
   desktop:
     entry:
-      Name: Fartcrobat
+      Name: Inkmoor
       GenericName: PDF Editor
       Comment: Read, edit, comment on and sign PDF documents
       Keywords: pdf;acrobat;reader;editor;sign;forms;
-      StartupWMClass: Fartcrobat
-  maintainer: Fartcrobat contributors <noreply@fartcrobat.org>
+      StartupWMClass: Inkmoor
+  maintainer: Inkmoor contributors <noreply@inkmoor.org>
 # No version in the AppImage's file name: an in-app update then replaces the file in place, so the
 # desktop entry and launchers that start it keep working. (electron-updater gives a file with a
 # version in its name the new version's name and deletes the old one; src/features/updates follows
@@ -111,4 +126,7 @@ linux:
 appImage:
   artifactName: ${productName}-${arch}.${ext}
 deb:
+  # Keeps its first name whatever the product is called, so dpkg upgrades the installed package
+  # (src/shared/identity.ts, LEGACY.debPackage).
+  packageName: fartcrobat
   priority: optional

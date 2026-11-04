@@ -7,12 +7,12 @@ import { join } from 'node:path'
 import type { UpdateStatus } from '../../src/shared/updates'
 import { activeDocState, fixturePath, launch, menuItem, openFile, ROOT, runCommand } from './helpers'
 
-// Updates end to end: a local server stands in for github.com (FARTCROBAT_UPDATE_URL) and
-// FARTCROBAT_FAKE_UPDATER stands in for electron-updater, reporting download progress and writing
+// Updates end to end: a local server stands in for github.com (INKMOOR_UPDATE_URL) and
+// INKMOOR_FAKE_UPDATER stands in for electron-updater, reporting download progress and writing
 // the install it would run to a log file. Both work only in unpackaged builds.
 test.skip(
-  !!process.env.FARTCROBAT_EXECUTABLE,
-  'FARTCROBAT_UPDATE_URL and FARTCROBAT_FAKE_UPDATER only work in unpackaged builds'
+  !!process.env.INKMOOR_EXECUTABLE,
+  'INKMOOR_UPDATE_URL and INKMOOR_FAKE_UPDATER only work in unpackaged builds'
 )
 
 /** This build's version: the server answers with it for "up to date". */
@@ -21,14 +21,14 @@ const NEW = '99.0.0'
 const REPO = '/normiecore/Fartcrobat'
 
 /** Lets windows ask about unsaved changes (launch closes them without asking). */
-const ASK_ON_CLOSE = { FARTCROBAT_FORCE_CLOSE: '' }
+const ASK_ON_CLOSE = { INKMOOR_FORCE_CLOSE: '' }
 
 const shot = (page: Page, name: string) =>
   page.screenshot({ path: `test-results/updates-${name}.png`, animations: 'disabled' })
 
 const workDirs: string[] = []
 function workDir() {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-updates-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-updates-'))
   workDirs.push(dir)
   return dir
 }
@@ -37,7 +37,7 @@ test.afterAll(() => {
 })
 
 interface FakeGitHub {
-  /** FARTCROBAT_UPDATE_URL: stands in for https://github.com/normiecore/Fartcrobat. */
+  /** INKMOOR_UPDATE_URL: stands in for https://github.com/normiecore/Fartcrobat. */
   base: string
   /** The release page /releases/latest leads to. */
   releaseUrl: (version: string) => string
@@ -149,10 +149,10 @@ function fakeUpdater(opts: FakeUpdaterOptions = {}): FakeUpdater {
 /** Automatic checks on, the first one at once, against the fake GitHub (and the fake updater). */
 function updateEnv(gh: FakeGitHub, updater?: FakeUpdater): Record<string, string> {
   return {
-    FARTCROBAT_UPDATE_CHECKS: '1',
-    FARTCROBAT_UPDATE_URL: gh.base,
-    FARTCROBAT_UPDATE_FIRST_CHECK_MS: '0',
-    ...(updater ? { FARTCROBAT_FAKE_UPDATER: updater.file } : {})
+    INKMOOR_UPDATE_CHECKS: '1',
+    INKMOOR_UPDATE_URL: gh.base,
+    INKMOOR_UPDATE_FIRST_CHECK_MS: '0',
+    ...(updater ? { INKMOOR_FAKE_UPDATER: updater.file } : {})
   }
 }
 
@@ -183,7 +183,7 @@ async function recordOpenedLinks(app: ElectronApplication) {
 }
 
 async function openPreferencesAt(page: Page, section: string) {
-  await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.preferences'))
+  await page.evaluate(() => void (window as any).__inkmoor.runCommand('app.preferences'))
   const prefs = page.getByRole('dialog', { name: 'Preferences' })
   await prefs.getByRole('button', { name: section, exact: true }).click()
   return prefs
@@ -220,7 +220,7 @@ test('an automatic check finds a new version; Download shows progress; Restart n
   const { app, page } = await launch([], { ...updateEnv(gh, updater), ...ASK_ON_CLOSE })
   try {
     const card = updateCard(page)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
     await expect(card).toContainText(`You have ${CURRENT}.`)
     await expect(card.getByRole('button', { name: "What's new" })).toBeVisible()
     // 'install': no note about the download page.
@@ -232,33 +232,33 @@ test('an automatic check finds a new version; Download shows progress; Restart n
     const bar = card.getByRole('progressbar')
     await expect(bar).toHaveAttribute('aria-valuemin', '0')
     await expect(bar).toHaveAttribute('aria-valuemax', '100')
-    await expect(card).toContainText(`Downloading Fartcrobat ${NEW}`)
+    await expect(card).toContainText(`Downloading Inkmoor ${NEW}`)
     // The bar moves: somewhere between the start and the end.
     await expect(bar).toHaveAttribute('aria-valuenow', /^[1-9]\d?$/)
     await expect(card).toContainText(/\d+% \(\d+ of 977 KB\)/)
     await expect(card.getByRole('button', { name: 'Cancel' })).toBeVisible()
     await shot(page, 'downloading')
 
-    await expect(card).toContainText(`Fartcrobat ${NEW} is ready to install.`)
-    await expect(card).toContainText('Restart Fartcrobat to finish.')
+    await expect(card).toContainText(`Inkmoor ${NEW} is ready to install.`)
+    await expect(card).toContainText('Restart Inkmoor to finish.')
     await expect(card.getByRole('button', { name: 'Later' })).toHaveAttribute(
       'title',
       'It installs the next time you quit.'
     )
     await shot(page, 'ready')
     await page.evaluate(() =>
-      (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
+      (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'dark' } }))
     )
     await shot(page, 'ready-dark')
     await page.evaluate(() =>
-      (window as any).__fartcrobat.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'light' } }))
+      (window as any).__inkmoor.useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: 'light' } }))
     )
 
     // A document with unsaved changes: the card moves to the corner of the document area.
     await openFile(page, fixturePath('text.pdf'))
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().core.doc.markDirty())
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().core.doc.markDirty())
     await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(true)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is ready to install.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is ready to install.`)
     await expect(page.locator('.shell-viewer-wrap').getByRole('region', { name: 'Update' })).toBeVisible()
     await shot(page, 'ready-document')
 
@@ -271,7 +271,7 @@ test('an automatic check finds a new version; Download shows progress; Restart n
     await ask.getByRole('button', { name: 'Cancel' }).click()
     await expect(ask).toBeHidden()
     expect((await activeDocState(page))?.dirty).toBe(true)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is ready to install.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is ready to install.`)
     expect((await updateStatus(page)).phase).toBe('ready')
     expect(updater.installs()).toEqual([])
 
@@ -292,14 +292,14 @@ test('closing the card hides it until Help > Check for Updates... finds the vers
   const { app, page } = await launch([], updateEnv(gh, updater))
   try {
     const card = updateCard(page)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
     await card.getByRole('button', { name: 'Close' }).click()
     await expect(card).toBeHidden()
     expect((await updateStatus(page)).dismissedVersion).toBe(NEW)
 
     const firstChecked = (await updateStatus(page)).lastChecked ?? 0
     await checkFromHelpMenu(page)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
     // The card comes back as soon as the check starts; wait for the check itself.
     await expect.poll(async () => (await updateStatus(page)).lastChecked ?? 0).toBeGreaterThan(firstChecked)
     expect(gh.checks()).toBe(2)
@@ -320,7 +320,7 @@ test('closing the card hides it until Help > Check for Updates... finds the vers
     await card.getByRole('button', { name: 'Close' }).click()
     await expect(card).toBeHidden()
     expect((await updateStatus(page)).phase).toBe('downloading')
-    await expect(card).toContainText(`Fartcrobat ${NEW} is ready to install.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is ready to install.`)
     expect((await updateStatus(page)).dismissedVersion).toBeNull()
   } finally {
     await closeQuietly(app)
@@ -337,7 +337,7 @@ test('Cancel stops a download and offers it again', async () => {
     await card.getByRole('button', { name: 'Download' }).click()
     await expect(card.getByRole('progressbar')).toBeVisible()
     await card.getByRole('button', { name: 'Cancel' }).click()
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
     await expect(card.getByRole('progressbar')).toHaveCount(0)
     expect((await updateStatus(page)).phase).toBe('available')
   } finally {
@@ -353,7 +353,7 @@ test('from the keyboard: the focus stays on the card as it changes, and screen r
   try {
     const card = updateCard(page)
     const live = announcer(page)
-    await expect(live).toHaveText(`Fartcrobat ${NEW} is available.`)
+    await expect(live).toHaveText(`Inkmoor ${NEW} is available.`)
     await expect(live).toHaveAttribute('aria-live', 'polite')
     // The same element all along: a live region added with its text already in it is not
     // reliably announced.
@@ -363,13 +363,13 @@ test('from the keyboard: the focus stays on the card as it changes, and screen r
     await card.getByRole('button', { name: 'Download' }).focus()
     await page.keyboard.press('Enter')
     await expect(card.getByRole('button', { name: 'Cancel' })).toBeFocused()
-    await expect(live).toHaveText(`Downloading Fartcrobat ${NEW}…`)
+    await expect(live).toHaveText(`Downloading Inkmoor ${NEW}…`)
     expect(await sameRegion()).toBe(true)
 
     await page.keyboard.press('Enter')
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
     await expect(card.getByRole('button', { name: 'Download' })).toBeFocused()
-    await expect(live).toHaveText(`Fartcrobat ${NEW} is available.`)
+    await expect(live).toHaveText(`Inkmoor ${NEW} is available.`)
 
     // Closed: nothing to announce, and the region stays for the next time.
     await card.getByRole('button', { name: 'Close' }).click()
@@ -382,20 +382,20 @@ test('from the keyboard: the focus stays on the card as it changes, and screen r
   }
 })
 
-test('Later: the update installs the next time Fartcrobat quits, without starting again', async () => {
+test('Later: the update installs the next time Inkmoor quits, without starting again', async () => {
   const gh = await fakeGitHub()
   const updater = fakeUpdater({ steps: 3, stepMs: 100 })
   const { app, page } = await launch([], updateEnv(gh, updater))
   try {
     const card = updateCard(page)
     await card.getByRole('button', { name: 'Download' }).click()
-    await expect(card).toContainText(`Fartcrobat ${NEW} is ready to install.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is ready to install.`)
     await card.getByRole('button', { name: 'Later' }).click()
     await expect(card).toBeHidden()
     expect(updater.installs()).toEqual([])
 
     // File > Exit. The window may be gone before the call returns.
-    await page.evaluate(() => void (window as any).__fartcrobat.runCommand('app.quit')).catch(() => {})
+    await page.evaluate(() => void (window as any).__inkmoor.runCommand('app.quit')).catch(() => {})
     await waitForExit(app)
     await expect.poll(() => updater.installs()).toEqual([{ version: NEW, silent: true, runAfter: false }])
   } finally {
@@ -412,7 +412,7 @@ test('a download that fails says so, with Try again and Download from GitHub', a
     const opened = await recordOpenedLinks(app)
     const card = updateCard(page)
     await card.getByRole('button', { name: 'Download' }).click()
-    await expect(card).toContainText(`Couldn't download Fartcrobat ${NEW}.`)
+    await expect(card).toContainText(`Couldn't download Inkmoor ${NEW}.`)
     const status = await updateStatus(page)
     expect(status).toMatchObject({ phase: 'error', errorDuring: 'download' })
     expect(status.error).toBeTruthy()
@@ -426,7 +426,7 @@ test('a download that fails says so, with Try again and Download from GitHub', a
     updater.configure({ steps: 6, stepMs: 400, failDownload: true })
     await card.getByRole('button', { name: 'Try again' }).click()
     await expect(card.getByRole('progressbar')).toBeVisible()
-    await expect(card).toContainText(`Couldn't download Fartcrobat ${NEW}.`)
+    await expect(card).toContainText(`Couldn't download Inkmoor ${NEW}.`)
 
     await card.getByRole('button', { name: 'Close' }).click()
     await expect(card).toBeHidden()
@@ -439,12 +439,12 @@ test('a download that fails says so, with Try again and Download from GitHub', a
 
 test("where the app cannot install ('notify'), Download opens the release page", async () => {
   const gh = await fakeGitHub({ kind: 'latest', version: NEW, absolute: true })
-  // No FARTCROBAT_FAKE_UPDATER: an unpackaged run only tells about new versions.
+  // No INKMOOR_FAKE_UPDATER: an unpackaged run only tells about new versions.
   const { app, page } = await launch([], updateEnv(gh))
   try {
     const opened = await recordOpenedLinks(app)
     const card = updateCard(page)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
     await expect(card).toContainText('Opens the download page on GitHub.')
     expect((await updateStatus(page)).capability).toBe('notify')
     await shot(page, 'available-notify')
@@ -453,14 +453,14 @@ test("where the app cannot install ('notify'), Download opens the release page",
     await expect.poll(opened).toEqual([gh.releaseUrl(NEW)])
     // Nothing downloads in the app.
     await expect(card.getByRole('progressbar')).toHaveCount(0)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
 
     await card.getByRole('button', { name: "What's new" }).click()
     await expect.poll(opened).toEqual([gh.releaseUrl(NEW), gh.releaseUrl(NEW)])
 
     const prefs = await openPreferencesAt(page, 'Updates')
     await expect(prefs).toContainText(
-      'On this system Fartcrobat tells you about new versions, and you download them from GitHub.'
+      'On this system Inkmoor tells you about new versions, and you download them from GitHub.'
     )
   } finally {
     await closeQuietly(app)
@@ -476,7 +476,7 @@ test('in a narrow window with panes open on both sides, the card moves to the co
     await openFile(page, fixturePath('text.pdf'))
     await runCommand(page, 'comments.showList')
     const card = updateCard(page)
-    await expect(card).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(card).toContainText(`Inkmoor ${NEW} is available.`)
     await expect
       .poll(() => page.evaluate(() => document.querySelector<HTMLElement>('.shell-viewer-wrap')!.clientWidth))
       .toBeLessThan(384)
@@ -512,25 +512,25 @@ test('up to date: an automatic check says nothing; Help > Check for Updates... a
     await expect(updateCard(page)).toHaveCount(0)
 
     await checkFromHelpMenu(page)
-    const toast = page.locator('.toast', { hasText: `Fartcrobat ${CURRENT} is up to date.` })
+    const toast = page.locator('.toast', { hasText: `Inkmoor ${CURRENT} is up to date.` })
     await expect(toast).toBeVisible()
     expect(gh.checks()).toBe(2)
     await expect(updateCard(page)).toHaveCount(0)
     await shot(page, 'up-to-date-toast')
 
-    // Help > About Fartcrobat: the version, and a check of its own.
+    // Help > About Inkmoor: the version, and a check of its own.
     await runCommand(page, 'help.about')
-    const about = page.getByRole('dialog', { name: 'About Fartcrobat' })
-    await expect(about.getByRole('heading', { name: `Fartcrobat ${CURRENT}` })).toBeVisible()
+    const about = page.getByRole('dialog', { name: 'About Inkmoor' })
+    await expect(about.getByRole('heading', { name: `Inkmoor ${CURRENT}` })).toBeVisible()
     await about.getByRole('button', { name: 'Check for Updates' }).click()
-    await expect(about.getByRole('status')).toHaveText(`Fartcrobat ${CURRENT} is up to date.`)
+    await expect(about.getByRole('status')).toHaveText(`Inkmoor ${CURRENT} is up to date.`)
     await expect.poll(gh.checks).toBe(3)
     await shot(page, 'about-up-to-date')
 
     // A newer version: About offers it.
     gh.answer = { kind: 'latest', version: NEW }
     await about.getByRole('button', { name: 'Check for Updates' }).click()
-    await expect(about.getByRole('status')).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(about.getByRole('status')).toContainText(`Inkmoor ${NEW} is available.`)
     await expect(about.getByRole('button', { name: 'Download' })).toBeVisible()
     await shot(page, 'about-available')
   } finally {
@@ -561,7 +561,7 @@ test('a failed check: silent when automatic, an error toast when asked for', asy
 
     // GitHub answers, but not with a release: a server error, or a page without a release tag.
     const unexpected = page.locator('.toast-error', {
-      hasText: "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
+      hasText: "Couldn't check for updates. GitHub sent an answer Inkmoor doesn't understand. Try again later."
     })
     for (const answer of [{ kind: 'error' }, { kind: 'page' }] as const) {
       gh.answer = answer
@@ -586,11 +586,11 @@ test('a failed check: silent when automatic, an error toast when asked for', asy
     await prefs.getByRole('button', { name: 'Done' }).click()
     gh.answer = { kind: 'error' }
     await runCommand(page, 'help.about')
-    const about = page.getByRole('dialog', { name: 'About Fartcrobat' })
+    const about = page.getByRole('dialog', { name: 'About Inkmoor' })
     const beforeAbout = gh.checks()
     await about.getByRole('button', { name: 'Check for Updates' }).click()
     await expect(about.getByRole('status')).toHaveText(
-      "Couldn't check for updates. GitHub sent an answer Fartcrobat doesn't understand. Try again later."
+      "Couldn't check for updates. GitHub sent an answer Inkmoor doesn't understand. Try again later."
     )
     expect(gh.checks()).toBeGreaterThan(beforeAbout)
     await about.getByRole('button', { name: 'Close', exact: true }).first().click()
@@ -600,7 +600,7 @@ test('a failed check: silent when automatic, an error toast when asked for', asy
     // GitHub answers again: the card.
     gh.answer = { kind: 'latest', version: NEW }
     await runCommand(page, 'help.checkForUpdates')
-    await expect(updateCard(page)).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(updateCard(page)).toContainText(`Inkmoor ${NEW} is available.`)
     await expect(failed).toHaveCount(0)
   } finally {
     await closeQuietly(app)
@@ -617,7 +617,7 @@ test('Preferences > Updates: with the switch off nothing is checked at start-up;
     join(userData, 'fartcrobat-settings.json'),
     JSON.stringify({ prefs: { rememberPasswords: false, checkForUpdates: false } })
   )
-  const { app, page } = await launch([], { ...updateEnv(gh), FARTCROBAT_USER_DATA: userData })
+  const { app, page } = await launch([], { ...updateEnv(gh), INKMOOR_USER_DATA: userData })
   try {
     const prefs = await openPreferencesAt(page, 'Updates')
     await expect(prefs.getByText(`Version ${CURRENT}`, { exact: true })).toBeVisible()
@@ -629,14 +629,14 @@ test('Preferences > Updates: with the switch off nothing is checked at start-up;
       'Checking asks GitHub for the latest release. Nothing about you or your documents is sent.'
     )
     await expect.poll(async () => (await updateStatus(page)).checksOff).toBe('preference')
-    // The first automatic check would have run at once (FARTCROBAT_UPDATE_FIRST_CHECK_MS=0). Give it
+    // The first automatic check would have run at once (INKMOOR_UPDATE_FIRST_CHECK_MS=0). Give it
     // time to show up at the server, which it must not.
     await page.waitForTimeout(1500)
     expect(gh.checks()).toBe(0)
     await shot(page, 'preferences-off')
 
     await prefs.getByRole('button', { name: 'Check Now' }).click()
-    await expect(prefs.getByRole('status')).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(prefs.getByRole('status')).toContainText(`Inkmoor ${NEW} is available.`)
     await expect(prefs.getByText('Last checked: just now')).toBeVisible()
     expect(gh.checks()).toBe(1)
     await shot(page, 'preferences-checked')
@@ -645,7 +645,7 @@ test('Preferences > Updates: with the switch off nothing is checked at start-up;
     await prefs.getByText('Check for updates automatically', { exact: true }).click()
     await expect(toggle).toBeChecked()
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().prefs.checkForUpdates))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().prefs.checkForUpdates))
       .toBe(true)
   } finally {
     await closeQuietly(app)
@@ -658,7 +658,7 @@ test('a machine policy that turns updates off: no checks at all, a read-only swi
   const dir = workDir()
   const policy = join(dir, 'policy.json')
   writeFileSync(policy, JSON.stringify({ autoUpdate: { enabled: false } }))
-  const { app, page } = await launch([], { ...updateEnv(gh), FARTCROBAT_POLICY_FILE: policy })
+  const { app, page } = await launch([], { ...updateEnv(gh), INKMOOR_POLICY_FILE: policy })
   try {
     await expect.poll(async () => (await updateStatus(page)).checksOff).toBe('policy')
 
@@ -678,8 +678,8 @@ test('a machine policy that turns updates off: no checks at all, a read-only swi
     ).toBeVisible()
 
     await runCommand(page, 'help.about')
-    const about = page.getByRole('dialog', { name: 'About Fartcrobat' })
-    await expect(about.getByRole('heading', { name: `Fartcrobat ${CURRENT}` })).toBeVisible()
+    const about = page.getByRole('dialog', { name: 'About Inkmoor' })
+    await expect(about.getByRole('heading', { name: `Inkmoor ${CURRENT}` })).toBeVisible()
     await expect(about.getByRole('button', { name: 'Check for Updates' })).toBeDisabled()
     await expect(about.getByRole('status')).toHaveText('Updates are managed by your organization.')
     await shot(page, 'about-policy')
@@ -705,12 +705,12 @@ test('a machine policy that turns checks on: the switch shows on and read-only, 
   )
   const { app, page } = await launch([], {
     ...updateEnv(gh),
-    FARTCROBAT_POLICY_FILE: policy,
-    FARTCROBAT_USER_DATA: userData
+    INKMOOR_POLICY_FILE: policy,
+    INKMOOR_USER_DATA: userData
   })
   try {
     // The person turned checks off, but the policy wins.
-    await expect(updateCard(page)).toContainText(`Fartcrobat ${NEW} is available.`)
+    await expect(updateCard(page)).toContainText(`Inkmoor ${NEW} is available.`)
     expect(gh.checks()).toBe(1)
     expect(await updateStatus(page)).toMatchObject({ checksOff: null, checksForcedOn: true })
 

@@ -21,7 +21,7 @@ interface CoreField {
 
 async function listAll(page: Page): Promise<CoreField[]> {
   return page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const fields = await d.ops('forms').listAll()
     return fields.map((f: any) => ({
       id: f.id,
@@ -44,7 +44,7 @@ const byName = async (page: Page, name: string) => (await listAll(page)).find((f
 async function pagePoint(page: Page, pageIndex: number, x: number, y: number) {
   return page.evaluate(
     ({ pageIndex, x, y }) => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const el = document.querySelector(`.viewer-page[data-page-index="${pageIndex}"]`)!
       const b = el.getBoundingClientRect()
       const s = d.state.zoom * (96 / 72)
@@ -57,7 +57,7 @@ async function pagePoint(page: Page, pageIndex: number, x: number, y: number) {
 /** Scrolls page point (0, y) to the top of the view and waits until the view is there. */
 async function scrollTo(page: Page, pageIndex: number, y: number) {
   await page.evaluate(
-    ({ pageIndex, y }) => (window as any).__fartcrobat.getActiveDoc().view.goToPage(pageIndex, { x: 0, y }),
+    ({ pageIndex, y }) => (window as any).__inkmoor.getActiveDoc().view.goToPage(pageIndex, { x: 0, y }),
     { pageIndex, y }
   )
   // the viewer scrolls on its next render; page points measured before that would miss
@@ -65,7 +65,7 @@ async function scrollTo(page: Page, pageIndex: number, y: number) {
     .poll(() =>
       page.evaluate(
         ({ pageIndex, y }) => {
-          const d = (window as any).__fartcrobat.getActiveDoc()
+          const d = (window as any).__inkmoor.getActiveDoc()
           const vp = d.view.getViewportElement().getBoundingClientRect()
           const b = document.querySelector(`.viewer-page[data-page-index="${pageIndex}"]`)!.getBoundingClientRect()
           const top = b.top + y * d.state.zoom * (96 / 72) - vp.top
@@ -116,7 +116,7 @@ async function externalLinks(app: ElectronApplication): Promise<string[]> {
 
 async function pageFieldOrder(page: Page, pageIndex: number): Promise<string[]> {
   return page.evaluate(async (p) => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     const fields = await d.ops('prepare-form').listPage(p)
     return fields.map((f: any) => f.name)
   }, pageIndex)
@@ -129,7 +129,7 @@ async function selectedFieldIds(page: Page): Promise<number[]> {
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {
   await page.evaluate((t) => {
-    const { useApp } = (window as any).__fartcrobat
+    const { useApp } = (window as any).__inkmoor
     useApp.setState((s: any) => ({ prefs: { ...s.prefs, theme: t } }))
   }, theme)
   await page.waitForTimeout(150)
@@ -139,7 +139,7 @@ const near = (a: number[], b: number[], tol = 1.5) => a.every((v, i) => Math.abs
 
 test('prepare a form: create fields, edit them, preview, save and reopen', async () => {
   const { app, page } = await launch()
-  const out = mkdtempSync(join(tmpdir(), 'fartcrobat-pf-'))
+  const out = mkdtempSync(join(tmpdir(), 'inkmoor-pf-'))
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
@@ -162,7 +162,7 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     await expect(page.locator('.ui-menu')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.locator('.ui-menu')).toHaveCount(0)
-    expect(await page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId)).toBe('form.text')
+    expect(await page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId)).toBe('form.text')
     await dragOnPage(page, 0, [72, 560], [272, 584])
     const nameBox = page.getByRole('textbox', { name: 'Field name' })
     await expect(nameBox).toBeVisible()
@@ -274,7 +274,7 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
     // Preview: back to normal filling; fill the text field
     await page.getByRole('button', { name: 'Preview', exact: true }).first().click()
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId))
       .toBe('select')
     await expect(page.locator('.fc-prepare-form-box')).toHaveCount(0)
     const cust = (await byName(page, 'customer'))!
@@ -289,7 +289,7 @@ test('prepare a form: create fields, edit them, preview, save and reopen', async
       await page.keyboard.press('Enter')
     } else {
       await page.evaluate(
-        async (id) => (window as any).__fartcrobat.getActiveDoc().ops('forms').setValue(id, 'Ada Lovelace'),
+        async (id) => (window as any).__inkmoor.getActiveDoc().ops('forms').setValue(id, 'Ada Lovelace'),
         cust.id
       )
     }
@@ -369,7 +369,7 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
   try {
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.5))
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
     await runCommand(page, 'form.prepare')
     await page
@@ -467,7 +467,7 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await props.getByRole('button', { name: 'OK', exact: true }).click()
     await expect(props).toBeHidden()
     const scripts = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       const f = (await d.ops('forms').listAll()).find((x: any) => x.name === 'total')
       return { scripts: f.scripts, order: await d.ops('forms').calculationOrder() }
     })
@@ -493,7 +493,7 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await expect.poll(() => pageFieldOrder(page, 0)).toEqual(['quantity', 'price', 'total'])
     // the calculation follows the rename
     const calc = await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       return (await d.ops('forms').listAll()).find((x: any) => x.name === 'total').scripts.calculate
     })
     expect(calc).toBe('AFSimple_Calculate("SUM", new Array ("price", "quantity"));')
@@ -531,7 +531,7 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
     await page.getByRole('button', { name: 'Add check box' }).first().focus()
     await page.keyboard.press('Enter')
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId))
       .toBe('form.checkbox')
     await page.keyboard.press('Enter')
     await expect(page.getByRole('textbox', { name: 'Field name' })).toHaveValue('Check Box1')
@@ -559,7 +559,7 @@ test('arranging fields at 150% zoom: multi-select, align, tab order, calculation
 
 test('request e-signatures: signers, signature fields, save and share by email', async () => {
   const { app, page } = await launch()
-  const out = mkdtempSync(join(tmpdir(), 'fartcrobat-pf-sign-'))
+  const out = mkdtempSync(join(tmpdir(), 'inkmoor-pf-sign-'))
   // work on a copy: "Save and share" saves the document in place
   const original = join(out, 'contract.pdf')
   copyFileSync(fixturePath('text.pdf'), original)
@@ -586,7 +586,7 @@ test('request e-signatures: signers, signature fields, save and share by email',
       .getByRole('button', { name: 'Signature field' })
       .click()
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId))
       .toBe('form.signature')
     await dragOnPage(page, 0, [72, 600], [252, 640])
     await expect.poll(async () => (await listAll(page)).length).toBe(1)

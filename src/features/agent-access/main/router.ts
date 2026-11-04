@@ -6,7 +6,7 @@ import type {
   AgentCallRequest,
   AgentProgress
 } from '@shared/agent/bridge'
-import type { AgentClientInfo, AgentErrorCode, AgentToolResult } from '@shared/agent/protocol'
+import { shimForwardsCompanion, type AgentClientInfo, type AgentErrorCode, type AgentToolResult } from '@shared/agent/protocol'
 import { agentTool } from '@shared/agent/tools'
 import { auditEntry } from './audit'
 
@@ -30,6 +30,8 @@ export interface WindowHost {
 export interface RouterCall {
   connectionId: number
   client: AgentClientInfo
+  /** The shim's version; unknown is taken as current. */
+  shimVersion?: string
   /** The shim's id (unique per connection). */
   id: string
   tool: string
@@ -58,6 +60,7 @@ interface Pending {
   started: number
   /** list_documents: asked of every window, answers merged. */
   fanOut: boolean
+  companionWindow?: string
   targets: Target[]
   cancelled: boolean
   /** Ends a cancelled call whose window does not answer. */
@@ -129,7 +132,7 @@ export class AgentRouter {
         p,
         fail(
           'unknown_tool',
-          `Fartcrobat has no tool named "${clip(call.tool)}". Update Fartcrobat or its Claude Desktop extension.`
+          `Inkmoor has no tool named "${clip(call.tool)}". Update Inkmoor or its Claude Desktop extension.`
         )
       )
       return
@@ -137,6 +140,7 @@ export class AgentRouter {
     if (call.tool === 'list_documents') {
       p.fanOut = true
       p.targets = this.host.windows().map((windowId) => ({ windowId, state: 'waiting' }))
+      p.companionWindow = this.currentWindow() ?? p.targets[0]?.windowId
       if (!p.targets.length) this.finish(p, { data: { documents: [] } })
       for (const t of p.targets) void this.deliver(p, t)
       return
@@ -236,7 +240,7 @@ export class AgentRouter {
       else
         this.finish(
           p,
-          fail('stale_handle', 'The Fartcrobat window closed before the call finished. Call list_documents.')
+          fail('stale_handle', 'The Inkmoor window closed before the call finished. Call list_documents.')
         )
     }
   }
@@ -265,7 +269,7 @@ export class AgentRouter {
   }
 
   /**
-   * Stops a call nobody will collect, through a wait_for_result of Fartcrobat's own: the window
+   * Stops a call nobody will collect, through a wait_for_result of Inkmoor's own: the window
    * then answers it, and the audit log records how the call really ended.
    */
   private stopTicket(ticket: string, t: Ticket) {
@@ -281,6 +285,12 @@ export class AgentRouter {
   }
 
   private route(call: RouterCall): { windowId: string } | AgentToolResult {
+    if (call.tool === 'companion_chat' && call.args.session !== undefined) {
+      const session = call.args.session
+      const match = typeof session === 'string' && /^(w\d+)-chat-[a-z0-9]+-[a-f0-9-]+$/.exec(session)
+      if (!match || !this.host.windows().includes(match[1])) return fail('invalid_args', 'The companion window closed or its session is invalid.')
+      return { windowId: match[1] }
+    }
     if (call.tool === 'wait_for_result') {
       const ticket = call.args.ticket
       if (typeof ticket !== 'string' || !ticket)
@@ -289,7 +299,7 @@ export class AgentRouter {
       if (!m || !this.host.windows().includes(m[1]))
         return fail(
           'invalid_args',
-          `No call has the ticket "${clip(ticket)}": it is not a current ticket, or its Fartcrobat window closed.`
+          `No call has the ticket "${clip(ticket)}": it is not a current ticket, or its Inkmoor window closed.`
         )
       return { windowId: m[1] }
     }
@@ -319,13 +329,13 @@ export class AgentRouter {
       t.state = 'done'
       if (p.fanOut) this.settle(p)
       else if (ready === 'timeout')
-        this.finish(p, fail('failed', 'The Fartcrobat window is not responding. Try again in a moment.'))
+        this.finish(p, fail('failed', 'The Inkmoor window is not responding. Try again in a moment.'))
       else
         this.finish(
           p,
           fail(
             'stale_handle',
-            'The Fartcrobat window closed before the call could start. Call list_documents.'
+            'The Inkmoor window closed before the call could start. Call list_documents.'
           )
         )
       return
@@ -340,13 +350,16 @@ export class AgentRouter {
         client,
         windowId: t.windowId,
         currentWindow,
+        allowCompanionJoin:
+          (p.call.shimVersion === undefined || shimForwardsCompanion(p.call.shimVersion)) &&
+          (!p.fanOut || p.companionWindow === t.windowId),
         tool,
         args
       })
     } catch (err) {
       t.state = 'done'
       if (p.fanOut) this.settle(p)
-      else this.finish(p, fail('failed', `Could not reach the Fartcrobat window: ${(err as Error).message}`))
+      else this.finish(p, fail('failed', `Could not reach the Inkmoor window: ${(err as Error).message}`))
     }
   }
 
@@ -372,6 +385,7 @@ export class AgentRouter {
     const documents: unknown[] = []
     let answered = false
     let firstError: AgentToolResult['error']
+    let companion: AgentToolResult['companion']
     for (const t of p.targets) {
       const result = t.reply?.result
       if (!result) continue
@@ -380,10 +394,11 @@ export class AgentRouter {
         continue
       }
       answered = true
+      companion ??= result.companion
       const docs = (result.data as { documents?: unknown } | undefined)?.documents
       if (Array.isArray(docs)) documents.push(...docs)
     }
-    this.finish(p, !answered && firstError ? { error: firstError } : { data: { documents } })
+    this.finish(p, !answered && firstError ? { error: firstError } : { data: { documents }, ...(companion ? { companion } : {}) })
   }
 
   private finish(p: Pending, result: AgentToolResult, detail?: AgentAuditDetail) {

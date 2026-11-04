@@ -84,7 +84,7 @@ export function stillRunning(ticket: string) {
     status: 'still_running',
     ticket,
     message:
-      'This is still running in Fartcrobat, probably waiting for the person to answer there. Call wait_for_result with this ticket to get the result.'
+      'This is still running in Inkmoor, probably waiting for the person to answer there. Call wait_for_result with this ticket to get the result.'
   }
 }
 
@@ -122,7 +122,7 @@ const waitForResult: ToolHandler = async (args, ctx) => {
   const unknown = () =>
     new ToolError(
       'invalid_args',
-      `No call has the ticket "${id.slice(0, 100)}": it is not a ticket of this Fartcrobat window, or its result was already returned.`
+      `No call has the ticket "${id.slice(0, 100)}": it is not a ticket of this Inkmoor window, or its result was already returned.`
     )
   const t = tickets.get(id)
   // Tickets belong to the connection that started the call.

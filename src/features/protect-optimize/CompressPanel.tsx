@@ -15,7 +15,8 @@ function CompressPanelBody({ doc }: { doc: DocumentModel }) {
   const title = useDocState(doc, (s) => s.title)
   const dirty = useDocState(doc, (s) => s.dirty)
   const filePath = useDocState(doc, (s) => s.filePath)
-  const encrypted = useDocState(doc, (s) => !!s.info.encryption)
+  const encrypted = useDocState(doc, (s) => !!s.info.encryption || s.info.security === 'certificate')
+  const certificate = useDocState(doc, (s) => s.info.security === 'certificate')
   const signed = useDocState(doc, (s) => s.info.signatureCount > 0)
   const [size, setSize] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
@@ -99,7 +100,11 @@ function CompressPanelBody({ doc }: { doc: DocumentModel }) {
       {encrypted && (
         <div className={`${P}-note`}>
           <Lock size={16} />
-          <span>This PDF is password protected. The compressed copy keeps its password and permissions.</span>
+          <span>
+            {certificate
+              ? 'This PDF has certificate security. The compressed copy is encrypted for the same people, with the same permissions.'
+              : 'This PDF is password protected. The compressed copy keeps its password and permissions.'}
+          </span>
         </div>
       )}
       {signed && (

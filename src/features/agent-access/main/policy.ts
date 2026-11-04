@@ -20,7 +20,7 @@ export async function machinePolicy(
 }
 
 /**
- * The policy that applies. The machine's comes first: FARTCROBAT_POLICY_FILE only exists for tests
+ * The policy that applies. The machine's comes first: INKMOOR_POLICY_FILE only exists for tests
  * and never overrides what an administrator set.
  */
 export function currentPolicy(
@@ -28,7 +28,7 @@ export function currentPolicy(
   env: NodeJS.ProcessEnv = process.env
 ): PolicyDecision | null {
   if (machine) return machine
-  return env.FARTCROBAT_POLICY_FILE ? readPolicy(env.FARTCROBAT_POLICY_FILE) : null
+  return env.INKMOOR_POLICY_FILE ? readPolicy(env.INKMOOR_POLICY_FILE) : null
 }
 
 export function agentAccessState(

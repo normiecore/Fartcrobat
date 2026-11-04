@@ -1,9 +1,12 @@
-// Starting Fartcrobat when an AI app calls a tool while it is not running.
+// Starting the app when an AI app calls a tool while it is not running.
 import { execFile, spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { access, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { posix, win32 } from 'node:path'
 import { AGENT_DIR, APP_FILE } from '@shared/agent/protocol'
+import { LEGACY, NAMES, PRODUCT_NAME, productNames, userDataEnvFor, userDataFolderName, type Names } from '@shared/identity'
+import { regExe } from '@shared/winSystem'
 
 export interface LaunchTarget {
   executable: string
@@ -24,11 +27,9 @@ export interface LaunchedApp {
 
 /**
  * electron-builder's NSIS installer records the install folder under HKCU (or HKLM for an install
- * for everyone) in `Software\<GUID>`, the GUID being UUID v5 of the appId (org.fartcrobat.app).
+ * for everyone) in `Software\<GUID>`, the GUID being pinned in electron-builder.yml (nsis.guid).
  */
-const WINDOWS_INSTALL_KEY = 'Software\\bd977413-7ee9-5f76-80a8-7e980aa59bd1'
-const WINDOWS_EXE = 'Fartcrobat.exe'
-const PRODUCT = 'Fartcrobat'
+const WINDOWS_INSTALL_KEY = `Software\\${LEGACY.nsisGuid}`
 /**
  * How long the shim waits for PowerShell or `open` to say whether they started the app. One still
  * at it then (a slow machine, a Gatekeeper prompt) may yet start it, so it is left to finish.
@@ -69,7 +70,7 @@ export function parseRegQuery(output: string): string | null {
 function regInstallLocation(root: 'HKCU' | 'HKLM'): Promise<string | null> {
   return new Promise((resolve) => {
     execFile(
-      'reg',
+      regExe(process.env),
       ['query', `${root}\\${WINDOWS_INSTALL_KEY}`, '/v', 'InstallLocation'],
       { windowsHide: true, timeout: 5000 },
       (err, stdout) => resolve(err ? null : parseRegQuery(String(stdout)))
@@ -78,17 +79,26 @@ function regInstallLocation(root: 'HKCU' | 'HKLM'): Promise<string | null> {
 }
 
 /**
- * Where Fartcrobat.exe may be on Windows, most likely first: the folders the installer recorded,
- * then its defaults (per user: %LOCALAPPDATA%\Programs\Fartcrobat; for everyone: Program Files).
+ * Where the executable may be on Windows, most likely first: the folders the installer recorded,
+ * then its defaults (per user: %LOCALAPPDATA%\Programs\<name>; for everyone: Program Files). An
+ * install updated across a rename keeps its folder and may have either executable name.
  */
-export function windowsInstallCandidates(env: NodeJS.ProcessEnv, registered: (string | null)[]): string[] {
+export function windowsInstallCandidates(
+  env: NodeJS.ProcessEnv,
+  registered: (string | null)[],
+  names: Names = NAMES
+): string[] {
+  const products = productNames(names)
   const dirs = registered.filter((d): d is string => !!d)
   const localAppData =
     env.LOCALAPPDATA || (env.USERPROFILE && win32.join(env.USERPROFILE, 'AppData', 'Local'))
-  if (localAppData) dirs.push(win32.join(localAppData, 'Programs', PRODUCT))
-  for (const programFiles of [env.ProgramW6432, env.ProgramFiles, env.PROGRAMFILES])
-    if (programFiles) dirs.push(win32.join(programFiles, PRODUCT))
-  return [...new Set(dirs.map((d) => win32.join(d, WINDOWS_EXE)))]
+  for (const product of products) {
+    if (localAppData) dirs.push(win32.join(localAppData, 'Programs', product))
+    for (const programFiles of [env.ProgramW6432, env.ProgramFiles, env.PROGRAMFILES])
+      if (programFiles) dirs.push(win32.join(programFiles, product))
+  }
+  const exes = [...new Set(dirs)].flatMap((d) => products.map((p) => win32.join(d, `${p}.exe`)))
+  return [...new Set(exes)]
 }
 
 /** Where the installers put the executable, most likely first. */
@@ -96,16 +106,21 @@ export function installCandidates(
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
   home: string,
-  registered: (string | null)[] = []
+  registered: (string | null)[] = [],
+  names: Names = NAMES
 ): string[] {
-  if (platform === 'win32') return windowsInstallCandidates(env, registered)
+  const products = productNames(names)
+  if (platform === 'win32') return windowsInstallCandidates(env, registered, names)
   if (platform === 'darwin')
-    return [
-      `/Applications/${PRODUCT}.app/Contents/MacOS/${PRODUCT}`,
-      posix.join(home, `Applications/${PRODUCT}.app/Contents/MacOS/${PRODUCT}`)
-    ]
-  // The .deb package; AppImages can be anywhere and are found through app.json only.
-  return [`/opt/${PRODUCT}/fartcrobat`]
+    return products.flatMap((p) => [
+      `/Applications/${p}.app/Contents/MacOS/${p}`,
+      posix.join(home, `Applications/${p}.app/Contents/MacOS/${p}`)
+    ])
+  // The .deb package (/opt/<productName>/<executableName>); AppImages can be anywhere and are found
+  // through app.json only.
+  return products.flatMap((p) => [`/opt/${p}/${p.toLowerCase()}`, `/opt/${p}/${LEGACY.debPackage}`]).filter(
+    (v, i, all) => all.indexOf(v) === i
+  )
 }
 
 async function exists(file: string): Promise<boolean> {
@@ -115,6 +130,60 @@ async function exists(file: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+/** Electron's appData folder, which holds the app's userData folder. */
+export function appDataDir(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir()
+): string {
+  if (platform === 'win32') return env.APPDATA || win32.join(home, 'AppData', 'Roaming')
+  if (platform === 'darwin') return posix.join(home, 'Library', 'Application Support')
+  return env.XDG_CONFIG_HOME || posix.join(home, '.config')
+}
+
+/**
+ * The app's usual userData folder, whatever the environment names: the folder from before a rename
+ * when there is one, as the app itself picks it (src/main/index.ts, pinUserData).
+ */
+export function defaultUserDataDir(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+  exists: (path: string) => boolean = existsSync,
+  names: Names = NAMES
+): string {
+  const path = platform === 'win32' ? win32 : posix
+  const appData = appDataDir(env, platform, home)
+  return path.join(appData, userDataFolderName((name) => exists(path.join(appData, name)), names))
+}
+
+/** Every folder that counts as the usual userData folder: one per product name. */
+function usualUserDataDirs(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, home: string, names: Names): string[] {
+  const path = platform === 'win32' ? win32 : posix
+  const appData = appDataDir(env, platform, home)
+  return productNames(names).map((name) => path.join(appData, name))
+}
+
+/**
+ * <NAME>_USER_DATA names a separate profile (development, tests). The Connect ChatGPT Desktop
+ * setup names the usual folder as well, because ChatGPT passes servers only some of the
+ * environment (XDG_CONFIG_HOME, for one): that is not a separate profile, and the app starts as
+ * for the Claude extension. A setup made before a rename names the folder under the old name.
+ */
+export function separateProfile(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+  home: string = homedir(),
+  names: Names = NAMES
+): boolean {
+  const named = env[userDataEnvFor(names.current)] || env[LEGACY.userDataEnv]
+  if (!named) return false
+  const usual = usualUserDataDirs(env, platform, home, names)
+  if (platform === 'win32')
+    return !usual.some((u) => win32.resolve(named).toLowerCase() === win32.resolve(u).toLowerCase())
+  return !usual.some((u) => posix.resolve(named) === posix.resolve(u))
 }
 
 /**
@@ -131,7 +200,7 @@ export async function findApp(
   const info = await readAppInfo(userData, platform)
   if (info && (info.enabled === false || (await exists(info.executable)))) return info
   // A separate profile (development, tests) only starts what it recorded itself.
-  if (env.FARTCROBAT_USER_DATA) return null
+  if (separateProfile(env, platform, home)) return null
   const registered =
     platform === 'win32' ? await Promise.all([regInstallLocation('HKCU'), regInstallLocation('HKLM')]) : []
   for (const exe of installCandidates(platform, env, home, registered))
@@ -161,11 +230,12 @@ export function macBundle(executable: string): string | null {
 export function launchMethod(
   target: LaunchTarget,
   env: NodeJS.ProcessEnv,
-  platform: NodeJS.Platform
+  platform: NodeJS.Platform,
+  home: string = homedir()
 ): LaunchMethod {
   // A separate profile (development, tests) is named in the environment, and only a direct start
   // passes that on: WMI and LaunchServices give the app the person's usual environment.
-  if (env.FARTCROBAT_USER_DATA) return 'direct'
+  if (separateProfile(env, platform, home)) return 'direct'
   if (platform === 'win32') return 'wmi'
   if (platform === 'darwin' && !target.args.length && macBundle(target.executable)) return 'launch-services'
   return 'direct'
@@ -199,13 +269,13 @@ export function windowsCommandLine(target: LaunchTarget): string {
 }
 
 /**
- * Starts the command line in FARTCROBAT_LAUNCH_COMMAND, in the folder in FARTCROBAT_LAUNCH_DIR,
+ * Starts the command line in INKMOOR_LAUNCH_COMMAND, in the folder in INKMOOR_LAUNCH_DIR,
  * through WMI, and exits with WMI's answer (0: started). Both come from the environment and are
  * never pasted into the script, so nothing in a path can change what PowerShell runs.
  */
 export const WMI_LAUNCH_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
-  '$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $env:FARTCROBAT_LAUNCH_COMMAND; CurrentDirectory = $env:FARTCROBAT_LAUNCH_DIR }',
+  '$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $env:INKMOOR_LAUNCH_COMMAND; CurrentDirectory = $env:INKMOOR_LAUNCH_DIR }',
   'exit [int]$r.ReturnValue'
 ].join('; ')
 
@@ -226,8 +296,8 @@ export function wmiLauncher(target: LaunchTarget, env: NodeJS.ProcessEnv): Launc
       windowsHide: true,
       env: {
         ...env,
-        FARTCROBAT_LAUNCH_COMMAND: windowsCommandLine(target),
-        FARTCROBAT_LAUNCH_DIR: win32.dirname(target.executable)
+        INKMOOR_LAUNCH_COMMAND: windowsCommandLine(target),
+        INKMOOR_LAUNCH_DIR: win32.dirname(target.executable)
       }
     }
   }
@@ -266,7 +336,7 @@ function spawnDirect(
   platform: NodeJS.Platform
 ): Promise<LaunchedApp> {
   const appEnv = { ...env }
-  // Set when the AI app runs this helper with its own Electron as Node: Fartcrobat would start as
+  // Set when the AI app runs this helper with its own Electron as Node: Inkmoor would start as
   // plain Node too, and exit at once.
   delete appEnv.ELECTRON_RUN_AS_NODE
   return new Promise((resolve, reject) => {
@@ -297,7 +367,7 @@ function spawnDirect(
  *   package, and Windows redirects its descendants' writes to AppData into a private copy, which
  *   would split the app's settings (agent access among them), endpoint.json and audit log from the
  *   real ones. Being outside the AI app's job object, the app does not close with it either.
- * - On macOS through LaunchServices (`open -a`), so macOS asks for file access in Fartcrobat's own
+ * - On macOS through LaunchServices (`open -a`), so macOS asks for file access in Inkmoor's own
  *   name rather than the AI app's, and brings the app to the front.
  * Otherwise, or when that fails, as a detached child.
  */
@@ -319,13 +389,13 @@ export async function startApp(target: LaunchTarget, opts: StartOptions = {}): P
     if (typeof outcome === 'string') {
       opts.log?.(
         outcome === 'started'
-          ? `Started Fartcrobat through ${name}.`
-          : `${name} has not finished starting Fartcrobat after ${timeoutMs / 1000} seconds; waiting for it.`
+          ? `Started ${PRODUCT_NAME} through ${name}.`
+          : `${name} has not finished starting ${PRODUCT_NAME} after ${timeoutMs / 1000} seconds; waiting for it.`
       )
       // The launcher's exit says nothing about the app: only a fresh endpoint.json does.
       return { pid: undefined, exited: new Promise(() => {}) }
     }
-    opts.log?.(`Could not start Fartcrobat through ${name} (${outcome.failed}); starting it directly.`)
+    opts.log?.(`Could not start ${PRODUCT_NAME} through ${name} (${outcome.failed}); starting it directly.`)
   }
   return spawnDirect(run, target, env, platform)
 }

@@ -10,7 +10,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `test-results
 async function engine<T = unknown>(page: Page, ns: string, op: string, ...args: unknown[]): Promise<T> {
   return page.evaluate(
     ({ ns, op, args }) => {
-      const ops = (window as any).__fartcrobat.getActiveDoc().ops(ns)
+      const ops = (window as any).__inkmoor.getActiveDoc().ops(ns)
       return ops[op](...args)
     },
     { ns, op, args }
@@ -40,7 +40,7 @@ async function thumbsSettled(page: Page) {
 
 async function setTheme(page: Page, theme: 'light' | 'dark') {
   await page.evaluate((t) => {
-    const { useApp } = (window as any).__fartcrobat
+    const { useApp } = (window as any).__inkmoor
     useApp.setState({ prefs: { ...useApp.getState().prefs, theme: t } })
   }, theme)
   await expect(page.locator('html')).toHaveAttribute('data-theme', theme)
@@ -116,7 +116,7 @@ test('page thumbnails: navigate, keyboard, reorder by drag, context menu', async
     await page.getByRole('menuitem', { name: 'Rotate Page Clockwise' }).click()
     await expect
       .poll(() =>
-        page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[1].rotation)
+        page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.pages[1].rotation)
       )
       .toBe(90)
     await page.locator('.fc-navigation-thumb[data-page-index="1"]').click({ button: 'right' })
@@ -183,7 +183,7 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     // a bookmark from selected text, at the current zoom
     await runCommand(page, 'nav.first')
     await page.evaluate(() => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       return d.pageText(0).then((t: any) => {
         const s = t.text.indexOf('The quick brown fox')
         d.setSelection({
@@ -261,7 +261,7 @@ test('bookmarks: navigate, add with Ctrl+B, rename, nest by drag, delete', async
     await expect.poll(async () => (await outlineTitles(page)).length).toBe(7)
 
     // a bookmark keeps an explicit zoom and position
-    await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().view.setZoom(1.5))
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.5))
     await runCommand(page, 'nav.last')
     await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(4)
     await page.getByRole('button', { name: 'New bookmark' }).click()
@@ -382,7 +382,7 @@ test('document properties: description, fonts, security, initial view, custom; u
     await expect(dialog).toBeHidden()
 
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.metadata.author))
       .toBe('Ada Lovelace')
     const props = await engine<any>(page, 'navigation', 'properties')
     expect(props.initialView.navigationTab).toBe('bookmarks')
@@ -392,14 +392,14 @@ test('document properties: description, fonts, security, initial view, custom; u
 
     await page.keyboard.press('Control+z')
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.metadata.author))
       .toBe('Fartcrobat Tests')
     expect((await engine<any>(page, 'navigation', 'properties')).custom).toEqual([])
 
     // encrypted document: the Security tab lists the restrictions
     await setTheme(page, 'dark')
     const opening = page.evaluate(
-      (p) => (window as any).__fartcrobat.openPaths([p]),
+      (p) => (window as any).__inkmoor.openPaths([p]),
       fixturePath('encrypted.pdf')
     )
     await page.getByLabel('Password', { exact: true }).fill('secret')
@@ -421,7 +421,7 @@ test('document properties: description, fonts, security, initial view, custom; u
     await shot(page, 'properties-description-dark')
     await dialog.getByRole('tab', { name: 'Initial View' }).click()
     await expect(dialog.getByLabel('Navigation tab')).toBeDisabled()
-    if (await page.evaluate(() => (window as any).__fartcrobat.registry.commands.has('protect.unlock'))) {
+    if (await page.evaluate(() => (window as any).__inkmoor.registry.commands.has('protect.unlock'))) {
       // the permissions password lifts the restriction while the dialog stays open
       await notice.getByRole('button', { name: 'Enter Permissions Password…' }).click()
       await page.getByRole('dialog', { name: 'Permissions password' }).getByLabel('Permissions password').fill('owner')
@@ -434,7 +434,7 @@ test('document properties: description, fonts, security, initial view, custom; u
       await expect(dialog).toBeHidden()
       await expect
         .poll(() =>
-          page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.metadata.author)
+          page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.metadata.author)
         )
         .toBe('Grace Hopper')
     } else {
@@ -582,7 +582,7 @@ test('attachments, layers and the initial view', async () => {
     await expect(page.locator('.shell-rightpanel', { hasText: 'Bookmarks' })).toBeVisible()
     await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.5, 2)
-    expect(await page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.layout)).toBe(
+    expect(await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.layout)).toBe(
       'two-page-continuous'
     )
     await expect(page.getByRole('treeitem', { name: /Introduction/ })).toBeVisible()
@@ -623,7 +623,7 @@ test('read out loud and the View menu entries', async () => {
     await expect(menuEntry(page, /Navigation Panes/)).toBeVisible()
     if (
       await page.evaluate(() =>
-        (window as any).__fartcrobat.registry.commands.has('comments.toggleVisibility')
+        (window as any).__inkmoor.registry.commands.has('comments.toggleVisibility')
       )
     )
       await expect(menuEntry(page, /Show\/Hide Comments/)).toBeVisible()

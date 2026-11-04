@@ -1,0 +1,53 @@
+/* Live edit review. On-page proposals are visual staging, not annotations that could leak into a
+   saved PDF. The layer lets the page underneath keep text selection and links: only marks take clicks. */
+.fc-agent-access-inline-layer { pointer-events: none; overflow: hidden; }
+.fc-agent-access-review-proposal { position: absolute; transition: clip-path 280ms ease-out 160ms; }
+.fc-agent-access-review-backdrop { position: absolute; inset: 0; background: #fff; }
+.fc-agent-access-review-removed { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #f4f4f4e6; color: #555; font-size: 13px; }
+
+/* The old lines are struck through, then the new text wipes in over them. */
+.fc-agent-access-review-strike { position: absolute; }
+.fc-agent-access-review-strike::after { content: ''; position: absolute; left: 0; right: 0; top: 52%; height: 2px; margin-top: -1px; background: #d7373f; transform-origin: left; animation: fc-agent-access-strike 160ms ease-out both; }
+@keyframes fc-agent-access-strike { from { transform: scaleX(0); } }
+
+.fc-agent-access-review-mark { position: absolute; pointer-events: auto; padding: 0; margin: 0; border: 1.5px dashed #c77700; border-radius: 2px; background: transparent; cursor: pointer; transition: box-shadow 120ms, border-color 120ms; }
+.fc-agent-access-review-mark.is-accepted { border: 1.5px solid var(--success, #268e6c); }
+.fc-agent-access-review-mark.is-rejected { border: 1.5px solid #8a8a8a; }
+.fc-agent-access-review-mark.is-focus { box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--accent, #1473e6); border-radius: 6px; }
+.fc-agent-access-review-mark:focus-visible { outline: 2px solid var(--accent, #1473e6); outline-offset: 3px; }
+.fc-agent-access-review-number { position: absolute; left: -2px; top: -2px; transform: translate(-50%, -50%); min-width: 18px; padding: 1px 5px; border-radius: 9px; background: #c77700; color: #fff; font: 600 11px/16px system-ui, sans-serif; text-align: center; white-space: nowrap; }
+.is-accepted > .fc-agent-access-review-number { background: var(--success, #268e6c); }
+.is-rejected > .fc-agent-access-review-number { background: #8a8a8a; }
+.fc-agent-access-review-chip { position: absolute; left: 0; bottom: 100%; margin-bottom: 3px; padding: 1px 6px; border-radius: 4px; background: var(--bg-elev, #fff); color: var(--text, #222); border: 1px solid var(--border, #ccc); font: 11px/16px system-ui, sans-serif; white-space: nowrap; pointer-events: none; }
+.fc-agent-access-review-guide { position: absolute; border: 1px dashed; pointer-events: none; }
+.fc-agent-access-review-guide.is-before { border-color: #d7373f99; }
+.fc-agent-access-review-guide.is-after { border-color: #268e6cbb; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-agent-access-review-proposal, .fc-agent-access-review-mark { transition: none; }
+  .fc-agent-access-review-strike::after { animation: none; }
+}
+
+/* The Review edits panel. */
+.fc-agent-access-inline-panel { height: 100%; min-height: 0; font-size: 13px; }
+.fc-agent-access-inline-panel p { overflow-wrap: anywhere; white-space: pre-wrap; }
+.fc-agent-access-inline-panel del { background: #d8434320; }
+.fc-agent-access-inline-panel ins { background: #22985b20; text-decoration: none; }
+.fc-agent-access-inline-panel figure { margin: 12px 0; }
+.fc-agent-access-inline-panel figcaption { margin-bottom: 4px; }
+.fc-agent-access-review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.fc-agent-access-review-warning { border-left: 3px solid #b36c00; padding-left: 8px; }
+.fc-agent-access-review-error { color: var(--danger, #d7373f); }
+.fc-agent-access-review-list { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fc-agent-access-review-list:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fc-agent-access-review-card { padding: 10px 12px; border: 1px solid var(--border, #aaa); border-left: 4px solid #c77700; border-radius: 6px; cursor: pointer; }
+.fc-agent-access-review-card.is-accepted { border-left-color: var(--success, #268e6c); }
+.fc-agent-access-review-card.is-rejected { border-left-color: #8a8a8a; }
+.fc-agent-access-review-card.is-hovered, .fc-agent-access-review-card.is-selected { box-shadow: 0 0 0 2px var(--accent, #1473e6); }
+.fc-agent-access-review-card header { display: flex; justify-content: space-between; gap: 8px; }
+.fc-agent-access-review-card p { margin: 6px 0; max-height: 9.5em; overflow: hidden; }
+.fc-agent-access-review-state { font-size: 11px; opacity: .8; white-space: nowrap; }
+.fc-agent-access-review-notes { margin: 6px 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px; }
+.fc-agent-access-review-notes li { padding: 1px 6px; border-radius: 4px; background: var(--bg-hover, #eee); font-size: 11px; }
+.fc-agent-access-review-card .fc-agent-access-review-actions { margin: 8px 0 0; }
+.fc-agent-access-review-thumb { position: relative; width: 100%; border: 1px solid var(--border, #aaa); background: #fff; overflow: hidden; }

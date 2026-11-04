@@ -557,3 +557,159 @@
 .fc-protect-optimize-saved > span {
   flex: 1;
 }
+
+/* ---- Encrypt with certificate ---- */
+.fc-protect-optimize-cert-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.fc-protect-optimize-cert-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.fc-protect-optimize-cert-group-head .fc-protect-optimize-cert-text {
+  flex: 1;
+}
+.fc-protect-optimize-cert-perms {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+.fc-protect-optimize-cert-perms .fc-protect-optimize-group-body {
+  margin-top: 4px;
+}
+.fc-protect-optimize-cert-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.fc-protect-optimize-cert-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--border);
+}
+.fc-protect-optimize-cert-row:last-child {
+  border-bottom: none;
+}
+.fc-protect-optimize-cert-row > .ui-check {
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+.fc-protect-optimize-cert-row.is-disabled .fc-protect-optimize-cert-name {
+  color: var(--text-muted);
+}
+.fc-protect-optimize-cert-row .ui-select {
+  width: auto;
+  flex-shrink: 0;
+}
+.fc-protect-optimize-cert-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+.fc-protect-optimize-cert-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.fc-protect-optimize-cert-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.fc-protect-optimize-cert-meta {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.fc-protect-optimize-cert-reason {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-style: italic;
+}
+.fc-protect-optimize-cert-warn {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: var(--fs-sm);
+  color: var(--text);
+}
+.fc-protect-optimize-cert-warn svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--warning);
+}
+.fc-protect-optimize-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-sunken);
+  font-size: var(--fs-sm);
+  font-weight: normal;
+  color: var(--text-muted);
+}
+.fc-protect-optimize-cert-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.fc-protect-optimize-cert-pane {
+  min-height: 160px;
+  max-height: 46vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.fc-protect-optimize-cert-subhead {
+  margin: 8px 0 2px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.fc-protect-optimize-cert-file {
+  width: 100%;
+}
+
+/* ---- Protect panel: certificate security ---- */
+.fc-protect-optimize-facts.is-certificate {
+  /* Certificate names can be long: let them wrap instead of widening the panel. */
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+.fc-protect-optimize-facts.is-certificate dd {
+  overflow-wrap: anywhere;
+}
+.fc-protect-optimize-recipients {
+  margin: 2px 4px 8px;
+  font-size: var(--fs-sm);
+}
+.fc-protect-optimize-recipients-title {
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.fc-protect-optimize-recipients ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.fc-protect-optimize-recipients li {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}

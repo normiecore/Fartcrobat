@@ -335,7 +335,7 @@ function HtmlForm({ o }: { o: HtmlConvertOptions }) {
       </div>
       <DropArea
         label={creating ? 'Converting…' : 'Select an HTML file'}
-        hint="Fartcrobat works offline: pictures and styles from the internet are left out. To convert a page from the web, save it as a complete web page first."
+        hint="Inkmoor works offline: pictures and styles from the internet are left out. To convert a page from the web, save it as a complete web page first."
         onPick={() => void pick()}
         onDrop={(paths) => {
           const html = paths.find((p) => HTML_EXTENSIONS.includes(extensionOf(p)))

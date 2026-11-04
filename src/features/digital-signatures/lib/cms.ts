@@ -21,7 +21,7 @@ import {
 } from './asn1'
 import { CryptoUnsupportedError, digest, signBytes, verifySignature, type KeyAlg, type SignatureAlgorithm } from './crypto'
 import { DIGEST_BY_OID, DIGEST_OID, OID, SIGNATURE_DIGEST, SIGNATURE_NAMES, type DigestName } from './oids'
-import { displayName, parseCertificate, type Certificate } from './x509'
+import { buildChain, displayName, isTimestampAuthority, parseCertificate, type Certificate, type ChainLink } from './x509'
 
 export interface BuildSignedDataOptions {
   /** Digest of the signed content (the PDF byte ranges). */
@@ -105,6 +105,10 @@ export interface TimestampInfo {
   valid: boolean
   digestName: DigestName
   imprint: Uint8Array
+  /** The authority's certificate chain (authority first: the token's signer), built at the timestamp time. */
+  chain: ChainLink[]
+  /** The token's signer has the time-stamping extended key usage and was valid at the timestamp time. */
+  authorityOk: boolean
 }
 
 export interface CmsVerification {
@@ -327,12 +331,15 @@ export async function verifyTimestampToken(token: Uint8Array, data: Uint8Array):
   if (v.eContentType !== OID.tstInfo || !v.eContent) throw new Asn1Error('Not a timestamp token')
   const info = parseTstInfo(v.eContent)
   const expected = await digest(info.digestName, data)
+  const chain = v.signer ? (await buildChain(v.signer, v.certificates, info.time)).chain : []
   return {
     time: info.time,
     authority: info.tsa || (v.signer ? displayName(v.signer.subject) : 'Unknown time-stamping authority'),
     valid: v.digestOk && v.signatureOk && bytesEqual(expected, info.imprint),
     digestName: info.digestName,
-    imprint: info.imprint
+    imprint: info.imprint,
+    chain,
+    authorityOk: isTimestampAuthority(v.signer, info.time)
   }
 }
 

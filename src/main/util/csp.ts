@@ -1,5 +1,5 @@
 /**
- * Content Security Policy for everything served from app://fartcrobat. The same string is in the
+ * Content Security Policy for everything served from app://inkmoor. The same string is in the
  * <meta> tag of src/renderer/index.html (used by the dev server); a unit test keeps them equal.
  * Sending it as a response header also covers the engine's Web Workers, which parse untrusted
  * PDFs and do not inherit the page's <meta> policy.

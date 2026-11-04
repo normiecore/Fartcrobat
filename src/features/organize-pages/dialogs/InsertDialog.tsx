@@ -21,7 +21,7 @@ import {
   insertFromClipboard,
   readClipboard
 } from '../actions'
-import { chooseFiles, loadFile, loadOpenDocument, orgOps, withPassword, type LoadedFile } from '../files'
+import { chooseFiles, loadFile, loadOpenDocument, orgOps, withUnlock, type LoadedFile } from '../files'
 import type { OrganizeClipboard } from '../ipc'
 import { countLabel, parsePageRange } from '../ranges'
 import { LocationPicker, Summary, gapForLocation, locationForGap, type Location } from './common'
@@ -60,7 +60,7 @@ export async function pickInsertFile(
   if (!path) return null
   try {
     const file = await loadFile(path)
-    const probe = await withPassword(file, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
+    const probe = await withUnlock(file, doc, (pw) => orgOps(doc).probe(file.bytes, file.engineName, pw))
     if (!probe) return null
     return { file: { ...file, password: probe.password }, pageCount: probe.result.pageCount }
   } catch (err) {

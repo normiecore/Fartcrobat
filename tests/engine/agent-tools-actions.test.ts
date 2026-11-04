@@ -129,7 +129,7 @@ describe('agent tools: paths and overwrite decisions', () => {
     expect(samePath(null, '/docs/a.pdf', 'linux')).toBe(false)
   })
 
-  it('tells protection Fartcrobat cannot open from other open errors', () => {
+  it('tells protection Inkmoor cannot open from other open errors', () => {
     expect(openErrorCode("This file could not be opened: unknown encryption handler: 'Adobe.PubSec'")).toBe('unsupported')
     expect(openErrorCode("unknown encryption handler: 'MicrosoftIRMServices'")).toBe('unsupported')
     expect(openErrorCode('cannot find startxref')).toBe('file_error')
@@ -410,6 +410,36 @@ describe('agent tools: form values', () => {
     expect(quiet.changes.map((c) => c.name)).toEqual(['amount1'])
     quiet.restore()
     expect(rt.value('amount1')).toBe('1000')
+  })
+
+  it("does not let the form's scripts print, save, submit or open links when an agent fills it", () => {
+    const calls: string[] = []
+    const host = {
+      print: () => calls.push('print'),
+      save: () => calls.push('save'),
+      exportData: () => calls.push('export'),
+      importData: () => calls.push('import'),
+      submitForm: (url: string) => calls.push(`submit:${url}`),
+      launchURL: (url: string) => calls.push(`url:${url}`)
+    }
+    const everything =
+      'this.print(); app.execMenuItem("Save"); this.saveAs("/tmp/x.pdf"); this.exportAsFDF(); this.importAnFDF(); ' +
+      'this.submitForm("https://example.com/s"); app.launchURL("https://example.com/l");'
+    const form = [
+      widget('name', { scripts: { keystroke: `if (event.willCommit) { ${everything} }` } }),
+      widget('city', { scripts: { validate: everything } })
+    ]
+    const rt = new FormRuntime({ fields: form, values: {}, calcOrder: [] }, host)
+    const plan = planFill(rt, resolveValues([{ name: 'name', value: 'Ada' }, { name: 'city', value: 'Paris' }], formFields(form)), { calculate: true })
+    expect(plan.changes.map((c) => c.value)).toEqual(['Ada', 'Paris'])
+    expect(calls).toEqual([])
+    // The same scripts may when the person commits a value.
+    const expected = ['print', 'save', 'save', 'export', 'import', 'submit:https://example.com/s', 'url:https://example.com/l']
+    rt.commit('name', 'Grace', { userAction: true })
+    expect(calls).toEqual(expected)
+    calls.length = 0
+    rt.commit('city', 'Rome', { userAction: true })
+    expect(calls).toEqual(expected)
   })
 })
 

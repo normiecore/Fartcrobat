@@ -9,7 +9,7 @@ const shot = (page: Page, name: string) => page.screenshot({ path: `test-results
 
 async function pageText(page: Page, index = 0): Promise<string> {
   return page.evaluate(
-    async (i) => (await (window as any).__fartcrobat.getActiveDoc().pageText(i)).text as string,
+    async (i) => (await (window as any).__inkmoor.getActiveDoc().pageText(i)).text as string,
     index
   )
 }
@@ -23,7 +23,7 @@ interface Line {
 /** Lines of a page's text with their direction. */
 async function pageLines(page: Page, index = 0): Promise<Line[]> {
   return page.evaluate(async (i) => {
-    const t = await (window as any).__fartcrobat.getActiveDoc().pageText(i)
+    const t = await (window as any).__inkmoor.getActiveDoc().pageText(i)
     return t.lines.map((l: any) => ({
       text: t.text.slice(l.start, l.end) as string,
       dir: l.dir as [number, number],
@@ -35,7 +35,7 @@ async function pageLines(page: Page, index = 0): Promise<Line[]> {
 async function spanAt(page: Page, needle: string, index = 0) {
   return page.evaluate(
     async ({ i, needle }) => {
-      const t = await (window as any).__fartcrobat.getActiveDoc().pageText(i)
+      const t = await (window as any).__inkmoor.getActiveDoc().pageText(i)
       const at = t.text.indexOf(needle)
       const s = t.spans.find((x: any) => x.start <= at && x.end > at)
       return s ? { font: s.font as string, size: s.size as number, color: s.color as number } : null
@@ -48,7 +48,7 @@ async function spanAt(page: Page, needle: string, index = 0) {
 async function charPoint(page: Page, needle: string, index = 0) {
   const p = await page.evaluate(
     async ({ i, needle }) => {
-      const doc = (window as any).__fartcrobat.getActiveDoc()
+      const doc = (window as any).__inkmoor.getActiveDoc()
       const t = await doc.pageText(i)
       const at = t.text.indexOf(needle)
       const q = t.quads.slice(at * 8, at * 8 + 8)
@@ -69,7 +69,7 @@ async function clickPage(page: Page, fx: number, fy: number, index = 0) {
 
 const editor = (page: Page) => page.locator('[data-fc-edit-text-editor]')
 const toolId = (page: Page) =>
-  page.evaluate(() => (window as any).__fartcrobat.useApp.getState().toolId as string)
+  page.evaluate(() => (window as any).__inkmoor.useApp.getState().toolId as string)
 const blockButton = (page: Page, name: RegExp, index = 0) =>
   page.locator(`.viewer-page[data-page-index="${index}"]`).getByRole('button', { name })
 
@@ -97,7 +97,7 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     // the editor sits exactly over the original text, at the original size
     const heading = (await page.locator('.fc-edit-text-frame').boundingBox())!
     const box = await page.evaluate(async () => {
-      const doc = (window as any).__fartcrobat.getActiveDoc()
+      const doc = (window as any).__inkmoor.getActiveDoc()
       const t = await doc.pageText(0)
       const l = t.lines.find((x: any) => t.text.slice(x.start, x.end) === 'Chapter 1')
       const el = document.querySelector('.viewer-page[data-page-index="0"]')!.getBoundingClientRect()
@@ -148,7 +148,7 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     await size.press('Enter')
     await expect(editor(page)).toBeFocused()
     const px = await page.evaluate(
-      () => (((window as any).__fartcrobat.getActiveDoc().state.zoom * 96) / 72) * 10
+      () => (((window as any).__inkmoor.getActiveDoc().state.zoom * 96) / 72) * 10
     )
     await expect
       .poll(() =>
@@ -177,11 +177,11 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     await expect.poll(() => toolId(page)).toBe('edit.addText')
     await clickPage(page, 0.55, 0.66)
     await expect(editor(page)).toBeFocused()
-    await page.keyboard.type('Added with Fartcrobat')
+    await page.keyboard.type('Added with Inkmoor')
     await shot(page, '7-adding-text')
     await clickPage(page, 0.3, 0.9)
     await expect(editor(page)).toHaveCount(0)
-    await expect.poll(() => pageText(page)).toContain('Added with Fartcrobat')
+    await expect.poll(() => pageText(page)).toContain('Added with Inkmoor')
     expect((await activeDocState(page))?.journal.undoLabel).toBe('Add Text')
     // after placing text the tool goes back to editing
     expect(await toolId(page)).toBe('edit.content')
@@ -214,7 +214,7 @@ test('edits the heading, resizes a paragraph, adds text and undoes everything', 
     await page.keyboard.press('Control+Z')
     await expect.poll(() => pageText(page)).not.toContain('A narrow text box')
     await page.keyboard.press('Control+Z')
-    await expect.poll(() => pageText(page)).not.toContain('Added with Fartcrobat')
+    await expect.poll(() => pageText(page)).not.toContain('Added with Inkmoor')
     await page.keyboard.press('Control+Z')
     await expect.poll(async () => (await spanAt(page, 'Lorem ipsum'))?.size).toBeCloseTo(11, 1)
     expect(await pageText(page)).toContain('Introduction')
@@ -240,11 +240,11 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
     await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(2, 2)
     await page.waitForTimeout(400)
     await page.evaluate(() => {
-      const el = (window as any).__fartcrobat.getActiveDoc().view.getViewportElement()
+      const el = (window as any).__inkmoor.getActiveDoc().view.getViewportElement()
       el.scrollLeft = 0
     })
     await page.evaluate(() =>
-      (window as any).__fartcrobat.getActiveDoc().view.scrollToRect(0, [66, 100, 90, 130])
+      (window as any).__inkmoor.getActiveDoc().view.scrollToRect(0, [66, 100, 90, 130])
     )
     await page.waitForTimeout(400)
     await waitForRender(page)
@@ -284,13 +284,13 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
     await page.waitForTimeout(300)
     // keyboard selection scrolled the end of the line into view: show the start of the page again
     await page.evaluate(
-      () => ((window as any).__fartcrobat.getActiveDoc().view.getViewportElement().scrollLeft = 0)
+      () => ((window as any).__inkmoor.getActiveDoc().view.getViewportElement().scrollLeft = 0)
     )
     await page.waitForTimeout(200)
     await shot(page, '11-zoom-200-formatting')
 
     await page.evaluate(() => {
-      const s = (window as any).__fartcrobat.useApp
+      const s = (window as any).__inkmoor.useApp
       s.setState({ prefs: { ...s.getState().prefs, theme: 'dark' } })
     })
     await page.waitForTimeout(300)
@@ -308,7 +308,7 @@ test('places the caret where clicked at 200%, formats a selection, keeps line br
 
     // dark page colours (Preferences > Accessibility): the editor and its cover follow them
     await page.evaluate(() => {
-      const s = (window as any).__fartcrobat.useApp
+      const s = (window as any).__inkmoor.useApp
       s.setState({ prefs: { ...s.getState().prefs, pageColors: 'dark' } })
     })
     await page.waitForTimeout(500)
@@ -398,9 +398,9 @@ test('links to page tools of other features, helps on scanned pages and edits fr
     await page.evaluate(() => {
       const w = window as any
       w.__ran = []
-      w.__realOcr = w.__fartcrobat.registry.commands.has('ocr.recognize')
+      w.__realOcr = w.__inkmoor.registry.commands.has('ocr.recognize')
       if (!w.__realOcr)
-        w.__fartcrobat.registry.commands.set('ocr.recognize', {
+        w.__inkmoor.registry.commands.set('ocr.recognize', {
           id: 'ocr.recognize',
           label: 'Recognize Text',
           run: () => w.__ran.push('ocr.recognize')
@@ -480,7 +480,7 @@ test('headers and watermarks added from the Edit panel stay updatable after edit
       page.locator('.ui-dialog').filter({ has: page.locator('h2', { hasText: title }) })
     const listing = () =>
       page.evaluate(async () => {
-        const doc = (window as any).__fartcrobat.getActiveDoc()
+        const doc = (window as any).__inkmoor.getActiveDoc()
         const l = await doc.ops('page-marks').list()
         return l.groups.map((g: any) => `${g.type}:${g.pages.length}`).sort()
       })
@@ -578,7 +578,7 @@ function fileText(path: string): string {
 }
 
 test('finishes the text being edited when saving from the menu or closing the document', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'fartcrobat-edit-text-'))
+  const dir = mkdtempSync(join(tmpdir(), 'inkmoor-edit-text-'))
   const file = join(dir, 'letter.pdf')
   copyFileSync(fixturePath('text.pdf'), file)
   const { app, page } = await launch()
@@ -610,7 +610,7 @@ test('finishes the text being edited when saving from the menu or closing the do
     await shot(page, '25-save-changes')
     await ask.getByRole('button', { name: 'Save', exact: true }).click()
     await expect
-      .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length))
+      .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.length))
       .toBe(0)
     expect(fileText(file)).toContain('lazy dog. Kind regards.')
   } finally {
@@ -630,7 +630,7 @@ test('commands from the menu bar write the text being edited first instead of cl
     await waitForRender(page)
     await page.locator('.shell-alltools-item', { hasText: 'Edit a PDF' }).click()
     const rotation = () =>
-      page.evaluate(() => (window as any).__fartcrobat.getActiveDoc().state.info.pages[0].rotation as number)
+      page.evaluate(() => (window as any).__inkmoor.getActiveDoc().state.info.pages[0].rotation as number)
 
     // Document > Rotate Pages…: the heading being typed is written before the pages turn
     await blockButton(page, /^Edit text: Chapter 1$/).click()

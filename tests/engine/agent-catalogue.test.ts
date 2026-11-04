@@ -33,7 +33,7 @@ describe('agent tool catalogue', () => {
     }
   })
 
-  it('takes no secrets: passwords and PINs are typed by the person in Fartcrobat', () => {
+  it('takes no secrets: passwords and PINs are typed by the person in Inkmoor', () => {
     // A yes/no option such as protect_document's require_open_password carries no secret.
     const secretLike = AGENT_TOOLS.flatMap((t) =>
       properties(t.inputSchema)

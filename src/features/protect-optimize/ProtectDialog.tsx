@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { Eye, EyeOff, Info, TriangleAlert } from 'lucide-react'
 import { Button, Checkbox, Dialog, Select, rememberOffer, setPrefs, useDocState, type DocumentModel, type RememberOffer } from '@renderer/sdk'
+import { OPENS_FOR_ANYONE } from './certificates'
 import {
   CHANGES_OPTIONS,
   DEFAULT_PROTECT_SETTINGS,
@@ -108,6 +109,8 @@ export function ProtectDialog({
   onDone: (settings?: ProtectSettings) => void
 }) {
   const signatures = useDocState(doc, (s) => s.info.signatureCount)
+  // The password replaces certificate security: without an open password, anyone can open the file.
+  const certificate = useDocState(doc, (s) => s.info.security === 'certificate')
   const [s, setS] = useState<ProtectSettings>(() => ({
     ...DEFAULT_PROTECT_SETTINGS,
     requireOpenPassword: mode === 'password',
@@ -285,6 +288,12 @@ export function ProtectDialog({
           <div className={`${P}-note is-error`} role="alert">
             <TriangleAlert size={16} />
             <span>{shown.general}</span>
+          </div>
+        )}
+        {certificate && !s.requireOpenPassword && (
+          <div className={`${P}-note is-warning`} data-testid="protect-opens-for-anyone">
+            <TriangleAlert size={16} />
+            <span>{OPENS_FOR_ANYONE}</span>
           </div>
         )}
         {signatures > 0 && (

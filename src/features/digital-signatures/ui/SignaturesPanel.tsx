@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CircleCheck, CircleX, Eraser, FileSearch, FileSignature, Info, MoreHorizontal, RefreshCw, ScrollText } from 'lucide-react'
 import { Button, EmptyState, IconButton, openToolGroup, showContextMenu, useDocState, type ContextMenuItem, type DocumentModel } from '@renderer/sdk'
-import { overallStatus, permissionText, signatureStatus } from '../status'
+import { displayedSigningTime, overallStatus, permissionText, signatureStatus, signingTimeNote } from '../status'
 import type { SignatureFieldInfo, SignatureReport } from '../types'
 import { clearSignature, goToSignature, validateAll, viewSignedVersion } from './actions'
 import { startSigning } from './flow'
@@ -93,7 +93,10 @@ function SignatureEntry({ doc, r, locked }: { doc: DocumentModel; r: SignatureRe
               </>
             )}
             <dt>Signing time</dt>
-            <dd>{formatDateTime(r.timestamp?.valid ? r.timestamp.time : r.signingTime)}</dd>
+            <dd>
+              {formatDateTime(displayedSigningTime(r, trusted))}
+              {signingTimeNote(r, trusted) ? ` ${signingTimeNote(r, trusted)}` : ''}
+            </dd>
             <dt>Field</dt>
             <dd>
               {r.fieldName}
@@ -148,6 +151,8 @@ export function SignaturesPanel({ doc }: { doc: DocumentModel }) {
   const { report, running, error } = useDocSignatures(doc)
   const trusted = useTrustedSet()
   const dirty = useDocState(doc, (s) => s.dirty)
+  // Signing certificate-encrypted documents is not supported yet (see encrypted.ts).
+  const encrypted = useDocState(doc, (s) => s.info.security === 'certificate')
   const overall = overallStatus(report, trusted)
   const hasAny = !!report && (report.signatures.length > 0 || report.unsigned.length > 0)
   return (
@@ -192,7 +197,7 @@ export function SignaturesPanel({ doc }: { doc: DocumentModel }) {
             <SignatureEntry key={r.fieldName} doc={doc} r={r} locked={report.locked} />
           ))}
           {report.unsigned.map((f) => (
-            <UnsignedEntry key={f.name} doc={doc} f={f} canSign={!report.locked && report.certified !== 1} />
+            <UnsignedEntry key={f.name} doc={doc} f={f} canSign={!report.locked && report.certified !== 1 && !encrypted} />
           ))}
         </ul>
       )}

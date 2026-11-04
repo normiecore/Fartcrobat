@@ -73,7 +73,7 @@ export function resolveDoc(ctx: ToolContext, handle?: unknown): DocumentModel {
         'no_document',
         open
           ? 'The person is on the Home screen, not looking at a document. Call list_documents and pass a handle.'
-          : 'No document is shown in the Fartcrobat window the person is using. Call list_documents (other windows may have documents open), use open_document, or ask the person to open one.'
+          : 'No document is shown in the Inkmoor window the person is using. Call list_documents (other windows may have documents open), use open_document, or ask the person to open one.'
       )
     }
     return doc
@@ -193,7 +193,7 @@ let confirming = 0
  */
 export function claimPerson(): () => void {
   if (confirming > 0 || useApp.getState().dialogs.length > 0)
-    throw new ToolError('busy', 'The person is answering another dialog in Fartcrobat. Try again after they have closed it.')
+    throw new ToolError('busy', 'The person is answering another dialog in Inkmoor. Try again after they have closed it.')
   confirming++
   let released = false
   return () => {
@@ -204,13 +204,13 @@ export function claimPerson(): () => void {
 }
 
 /**
- * Asks the person in Fartcrobat whether the agent may go ahead. Decline is the default button and
+ * Asks the person in Inkmoor whether the agent may go ahead. Decline is the default button and
  * Escape declines. Resolves false when the agent cancels the call meanwhile. Throws busy while
  * another dialog is open (see claimPerson).
  */
 export async function confirmAgentAction(
   ctx: ToolContext,
-  opts: { title: string; message: ReactNode; confirmLabel: string; details?: string[] }
+  opts: { title: string; message: ReactNode; confirmLabel: string; details?: string[]; width?: number }
 ): Promise<boolean> {
   throwIfAborted(ctx)
   // Nothing is awaited between the claim and openDialog, so two calls cannot both get through.
@@ -220,7 +220,7 @@ export async function confirmAgentAction(
     <Dialog
       title={opts.title}
       onClose={() => c(false)}
-      width={460}
+      width={opts.width ?? 460}
       className="fc-agent-access-confirm"
       footer={
         <>

@@ -99,7 +99,8 @@ export function renderToPixmap(s: Session, pageIndex: number, opts: RenderOption
   return { pix, region }
 }
 
-async function toResult(pixels: Uint8ClampedArray, region: Rect) {
+/** Copies pixels out of the WASM heap into a transferable result (an ImageBitmap in the browser). */
+export async function toResult(pixels: Uint8ClampedArray, region: Rect) {
   const width = region[2] - region[0]
   const height = region[3] - region[1]
   if (typeof createImageBitmap === 'function' && typeof ImageData === 'function') {

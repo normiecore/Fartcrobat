@@ -10,7 +10,8 @@ export async function viewSignedVersion(doc: DocumentModel, r: SignatureReport) 
     const bytes = await sigOps(doc).revisionBytes(r.revisionEnd)
     // A read-only view of an earlier revision: nothing to save unless the user edits it.
     const name = `${stripExtension(doc.state.title)} (signed version${r.signedVersion ? `, rev. ${r.signedVersion}` : ''}).pdf`
-    const opened = await openBytes(bytes, name, { filePath: null, dirty: false })
+    // An earlier revision of a certificate-encrypted file opens with the tab's key.
+    const opened = await openBytes(bytes, name, { filePath: null, dirty: false, derivedFrom: doc.state.unlock })
     if (opened) {
       openRightPanel('signatures')
       toast(`Showing the document as it was when ${r.signerName} signed it.`)

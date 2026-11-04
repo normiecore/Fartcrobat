@@ -58,13 +58,27 @@ export function callFinished(id: string, patch: Pick<CallRecord, 'outcome'> & Pa
   }))
 }
 
+/**
+ * The newest call the companion talks about: not its own chat calls, and only its conversation's
+ * once one joined. Records keep their identity until they change, so a selector returning this
+ * re-renders only when that call does.
+ */
+export function latestCall(calls: CallRecord[], ownerId?: number): CallRecord | undefined {
+  return calls.find(
+    (c) =>
+      c.tool !== 'companion_chat' &&
+      c.tool !== 'wait_for_result' &&
+      (ownerId === undefined || c.id.startsWith(`${ownerId}:`))
+  )
+}
+
 // ---- labels ------------------------------------------------------------------------------------
 
-/** How Fartcrobat names an AI app: "Claude" for Claude's apps, else what the app reported. */
+/** How Inkmoor names an AI app: "Claude" for Claude's apps, else what the app reported. */
 export function appLabel(name: string | undefined): string {
   const n = (name ?? '').trim()
   if (!n) return 'AI app'
-  return /claude/i.test(n) ? 'Claude' : n
+  return /claude/i.test(n) ? 'Claude' : /chatgpt|codex|openai/i.test(n) ? 'ChatGPT' : n
 }
 
 /** The indicator text: "Claude connected", or "2 AI apps connected" for different apps. */
@@ -81,9 +95,16 @@ export function documentLabel(document: string | undefined): string {
   return document.split(/[\\/]/).pop() || document
 }
 
+// Built once: making a formatter is costly, and the activity list shows up to MAX_CALLS times.
+let formats: [Intl.DateTimeFormat, Intl.DateTimeFormat] | null = null
+
 /** "10:42:07", or "10:42" without seconds. */
 export function timeLabel(ms: number, seconds = true): string {
-  return new Date(ms).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', ...(seconds ? { second: '2-digit' } : {}) })
+  formats ??= [
+    new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit' }),
+    new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
+  ]
+  return formats[seconds ? 0 : 1].format(ms)
 }
 
 /** "120 ms", "3.4 s", "2 min" */

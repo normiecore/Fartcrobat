@@ -1,0 +1,284 @@
+%PDF-1.3
+%‚„œ”
+1 0 obj
+<<
+/AcroForm 2 0 R
+/Outlines 15 0 R
+/PageMode /UseNone
+/Pages 10 0 R
+/Type /Catalog
+/Metadata 19 0 R
+>>
+endobj
+2 0 obj
+<<
+/DA (\057Helv 0 Tf 0 g)
+/DR <<
+/Encoding <<
+/RLAFencoding 3 0 R
+>>
+/Font <<
+/Helv 4 0 R
+>>
+>>
+/Fields [ 5 0 R ]
+>>
+endobj
+3 0 obj
+<<
+/Type /Encoding
+/Differences [ 24 /breve /caron /circumflex /dotaccent /hungarumlaut /ogonek /ring /tilde 39 /quotesingle 96 /grave 128 /bullet /dagger /daggerdbl /ellipsis /emdash /endash /florin /fraction /guilsinglleft /guilsinglright /minus /perthousand /quotedblbase /quotedblleft /quotedblright /quoteleft /quoteright /quotesinglbase /trademark /fi /fl /Lslash /OE /Scaron /Ydieresis /Zcaron /dotlessi /lslash /oe /scaron /zcaron 160 /Euro 164 /currency 166 /brokenbar 168 /dieresis /copyright /ordfeminine 172 /logicalnot /.notdef /registered /macron /degree /plusminus /twosuperior /threesuperior /acute /mu 183 /periodcentered /cedilla /onesuperior /ordmasculine 188 /onequarter /onehalf /threequarters 192 /Agrave /Aacute /Acircumflex /Atilde /Adieresis /Aring /AE /Ccedilla /Egrave /Eacute /Ecircumflex /Edieresis /Igrave /Iacute /Icircumflex /Idieresis /Eth /Ntilde /Ograve /Oacute /Ocircumflex /Otilde /Odieresis /multiply /Oslash /Ugrave /Uacute /Ucircumflex /Udieresis /Yacute /Thorn /germandbls /agrave /aacute /acircumflex /atilde /adieresis /aring /ae /ccedilla /egrave /eacute /ecircumflex /edieresis /igrave /iacute /icircumflex /idieresis /eth /ntilde /ograve /oacute /ocircumflex /otilde /odieresis /divide /oslash /ugrave /uacute /ucircumflex /udieresis /yacute /thorn /ydieresis ]
+>>
+endobj
+4 0 obj
+<<
+/BaseFont /Helvetica
+/Subtype /Type1
+/Name /Helv
+/Type /Font
+/Encoding 3 0 R
+>>
+endobj
+5 0 obj
+<<
+/AP <<
+/N 6 0 R
+>>
+/BS <<
+/S /S
+/W 1
+>>
+/DA (\057Helv 12 Tf \0561 \0561 \0561 rg)
+/DV (Field value)
+/F 4
+/FT /Tx
+/Ff 0
+/MK <<
+/BC [ 0.1 0.1 0.1 ]
+/BG [ 0.8 0.843 1 ]
+>>
+/MaxLen 100
+/P 7 0 R
+/Rect [ 72 520 272 544 ]
+/Subtype /Widget
+/T (name)
+/Type /Annot
+/V (Field value)
+>>
+endobj
+6 0 obj
+<<
+/BBox [ 0 0 200 24 ]
+/FormType 1
+/Matrix [ 1 0 0 1 0 0 ]
+/Resources <<
+/ProcSet [ /PDF /Text ]
+/Font <<
+/Helv 4 0 R
+>>
+>>
+/Subtype /Form
+/Type /XObject
+/Length 171
+>>
+stream
+.8 .843 1 rg
+0 0 200 24 re
+f
+.1 .1 .1 RG
+1 w
+0.5 0.5 199 23 re
+s
+/Tx BMC 
+q
+2 2 196 20 re
+W
+n
+0 g
+0 G
+BT
+/Helv 12 Tf
+.1 .1 .1 rg
+1 0 0 1 4 10 Tm
+(Field value) Tj
+ET
+Q
+EMC
+
+endstream
+endobj
+7 0 obj
+<<
+/Annots [ 8 0 R 5 0 R ]
+/Contents 9 0 R
+/MediaBox [ 0 0 612 792 ]
+/Parent 10 0 R
+/Resources <<
+/Font 13 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+>>
+endobj
+8 0 obj
+<<
+/C [ 0 0 0 ]
+/Contents (Note text in an object stream)
+/QuadPoints [ 72 600 92 600 72 620 92 620 ]
+/Rect [ 72 600 92 620 ]
+/Subtype /Text
+/Type /Annot
+>>
+endobj
+9 0 obj
+<<
+/Length 197
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+BT /F1 24 Tf 28.8 TL ET
+BT 1 0 0 1 72 700 Tm (Hello secret world) Tj T* ET
+BT /F1 14 Tf 16.8 TL ET
+BT 1 0 0 1 72 670 Tm (Second line of page one) Tj T* ET
+ 
+
+endstream
+endobj
+10 0 obj
+<<
+/Count 2
+/Kids [ 7 0 R 11 0 R ]
+/Type /Pages
+>>
+endobj
+11 0 obj
+<<
+/Contents 12 0 R
+/MediaBox [ 0 0 612 792 ]
+/Parent 10 0 R
+/Resources <<
+/Font 13 0 R
+/ProcSet [ /PDF /Text /ImageB /ImageC /ImageI ]
+>>
+/Rotate 0
+/Trans <<
+>>
+/Type /Page
+>>
+endobj
+12 0 obj
+<<
+/Length 112
+>>
+stream
+1 0 0 1 0 0 cm  BT /F1 12 Tf 14.4 TL ET
+BT /F1 24 Tf 28.8 TL ET
+BT 1 0 0 1 72 700 Tm (Page two text) Tj T* ET
+ 
+
+endstream
+endobj
+13 0 obj
+<<
+/F1 14 0 R
+>>
+endobj
+14 0 obj
+<<
+/BaseFont /Helvetica
+/Encoding /WinAnsiEncoding
+/Name /F1
+/Subtype /Type1
+/Type /Font
+>>
+endobj
+15 0 obj
+<<
+/Count 2
+/First 16 0 R
+/Last 17 0 R
+/Type /Outlines
+>>
+endobj
+16 0 obj
+<<
+/Next 17 0 R
+/Dest [ 7 0 R /Fit ]
+/Parent 15 0 R
+/Title (Page 1)
+>>
+endobj
+17 0 obj
+<<
+/Prev 16 0 R
+/Dest [ 11 0 R /Fit ]
+/Parent 15 0 R
+/Title (Page 2)
+>>
+endobj
+18 0 obj
+<<
+/Author (Fartcrobat Tests)
+/CreationDate (D\07220000101000000\05300\04700\047)
+/Creator (anonymous)
+/Keywords ()
+/ModDate (D\07220000101000000\05300\04700\047)
+/Producer (ReportLab PDF Library \055 \050opensource\051)
+/Subject (Passwordless test fixture)
+/Title (Secret title)
+/Trapped /False
+>>
+endobj
+19 0 obj
+<<
+/Type /Metadata
+/Subtype /XML
+/Length 344
+>>
+stream
+<?xpacket begin="Ôªø" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:pdf="http://ns.adobe.com/pdf/1.3/">
+   <pdf:Keywords>xmp-marker-123</pdf:Keywords>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>
+endstream
+endobj
+xref
+0 20
+0000000000 65535 f 
+0000000015 00000 n 
+0000000134 00000 n 
+0000000267 00000 n 
+0000001593 00000 n 
+0000001691 00000 n 
+0000001984 00000 n 
+0000002358 00000 n 
+0000002573 00000 n 
+0000002745 00000 n 
+0000002993 00000 n 
+0000003060 00000 n 
+0000003253 00000 n 
+0000003417 00000 n 
+0000003450 00000 n 
+0000003558 00000 n 
+0000003632 00000 n 
+0000003719 00000 n 
+0000003807 00000 n 
+0000004122 00000 n 
+trailer
+<<
+/Size 20
+/Root 1 0 R
+/Info 18 0 R
+/ID [ <38316146eae729392b866458dd844c7f> <38316146eae729392b866458dd844c7f> ]
+>>
+startxref
+4548
+%%EOF

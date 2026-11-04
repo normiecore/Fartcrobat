@@ -127,8 +127,8 @@ describe('what a manual check found', () => {
     expect(
       statusLine(status({ phase: 'error', errorDuring: 'check', manual: true, error: 'GitHub said no.' }))
     ).toBe('GitHub said no.')
-    expect(statusLine(status({ phase: 'upToDate' }))).toBe('Fartcrobat 0.1.0 is up to date.')
-    expect(statusLine(status({ phase: 'available', update }))).toBe('Fartcrobat 0.2.0 is available.')
+    expect(statusLine(status({ phase: 'upToDate' }))).toBe('Inkmoor 0.1.0 is up to date.')
+    expect(statusLine(status({ phase: 'available', update }))).toBe('Inkmoor 0.2.0 is available.')
     expect(statusLine(status({ phase: 'idle' }))).toBeNull()
   })
 })

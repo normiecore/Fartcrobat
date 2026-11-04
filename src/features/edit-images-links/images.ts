@@ -397,7 +397,7 @@ export function replaceImage(s: Session, page: number, ref: ImageRef, bytes: Uin
   const img = loadImage(s, bytes)
   const w = img.getWidth()
   const h = img.getHeight()
-  const newRef = s.pdf.addImage(img)
+  const newRef = addImageObject(s, img)
   const xo = m.kind === 'page' ? pageXObjects(s, page) : xobjectDictOf(m.resources)
   const name = uniqueName([xo], 'FcIm')
   // Fit the new aspect ratio inside the displayed width/height, centred, keeping rotation/flip.
@@ -503,6 +503,19 @@ export function arrangeImage(s: Session, page: number, ref: ImageRef, where: Arr
   return relocate(s, page, occ, res.map(opStart))
 }
 
+/**
+ * Makes the image object on a scratch document and grafts it in. MuPDF's per-document image cache
+ * is not part of the undo journal: after an undo, s.pdf.addImage would hand back the removed object.
+ */
+function addImageObject(s: Session, img: ReturnType<typeof loadImage>): PDFObject {
+  const tmp = new s.mupdf.PDFDocument()
+  try {
+    return s.pdf.graftObject(tmp.addImage(img))
+  } finally {
+    tmp.destroy()
+  }
+}
+
 export function loadImage(s: Session, bytes: Uint8Array) {
   try {
     return new s.mupdf.Image(bytes)
@@ -516,7 +529,7 @@ export function addImage(s: Session, page: number, bytes: Uint8Array, rect: Rect
   const img = loadImage(s, bytes)
   const scene = buildScene(s, page)
   const m = scene.pageModel
-  const ref = s.pdf.addImage(img)
+  const ref = addImageObject(s, img)
   const name = uniqueName([pageXObjects(s, page)], 'FcIm')
   const [x0, y0, x1, y1] = rect
   const mPage: Matrix = [x1 - x0, 0, 0, -(y1 - y0), x0, y1]

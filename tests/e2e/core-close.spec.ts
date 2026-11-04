@@ -27,7 +27,7 @@ type Work = 'nothing' | 'hover' | 'search' | 'save' | 'saved'
 async function openAndClose(page: Page, path: string, work: Work, tool?: string) {
   await page.evaluate(
     async ({ path, work, tool }) => {
-      const f = (window as any).__fartcrobat
+      const f = (window as any).__inkmoor
       await f.openPaths([path])
       const doc = f.getActiveDoc()
       const [kind, id] = tool?.split(':') ?? []
@@ -50,10 +50,10 @@ async function openAndClose(page: Page, path: string, work: Work, tool?: string)
     { path, work, tool }
   )
   await expect
-    .poll(() => page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length))
+    .poll(() => page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.length))
     .toBe(0)
   await page.evaluate(() =>
-    (window as any).__fartcrobat.useApp.setState({ toolGroupId: null, toolId: 'select' })
+    (window as any).__inkmoor.useApp.setState({ toolGroupId: null, toolId: 'select' })
   )
 }
 
@@ -71,7 +71,7 @@ test('closing a document while work on it is still running logs no error', async
       await openAndClose(page, file, 'hover', tool)
 
     // The file still opens and shows normally afterwards.
-    await page.evaluate((p) => (window as any).__fartcrobat.openPaths([p]), file)
+    await page.evaluate((p) => (window as any).__inkmoor.openPaths([p]), file)
     await expect(page.locator('.viewer-page canvas').first()).toBeVisible()
     // Work that was queued with a timer before a close (nothing to wait for: it must stay silent).
     await page.waitForTimeout(500)

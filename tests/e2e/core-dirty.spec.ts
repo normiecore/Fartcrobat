@@ -2,13 +2,13 @@ import { expect, test, type Page } from '@playwright/test'
 import { activeDocState, fixturePath, launch, openFile, runCommand, waitForRender } from './helpers'
 
 async function docCount(page: Page): Promise<number> {
-  return page.evaluate(() => (window as any).__fartcrobat.useApp.getState().docs.length)
+  return page.evaluate(() => (window as any).__inkmoor.useApp.getState().docs.length)
 }
 
 /** Runs a few read-only engine calls on the active document (each returns a ChangeSet). */
 async function queryEngine(page: Page) {
   await page.evaluate(async () => {
-    const d = (window as any).__fartcrobat.getActiveDoc()
+    const d = (window as any).__inkmoor.getActiveDoc()
     await d.core.text.plain(0)
     await d.core.doc.info()
     await d.core.render.page(0, { scale: 0.2 })
@@ -23,7 +23,7 @@ test('new and replaced documents stay unsaved and ask to be saved on close', asy
 
     // A new untitled document (Combine, Create, Extract to new file...)
     await page.evaluate(async () => {
-      const api = (window as any).__fartcrobat
+      const api = (window as any).__inkmoor
       const bytes = await api.getActiveDoc().core.doc.save({})
       await api.openNewDocument(bytes, 'Binder1')
     })
@@ -41,7 +41,7 @@ test('new and replaced documents stay unsaved and ask to be saved on close', asy
 
     // Content replaced in memory only (e.g. optimised without writing the file)
     await page.evaluate(async () => {
-      const api = (window as any).__fartcrobat
+      const api = (window as any).__inkmoor
       const d = api.getActiveDoc()
       const bytes = await d.core.doc.save({})
       await api.replaceDocumentBytes(d, bytes, null)
@@ -65,14 +65,14 @@ test('document properties shown in the UI follow document-level changes', async 
     await openFile(page, fixturePath('text.pdf'))
     await waitForRender(page)
     await page.evaluate(async () => {
-      const d = (window as any).__fartcrobat.getActiveDoc()
+      const d = (window as any).__inkmoor.getActiveDoc()
       await d.core.doc.setMetadata({ title: 'Renamed Title' })
       await d.core.doc.setLanguage('fr-CA')
     })
     await expect
       .poll(() =>
         page.evaluate(() => {
-          const info = (window as any).__fartcrobat.getActiveDoc().state.info
+          const info = (window as any).__inkmoor.getActiveDoc().state.info
           return `${info.metadata.title}|${info.language}`
         })
       )

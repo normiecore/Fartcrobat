@@ -1,9 +1,9 @@
 # Feature: agent-access
 
-Lets AI apps on the same computer (Claude Desktop first, through a Fartcrobat extension) work with
-the documents open in Fartcrobat: read them, see what the person is looking at and has selected,
+Lets AI apps on the same computer (Claude Desktop first, through an Inkmoor extension) work with
+the documents open in Inkmoor: read them, see what the person is looking at and has selected,
 and make the same changes the person could make. Changes appear live and are undoable ("Agent:" in
-Edit > Undo). Irreversible actions need one click from the person in Fartcrobat.
+Edit > Undo). Irreversible actions need one click from the person in Inkmoor.
 
 ## Decisions
 
@@ -14,10 +14,10 @@ From the owner:
   (network shares included), every open document, including password-protected ones they already
   unlocked, and protected files whose password is saved on this device (they open without a
   prompt; see passwordless.md). No per-document sharing.
-- **Irreversible actions ask first** in Fartcrobat with one click (Decline is the default):
+- **Irreversible actions ask first** in Inkmoor with one click (Decline is the default):
   overwriting a file on disk (save over the original, export or extract over an existing file),
   discarding unsaved changes, applying redactions, removing security, and undoing or redoing a
-  change the person made (or applied redactions). Signing and protecting open Fartcrobat's own
+  change the person made (or applied redactions). Signing and protecting open Inkmoor's own
   dialog, where the person types passwords and makes the deliberate click; passwords never reach
   the agent.
 - Target for v1: **Claude Desktop on Windows**. macOS and Linux work the same way (Unix socket) and
@@ -26,13 +26,13 @@ From the owner:
   their text, as the person reads it on screen. `get_page_text`, `find_text`, `get_context`,
   `get_document_info`, `list_annotations`, `list_form_fields` and `render_page` return their content
   with `copyRestricted: true`, and `SERVER_INSTRUCTIONS` ask the agent not to copy that text into
-  files or other apps. `export_document` stays refused, like Fartcrobat's own Export and Copy. The
+  files or other apps. `export_document` stays refused, like Inkmoor's own Export and Copy. The
   restriction is advisory (pictures of the pages show the same text), so this is a usage rule,
   not a security boundary.
 - **Network shares** stay reachable (redirected folders, DFS). On Windows, any path starting with
   two separators (`\\server\share\...`, `//server/share/...`, `/\server\...`) is a network path,
   as it is for Windows itself. The first time an AI app connection uses a computer in a window, the
-  person is asked once ("Use a network location?", Allow or Decline) before Fartcrobat touches the
+  person is asked once ("Use a network location?", Allow or Decline) before Inkmoor touches the
   path, because on Windows even checking that a file exists there signs in to that computer with
   the person's account. Computers of documents open in the window count as allowed. The answer
   lasts until that AI app disconnects or the window closes; calls made while the question is on
@@ -54,14 +54,14 @@ From the owner:
 
 ```
 Claude Desktop --stdio, MCP--> shim (Node, in the .mcpb extension)
-   --named pipe / Unix socket, NDJSON, mutual HMAC auth--> Fartcrobat main process
+   --named pipe / Unix socket, NDJSON, mutual HMAC auth--> Inkmoor main process
    --IPC 'agent:request' / 'feature:agent-access:reply'--> window (renderer) --> DocumentModel / engine
 ```
 
 Contracts (do not change without updating every side):
 - `src/shared/agent/protocol.ts`: pipe protocol, endpoint/app files, framing, tool result shape,
   error codes, MCP server instructions.
-- `src/shared/agent/tools.ts`: the 31 tools (name, description, JSON Schema, annotations, gate).
+- `src/shared/agent/tools.ts`: the tool catalogue (name, description, JSON Schema, annotations, gate).
   The shim advertises exactly these; the renderer implements one handler per name
   (`wait_for_result` may be answered by the runner itself).
 - `src/shared/agent/bridge.ts`: main <-> window messages, routing rules, status, audit entries.
@@ -75,14 +75,14 @@ Contracts (do not change without updating every side):
 
 - Starts when agent access is enabled (preference `agentAccess`, default true, overridden by a
   machine policy, read by `src/main/policy.ts`, which remembered passwords share). Windows: the
-  REG_DWORD `AgentAccess` under `HKLM\SOFTWARE\Policies\Fartcrobat` (1 is on, 0 off; read with
+  REG_DWORD `AgentAccess` under `HKLM\SOFTWARE\Policies\Inkmoor` (1 is on, 0 off; read with
   `reg.exe`), which Group Policy or Intune can set and only administrators can write. macOS
-  `/Library/Application Support/Fartcrobat/policy.json`, Linux `/etc/fartcrobat/policy.json`,
+  `/Library/Application Support/Inkmoor/policy.json`, Linux `/etc/inkmoor/policy.json`,
   `{ "agentAccess": { "enabled": true | false } }`. A policy that exists but cannot be read or
-  understood turns access off. Tests may point `FARTCROBAT_POLICY_FILE` at a file on any system.
+  understood turns access off. Tests may point `INKMOOR_POLICY_FILE` at a file on any system.
   Stops and removes the endpoint file when turned off; restarts when turned on. `app.json` records
   whether access is on so the shim does not start the app to be refused.
-- Listens on a random address: `\\.\pipe\fartcrobat-agent-<32 hex>` on Windows; on other systems
+- Listens on a random address: `\\.\pipe\inkmoor-agent-<32 hex>` on Windows; on other systems
   `<private 0700 temp dir>/agent.sock`. Writes `<userData>/agent-access/endpoint.json`
   (`AgentEndpoint`, file mode 0600, written atomically) and `app.json` (`AgentAppInfo`: the
   executable and args to start the app; kept after quit). Removes endpoint.json on quit.
@@ -101,10 +101,10 @@ Contracts (do not change without updating every side):
   starts or finishes (for the running counts), coalesced into one broadcast per turn of the event
   loop. Answers `feature:agent-access:status`, `disconnect`, `attention` (show, restore and focus
   the window; `flashFrame` on Windows when focusing is refused), `revealAuditLog`,
-  `installExtension` (opens `<resources>/agent/fartcrobat.mcpb`, or
-  `<appPath>/out/agent/fartcrobat.mcpb` when unpackaged, with `shell.openPath`, which hands it to
+  `installExtension` (opens `<resources>/agent/inkmoor.mcpb`, or
+  `<appPath>/out/agent/inkmoor.mcpb` when unpackaged, with `shell.openPath`, which hands it to
   Claude Desktop; when the file is missing it returns "The Claude Desktop extension is not
-  included in this copy of Fartcrobat.").
+  included in this copy of Inkmoor.").
 
 ### Window (`src/features/agent-access/index.tsx`, `ui/**`, `tools/**`)
 
@@ -128,7 +128,7 @@ Contracts (do not change without updating every side):
   as a popover. It is hidden in Read Mode.
 - Disconnect closes that AI app's connections and blocks the app (by its reported name) from
   reconnecting until the person clicks "Allow again" (in the panel or Preferences) or restarts
-  Fartcrobat. Its shim is told `disconnected` and refused with `blocked` meanwhile, so it does
+  Inkmoor. Its shim is told `disconnected` and refused with `blocked` meanwhile, so it does
   not silently reconnect on the next call.
 - One question at a time: while a confirmation, network-location question or password prompt
   from an agent is on screen, another agent call that needs the person answers `busy`.
@@ -139,19 +139,20 @@ Contracts (do not change without updating every side):
 ### Shim (`src/agent-shim/`)
 
 - Built by `npm run build:agent`: `scripts/build-agent-shim.mjs` writes `out/agent/shim.mjs` and
-  `scripts/build-agent-extension.mjs` packs it into `out/agent/fartcrobat.mcpb` (its manifest
-  requires Node 20 or later). The installers ship it as `<resources>/agent/fartcrobat.mcpb`.
+  `scripts/build-agent-extension.mjs` packs it into `out/agent/inkmoor.mcpb` (its manifest
+  requires Node 20 or later). The installers ship it as `<resources>/agent/inkmoor.mcpb`.
 - Node 20+ ESM bundle with `@modelcontextprotocol/server` 2.2.0 (pinned; the SDK's own protocol
   negotiation). Advertises `AGENT_TOOLS` with `SERVER_INSTRUCTIONS`, maps `AgentToolResult` to MCP
   content (`data` as one JSON text block, images as image blocks, `error` as isError
   "[code] message"), forwards MCP cancellation and progress.
-- Finds the app through `<userData>/agent-access/endpoint.json` (userData: `FARTCROBAT_USER_DATA`,
-  else `%APPDATA%\Fartcrobat`, `~/Library/Application Support/Fartcrobat`,
-  `$XDG_CONFIG_HOME/Fartcrobat` or `~/.config/Fartcrobat`). If the app is not running, starts it
-  from `app.json` when its executable still exists; otherwise, unless `FARTCROBAT_USER_DATA` is
-  set, from the installed copy (Windows: the installer's `InstallLocation` in HKCU or HKLM,
-  `%LOCALAPPDATA%\Programs\Fartcrobat`, `Program Files\Fartcrobat`; macOS: `/Applications` or
-  `~/Applications`; Linux: `/opt/Fartcrobat`). Waits up to 30 s for the endpoint. Reconnects after
+- Finds the app through `<userData>/agent-access/endpoint.json` (userData: `INKMOOR_USER_DATA`,
+  else `%APPDATA%\Inkmoor`, `~/Library/Application Support/Inkmoor`,
+  `$XDG_CONFIG_HOME/Inkmoor` or `~/.config/Inkmoor`). If the app is not running, starts it
+  from `app.json` when its executable still exists; otherwise, unless `INKMOOR_USER_DATA` names
+  a separate profile (a folder other than the usual one, `separateProfile` in `launch.ts`), from
+  the installed copy (Windows: the installer's `InstallLocation` in HKCU or HKLM,
+  `%LOCALAPPDATA%\Programs\Inkmoor`, `Program Files\Inkmoor`; macOS: `/Applications` or
+  `~/Applications`; Linux: `/opt/Inkmoor`). Waits up to 30 s for the endpoint. Reconnects after
   the app restarts. Verifies the app's MAC before sending anything.
 - Connects on the first call and reconnects on the next call after the connection drops, never
   on its own. Does not start the app when `app.json` says agent access is off. After the person
@@ -162,7 +163,7 @@ Contracts (do not change without updating every side):
   AppData writes into a private copy, which would split the app's settings, endpoint file and
   audit log from the real ones. On macOS it uses `open -a`. Otherwise, or if that fails, a
   detached child.
-- If the app cannot be reached the result is an error saying Fartcrobat is not running or agent
+- If the app cannot be reached the result is an error saying Inkmoor is not running or agent
   access is off. A call that waits for the person answers `still_running` before the AI app's
   request timeout (see Decisions).
 
@@ -177,3 +178,9 @@ Contracts (do not change without updating every side):
 - End to end (Playwright): launch the built app with its own userData, start the built shim with
   an MCP client over stdio, call tools, and check the app (document state, undo label, confirm
   dialog: Decline and Apply). Skips nothing on Linux CI.
+
+
+## Native editing and design-aware reflow
+
+See [agent-text-editing.md](agent-text-editing.md) for native text editing, document layout inspection,
+linked column/page flows that keep the design, and an explicitly approved new-design option.

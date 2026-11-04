@@ -452,14 +452,14 @@ export function SignatureControl({ doc, ctl, field, extra, box, readOnly }: Cont
       return
     }
     window.dispatchEvent(
-      new CustomEvent('fartcrobat:sign-field', {
+      new CustomEvent('inkmoor:sign-field', {
         detail: { docId: doc.id, fieldId: field.id, fieldName: field.name, page: field.page, rect: field.rect }
       })
     )
     // The digital-signatures feature listens for the event and starts certificate signing.
     if (registry.features.some((f) => f.id === 'digital-signatures')) return
     const fillSign = registry.toolGroups.some((g) => g.id === 'fillsign')
-    toast('Signing with a digital ID is not available in this version of Fartcrobat.', {
+    toast('Signing with a digital ID is not available in this version of Inkmoor.', {
       kind: 'warning',
       action: fillSign
         ? {

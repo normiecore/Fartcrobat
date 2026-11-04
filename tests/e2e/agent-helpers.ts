@@ -1,5 +1,5 @@
 // Agent access end to end: the built app plus the built MCP shim (out/agent/shim.mjs), driven by an
-// MCP client over stdio exactly as Claude Desktop drives the Fartcrobat extension.
+// MCP client over stdio exactly as Claude Desktop drives the Inkmoor extension.
 import { expect, type Page } from '@playwright/test'
 import { Client } from '@modelcontextprotocol/client'
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/client/stdio'
@@ -36,14 +36,14 @@ export interface Agent {
 
 /**
  * Starts the built shim with an MCP client, as an AI app does. `client` is how the AI app introduces
- * itself ("claude-ai" is Claude Desktop). The shim finds the app through FARTCROBAT_USER_DATA; it
+ * itself ("claude-ai" is Claude Desktop). The shim finds the app through INKMOOR_USER_DATA; it
  * gets the display and ELECTRON_DISABLE_SANDBOX so a copy of the app it starts (to hand over to the
  * running one) can come up on this machine, like the app the tests launch with --no-sandbox.
  */
-export async function startShim(userData: string, client = { name: 'claude-ai', version: '0.14.0' }): Promise<Agent> {
-  const env: Record<string, string> = { ...getDefaultEnvironment(), FARTCROBAT_USER_DATA: userData, ELECTRON_DISABLE_SANDBOX: '1' }
+export async function startShim(userData: string, client = { name: 'claude-ai', version: '0.14.0' }, shim = SHIM): Promise<Agent> {
+  const env: Record<string, string> = { ...getDefaultEnvironment(), INKMOOR_USER_DATA: userData, ELECTRON_DISABLE_SANDBOX: '1' }
   for (const key of ['DISPLAY', 'XAUTHORITY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR']) if (process.env[key]) env[key] = process.env[key]!
-  const transport = new StdioClientTransport({ command: process.execPath, args: [SHIM], env, stderr: 'pipe' })
+  const transport = new StdioClientTransport({ command: process.execPath, args: [shim], env, stderr: 'pipe' })
   let stderr = ''
   transport.stderr?.on('data', (chunk) => {
     stderr += String(chunk)
@@ -82,7 +82,7 @@ export interface Session extends App {
  * the shim.
  */
 export async function startSession(files: string[] = [], env: Record<string, string> = {}): Promise<Session> {
-  const a = await launch(files, { FARTCROBAT_MULTI_INSTANCE: '', ...env })
+  const a = await launch(files, { INKMOOR_MULTI_INSTANCE: '', ...env })
   try {
     await expect.poll(() => existsSync(endpointFile(a.userData)), { timeout: 30_000 }).toBe(true)
     const agent = await startShim(a.userData)
@@ -157,10 +157,10 @@ export async function expectAudit(userData: string, tools: string[], secrets: st
 
 /** The undo label the active document offers (Edit > Undo). */
 export async function undoLabel(page: Page): Promise<string | null> {
-  return page.evaluate(() => (window as any).__fartcrobat.getActiveDoc()?.state.journal.undoLabel ?? null)
+  return page.evaluate(() => (window as any).__inkmoor.getActiveDoc()?.state.journal.undoLabel ?? null)
 }
 
 /** Text of a page of the active document, from the app itself. */
 export async function appPageText(page: Page, index: number): Promise<string> {
-  return page.evaluate(async (i) => (await (window as any).__fartcrobat.getActiveDoc().pageText(i)).text as string, index)
+  return page.evaluate(async (i) => (await (window as any).__inkmoor.getActiveDoc().pageText(i)).text as string, index)
 }

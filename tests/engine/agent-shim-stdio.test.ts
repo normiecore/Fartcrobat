@@ -1,4 +1,4 @@
-// The built MCP shim end to end: an MCP client starts it over stdio, and a fake Fartcrobat (the app
+// The built MCP shim end to end: an MCP client starts it over stdio, and a fake Inkmoor (the app
 // side of @shared/agent/protocol, with the real token and HMACs) answers on a local socket.
 import { execFileSync } from 'node:child_process'
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
@@ -29,11 +29,11 @@ import { AGENT_TOOLS } from '@shared/agent/tools'
 
 const ROOT = resolve(__dirname, '../..')
 const VERSION: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
-const DISABLED = '[disabled] Agent access is turned off in Fartcrobat (Preferences > AI apps).'
+const DISABLED = '[disabled] Agent access is turned off in Inkmoor (Preferences > AI apps).'
 const DISCONNECTED =
-  '[disabled] The person disconnected this AI app in Fartcrobat, so the call was stopped and may or may not have taken effect. Do not use Fartcrobat again unless they ask.'
+  '[disabled] The person disconnected this AI app in Inkmoor, so the call was stopped and may or may not have taken effect. Do not use Inkmoor again unless they ask.'
 const BLOCKED =
-  '[disabled] The person disconnected this AI app in Fartcrobat. Do not use Fartcrobat again unless they ask; they can allow it again in Fartcrobat (Preferences > AI apps).'
+  '[disabled] The person disconnected this AI app in Inkmoor. Do not use Inkmoor again unless they ask; they can allow it again in Inkmoor (Preferences > AI apps).'
 const SLOW = { timeout: 20_000 }
 
 const hmac = (token: string, role: 'client' | 'server', nonce: string) =>
@@ -41,7 +41,7 @@ const hmac = (token: string, role: 'client' | 'server', nonce: string) =>
 
 type Behaviour = (call: CallMessage, reply: (msg: AppToShim) => void, socket: Socket) => void
 
-/** The app side of the pipe protocol, as Fartcrobat's main process speaks it. */
+/** The app side of the pipe protocol, as Inkmoor's main process speaks it. */
 class FakeApp {
   readonly token = randomBytes(32).toString('hex')
   readonly auths: AuthMessage[] = []
@@ -65,7 +65,7 @@ class FakeApp {
   ) {
     this.address =
       process.platform === 'win32'
-        ? `\\\\.\\pipe\\fartcrobat-shim-test-${randomBytes(8).toString('hex')}`
+        ? `\\\\.\\pipe\\inkmoor-shim-test-${randomBytes(8).toString('hex')}`
         : join(mkdtempSync(join(dir, 'sock-')), 'agent.sock')
     this.server = createServer((socket) => this.accept(socket))
   }
@@ -190,7 +190,7 @@ describe('agent shim over stdio', () => {
     const transport = new StdioClientTransport({
       command: process.execPath,
       args: [shimPath],
-      env: { ...getDefaultEnvironment(), FARTCROBAT_USER_DATA: userData },
+      env: { ...getDefaultEnvironment(), INKMOOR_USER_DATA: userData },
       stderr: 'pipe'
     })
     let stderr = ''
@@ -204,12 +204,12 @@ describe('agent shim over stdio', () => {
   const text = (result: { content?: unknown }) =>
     (result.content as { type: string; text?: string }[]).map((c) => c.text ?? `<${c.type}>`).join('\n')
 
-  it('advertises the 31 tools with their schemas, its name and the instructions', async () => {
+  it('advertises every tool with their schemas, its name and the instructions', async () => {
     const { client } = await startShim()
     expect(client.getServerVersion()).toMatchObject({ name: 'fartcrobat', version: VERSION })
     expect(client.getInstructions()).toBe(SERVER_INSTRUCTIONS)
     const { tools } = await client.listTools()
-    expect(tools).toHaveLength(31)
+    expect(tools).toHaveLength(AGENT_TOOLS.length)
     expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name))
     for (const [i, tool] of tools.entries()) {
       expect(tool.title).toBe(AGENT_TOOLS[i].title)
@@ -254,7 +254,7 @@ describe('agent shim over stdio', () => {
           : {
               t: 'result',
               id: call.id,
-              result: { error: { code: 'declined', message: 'The person declined in Fartcrobat.' } }
+              result: { error: { code: 'declined', message: 'The person declined in Inkmoor.' } }
             }
       )
     const { client } = await startShim()
@@ -265,7 +265,7 @@ describe('agent shim over stdio', () => {
     ])
     const declined = await client.callTool({ name: 'apply_redactions', arguments: {} })
     expect(declined.isError).toBe(true)
-    expect(text(declined)).toBe('[declined] The person declined in Fartcrobat.')
+    expect(text(declined)).toBe('[declined] The person declined in Inkmoor.')
   })
 
   it('answers unknown tools itself', async () => {
@@ -273,7 +273,7 @@ describe('agent shim over stdio', () => {
     const { client } = await startShim()
     const result = await client.callTool({ name: 'format_disk', arguments: {} })
     expect(result.isError).toBe(true)
-    expect(text(result)).toBe('[unknown_tool] Fartcrobat has no tool named "format_disk".')
+    expect(text(result)).toBe('[unknown_tool] Inkmoor has no tool named "format_disk".')
     expect(app.connections).toBe(0)
   })
 
@@ -325,7 +325,7 @@ describe('agent shim over stdio', () => {
     await expect.poll(() => app.calls.length, SLOW).toBe(1)
     await client.close()
     await expect.poll(() => app.cancels, SLOW).toEqual([app.calls[0].id])
-    await expect.poll(() => stderr(), SLOW).toContain('Disconnected from Fartcrobat')
+    await expect.poll(() => stderr(), SLOW).toContain('Disconnected from Inkmoor')
   })
 
   it('sends nothing to an app that cannot prove it holds the token', async () => {
@@ -335,7 +335,7 @@ describe('agent shim over stdio', () => {
     const result = await client.callTool({ name: 'list_documents', arguments: {} })
     expect(result.isError).toBe(true)
     expect(text(result)).toBe(
-      '[failed] Could not verify that the program answering is Fartcrobat, so nothing was sent to it. Restart Fartcrobat, then try again.'
+      '[failed] Could not verify that the program answering is Inkmoor, so nothing was sent to it. Restart Inkmoor, then try again.'
     )
     expect(app.auths).toHaveLength(1)
     expect(app.received).toEqual([])
@@ -356,7 +356,7 @@ describe('agent shim over stdio', () => {
     app.behaviour = () => {}
     // Something the shim could start: it must not, as the app is running and refusing.
     const marker = join(userData, 'started.json')
-    const script = join(userData, 'fake-fartcrobat.cjs')
+    const script = join(userData, 'fake-inkmoor.cjs')
     writeFileSync(script, "require('node:fs').writeFileSync(process.argv[2], '{}')\n")
     writeFileSync(
       join(userData, AGENT_DIR, APP_FILE),
@@ -374,7 +374,7 @@ describe('agent shim over stdio', () => {
     expect(text(await running)).toBe(DISCONNECTED)
     await expect
       .poll(() => stderr(), SLOW)
-      .toContain('Disconnected from Fartcrobat (connection 1): the person disconnected this AI app.')
+      .toContain('Disconnected from Inkmoor (connection 1): the person disconnected this AI app.')
 
     // The app now refuses this AI app; each call asks once and gives up, starting nothing.
     app.rejectWith = { t: 'reject', code: 'blocked', message: 'Text from the app is not shown.' }
@@ -395,14 +395,14 @@ describe('agent shim over stdio', () => {
     expect(existsSync(marker)).toBe(false)
   })
 
-  it('says Fartcrobat closed when the connection drops mid-call, then reconnects', async () => {
+  it('says Inkmoor closed when the connection drops mid-call, then reconnects', async () => {
     const app = await startApp()
     app.behaviour = (_call, _reply, socket) => socket.destroy()
     const { client } = await startShim()
     const dropped = await client.callTool({ name: 'save_document', arguments: {} })
     expect(dropped.isError).toBe(true)
     expect(text(dropped)).toBe(
-      '[failed] Fartcrobat closed before the call finished, so it may or may not have taken effect. Check the document in Fartcrobat before trying again.'
+      '[failed] Inkmoor closed before the call finished, so it may or may not have taken effect. Check the document in Inkmoor before trying again.'
     )
 
     // Turned off while a call ran: the app says so before it closes the connection.
@@ -425,7 +425,7 @@ describe('agent shim over stdio', () => {
     await client.callTool({ name: 'list_documents', arguments: {} })
     expect(first.calls).toHaveLength(1)
     await first.stop()
-    await expect.poll(() => stderr(), SLOW).toContain('Disconnected from Fartcrobat')
+    await expect.poll(() => stderr(), SLOW).toContain('Disconnected from Inkmoor')
 
     const second = await startApp()
     expect(second.token).not.toBe(first.token)
@@ -437,12 +437,12 @@ describe('agent shim over stdio', () => {
 
   it('starts the app from app.json on the first call, not before', async () => {
     const marker = join(userData, 'started.json')
-    const script = join(userData, 'fake-fartcrobat.cjs')
+    const script = join(userData, 'fake-inkmoor.cjs')
     writeFileSync(
       script,
       [
         "const fs = require('node:fs')",
-        'fs.writeFileSync(process.argv[2], JSON.stringify({ pid: process.pid, userData: process.env.FARTCROBAT_USER_DATA }))',
+        'fs.writeFileSync(process.argv[2], JSON.stringify({ pid: process.pid, userData: process.env.INKMOOR_USER_DATA }))',
         // Stays open like the real app (the test stops it); gives up on its own if the test does not.
         'setTimeout(() => {}, 60000)'
       ].join('\n')
@@ -477,7 +477,7 @@ describe('agent shim over stdio', () => {
     // A copy that would stay open without ever publishing an endpoint: starting it would make the
     // call wait for the start timeout instead of answering.
     const marker = join(userData, 'started.json')
-    const script = join(userData, 'fake-fartcrobat.cjs')
+    const script = join(userData, 'fake-inkmoor.cjs')
     writeFileSync(
       script,
       [
@@ -508,7 +508,7 @@ describe('agent shim over stdio', () => {
     expect(existsSync(marker)).toBe(false)
   })
 
-  it('says an open Fartcrobat did not accept the connection when a started copy hands over to it', async () => {
+  it('says an open Inkmoor did not accept the connection when a started copy hands over to it', async () => {
     // An app.json from an app that does not record whether agent access is on.
     const script = join(userData, 'second-instance.cjs')
     writeFileSync(script, 'process.exit(0)\n')
@@ -521,20 +521,20 @@ describe('agent shim over stdio', () => {
     const result = await client.callTool({ name: 'list_documents', arguments: {} })
     expect(result.isError).toBe(true)
     expect(text(result)).toBe(
-      '[failed] Fartcrobat is open but did not accept the connection. Check that Preferences > AI apps allows AI apps to work with your documents, then try again.'
+      '[failed] Inkmoor is open but did not accept the connection. Check that Preferences > AI apps allows AI apps to work with your documents, then try again.'
     )
   })
 
-  it('says Fartcrobat is not running when there is nothing to start', async () => {
+  it('says Inkmoor is not running when there is nothing to start', async () => {
     const { client } = await startShim()
     const result = await client.callTool({ name: 'list_documents', arguments: {} })
     expect(result.isError).toBe(true)
     expect(text(result)).toBe(
-      '[failed] Fartcrobat is not running and could not be started. Open Fartcrobat, then try again.'
+      '[failed] Inkmoor is not running and could not be started. Open Inkmoor, then try again.'
     )
   })
 
-  it('leaves the name empty for an AI app that does not give one, so Fartcrobat words it', async () => {
+  it('leaves the name empty for an AI app that does not give one, so Inkmoor words it', async () => {
     const app = await startApp()
     const { client } = await startShim('legacy', { name: '', version: '' })
     expect(text(await client.callTool({ name: 'list_documents', arguments: {} }))).toBe(
@@ -547,7 +547,7 @@ describe('agent shim over stdio', () => {
     const app = await startApp()
     const { client } = await startShim('auto')
     expect(client.getNegotiatedProtocolVersion()).toBe('2026-07-28')
-    expect((await client.listTools()).tools).toHaveLength(31)
+    expect((await client.listTools()).tools).toHaveLength(AGENT_TOOLS.length)
     const result = await client.callTool({ name: 'get_context', arguments: {} })
     expect(text(result)).toBe(JSON.stringify({ tool: 'get_context', args: {} }, null, 1))
     expect(app.auths[0].client).toEqual({ name: 'test-client', version: '1.2.3' })
