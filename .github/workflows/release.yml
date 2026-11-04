@@ -9,10 +9,11 @@ name: Release
 #   must pass on the same commit; installed copies on Windows and AppImages install a release
 #   silently, so nothing untested is published.
 # - When a job of that run fails for a reason outside the code (a runner, the network), use
-#   "Re-run failed jobs" on the same run: it keeps the merged commit. A manual run builds only;
-#   with a version (main only) it publishes main's head as it is then, so for a fix in the code,
-#   merge the fix and run it while main's head is the version bump plus that fix, never in addition
-#   to a run that can still publish. A v* tag push also publishes, the tagged commit.
+#   "Re-run failed jobs" on the same run: it keeps the merged commit. If a re-run job cannot find
+#   an artifact of the first attempt, "Re-run all jobs" builds everything again. A manual run
+#   builds only; with a version (main only) it publishes main's head as it is then, so for a fix in
+#   the code, merge the fix and run it while main's head is the version bump plus that fix, never
+#   in addition to a run that can still publish. A v* tag push also publishes, the tagged commit.
 # - To write the notes on GitHub first, save the release as a draft (do not publish it): this
 #   workflow attaches the installers to the draft and points its tag at the commit it built and
 #   tested, and you publish it. Publishing it pushes the tag, and that run stops at once.
