@@ -176,7 +176,19 @@ export interface SignatureReport {
   contactInfo: string
   /** ISO time the signer's computer claims (signed attribute or /M). */
   signingTime: string | null
-  timestamp: { time: string; authority: string; valid: boolean } | null
+  /**
+   * Embedded timestamp. `valid` only says the token matches and its signature verified; whether the
+   * authority is trusted comes from its chain (`timestampTrusted` in status.ts). For document
+   * timestamps (/Type /DocTimeStamp with /SubFilter /ETSI.RFC3161, `isDocumentTimestamp` in
+   * status.ts) the token is the signature value, its authority's chain is `certificates`, and
+   * these two lists are empty (a timestamp nested in the token is ignored, and status.ts does not
+   * accept a document timestamp whose lists are not empty). A /DocTimeStamp in any other format, or an ETSI.RFC3161 value in a
+   * dictionary that is not a /DocTimeStamp, is malformed: the validator reports a problem and does
+   * not check it.
+   * `authorityOk`: the token's signer (the first certificate of the authority's chain) has the
+   * time-stamping extended key usage and was valid at the timestamp time.
+   */
+  timestamp: { time: string; authority: string; valid: boolean; authorityOk: boolean; certificates: CertDetails[]; chainVerified: boolean[] } | null
   subFilter: string
   digestAlgorithm: string
   signatureAlgorithm: string
@@ -195,7 +207,10 @@ export interface SignatureReport {
   signatureValid: boolean | null
   /** Signer first. */
   certificates: CertDetails[]
-  /** For each certificate in `certificates`, whether its issuer's signature verified. */
+  /**
+   * For each certificate in `certificates`, whether its issuer's signature verified and the issuer
+   * may issue certificates (CA, key usage, path length, validity). Trust never flows past a false.
+   */
   chainVerified: boolean[]
   chainComplete: boolean
   certValidAtSigning: boolean | null
@@ -206,6 +221,23 @@ export interface SignatureReport {
   changes: ChangeEntry[]
   /** Details could not be determined for later changes. */
   changesUnknown: boolean
+  /**
+   * The signed revision could not be read, so the restrictions the signer applied (field lock,
+   * certification) are not known: later changes count as not allowed.
+   */
+  restrictionsUnknown: boolean
+  /**
+   * What the file holds after this signature's revision: nothing ('none'), only later signatures
+   * written the way a standard incremental signing writes them ('signing'), or anything else,
+   * including changes that could not be checked ('other'). Anything but 'none' and 'signing' caps
+   * the status at a warning, whatever `changes` says.
+   */
+  laterUpdates: 'none' | 'signing' | 'other'
+  /**
+   * Most restrictive permission in force for this signature: its own certification or the one it
+   * was made under, and its field lock. 1 means no change at all is allowed after it.
+   */
+  permissionInForce: MdpPermission | null
   /** Fatal problems (signature invalid). */
   problems: string[]
   /** Problems that make the signature questionable. */

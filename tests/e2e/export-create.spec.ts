@@ -1,6 +1,6 @@
 import { expect, test, type ElectronApplication, type Page } from '@playwright/test'
 import JSZip from 'jszip'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { activeDocState, fixturePath, launch, waitForRender } from './helpers'
@@ -331,6 +331,61 @@ test('Create a PDF: from Home, combine files, blank pages, HTML and Office files
     await page.getByRole('button', { name: /^Images/ }).click()
     await shot(page, 'images-dark')
     await setTheme(page, 'light')
+  } finally {
+    await app.close()
+  }
+})
+
+test('HTML conversion loads only files in the page folder and runs no scripts', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'fc-html-e2e-'))
+  const site = join(dir, 'site')
+  mkdirSync(join(site, 'assets'), { recursive: true })
+  mkdirSync(join(dir, 'outside'))
+  copyFileSync(fixturePath('scan.png'), join(site, 'assets', 'pic.png'))
+  writeFileSync(join(site, 'assets', 'style.css'), 'h1::after { content: " STYLE_LOADED" }')
+  writeFileSync(join(site, 'assets', 'frame.html'), '<p>INSIDE_FRAME</p>')
+  writeFileSync(join(dir, 'outside', 'secret.html'), '<p>OUTSIDE_SECRET</p>')
+  copyFileSync(fixturePath('scan.png'), join(dir, 'outside', 'pic.png'))
+  const html = join(site, 'page.html')
+  writeFileSync(
+    html,
+    `<!doctype html><html><head><meta charset="utf-8"><title>t</title>
+<meta http-equiv="refresh" content="0;url=../outside/secret.html">
+<link rel="stylesheet" href="assets/style.css"></head><body>
+<h1>Local page</h1>
+<p><img src="assets/pic.png" width="60" alt="LOCAL_IMG_MISSING"></p>
+<p><img src="../outside/pic.png" width="60" alt="OUTSIDE_IMG_REFUSED"></p>
+<p><img src="file://example.invalid/share/pic.png" width="60" alt="HOST_IMG_REFUSED"></p>
+<iframe src="assets/frame.html" width="300" height="80"></iframe>
+<iframe src="../outside/secret.html" width="300" height="80"></iframe>
+<script>document.write('SCRIPT_RAN')</script>
+</body></html>`
+  )
+  const { app, page } = await launch()
+  try {
+    // Record which pages the conversion window tried to show and which it actually showed.
+    await app.evaluate(({ app: electronApp }) => {
+      const g = globalThis as any
+      g.__htmlNav = { attempted: [] as string[], shown: [] as string[] }
+      electronApp.on('web-contents-created', (_e, wc) => {
+        wc.on('will-navigate', (_ev, url) => g.__htmlNav.attempted.push(url))
+        wc.on('did-navigate', (_ev, url) => g.__htmlNav.shown.push(url))
+      })
+    })
+    await openPath(page, html)
+    await expect.poll(async () => (await activeDocState(page))?.title, { timeout: 60000 }).toBe('page.pdf')
+    const text = await pageText(page, 0)
+    expect(text).toContain('Local page')
+    expect(text).toContain('STYLE_LOADED')
+    expect(text).toContain('INSIDE_FRAME')
+    expect(text).not.toContain('LOCAL_IMG_MISSING')
+    expect(text).toContain('OUTSIDE_IMG_REFUSED')
+    expect(text).toContain('HOST_IMG_REFUSED')
+    expect(text).not.toContain('OUTSIDE_SECRET')
+    expect(text).not.toContain('SCRIPT_RAN')
+    const nav = await app.evaluate(() => (globalThis as any).__htmlNav as { attempted: string[]; shown: string[] })
+    expect(nav.shown.some((u) => u.endsWith('/site/page.html'))).toBe(true)
+    expect(nav.shown.filter((u) => u.includes('secret'))).toEqual([])
   } finally {
     await app.close()
   }

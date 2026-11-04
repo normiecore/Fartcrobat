@@ -7,7 +7,7 @@
  * writes the signed bytes to disk and reloads the tab from them.
  */
 import { EngineError } from '@engine/define'
-import { saveDocument } from '@engine/ops/doc'
+import { REQUIRED_SAVE_OPTIONS, saveDocument } from '@engine/ops/doc'
 import type { Mupdf, PDFDocument, PDFObject, Session } from '@engine/session'
 import { catalog, countSignatures, isNull, pdfDate, readRect } from '@engine/util/pdf'
 import { normalizeRect, transformRect } from '@shared/geometry'
@@ -49,6 +49,9 @@ export function contentsSize(chain: Uint8Array[]): number {
   return Math.max(16384, Math.ceil(want / 1024) * 1024)
 }
 
+const CLEAN_SAVE_SIGNED_MESSAGE =
+  'Content was redacted or removed from this signed document. Saving it rewrites the whole file, which invalidates its existing signatures, so it cannot be signed again.'
+
 export function signCapability(s: Session): SignCapability {
   const pdf = s.pdf
   const fields = listSignatureFields(pdf, s)
@@ -64,6 +67,7 @@ export function signCapability(s: Session): SignCapability {
   else if (!canForm) reason = "The document's security settings do not allow signing."
   else if (cert?.permission === 1) reason = 'This document is certified and the certifier does not allow any changes, including signing.'
   else if (lockedBy) reason = `This document was locked when “${lockedBy.name}” was signed, so it cannot be signed again.`
+  else if (signed.length && s.state.has(REQUIRED_SAVE_OPTIONS)) reason = CLEAN_SAVE_SIGNED_MESSAGE
   else if (signed.length && !safe(() => pdf.canBeSavedIncrementally(), false))
     reason = 'This file was damaged and had to be repaired when it was opened. Signing it would invalidate its existing signatures.'
   let certifyReason: string | null = reason
@@ -253,7 +257,10 @@ export async function signDocument(s: Session, req: SignRequest): Promise<SignRe
   let bytes: Uint8Array | null = null
   let prepared: Prepared | null = null
   let began = false
-  if (safe(() => live.canBeSavedIncrementally(), false)) {
+  // After redaction or Remove Hidden Information the file must be rewritten in full: an
+  // incremental update is built on the opened bytes and would keep the removed content.
+  const cleanSave = s.state.has(REQUIRED_SAVE_OPTIONS)
+  if (!cleanSave && safe(() => live.canBeSavedIncrementally(), false)) {
     try {
       live.beginOperation('Sign Document')
       began = true
@@ -275,17 +282,25 @@ export async function signDocument(s: Session, req: SignRequest): Promise<SignRe
     }
   } else {
     if (safe(() => countSignatures(live), 0) > 0) {
-      throw new EngineError('This file cannot be updated without invalidating its existing signatures.', 'CANNOT_SIGN')
+      throw new EngineError(
+        cleanSave ? CLEAN_SAVE_SIGNED_MESSAGE : 'This file cannot be updated without invalidating its existing signatures.',
+        'CANNOT_SIGN'
+      )
     }
-    if (!isNull(live.getTrailer().get('Encrypt'))) {
+    const encrypted = !isNull(live.getTrailer().get('Encrypt'))
+    if (encrypted && !cleanSave) {
       throw new EngineError(
         'This password-protected file was damaged and repaired when it was opened. Save a copy first (File > Save As), open the copy and sign it.',
         'CANNOT_SIGN'
       )
     }
+    // With a clean save required, saveDocument applies those options (garbage collection, cleaning).
     const full = saveDocument(s, { mode: 'full' })
     const scratch = new m.PDFDocument(full)
     try {
+      if (scratch.needsPassword() && !(s.password && scratch.authenticatePassword(s.password))) {
+        throw new EngineError('The password-protected file could not be opened again to sign it', 'CANNOT_SIGN')
+      }
       prepared = prepareSignature(m, scratch, req, time, size)
       const buf = scratch.saveToBuffer('incremental,compress')
       bytes = buf.asUint8Array().slice()

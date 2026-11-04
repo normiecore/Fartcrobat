@@ -2,8 +2,9 @@
 // it in the registry, macOS and Linux in a file only an administrator can write.
 import { execFile } from 'node:child_process'
 import { readFileSync } from 'node:fs'
-import { posix, win32 } from 'node:path'
+import { posix } from 'node:path'
 import { NAMES, productNames, type Names } from '@shared/identity'
+import { regExe } from '@shared/winSystem'
 
 export type PolicyDecision = 'enabled' | 'disabled'
 
@@ -147,7 +148,7 @@ export function windowsPolicy(
   run: RunFile = runFile,
   key: string = WINDOWS_POLICY_KEY
 ): Promise<MachinePolicy> {
-  const reg = win32.join(env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe')
+  const reg = regExe(env)
   return new Promise((resolve) => {
     run(reg, ['query', key], (err, stdout) => {
       if (!err) return resolve(bySection((section) => parseRegQuery(stdout, section)))

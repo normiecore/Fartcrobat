@@ -16,8 +16,12 @@ export const UNSAFE_EXTENSIONS: ReadonlySet<string> = new Set([
   'jar', 'class', 'mde', 'mdb', 'ade', 'adp', 'accda', 'accde', 'mad', 'maf', 'mag', 'mam', 'maq', 'mar',
   'mas', 'mat', 'mau', 'mav', 'maw', 'mda', 'mdt', 'mdw', 'mdz', 'ops', 'pcd', 'prf', 'prg', 'pst', 'crt',
   'cer', 'der', 'its', 'vsmacros', 'vsw', 'vss', 'vst', 'img', 'iso', 'vhd', 'vhdx', 'udf',
+  'msu', 'appinstaller', 'vsto', 'rdp', 'wsb', 'diagcfg', 'diagpkg', 'theme', 'themepack', 'deskthemepack',
+  'mht', 'mhtml', 'one', 'onepkg', 'wiz',
+  // Office files that fetch data or run code when opened (web queries, SYLK, add-ins)
+  'iqy', 'dqy', 'rqy', 'oqy', 'slk', 'xla', 'xlam', 'ppa', 'ppam',
   // Office documents with macros
-  'docm', 'dotm', 'xlsm', 'xltm', 'xlam', 'pptm', 'potm', 'ppam', 'ppsm', 'sldm',
+  'docm', 'dotm', 'xlsm', 'xltm', 'pptm', 'potm', 'ppsm', 'sldm',
   // macOS applications, installers, scripts and launchers
   'app', 'command', 'tool', 'pkg', 'mpkg', 'dmg', 'scpt', 'scptd', 'applescript', 'workflow', 'action',
   'terminal', 'prefpane', 'kext', 'plugin', 'bundle', 'framework', 'saver', 'qlgenerator', 'mdimporter',

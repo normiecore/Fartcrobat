@@ -259,7 +259,12 @@ test(`${SCOPE}, ${INSTALLER} installer: Restart now asks about unsaved changes, 
   if (contactsOnlyGitHub(OLD)) expect(others).toEqual([])
   expect(reqs.some((r) => r.path?.endsWith(`/releases/download/v${NEW}/latest.yml`))).toBe(true)
   expect(download.text).toContain(`${NEW_NAMES.winSetupX64}:`)
-  if (INSTALLER === 'x64') expect(download.differential, download.text).toBe(true)
+  // A differential download needs the old installer's blockmap, which electron-updater looks for
+  // under the new file name with the old version (Inkmoor-Setup-0.3.0-x64.exe.blockmap). Across the
+  // rename that file does not exist (0.3.0's is Fartcrobat-Setup-...), so that one update is a full
+  // download, which is fine; later updates are differential again.
+  if (INSTALLER === 'x64' && OLD_NAMES.winSetupX64 === NEW_NAMES.winSetupX64.replace(NEW, OLD))
+    expect(download.differential, download.text).toBe(true)
 
   // The new version: NEW, in the old userData folder (settings kept), up to date, and asking nobody but GitHub.
   const fromNew = (await gh.requests()).length
@@ -289,7 +294,12 @@ test(`${SCOPE}, ${INSTALLER} installer: Restart now asks about unsaved changes, 
       await managed.app.close().catch(() => {})
     }
   } finally {
-    for (const key of policyKeys) execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' })
+    // Only the old key was written; reg.exe fails on the other one, which must not hide the result.
+    for (const key of policyKeys) {
+      try {
+        execFileSync('reg', ['delete', key, '/f'], { stdio: 'ignore' })
+      } catch {}
+    }
     killApps()
   }
 })

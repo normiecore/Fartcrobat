@@ -203,6 +203,16 @@ export function couldHaveIssued(issuer: Certificate, cert: Certificate): boolean
   return true
 }
 
+/**
+ * Whether `cert` may sign RFC 3161 timestamps at `time`: it carries the extended key usage
+ * id-kp-timeStamping (RFC 3161 2.3) and was valid then.
+ */
+export function isTimestampAuthority(cert: Certificate | null, time: Date): boolean {
+  if (!cert?.extKeyUsage?.includes(OID.ekuTimeStamping)) return false
+  const t = time.getTime()
+  return t >= cert.notBefore.getTime() && t <= cert.notAfter.getTime()
+}
+
 /** Checks the certificate's signature with the issuer's public key. */
 export async function verifyIssuedBy(cert: Certificate, issuer: Certificate): Promise<boolean> {
   try {
@@ -215,15 +225,46 @@ export async function verifyIssuedBy(cert: Certificate, issuer: Certificate): Pr
 
 export interface ChainLink {
   cert: Certificate
-  /** Whether this certificate's signature was verified by the next one in the chain (or itself for a root). */
+  /**
+   * Whether this link holds: the certificate's signature verified with the next one's key (or its
+   * own for a root), and that issuer may issue certificates here (CA, key usage, path length and,
+   * for intermediates, validity at the given time).
+   */
   verified: boolean
 }
 
 /**
- * Builds the chain signer -> ... -> root from the certificates at hand. Each link records whether
- * its signature verified with the issuer's key.
+ * Whether `issuer`, found at position `index` of a chain (the signer is 0), may have issued the
+ * certificate below it: it must be a CA (basicConstraints cA, and keyCertSign when key usage is
+ * present), its path length constraint must allow the intermediates below it, and an intermediate
+ * must have been valid at `when`.
  */
-export async function buildChain(signer: Certificate, pool: Certificate[]): Promise<{ chain: ChainLink[]; complete: boolean }> {
+export function mayIssue(issuer: Certificate, index: number, below: Certificate[], when: Date): boolean {
+  if (!issuer.basicConstraints?.ca) return false
+  if (issuer.keyUsage && !issuer.keyUsage.includes('Certificate signing')) return false
+  const pathLen = issuer.basicConstraints.pathLen
+  if (pathLen !== undefined) {
+    // Intermediates between the issuer and the signer (self-issued ones do not count, RFC 5280 4.2.1.9).
+    const intermediates = below.slice(1, index).filter((c) => !isSelfIssued(c)).length
+    if (intermediates > pathLen) return false
+  }
+  if (!isSelfIssued(issuer)) {
+    const t = when.getTime()
+    if (!(t >= issuer.notBefore.getTime() && t <= issuer.notAfter.getTime())) return false
+  }
+  return true
+}
+
+/**
+ * Builds the chain signer -> ... -> root from the certificates at hand. Each link records whether
+ * its signature verified with the issuer's key and the issuer was allowed to issue it at `when`
+ * (the signing time). Trust must not flow past a link that is not verified.
+ */
+export async function buildChain(
+  signer: Certificate,
+  pool: Certificate[],
+  when: Date = new Date()
+): Promise<{ chain: ChainLink[]; complete: boolean }> {
   const chain: ChainLink[] = []
   let cur = signer
   const seen = new Set<string>()
@@ -235,12 +276,23 @@ export async function buildChain(signer: Certificate, pool: Certificate[]): Prom
       chain.push({ cert: cur, verified: await verifyIssuedBy(cur, cur) })
       return { chain, complete: true }
     }
-    const issuer = pool.find((c) => c !== cur && couldHaveIssued(c, cur))
-    if (!issuer) {
+    const below = [...chain.map((l) => l.cert), cur]
+    const candidates = pool.filter((c) => c !== cur && couldHaveIssued(c, cur))
+    if (!candidates.length) {
       chain.push({ cert: cur, verified: false })
       return { chain, complete: false }
     }
-    chain.push({ cert: cur, verified: await verifyIssuedBy(cur, issuer) })
+    // Prefer a candidate that forms a valid link, so a look-alike certificate cannot hide the real issuer.
+    let issuer = candidates[0]
+    let verified = false
+    for (const c of candidates) {
+      if (mayIssue(c, depth + 1, below, when) && (await verifyIssuedBy(cur, c))) {
+        issuer = c
+        verified = true
+        break
+      }
+    }
+    chain.push({ cert: cur, verified })
     cur = issuer
   }
   return { chain, complete: false }

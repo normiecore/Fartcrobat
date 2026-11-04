@@ -180,7 +180,8 @@ export function DigitalIdsSettings() {
       <WindowsStoreSettings />
       <h4 className="fc-digital-signatures-h4">Trusted certificates</h4>
       <p className="shell-muted fc-digital-signatures-small">
-        Signatures made with these certificates (or certificates they issued) show the signer's identity as valid. Add one from a
+        Signatures made with these certificates (or with certificates issued by those that are certificate authorities) show the signer's
+        identity as valid. Add one from a
         signature's properties with “Trust This Signer”.
       </p>
       {trusted.length === 0 ? (

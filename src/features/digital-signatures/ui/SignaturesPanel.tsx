@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CircleCheck, CircleX, Eraser, FileSearch, FileSignature, Info, MoreHorizontal, RefreshCw, ScrollText } from 'lucide-react'
 import { Button, EmptyState, IconButton, openToolGroup, showContextMenu, useDocState, type ContextMenuItem, type DocumentModel } from '@renderer/sdk'
-import { overallStatus, permissionText, signatureStatus } from '../status'
+import { displayedSigningTime, overallStatus, permissionText, signatureStatus, signingTimeNote } from '../status'
 import type { SignatureFieldInfo, SignatureReport } from '../types'
 import { clearSignature, goToSignature, validateAll, viewSignedVersion } from './actions'
 import { startSigning } from './flow'
@@ -93,7 +93,10 @@ function SignatureEntry({ doc, r, locked }: { doc: DocumentModel; r: SignatureRe
               </>
             )}
             <dt>Signing time</dt>
-            <dd>{formatDateTime(r.timestamp?.valid ? r.timestamp.time : r.signingTime)}</dd>
+            <dd>
+              {formatDateTime(displayedSigningTime(r, trusted))}
+              {signingTimeNote(r, trusted) ? ` ${signingTimeNote(r, trusted)}` : ''}
+            </dd>
             <dt>Field</dt>
             <dd>
               {r.fieldName}
