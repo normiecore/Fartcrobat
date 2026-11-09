@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Eye, X } from 'lucide-react'
 import { usePopupEscape } from '@renderer/ui/Menu'
+import { trapTab } from '@renderer/ui/Dialog'
 import {
   Button,
   IconButton,
@@ -86,6 +87,14 @@ function QuickLook({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A modal: Tab and Shift+Tab cycle through the preview's buttons and never reach the shell
+      // or the Organize toolbar underneath (whose buttons would act on the grid).
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey) {
+        const root = rootRef.current
+        if (root && trapTab(root, e.shiftKey)) e.preventDefault()
+        e.stopPropagation()
+        return
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return
       let to: number | null = null
       if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') to = i - 1

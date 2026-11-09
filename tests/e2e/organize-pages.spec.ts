@@ -776,6 +776,18 @@ test('organize pages: fit presets, zoom keeps the place, quick look, reorder whe
     expect((await gridFacts(page)).columns).toBe(1)
     await page.setViewportSize({ width: 1400, height: 900 })
     await expect.poll(async () => Math.round((await gridFacts(page)).pageWidth)).toBe(Math.round(big))
+    // Arrow keys on the slider move it at small sizes too (one slider position can round to the
+    // same pixel size, so they step the size itself).
+    await slider.focus()
+    await page.keyboard.press('Home')
+    await expect(slider).toHaveAttribute('aria-valuetext', '80 pixels')
+    const small = (await gridFacts(page)).pageWidth
+    for (let k = 0; k < 5; k++) await page.keyboard.press('ArrowRight')
+    await expect(slider).toHaveAttribute('aria-valuetext', '130 pixels')
+    expect(Number(await slider.inputValue())).toBeGreaterThan(0)
+    await expect.poll(async () => (await gridFacts(page)).pageWidth).toBeGreaterThan(small + 30)
+    await page.keyboard.press('ArrowLeft')
+    await expect(slider).toHaveAttribute('aria-valuetext', '120 pixels')
 
     // Quick look: Space shows the focused page large, arrows move, Escape closes it.
     await twoPerRow.click()
@@ -796,6 +808,29 @@ test('organize pages: fit presets, zoom keeps the place, quick look, reorder whe
     await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
     await page.keyboard.press('ArrowLeft')
     preview = page.getByRole('dialog', { name: 'Page 4 of 15' })
+    await expect(preview).toBeVisible()
+    // It is modal: Tab and Shift+Tab stay on its own buttons, never the shell or the toolbar
+    // underneath (Enter on the toolbar's Delete would delete the page).
+    const focusInPreview = () =>
+      page.evaluate(() => !!document.querySelector('[role="dialog"]')?.contains(document.activeElement))
+    const focusedName = () => page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? document.activeElement?.textContent ?? '')
+    const seen = new Set<string>()
+    for (let k = 0; k < 7; k++) {
+      await page.keyboard.press('Tab')
+      expect(await focusInPreview()).toBe(true)
+      seen.add(await focusedName())
+    }
+    expect([...seen].sort()).toEqual(['Close preview', 'Next page', 'Open in document', 'Previous page'])
+    for (let k = 0; k < 5; k++) {
+      await page.keyboard.press('Shift+Tab')
+      expect(await focusInPreview()).toBe(true)
+    }
+    // Enter acts on the preview's own button (Next page here), not on anything underneath.
+    await preview.getByRole('button', { name: 'Next page' }).focus()
+    await page.keyboard.press('Enter')
+    await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
+    expect((await activeDocState(page))?.pageCount).toBe(15)
+    await page.keyboard.press('ArrowLeft')
     await expect(preview).toBeVisible()
     // Shortcuts do not reach the grid underneath.
     await page.keyboard.press('Delete')

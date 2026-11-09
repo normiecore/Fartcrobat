@@ -15,6 +15,7 @@ import {
   scrollForAnchor,
   SLIDER_STEPS,
   sizeToSlider,
+  sliderKeyStep,
   sliderToSize,
   thumbForColumns,
   thumbForHeight,
@@ -109,6 +110,19 @@ describe('organize zoom: slider and steps', () => {
     expect(zoomStep(1200, -1)).toBe(1000)
     expect(zoomStep(40, 1)).toBe(50)
     expect(zoomStep(40, -1)).toBe(30)
+  })
+  it('arrow keys on the slider always change the size, at least 10 px, within the range', () => {
+    // At small sizes several slider positions round to the same pixel size; the key step does not.
+    for (const size of [80, 81, 120, 170, 179, 400, 1200]) {
+      expect(sliderKeyStep(size, 1, 80, 1280)).toBeGreaterThanOrEqual(size + 10)
+      expect(sizeToSlider(sliderKeyStep(size, 1, 80, 1280), 80, 1280)).toBeGreaterThan(sizeToSlider(size, 80, 1280))
+    }
+    expect(sliderKeyStep(170, 1, 80, 1280)).toBe(180)
+    expect(sliderKeyStep(1000, 1, 80, 1280)).toBe(1050)
+    expect(sliderKeyStep(170, -1, 80, 1280)).toBe(160)
+    expect(sliderKeyStep(85, -1, 80, 1280)).toBe(80)
+    expect(sliderKeyStep(1275, 1, 80, 1280)).toBe(1280)
+    expect(sliderKeyStep(80, -1, 80, 1280)).toBe(80)
   })
   it('renders at the displayed size times the screen density, in steps, with a cap', () => {
     expect(renderLongSide(170, 1)).toBe(200)

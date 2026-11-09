@@ -87,6 +87,16 @@ export function sliderToSize(pos: number, min: number, max: number): number {
   return Math.round(min * Math.pow(max / min, t))
 }
 
+/**
+ * One arrow-key step of the size slider: 10 px or 5 %, whichever is more, kept within min..max.
+ * The slider's own steps are too fine for that at small sizes (several positions round to the
+ * same pixel size), so the arrow keys step the size and the slider follows.
+ */
+export function sliderKeyStep(size: number, direction: 1 | -1, min: number, max: number): number {
+  const next = direction > 0 ? Math.max(size * 1.05, size + 10) : Math.min(size / 1.05, size - 10)
+  return Math.max(min, Math.min(max, Math.round(next)))
+}
+
 /** One zoom step (buttons, Ctrl+= and Ctrl+-): 20 % bigger or smaller, at least 10 px. */
 export function zoomStep(size: number, direction: 1 | -1): number {
   const next = direction > 0 ? size * 1.2 : size / 1.2

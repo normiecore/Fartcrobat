@@ -80,6 +80,7 @@ import {
   scrollForAnchor,
   SLIDER_STEPS,
   sizeToSlider,
+  sliderKeyStep,
   sliderToSize,
   zoomStep,
   type FitMode,
@@ -235,6 +236,15 @@ function ThumbSizeControl({ thumb, max }: { thumb: number; max: number }) {
         value={sizeToSlider(thumb, MIN_THUMB, max)}
         aria-valuetext={`${thumb} pixels`}
         onChange={(e) => setThumbSize(sliderToSize(parseFloat(e.target.value), MIN_THUMB, max))}
+        onKeyDown={(e) => {
+          // Arrow keys step the size itself: one slider position can round to the same pixel size.
+          const dir =
+            e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0
+          if (!dir || e.ctrlKey || e.metaKey || e.altKey) return
+          e.preventDefault()
+          const next = sliderKeyStep(thumb, dir, MIN_THUMB, max)
+          if (next !== thumb) setThumbSize(next)
+        }}
       />
       <IconButton
         icon={ZoomIn}

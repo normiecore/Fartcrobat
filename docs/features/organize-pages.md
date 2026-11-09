@@ -12,7 +12,10 @@ How it behaves:
 
 - **Size range.** The slider at the bottom right (and Ctrl+mouse wheel, Ctrl+= and Ctrl+-, the
   zoom buttons) goes from 80 px up to one page filling the grid's width. The slider is on a log
-  scale, so small sizes stay fine-grained; the buttons and Ctrl+=/- step by 20 %. The chosen size
+  scale, so small sizes stay fine-grained; the buttons and Ctrl+=/- step by 20 %. The arrow keys
+  on the slider step the size by 10 px or 5 %, whichever is more (`sliderKeyStep`), rather than
+  one slider position: at small sizes several positions round to the same pixel size, so a native
+  arrow step would snap back. Page Up/Down, Home and End move the slider as usual. The chosen size
   is remembered (`organize-pages:thumbSize`) and shown limited to what the window allows: a
   narrower window shows less, and the size comes back when the window is wider again.
 - **Fit presets** next to the slider: **Fit width** (one page per row, as wide as the view),
@@ -49,8 +52,10 @@ How it behaves:
   buttons go through the pages; Escape (through `usePopupEscape`), Space, the close button or a
   click beside the page closes it; Enter or **Open in document** opens that page in the normal
   view. The grid's focus follows the page shown, so closing leaves you there; the selection is
-  not changed. The preview is opened with `openDialog`, so shortcuts and menu commands do not act
-  on the grid underneath while it is up; leaving Organize Pages or closing the document closes it.
+  not changed. The preview is opened with `openDialog` and is modal: Tab and Shift+Tab cycle
+  through its own buttons (`trapTab`, shared with `ui/Dialog.tsx`), so the focus never reaches the
+  shell or the Organize toolbar, whose buttons would otherwise act on the grid (an Enter on Delete
+  deleted the page shown). Shortcuts and menu commands do not act on the grid underneath either; leaving Organize Pages or closing the document closes it.
   The next page is rendered ahead.
 - **Shortcut changes.** Double-click used to open the page in the normal view; that is now
   Enter, the context menu's Open Page, or Open in document in the preview. Space still selects
