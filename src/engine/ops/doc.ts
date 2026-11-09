@@ -803,6 +803,28 @@ export default defineOps('doc', {
   },
 
   /**
+   * What another window needs to open this document as it is now (a tab moved between windows, see
+   * docs/features/windows-tabs.md): the bytes a Save would write, or the exact bytes it was opened
+   * from (or last saved incrementally to) while it has no edits and no undo steps, so signatures
+   * validate the same there; the password it was opened with; its certificate key. Secrets: the
+   * password and the key only go to the app window that takes the document.
+   */
+  handOff(s): Transfer<{ bytes: Uint8Array; version: number; password: string | null; certificateKey: CertificateKey | null }> {
+    const journal = s.journal()
+    const untouched = !s.isDirty() && !journal.canUndo && !journal.canRedo && !!s.sourceBytes && !s.converted
+    const version = s.editVersion()
+    const bytes = untouched ? s.sourceBytes!.slice() : saveDocument(s, {})
+    const k = s.doc ? s.pubsec?.key : null
+    const certificateKey = k ? { envelope: k.envelope.slice(), seed: k.seed.slice(), permissions: k.permissions } : null
+    return withTransfer({ bytes, version, password: s.password, certificateKey }, [bytes.buffer as ArrayBuffer])
+  },
+
+  /** The edit version now (see saveWithVersion), to tell whether the document changed since. */
+  editVersion(s): number {
+    return s.editVersion()
+  },
+
+  /**
    * Changes document properties. Dates may be ISO strings (as `info().metadata` returns them) or
    * PDF dates; the modification date is set to now unless the patch sets it.
    */

@@ -16,6 +16,7 @@ import { registerPasswordHandlers } from './passwords'
 import { destroyPrintWindows, listPrinters, printImages } from './print'
 import { registerAppScheme, serveRenderer } from './protocol'
 import { store } from './store'
+import { registerTabMoveHandlers } from './tabMoves'
 import { sessionTemp } from './temp'
 import { atomicWrite } from './util/atomicWrite'
 import { externalUrlToOpen } from './util/externalUrl'
@@ -80,12 +81,12 @@ function start() {
   app.on('second-instance', (_e, argv, workingDirectory) => {
     // Relative paths are relative to the second process's folder; with no files this just
     // brings the window forward (launching the app again from the Start menu or the dock).
-    deliverFiles(filesFromArgv(argv, workingDirectory || process.cwd(), ARGV_SKIP))
+    deliverFiles(filesFromArgv(argv, workingDirectory || process.cwd(), ARGV_SKIP), { fromOtherApp: true })
   })
   app.on('open-file', (e, path) => {
     e.preventDefault()
     const file = openableFile(path, process.cwd())
-    if (file) deliverFiles([file])
+    if (file) deliverFiles([file], { fromOtherApp: true })
   })
 
   registerAppScheme()
@@ -336,6 +337,7 @@ function registerCoreHandlers() {
 
   registerPasswordHandlers()
   registerCertKeyHandlers()
+  registerTabMoveHandlers()
 }
 
 function registerFeatureHandlers() {

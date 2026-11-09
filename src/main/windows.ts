@@ -1,10 +1,12 @@
 import { app, BrowserWindow, dialog, nativeTheme, screen, shell } from 'electron'
 import { join } from 'node:path'
+import { pathKey } from '@shared/paths'
 import { send } from './ipc'
 import { APP_ORIGIN } from './protocol'
 import { appImageFile } from './util/appImage'
 import { externalUrlToOpen } from './util/externalUrl'
 import { spellCheckInWindows } from './util/spellcheck'
+import { store } from './store'
 
 /** Document windows (print jobs use hidden windows that are not part of this set). */
 const windows = new Set<BrowserWindow>()
@@ -91,17 +93,56 @@ const readyToShow = new WeakSet<BrowserWindow>()
  * Opens files in the current window, creating one when none exists (macOS keeps running without
  * windows). Files for a window whose renderer is still loading wait until it has booted, so
  * nothing is lost when several files arrive at once. With no files, just brings the app forward.
+ *
+ * `fromOtherApp` (a second launch, Open With, macOS open-file while running): a file already open
+ * in some window is shown there, and with Preferences > General > "Open files from other apps in:
+ * a new window" the others open together in a new window.
  */
-export function deliverFiles(paths: string[]) {
+export function deliverFiles(paths: string[], opts: { fromOtherApp?: boolean } = {}) {
   if (!app.isReady()) {
     launchQueue.push(...paths)
     return
   }
-  const win = currentWindow() ?? createWindow()
+  let rest = paths
+  if (opts.fromOtherApp && paths.length) {
+    rest = []
+    for (const path of paths) {
+      const owner = windowWithFile(path)
+      if (owner) sendFiles(owner, [path])
+      else rest.push(path)
+    }
+    if (!rest.length) return
+  }
+  const newWindow = !!opts.fromOtherApp && rest.length > 0 && store().prefs.openFilesFromOtherApps === 'new-window' && allWindows().length > 0
+  const win = (newWindow ? null : currentWindow()) ?? createWindow()
+  sendFiles(win, rest)
+}
+
+function sendFiles(win: BrowserWindow, paths: string[]) {
   showWindow(win)
   if (!paths.length) return
   if (readyWindows.has(win)) send(win, 'app:openFiles', paths)
   else queueFor(win).push(...paths)
+}
+
+/** The window that has `path` open (as reported by window:setOpenFiles), if any. */
+function windowWithFile(path: string): BrowserWindow | null {
+  const key = pathKey(path, process.platform)
+  for (const w of allWindows()) {
+    if (closeApproved.has(w)) continue
+    if ((openFilesByWindow.get(w) ?? []).some((p) => pathKey(p, process.platform) === key)) return w
+  }
+  return null
+}
+
+/** Whether the window's renderer has booted and listens for main-process events. */
+export function isWindowReady(win: BrowserWindow): boolean {
+  return isAppWindow(win) && readyWindows.has(win) && !closeApproved.has(win)
+}
+
+/** Closes a window without asking its renderer (it has nothing open: a move into it failed). */
+export function closeWithoutAsking(win: BrowserWindow) {
+  approveAndClose(win)
 }
 
 function queueFor(win: BrowserWindow): string[] {
@@ -393,11 +434,13 @@ async function offerReload(win: BrowserWindow, reason: string) {
 
 // ---- creating windows ---------------------------------------------------------------------------
 
-export function createWindow(): BrowserWindow {
+/** Opens an app window; `bounds` places it (a tab dragged out of another window), else a default size. */
+export function createWindow(opts: { bounds?: { x: number; y: number; width: number; height: number } } = {}): BrowserWindow {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
   const win = new BrowserWindow({
-    width: Math.min(1480, Math.round(width * 0.9)),
-    height: Math.min(980, Math.round(height * 0.92)),
+    ...(opts.bounds ?? {}),
+    width: opts.bounds?.width ?? Math.min(1480, Math.round(width * 0.9)),
+    height: opts.bounds?.height ?? Math.min(980, Math.round(height * 0.92)),
     minWidth: 720,
     minHeight: 480,
     show: false,

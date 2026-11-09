@@ -1,5 +1,6 @@
 import type { AgentCallRequest, AgentStatus } from './agent/bridge'
 import type { UpdateStatus } from './updates'
+import type { DocumentHandOff, IncomingMove, MoveResult, MoveSettlement, MoveTarget, WindowSummary } from './tabMoves'
 import type {
   CertKeysDecryptRequest,
   CertKeysDecryptResult,
@@ -71,6 +72,23 @@ export interface IpcApi {
   'window:setFullScreen': (on: boolean) => void
   'window:isFullScreen': () => boolean
   'window:new': () => void
+  /** This window's id (BrowserWindow.id), which tab drags between windows carry. */
+  'window:id': () => number
+  /** The other app windows, for "Move to …" (see src/shared/tabMoves.ts). */
+  'window:list': () => WindowSummary[]
+  /** Hands a document of this window to another window, or to a new one; resolves once it opened there. */
+  'window:moveDocument': (handOff: DocumentHandOff, target: MoveTarget) => MoveResult
+  /** Documents moved to this window that waited for it to boot. */
+  'window:takeMovedDocuments': () => IncomingMove[]
+  /** This window opened (or could not open) a document moved to it (window:incomingDocument). */
+  'window:moveSettled': (moveId: string, settlement: MoveSettlement) => void
+  /** A tab of window `fromWindowId` was dropped on this window's tab strip at `index`. */
+  'window:requestTabMove': (fromWindowId: number, docId: string, index: number) => void
+  /**
+   * A tab drag of this window ended outside it with no drop: where it should go, from the pointer's
+   * position on screen (null: nowhere, the pointer is back over this window).
+   */
+  'window:tabDropDestination': () => MoveTarget | null
   /** The files this window has open (reopened if its renderer crashes). */
   'window:setOpenFiles': (paths: string[]) => void
   /** Runs a native text-editing command in this window's focused text field. */
@@ -129,6 +147,10 @@ export interface IpcEvents {
   'menu:command': (commandId: string) => void
   'app:beforeQuit': () => void
   'window:fullScreenChanged': (on: boolean) => void
+  /** A document moved to this window from another one: open it, then answer window:moveSettled. */
+  'window:incomingDocument': (move: IncomingMove) => void
+  /** Another window took a tab dropped on its strip: move this window's document `docId` there. */
+  'window:moveOut': (docId: string, target: MoveTarget) => void
   /** Agent access: run a tool in this window (see src/shared/agent/bridge.ts). */
   'agent:request': (request: AgentCallRequest) => void
   /** Agent access: the agent cancelled a call (close its dialog, stop its work). */
@@ -160,6 +182,8 @@ export const ALLOWED_EVENT_CHANNELS: (keyof IpcEvents)[] = [
   'menu:command',
   'app:beforeQuit',
   'window:fullScreenChanged',
+  'window:incomingDocument',
+  'window:moveOut',
   'agent:request',
   'agent:cancel',
   'agent:status',

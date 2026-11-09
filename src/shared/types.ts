@@ -208,6 +208,11 @@ export interface Preferences {
    * cards (Preferences > Digital IDs; Windows only).
    */
   useWindowsCertificateStore: boolean
+  /**
+   * Files opened from another app (double-clicking a PDF while Inkmoor runs, Open With): in the
+   * window used last, or in a new window of their own (Preferences > General).
+   */
+  openFilesFromOtherApps: 'current-window' | 'new-window'
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -236,7 +241,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   rememberPasswords: true,
   rememberPasswordChecked: true,
   checkForUpdates: true,
-  useWindowsCertificateStore: true
+  useWindowsCertificateStore: true,
+  openFilesFromOtherApps: 'current-window'
 }
 
 export interface RecentFile {

@@ -10,6 +10,7 @@ import { commandsAllowed, handleShortcut, runCommand, scheduleMenuUpdate } from 
 import { answerCloseRequest, openNewDocument, openPaths, refreshRecent, replaceDocumentBytes } from './app/actions'
 import { runMenuCommand, trackTextFieldFocus } from './app/editing'
 import { reportOpenFiles } from './app/windowState'
+import { installTabMoves, moveDocument, takeMovedDocuments } from './app/tabMoves'
 import { invoke, onMainEvent } from './platform'
 import { authorName, coreFeature } from './core/coreFeature'
 import { AppShell } from './shell/AppShell'
@@ -60,6 +61,7 @@ async function boot() {
   window.addEventListener('blur', () => useApp.setState({ spaceHand: false }))
 
   onMainEvent('app:openFiles', (paths) => void openPaths(paths))
+  installTabMoves()
   // Text-editing items act on the focused field; other commands wait like keyboard shortcuts.
   onMainEvent('menu:command', (id) => void runMenuCommand(id))
   onMainEvent('app:beforeQuit', () => void answerCloseRequest())
@@ -105,7 +107,8 @@ async function boot() {
   void refreshRecent()
   const launch = await invoke('app:launchFiles').catch(() => [] as string[])
   if (launch.length) await openPaths(launch)
-  ;(window as any).__inkmoor = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes }
+  await takeMovedDocuments()
+  ;(window as any).__inkmoor = { registry, useApp, getActiveDoc, openPaths, runCommand, openNewDocument, replaceDocumentBytes, moveDocument }
 }
 
 void boot()
