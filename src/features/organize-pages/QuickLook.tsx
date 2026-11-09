@@ -39,7 +39,32 @@ export function openQuickLook(doc: DocumentModel, index: number, openInViewer: (
   const grid = document.querySelector<HTMLElement>(`.fc-organize-pages-view[data-doc-id="${doc.id}"] .fc-organize-pages-scroll`)
   void openDialog<number>((close) => <QuickLook doc={doc} start={index} close={close} />, { preview: true }).then((open) => {
     if (open !== undefined) openInViewer(open)
-    else if (grid?.isConnected) grid.focus({ preventScroll: true })
+    else if (grid) returnFocusToGrid(grid)
+  })
+}
+
+/**
+ * Gives the focus back to the grid once the quick look has closed. When it closed for another
+ * dialog (an agent confirmation closes it to ask its question), that dialog keeps the focus, and
+ * the grid gets it back only after every dialog has closed and the focus was left nowhere.
+ */
+export function returnFocusToGrid(grid: HTMLElement): void {
+  const lost = () => {
+    const active = document.activeElement
+    return !active || active === document.body || !active.isConnected
+  }
+  const settle = () => {
+    if (grid.isConnected && lost()) grid.focus({ preventScroll: true })
+  }
+  if (useApp.getState().dialogs.length === 0) {
+    if (grid.isConnected) grid.focus({ preventScroll: true })
+    return
+  }
+  const unsub = useApp.subscribe((s) => {
+    if (s.dialogs.length > 0) return
+    unsub()
+    // After the last dialog's own clean-up has run (it may have put the focus somewhere itself).
+    requestAnimationFrame(settle)
   })
 }
 

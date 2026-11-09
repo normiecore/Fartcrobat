@@ -244,6 +244,43 @@ test('apply_redactions asks the person first: Decline stops it, Apply removes th
   }
 })
 
+test('a confirmation that closes the Organize quick look takes the focus, and the grid gets it back', async () => {
+  const s = await startSession()
+  try {
+    const { agent, page } = s
+    const { handle } = dataOf(await agent.call('open_document', { path: fixturePath('text.pdf') }))
+    await waitForRender(page)
+    expect(dataOf(await agent.call('mark_redactions', { handle, pattern: 'email' }))).toMatchObject({ marked: 5 })
+
+    await page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
+    const grid = page.getByLabel('Pages of text.pdf', { exact: true })
+    await expect(page.locator('.fc-organize-pages-cell')).toHaveCount(5)
+    await page.locator('.fc-organize-pages-cell[data-org-index="1"]').click()
+    await expect(grid).toBeFocused()
+    const status = page.locator('.fc-organize-pages-status')
+    await expect(status).toContainText('1 selected (2)')
+    await page.keyboard.press('Space')
+    const preview = page.getByRole('dialog', { name: 'Page 2 of 5' })
+    await expect(preview).toBeVisible()
+
+    // The question closes the quick look and opens with Decline focused; Enter answers it.
+    const declined = agent.start('apply_redactions', { handle })
+    const dialog = await confirmation(page, 'Apply redactions?')
+    await expect(preview).toBeHidden()
+    await page.keyboard.press('Enter')
+    expect(errorOf(await declined)).toContain('[declined]')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    // The grid has the focus again, so its keys work without a click.
+    await expect(grid).toBeFocused()
+    await page.keyboard.press('ArrowRight')
+    await expect(status).toContainText('1 selected (3)')
+    expect(dataOf(await agent.call('list_annotations', { handle, types: ['Redact'] })).count).toBe(5)
+    await expect(dialog).toBeHidden()
+  } finally {
+    await s.close()
+  }
+})
+
 test('save_document: a new path saves without asking, overwriting asks first', async () => {
   const dir = workDir()
   const source = join(dir, 'report.pdf')
