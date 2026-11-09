@@ -202,10 +202,24 @@ export function commandsAllowed(): boolean {
   return !s.dialogs.length && !s.paletteOpen && !s.progress
 }
 
+/**
+ * True for a key that types a character with AltGr: Polish AltGr+N is "ń", German AltGr+Q "@".
+ * Windows reports AltGr as Ctrl+Alt, and eventToShortcut maps "ń" on KeyN to N, so without this
+ * Ctrl+Alt+N (New Window) would take the letter and open a window. Never a shortcut. While typing,
+ * a Ctrl+Alt key that produced a non-ASCII character is also text: Windows treats left Ctrl+Alt as
+ * AltGr, and Chromium does not always report the AltGraph state for it.
+ */
+function typesCharacter(e: KeyboardEvent, typing: boolean): boolean {
+  if (typeof e.getModifierState === 'function' && e.getModifierState('AltGraph')) return true
+  if (!typing || isMac || !e.ctrlKey || !e.altKey || e.metaKey) return false
+  return e.key.length === 1 && !/^[\x20-\x7e]$/.test(e.key)
+}
+
 /** Global keydown handler. Returns true when a command handled the event. */
 export function handleShortcut(e: KeyboardEvent): boolean {
   if (!shortcutIndex) buildShortcutIndex()
   if (e.defaultPrevented) return false
+  if (typesCharacter(e, isTypingTarget(e.target))) return false
   const combo = eventToShortcut(e)
   const cmds = shortcutIndex!.get(combo)
   if (!cmds) return false

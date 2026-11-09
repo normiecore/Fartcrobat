@@ -8,6 +8,7 @@ import { AgentCompanion } from './ui/Companion'
 import { AgentIndicator } from './ui/Indicator'
 import { AgentSettings, refreshAgentStatus } from './ui/Settings'
 import { setAgentStatus } from './ui/store'
+import { useInlineReview } from './ui/reviewState'
 import { startAgentRunner } from './runner'
 import './ipc'
 import './agent-access.css'
@@ -32,5 +33,10 @@ export default defineFeature({
   rightPanels: [{ id: 'agent-review', label: 'Review edits', icon: FileCheck, order: 89, component: InlineReviewPanel }, { id: 'agent-activity', label: 'Agent activity', icon: Bot, order: 90, component: ActivityPanel }],
   pageLayers: [{ id: 'agent-review-preview', order: 99, component: InlineReviewLayer }, { id: 'agent-access-flash', order: 95, component: FlashLayer }],
   settings: [{ id: 'ai-apps', label: 'AI apps', order: 90, component: AgentSettings }],
-  globals: [AgentAccessGlobal]
+  globals: [AgentAccessGlobal],
+  // The review's proposal lives in this window's engine for the document: finish it before moving.
+  moveGuard: (doc) =>
+    useInlineReview.getState().review?.docId === doc.id
+      ? `Accept or reject the AI app's edits to “${doc.state.title}” first, then move it.`
+      : null
 })

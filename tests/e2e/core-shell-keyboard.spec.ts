@@ -25,6 +25,48 @@ test('Ctrl shortcuts work with a non-Latin keyboard layout', async () => {
   }
 })
 
+test('AltGr letters are typed, not taken as Ctrl+Alt shortcuts (New Window is Ctrl+Alt+N)', async () => {
+  const { app, page } = await launch()
+  const windowCount = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await runCommand(page, 'edit.find')
+    const input = page.getByRole('textbox', { name: 'Find in document', exact: true })
+    await expect(input).toBeFocused()
+    expect(await windowCount()).toBe(1)
+    // Polish "ń" is AltGr+N; Windows reports AltGr as Ctrl+Alt, with or without the AltGraph state.
+    const taken = await page.evaluate(() => {
+      const el = document.activeElement!
+      const press = (init: KeyboardEventInit) => {
+        const e = new KeyboardEvent('keydown', { key: 'ń', code: 'KeyN', ctrlKey: true, altKey: true, bubbles: true, cancelable: true, ...init })
+        el.dispatchEvent(e)
+        return e.defaultPrevented
+      }
+      return [press({}), press({ modifierAltGraph: true } as KeyboardEventInit)]
+    })
+    expect(taken).toEqual([false, false])
+    // Outside a text field, AltGr is still never a shortcut.
+    const onBody = await page.evaluate(() => {
+      const e = new KeyboardEvent('keydown', { key: 'ń', code: 'KeyN', ctrlKey: true, altKey: true, modifierAltGraph: true, bubbles: true, cancelable: true } as KeyboardEventInit)
+      document.body.dispatchEvent(e)
+      return e.defaultPrevented
+    })
+    expect(onBody).toBe(false)
+    // A real Ctrl+Alt+N still opens a window, and only that one.
+    const next = app.waitForEvent('window')
+    const opened = await page.evaluate(() => {
+      const e = new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', ctrlKey: true, altKey: true, bubbles: true, cancelable: true })
+      document.body.dispatchEvent(e)
+      return e.defaultPrevented
+    })
+    expect(opened).toBe(true)
+    await next
+    await expect.poll(windowCount).toBe(2)
+  } finally {
+    await app.close()
+  }
+})
+
 test('Escape that closes the palette or a menu does nothing else', async () => {
   const { app, page } = await launch()
   try {

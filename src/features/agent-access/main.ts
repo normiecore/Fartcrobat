@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { appVersion } from '@main/appVersion'
 import type { MainContext } from '@main/context'
+import { onDocumentMoved } from '@main/tabMoves'
 import { allWindows, createWindow, showWindow } from '@main/windows'
 import type { AgentCallReply, AgentCallRequest, AgentProgress, AgentStatus } from '@shared/agent/bridge'
 import { launchInfo } from './main/endpoint'
@@ -165,6 +166,10 @@ export function register(ctx: MainContext) {
     }
   })
 
+  // A tab moved to another window: calls with the handle the agent knows still reach it.
+  onDocumentMoved(({ from, to }) =>
+    agent.router.documentMoved(`w${from.webContentsId}-${from.boot}-${from.docId}`, `w${to.webContentsId}-${to.boot}-${to.docId}`)
+  )
   ctx.handle('feature:agent-access:status', (e) => {
     host.markListening(e.sender)
     return agent.status()

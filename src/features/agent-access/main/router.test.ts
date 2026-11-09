@@ -137,6 +137,32 @@ describe('agent router', () => {
     expect(router.running(1)).toBe(0)
   })
 
+  it('follows a document that moved to another window (and on again) from its old handle', async () => {
+    const host = new FakeHost('w1', 'w2', 'w3')
+    const { router, sink } = setup(host)
+    router.documentMoved('w1-b1-doc-3', 'w2-b2-doc-1')
+    router.call(call('get_page_text', { handle: 'w1-b1-doc-3', pages: '1' }))
+    await waitFor(() => expect(host.requests).toHaveLength(1))
+    expect(host.requests[0].windowId).toBe('w2')
+    expect(host.requests[0].request.args).toEqual({ handle: 'w2-b2-doc-1', pages: '1' })
+
+    // Moved on again, and the first window closed (it had no tabs left).
+    router.documentMoved('w2-b2-doc-1', 'w3-b3-doc-7')
+    host.close('w1')
+    router.call(call('get_page_text', { handle: 'w1-b1-doc-3' }))
+    await waitFor(() => expect(host.requests).toHaveLength(2))
+    expect(host.requests[1]).toMatchObject({ windowId: 'w3', request: { args: { handle: 'w3-b3-doc-7' } } })
+    expect(router.currentHandle('w2-b2-doc-1')).toBe('w3-b3-doc-7')
+
+    // Handles of documents that never moved, and malformed entries, are left alone.
+    router.documentMoved('not a handle', 'w3-b3-doc-8')
+    expect(router.currentHandle('not a handle')).toBe('not a handle')
+    router.call(call('get_page_text', { handle: 'w3-b3-doc-2' }))
+    await waitFor(() => expect(host.requests).toHaveLength(3))
+    expect(host.requests[2].request.args).toEqual({ handle: 'w3-b3-doc-2' })
+    expect(sink.results).toEqual([])
+  })
+
   it('answers stale_handle for an unknown window or a malformed handle without reaching a window', () => {
     const host = new FakeHost('w1')
     const { router, sink } = setup(host)
