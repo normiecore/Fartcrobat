@@ -849,6 +849,38 @@ test('organize pages: fit presets, zoom keeps the place, quick look, reorder whe
     await page.keyboard.press('Space')
     await expect(page.getByRole('dialog')).toHaveCount(0)
 
+    // A dialog opened over the preview (closing the window with unsaved changes) gets its keys:
+    // Tab stays in it, arrows do not turn the preview's pages, Space presses its button.
+    await page.keyboard.press('Space')
+    preview = page.getByRole('dialog', { name: 'Page 5 of 15' })
+    await expect(preview).toBeVisible()
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('app:beforeQuit'))
+    const ask = page.getByRole('dialog', { name: 'Save changes?' })
+    await expect(ask).toBeVisible()
+    await expect(ask.getByRole('button', { name: 'Save', exact: true })).toBeFocused()
+    const focusInAsk = () =>
+      page.evaluate(() => {
+        const all = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+        return !!all[all.length - 1]?.contains(document.activeElement)
+      })
+    const asked = new Set<string>()
+    for (let k = 0; k < 4; k++) {
+      await page.keyboard.press('Tab')
+      expect(await focusInAsk()).toBe(true)
+      asked.add(await focusedName())
+    }
+    expect(asked).toContain('Cancel')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('End')
+    await expect(preview).toBeVisible()
+    await ask.getByRole('button', { name: 'Cancel', exact: true }).focus()
+    await page.keyboard.press('Space')
+    await expect(ask).toHaveCount(0)
+    await expect(preview).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    expect(app.windows().length).toBe(1)
+
     // Reordering by dragging still works with large pages: page 1 after page 2.
     await page.keyboard.press('Home')
     await expect(cell(page, 0)).toBeInViewport()

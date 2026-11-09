@@ -56,7 +56,10 @@ How it behaves:
   through its own buttons (`trapTab`, shared with `ui/Dialog.tsx`), so the focus never reaches the
   shell or the Organize toolbar, whose buttons would otherwise act on the grid (an Enter on Delete
   deleted the page shown). Shortcuts and menu commands do not act on the grid underneath either; leaving Organize Pages or closing the document closes it.
-  The next page is rendered ahead.
+  The next page is rendered ahead. Its keys are only its own while it is the top modal
+  (`isTopModal`): a dialog opened over it, such as Save changes? when the window closes or the
+  update card's Restart now quits, gets Tab, the arrow keys, Space and Enter as usual, and the
+  preview's page does not change behind it.
 - **Shortcut changes.** Double-click used to open the page in the normal view; that is now
   Enter, the context menu's Open Page, or Open in document in the preview. Space still selects
   the focused page (when it was not selected) and now also opens the preview; Ctrl+Space still

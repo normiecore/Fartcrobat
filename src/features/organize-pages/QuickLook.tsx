@@ -22,6 +22,15 @@ const MARGIN = 24
 const HEADER = 48
 
 /**
+ * True while `el` is the modal shown on top. Dialogs render in the order they opened (DialogHost),
+ * so a later modal in the document is above this one.
+ */
+export function isTopModal(el: HTMLElement): boolean {
+  const all = document.querySelectorAll('[role="dialog"][aria-modal="true"]')
+  return all[all.length - 1] === el
+}
+
+/**
  * Quick look: a large preview of one page over the Organize Pages grid, sized to the window.
  * Left/Right (and Page Up/Down, Home, End) move through the pages, Escape or Space closes it, Enter
  * opens the page in the document. The grid's focus follows the page shown.
@@ -87,11 +96,14 @@ function QuickLook({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Keys belong to a dialog opened on top of the preview (Save changes? when the window
+      // closes, say): leave them alone.
+      const root = rootRef.current
+      if (!root || !isTopModal(root)) return
       // A modal: Tab and Shift+Tab cycle through the preview's buttons and never reach the shell
       // or the Organize toolbar underneath (whose buttons would act on the grid).
       if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey) {
-        const root = rootRef.current
-        if (root && trapTab(root, e.shiftKey)) e.preventDefault()
+        if (trapTab(root, e.shiftKey)) e.preventDefault()
         e.stopPropagation()
         return
       }
