@@ -32,7 +32,7 @@ function status(patch: Partial<UpdateStatus> = {}): UpdateStatus {
 
 const update = {
   version: '0.2.0',
-  releaseUrl: 'https://github.com/normiecore/Fartcrobat/releases/tag/v0.2.0'
+  releaseUrl: 'https://github.com/normiecore/Inkmoor/releases/tag/v0.2.0'
 }
 
 describe('cardView', () => {

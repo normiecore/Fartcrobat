@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
-const REPO = 'normiecore/Fartcrobat'
+const REPO = 'normiecore/Inkmoor'
 
 /** Who downloads which file, in the order the table lists them. */
 export function releaseDownloads(version) {

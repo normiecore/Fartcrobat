@@ -11,7 +11,7 @@
   !ifdef APP_ARM64
     !ifndef APP_64
       ${IfNot} ${IsNativeARM64}
-        MessageBox MB_OK|MB_ICONSTOP "This installer is for Windows on Arm. For this PC, download Inkmoor-Setup-${VERSION}-x64.exe from https://github.com/normiecore/Fartcrobat/releases/latest" /SD IDOK
+        MessageBox MB_OK|MB_ICONSTOP "This installer is for Windows on Arm. For this PC, download Inkmoor-Setup-${VERSION}-x64.exe from https://github.com/normiecore/Inkmoor/releases/latest" /SD IDOK
         SetErrorLevel 1
         Quit
       ${EndIf}

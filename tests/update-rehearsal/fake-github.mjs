@@ -17,8 +17,10 @@ import { createServer } from 'node:http'
 import { createServer as createTlsServer } from 'node:https'
 import { join, resolve } from 'node:path'
 
-// The repository keeps its first name whatever the app is called (src/shared/identity.ts).
-const REPO = '/normiecore/Fartcrobat'
+// The repository (src/shared/identity.ts, RELEASES_REPO), and its name up to 0.4.0, which GitHub
+// redirects to it: copies up to 0.4.0 ask the old name and find no update (names.mjs, releaseRepo).
+const REPO = '/normiecore/Inkmoor'
+const OLD_REPO = '/normiecore/fartcrobat'
 const ASSET_HOST = 'release-assets.githubusercontent.com'
 const ASSET_PATH = '/github-production-release-asset'
 const HOSTS = new Set(['github.com', ASSET_HOST])
@@ -120,6 +122,9 @@ function handle(req, res) {
     log({ ...entry, status, ...(headers.Location ? { location: headers.Location } : {}) })
   }
   if (host === 'github.com') {
+    const lower = url.pathname.toLowerCase()
+    if (lower === OLD_REPO || lower.startsWith(`${OLD_REPO}/`))
+      return reply(301, { Location: `https://github.com${REPO}${url.pathname.slice(OLD_REPO.length)}${url.search}` })
     if (url.pathname === `${REPO}/releases/latest`) {
       // electron-updater asks for JSON; the app's own check reads the redirect.
       if ((req.headers.accept ?? '').includes('application/json'))

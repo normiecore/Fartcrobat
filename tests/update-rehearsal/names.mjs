@@ -7,13 +7,19 @@
 //
 //   node names.mjs <version> <field>      prints one field of productFor(<version>), e.g. winSetupX64
 //   node names.mjs default-new <old>      the version to rehearse when none is given: the next patch
-//                                         version, or the first version under the checkout's name
-//                                         when the next patch version would still have the old one
+//                                         version, and at least FIRST_INKMOOR_REPO (the first version
+//                                         that asks the repository a build of this checkout asks)
 //   node names.mjs check-build <new>      exits 1 when a build of this checkout, versioned <new>,
 //                                         would not have the names <new> stands for
+//   node names.mjs same-repo <old> <new>  exits 1 when <old> asks another repository than <new>
+//                                         publishes to: no rehearsal can update across that
+//
+// The GitHub repository was normiecore/Fartcrobat up to 0.4.0 and is normiecore/Inkmoor from 0.4.1
+// (src/shared/identity.ts, RELEASES_REPO). GitHub redirects the old name to the new one, but copies
+// up to 0.4.0 only accept a redirect to a release page, so they cannot update to 0.4.1 or later.
 //
 // What keeps its first value whatever the app is called (src/shared/identity.ts, LEGACY) is not
-// here: the GitHub repository normiecore/Fartcrobat, the .deb package name `fartcrobat`, the NSIS
+// here: the .deb package name `fartcrobat`, the NSIS
 // GUID, the settings file name. The userData folder is the one of the version that first ran: an
 // install keeps it across the rename.
 import { readFileSync } from 'node:fs'
@@ -22,6 +28,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /** The first version called Inkmoor. */
 export const FIRST_INKMOOR = '0.4.0'
+
+/** The first version that asks normiecore/Inkmoor for updates (before: normiecore/Fartcrobat). */
+export const FIRST_INKMOOR_REPO = '0.4.1'
 
 /** The .deb package name, the same under both names (dpkg upgrades in place only under one name). */
 export const DEB_PACKAGE = 'fartcrobat'
@@ -44,6 +53,10 @@ export function versionBefore(a, b) {
 
 /** The product name a version shipped (or ships) under. */
 export const productName = (version) => (versionBefore(version, FIRST_INKMOOR) ? 'Fartcrobat' : 'Inkmoor')
+
+/** The GitHub repository (owner/name) a version asks for updates and is published in. */
+export const releaseRepo = (version) =>
+  versionBefore(version.replace(/^v/, ''), FIRST_INKMOOR_REPO) ? 'normiecore/Fartcrobat' : 'normiecore/Inkmoor'
 
 /** The names one version of the app has: its files, executables, policy locations and window global. */
 export function productFor(version) {
@@ -79,7 +92,9 @@ export function productFor(version) {
     debAppArmor: `/etc/apparmor.d/${lower}`,
     linuxPolicy: `/etc/${lower}/policy.json`,
     /** No version in the name: an update replaces the file in place and it keeps its name. */
-    appImage: `${name}-x86_64.AppImage`
+    appImage: `${name}-x86_64.AppImage`,
+    /** The GitHub repository it asks for updates (owner/name). */
+    repo: releaseRepo(v)
   }
 }
 
@@ -89,11 +104,15 @@ export function checkoutName() {
   return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).productName
 }
 
-/** The version to rehearse to from `old` when none is given (see the top of this file). */
+/**
+ * The version to rehearse to from `old` when none is given (see the top of this file). A build of
+ * this checkout asks normiecore/Inkmoor, so it is at least FIRST_INKMOOR_REPO.
+ */
 export function defaultNew(old, name = checkoutName()) {
   const [a, b, c] = parse(old)
   const next = `${a}.${b}.${c + 1}`
-  return productName(next) !== name && name === 'Inkmoor' ? FIRST_INKMOOR : next
+  if (name !== 'Inkmoor') return next
+  return versionBefore(next, FIRST_INKMOOR_REPO) ? FIRST_INKMOOR_REPO : next
 }
 
 function main(argv) {
@@ -101,6 +120,13 @@ function main(argv) {
   if (first === 'default-new' && second) return console.log(defaultNew(second))
   if (first === 'check-build' && second) {
     const built = checkoutName()
+    if (built === 'Inkmoor' && versionBefore(second, FIRST_INKMOOR_REPO)) {
+      console.error(
+        `A build of this checkout asks normiecore/Inkmoor for updates, which ${second} did not ` +
+          `(names.mjs, FIRST_INKMOOR_REPO): rehearse with ${FIRST_INKMOOR_REPO} or later.`
+      )
+      process.exit(1)
+    }
     if (built === productName(second)) return
     console.error(
       `This checkout builds ${built}, but ${second} is a ${productName(second)} version (Inkmoor from ${FIRST_INKMOOR} on): ` +
@@ -108,7 +134,15 @@ function main(argv) {
     )
     process.exit(1)
   }
-  if (first && second && !['default-new', 'check-build'].includes(first)) {
+  if (first === 'same-repo' && second && argv[2]) {
+    if (releaseRepo(second) === releaseRepo(argv[2])) return
+    console.error(
+      `${second} asks ${releaseRepo(second)} for updates and ${argv[2]} is published in ${releaseRepo(argv[2])}: ` +
+        `${second} cannot find it (names.mjs, FIRST_INKMOOR_REPO), so there is nothing to rehearse.`
+    )
+    process.exit(1)
+  }
+  if (first && second && !['default-new', 'check-build', 'same-repo'].includes(first)) {
     const names = productFor(first)
     if (!(second in names)) {
       console.error(`no field ${second}; one of: ${Object.keys(names).join(', ')}`)
@@ -116,7 +150,7 @@ function main(argv) {
     }
     return console.log(names[second])
   }
-  console.error('usage: names.mjs <version> <field> | default-new <old> | check-build <new>')
+  console.error('usage: names.mjs <version> <field> | default-new <old> | check-build <new> | same-repo <old> <new>')
   process.exit(2)
 }
 

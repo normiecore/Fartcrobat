@@ -62,7 +62,7 @@ describe('release-downloads', () => {
     expect(notes.status).toBe(0)
     expect(notes.stdout).toMatch(/^## Download\n/)
     for (const f of ['Inkmoor-Setup-0.2.1-x64.exe', 'Inkmoor-Setup-0.2.1-arm64.exe', 'Inkmoor-0.2.1-arm64.dmg', 'Inkmoor-0.2.1-x64.dmg', 'inkmoor_0.2.1_amd64.deb', 'Inkmoor-x86_64.AppImage'])
-      expect(notes.stdout).toContain(`[${f}](https://github.com/normiecore/Fartcrobat/releases/download/v0.2.1/${f})`)
+      expect(notes.stdout).toContain(`[${f}](https://github.com/normiecore/Inkmoor/releases/download/v0.2.1/${f})`)
 
     const partial = run('--dir', build(WIN), '--version', '0.2.1', '--notes')
     expect(partial.status).toBe(1)

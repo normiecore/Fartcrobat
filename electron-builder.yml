@@ -33,7 +33,7 @@ asarUnpack:
 publish:
   provider: github
   owner: normiecore
-  repo: Fartcrobat
+  repo: Inkmoor
   releaseType: release
 # File associations are per platform: on Windows the name is the registry ProgId, which must be
 # unique to Inkmoor (src/main/util/systemDefaults.ts WINDOWS_PROG_ID checks it to tell whether

@@ -18,7 +18,7 @@ test.skip(
 /** This build's version: the server answers with it for "up to date". */
 const CURRENT: string = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version
 const NEW = '99.0.0'
-const REPO = '/normiecore/Fartcrobat'
+const REPO = '/normiecore/Inkmoor'
 
 /** Lets windows ask about unsaved changes (launch closes them without asking). */
 const ASK_ON_CLOSE = { INKMOOR_FORCE_CLOSE: '' }
@@ -37,7 +37,7 @@ test.afterAll(() => {
 })
 
 interface FakeGitHub {
-  /** INKMOOR_UPDATE_URL: stands in for https://github.com/normiecore/Fartcrobat. */
+  /** INKMOOR_UPDATE_URL: stands in for https://github.com/normiecore/Inkmoor. */
   base: string
   /** The release page /releases/latest leads to. */
   releaseUrl: (version: string) => string
