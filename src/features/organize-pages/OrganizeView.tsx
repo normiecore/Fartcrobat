@@ -430,8 +430,16 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
   const m = useMemo(() => gridMetrics(count, viewport.width, thumb, aspect), [count, viewport.width, thumb, aspect])
   const mRef = useRef(m)
   mRef.current = m
-  /** Scroll position as last seen (before a layout change can clamp it). */
+  /**
+   * Scroll position as last seen (before a layout change can clamp it). Kept up to date wherever the
+   * grid scrolls itself, not only in onScroll: the zoom anchor reads it in the same frame, before
+   * any scroll event (opening Organize at a page far down, then the first real measurement).
+   */
   const scrollTopRef = useRef(0)
+  const scrollTo = useCallback((el: HTMLElement, top: number) => {
+    el.scrollTop = top
+    scrollTopRef.current = el.scrollTop
+  }, [])
   /** The pointer of the last Ctrl+wheel, in view coordinates. */
   const wheelRef = useRef<{ x: number; y: number; at: number } | null>(null)
   const prevLayout = useRef<{ m: GridMetrics; count: number; height: number } | null>(null)
@@ -494,10 +502,9 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
     if (!anchor) anchor = anchorForPage(prev.m, focusedIndex(doc), oldTop, prev.height)
     if (!anchor) anchor = anchorAtPoint(prev.m, count, oldTop, prev.height / 2, viewport.width / 2)
     if (!anchor) return
-    el.scrollTop = scrollForAnchor(m, el.clientHeight, anchor)
-    scrollTopRef.current = el.scrollTop
+    scrollTo(el, scrollForAnchor(m, el.clientHeight, anchor))
     setScrollTop(el.scrollTop)
-  }, [m, count, viewport.height, viewport.width, doc])
+  }, [m, count, viewport.height, viewport.width, doc, scrollTo])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -522,10 +529,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
     const f = focusedIndex(doc)
     if (el && f >= 0) {
       const p = cellPosition(mRef.current, f)
-      if (p.top + mRef.current.cellHeight > el.clientHeight) el.scrollTop = p.top - el.clientHeight / 3
+      if (p.top + mRef.current.cellHeight > el.clientHeight) scrollTo(el, p.top - el.clientHeight / 3)
     }
     return () => revealInViewer(doc, doc.state.currentPage)
-  }, [doc])
+  }, [doc, scrollTo])
 
   // Keep the focused page visible (keyboard navigation, inserted pages).
   useEffect(() => {
@@ -533,10 +540,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
     if (!el || focusIndex < 0 || dragRef.current) return
     const p = cellPosition(mRef.current, focusIndex)
     const h = mRef.current.cellHeight
-    if (p.top < el.scrollTop) el.scrollTop = p.top - 12
-    else if (p.top + h > el.scrollTop + el.clientHeight) el.scrollTop = p.top + h - el.clientHeight + 12
+    if (p.top < el.scrollTop) scrollTo(el, p.top - 12)
+    else if (p.top + h > el.scrollTop + el.clientHeight) scrollTo(el, p.top + h - el.clientHeight + 12)
     // a new thumbnail size is handled by the zoom anchor above
-  }, [focusIndex, org.focus])
+  }, [focusIndex, org.focus, scrollTo])
 
   const toContent = useCallback((clientX: number, clientY: number) => {
     const el = scrollRef.current!

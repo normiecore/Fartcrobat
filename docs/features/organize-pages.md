@@ -24,6 +24,8 @@ How it behaves:
   tooltip and keyboard focus; the chosen one stays pressed and keeps fitting when the window is
   resized, until a size is chosen another way. It is remembered too (`organize-pages:fit`). In a
   narrow window they show icons only, with their names kept as tooltips and accessible names.
+  The right rail's zoom buttons (one of them also named Fit page) are hidden while a view
+  replaces the document (Organize, Compare, Create): they only zoomed the hidden viewer.
 - **Page boxes follow the document's shape.** Each thumbnail sits in a box that fits every page of
   the document: narrow boxes for all-portrait documents, wide ones for all-landscape documents,
   square ones for mixed documents (as before). So Fit width really fills the width with a
@@ -32,7 +34,10 @@ How it behaves:
 - **Zoom keeps your place.** After the size or the window changes, the page under the pointer
   (Ctrl+wheel) stays under the pointer; otherwise the focused page stays where it was and, when it
   fits, is brought fully into view (a page taller than the view shows its top); otherwise the
-  page in the middle of the view stays there. `zoom.ts` (`anchorAtPoint`, `anchorForPage`,
+  page in the middle of the view stays there. Coming back to Organize (another tab and back, or
+  closing and opening it) starts at the focused page and keeps it there: the remembered scroll
+  position (`scrollTopRef`) is updated wherever the grid scrolls itself, since the first real
+  measurement of the view re-anchors before any scroll event. `zoom.ts` (`anchorAtPoint`, `anchorForPage`,
   `scrollForAnchor`) does the maths, the layout effect in `OrganizeView.tsx` applies it. The grid
   keeps a stable scrollbar gutter, so the width (and a fit preset) does not change when the
   scrollbar appears.
@@ -50,7 +55,8 @@ How it behaves:
 - **Quick look.** Double-click a page, or press Space on the focused page, to see it as large as
   the window (`QuickLook.tsx`). Left/Right (also Up/Down, Page Up/Down, Home, End) and the arrow
   buttons go through the pages; Escape (through `usePopupEscape`), Space, the close button or a
-  click beside the page closes it; Enter or **Open in document** opens that page in the normal
+  click beside the page closes it (holding Space does not: its auto-repeat is ignored, and Space on
+  a focused button presses the button); Enter or **Open in document** opens that page in the normal
   view. The grid's focus follows the page shown, so closing leaves you there; the selection is
   not changed. The preview is opened with `openDialog` and is modal: Tab and Shift+Tab cycle
   through its own buttons (`trapTab`, shared with `ui/Dialog.tsx`), so the focus never reaches the
@@ -59,7 +65,8 @@ How it behaves:
   The next page is rendered ahead. Its keys are only its own while it is the top modal
   (`isTopModal`): a dialog opened over it, such as Save changes? when the window closes or the
   update card's Restart now quits, gets Tab, the arrow keys, Space and Enter as usual, and the
-  preview's page does not change behind it.
+  preview's page does not change behind it. It is only a preview (`openDialog(..., { preview:
+  true })`), so an agent confirmation closes it instead of failing as busy (`claimPerson`).
 - **Shortcut changes.** Double-click used to open the page in the normal view; that is now
   Enter, the context menu's Open Page, or Open in document in the preview. Space still selects
   the focused page (when it was not selected) and now also opens the preview; Ctrl+Space still

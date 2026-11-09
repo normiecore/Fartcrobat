@@ -75,6 +75,9 @@ export function RightRail() {
   const doc = useActiveDoc()
   const panelId = useApp((s) => s.rightPanelId)
   const panel = registry.rightPanels.find((p) => p.id === panelId)
+  // A view that replaces the document (Organize Pages, Compare, Create) has its own zoom; these
+  // would only zoom the hidden viewer, and Organize's own Fit page would share their name.
+  const docView = useApp((s) => !!registry.toolGroups.find((g) => g.id === s.toolGroupId)?.documentView)
   if (!doc) return null
   return (
     <>
@@ -108,7 +111,7 @@ export function RightRail() {
         </div>
         <div className="shell-rightrail-bottom">
           <PageNav doc={doc} />
-          <ZoomControls doc={doc} />
+          {!docView && <ZoomControls doc={doc} />}
         </div>
       </nav>
     </>

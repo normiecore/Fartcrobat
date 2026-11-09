@@ -88,6 +88,23 @@ describe('confirmations', () => {
     await own
   })
 
+  it('close a preview that asks nothing (Organize Pages quick look) instead of being busy', async () => {
+    const preview = ui.openDialog(() => null, { preview: true })
+    const asking = common.confirmAgentAction(ctxFor().ctx, confirmOpts)
+    expect(await preview).toBeUndefined()
+    expect(dialogs()).toHaveLength(1)
+    expect(common.isAgentConfirmation(dialogs()[0])).toBe(true)
+    dialogs()[0].resolve(true)
+    expect(await asking).toBe(true)
+    // Over a dialog of the person's own, a preview under it does not make it askable.
+    const own = ui.openDialog(() => null)
+    const preview2 = ui.openDialog(() => null, { preview: true })
+    expect(await codeOf(common.confirmAgentAction(ctxFor().ctx, confirmOpts))).toBe('busy')
+    expect(dialogs()).toHaveLength(2)
+    for (const d of dialogs()) d.resolve(undefined)
+    await Promise.all([own, preview2])
+  })
+
   it('close as declined when the call is cancelled, also before the dialog was drawn', async () => {
     const { ctx, controller } = ctxFor()
     const asking = common.confirmAgentAction(ctx, confirmOpts)

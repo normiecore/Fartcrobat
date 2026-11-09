@@ -37,9 +37,7 @@ export function isTopModal(el: HTMLElement): boolean {
  */
 export function openQuickLook(doc: DocumentModel, index: number, openInViewer: (index: number) => void) {
   const grid = document.querySelector<HTMLElement>(`.fc-organize-pages-view[data-doc-id="${doc.id}"] .fc-organize-pages-scroll`)
-  void openDialog<number>((close) => (
-    <QuickLook doc={doc} start={index} close={close} />
-  )).then((open) => {
+  void openDialog<number>((close) => <QuickLook doc={doc} start={index} close={close} />, { preview: true }).then((open) => {
     if (open !== undefined) openInViewer(open)
     else if (grid?.isConnected) grid.focus({ preventScroll: true })
   })
@@ -114,7 +112,12 @@ function QuickLook({
       else if (e.key === 'Home') to = 0
       else if (e.key === 'End') to = count - 1
       else if (e.key === ' ') {
+        // A focused button keeps Space (keyboard and screen-reader users press buttons with it).
+        if (e.target instanceof HTMLButtonElement) return
         e.preventDefault()
+        e.stopPropagation()
+        // Holding Space opened the preview: its auto-repeat must not close it again.
+        if (e.repeat) return
         e.stopPropagation()
         close()
         return

@@ -5,8 +5,14 @@ import type { ContextMenuItem } from './registry'
 
 let nextId = 1
 
-/** Opens a modal dialog. `render` receives `close(result)`; resolves with the result (undefined if dismissed). */
-export function openDialog<R = unknown>(render: (close: (result?: R) => void) => ReactNode): Promise<R | undefined> {
+/**
+ * Opens a modal dialog. `render` receives `close(result)`; resolves with the result (undefined if
+ * dismissed). `preview` marks a dialog that asks nothing (see DialogEntry.preview).
+ */
+export function openDialog<R = unknown>(
+  render: (close: (result?: R) => void) => ReactNode,
+  opts: { preview?: boolean } = {}
+): Promise<R | undefined> {
   return new Promise((resolve) => {
     const id = nextId++
     useApp.setState((s) => ({
@@ -15,6 +21,7 @@ export function openDialog<R = unknown>(render: (close: (result?: R) => void) =>
         {
           id,
           render: render as (close: (r?: unknown) => void) => ReactNode,
+          ...(opts.preview ? { preview: true } : {}),
           resolve: (r: unknown) => {
             useApp.setState((st) => ({ dialogs: st.dialogs.filter((d) => d.id !== id) }))
             resolve(r as R | undefined)

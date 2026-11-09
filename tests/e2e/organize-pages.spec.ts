@@ -688,6 +688,9 @@ test('organize pages: fit presets, zoom keeps the place, quick look, reorder whe
     const twoPerRow = status.getByRole('button', { name: '2 per row', exact: true })
     const fitPage = status.getByRole('button', { name: 'Fit page', exact: true })
     await expect(fitWidth).toHaveAttribute('title', /one page per row/)
+    // One control named Fit page: the right rail's zoom (of the hidden viewer) is not shown here.
+    await expect(page.getByRole('button', { name: 'Fit page', exact: true })).toHaveCount(1)
+    await expect(page.getByRole('button', { name: 'Zoom in', exact: true })).toHaveCount(0)
     expect((await gridFacts(page)).columns).toBeGreaterThan(3)
 
     // The focused page stays in view while the size changes.
@@ -848,6 +851,22 @@ test('organize pages: fit presets, zoom keeps the place, quick look, reorder whe
     await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
     await page.keyboard.press('Space')
     await expect(page.getByRole('dialog')).toHaveCount(0)
+    // Holding Space: the auto-repeat does not close the preview it opened.
+    await page.keyboard.down('Space')
+    await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
+    for (let k = 0; k < 3; k++) await page.keyboard.down('Space')
+    await page.keyboard.up('Space')
+    await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
+    // Space on a focused button presses it.
+    await page.getByRole('dialog').getByRole('button', { name: 'Next page' }).focus()
+    await page.keyboard.press('Space')
+    await expect(page.getByRole('dialog', { name: 'Page 6 of 15' })).toBeVisible()
+    await page.getByRole('dialog').getByRole('button', { name: 'Previous page' }).focus()
+    await page.keyboard.press('Space')
+    await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
+    await page.getByRole('dialog').focus()
+    await page.keyboard.press('Space')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
 
     // A dialog opened over the preview (closing the window with unsaved changes) gets its keys:
     // Tab stays in it, arrows do not turn the preview's pages, Space presses its button.
@@ -893,6 +912,52 @@ test('organize pages: fit presets, zoom keeps the place, quick look, reorder whe
     await expect(page.locator('.fc-organize-pages-ghost')).toHaveText('Move 1 page before page 3')
     await page.mouse.up()
     await expect.poll(async () => (await pageOrder(page)).slice(0, 3)).toEqual(['C2', 'C1', 'C3'])
+  } finally {
+    await app.close()
+  }
+})
+
+test('organize pages: coming back keeps the focused page in view', async () => {
+  const { app, page } = await launch()
+  try {
+    await page.setViewportSize({ width: 1400, height: 900 })
+    await openFile(page, fixturePath('mixed-sizes.pdf'))
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    // 40 pages.
+    await page.evaluate(async () => {
+      const d = (window as any).__inkmoor.getActiveDoc()
+      for (let k = 0; k < 7; k++) await d.ops('pages').duplicate([0, 1, 2, 3, 4], d.pageCount)
+    })
+    await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(40)
+    await page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
+    const status = page.locator('.fc-organize-pages-status')
+    await expect(status).toContainText('40 pages')
+    const scroll = page.locator('.fc-organize-pages-scroll')
+    const otherTab = page.locator('.shell-tab', { hasText: 'mixed-sizes.pdf' })
+    const thisTab = page.locator('.shell-tab', { hasText: 'text.pdf' })
+    const organize = () => page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
+
+    for (const preset of ['default', 'Fit width', '2 per row', 'Fit page'] as const) {
+      if (preset !== 'default') await status.getByRole('button', { name: preset, exact: true }).click()
+      await scroll.focus()
+      await page.keyboard.press('End')
+      for (let k = 0; k < 10; k++) await page.keyboard.press('ArrowLeft')
+      await expect(status).toContainText('1 selected (30)')
+      await expect(cell(page, 29)).toBeInViewport()
+      // Another tab (Organize shows its pages) and back.
+      await otherTab.click()
+      await expect(status).not.toContainText('40 pages')
+      await thisTab.click()
+      await expect(status).toContainText('40 pages')
+      await expect(cell(page, 29)).toBeInViewport()
+      // Leave Organize and open it again.
+      await page.locator('.fc-organize-pages-toolbar').getByRole('button', { name: 'Close' }).click()
+      await expect(scroll).toHaveCount(0)
+      await organize()
+      await expect(scroll).toBeVisible()
+      await expect(cell(page, 29)).toBeInViewport()
+    }
   } finally {
     await app.close()
   }

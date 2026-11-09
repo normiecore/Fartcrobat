@@ -189,11 +189,16 @@ let confirming = 0
 /**
  * Claims the person's attention for one agent confirmation. Only one at a time per window, and
  * none over a dialog already open: stacked dialogs look alike, so one double-click could approve
- * two of them. Throws busy otherwise. Returns the release.
+ * two of them. Throws busy otherwise. A preview that asks nothing (the Organize Pages quick look)
+ * is not in the way: it closes for the question. Returns the release.
  */
 export function claimPerson(): () => void {
-  if (confirming > 0 || useApp.getState().dialogs.length > 0)
-    throw new ToolError('busy', 'The person is answering another dialog in Inkmoor. Try again after they have closed it.')
+  const busy = () =>
+    new ToolError('busy', 'The person is answering another dialog in Inkmoor. Try again after they have closed it.')
+  if (confirming > 0) throw busy()
+  const open = useApp.getState().dialogs
+  if (open.some((d) => !d.preview)) throw busy()
+  for (const d of open) d.resolve(undefined)
   confirming++
   let released = false
   return () => {
