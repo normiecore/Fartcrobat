@@ -121,8 +121,51 @@ export function navigate(index: number, key: string, columns: number, count: num
   return Math.max(0, Math.min(count - 1, next))
 }
 
+/**
+ * Shape of the box every thumbnail sits in, as fractions of the thumbnail size (the larger is 1).
+ * A document of portrait pages gets narrow boxes, so "Fit width" really fills the width with the
+ * page; mixed portrait and landscape pages get square boxes.
+ */
+export interface BoxAspect {
+  w: number
+  h: number
+}
+
+export const SQUARE: BoxAspect = { w: 1, h: 1 }
+
+/** The box shape that fits every page of the document. */
+export function boxAspect(pages: PageShape[]): BoxAspect {
+  let w = 0
+  let h = 0
+  for (const p of pages) {
+    const pw = Math.max(1, p.width)
+    const ph = Math.max(1, p.height)
+    const long = Math.max(pw, ph)
+    w = Math.max(w, pw / long)
+    h = Math.max(h, ph / long)
+  }
+  if (!w || !h) return SQUARE
+  // Nearly square differences are not worth a different layout; keep the values stable.
+  return { w: Math.min(1, Math.round(w * 1000) / 1000), h: Math.min(1, Math.round(h * 1000) / 1000) }
+}
+
+/** Space around and between thumbnails (CSS pixels). */
+export const GRID = {
+  gapX: 28,
+  gapY: 20,
+  padX: 24,
+  padY: 20,
+  /** A cell is this much wider than its page box (selection border and padding). */
+  cellExtraW: 24,
+  /** ...and this much taller (padding and the page number underneath). */
+  cellExtraH: 44
+}
+
 /** Grid layout of the thumbnail view. All values in CSS pixels. */
 export interface GridMetrics {
+  /** Size of the box the page image is fitted into. */
+  boxWidth: number
+  boxHeight: number
   columns: number
   cellWidth: number
   cellHeight: number
@@ -135,20 +178,37 @@ export interface GridMetrics {
   contentHeight: number
 }
 
-export function gridMetrics(count: number, viewportWidth: number, thumb: number): GridMetrics {
-  const cellWidth = Math.round(thumb + 24)
-  const cellHeight = Math.round(thumb + 44)
-  const gapX = 28
-  const gapY = 20
-  const padX = 24
-  const padY = 20
+export function gridMetrics(
+  count: number,
+  viewportWidth: number,
+  thumb: number,
+  aspect: BoxAspect = SQUARE
+): GridMetrics {
+  const boxWidth = Math.max(8, Math.round(thumb * aspect.w))
+  const boxHeight = Math.max(8, Math.round(thumb * aspect.h))
+  const { gapX, gapY, padX, padY } = GRID
+  const cellWidth = boxWidth + GRID.cellExtraW
+  const cellHeight = boxHeight + GRID.cellExtraH
   const usable = Math.max(cellWidth, viewportWidth - padX * 2)
   const columns = Math.max(1, Math.floor((usable + gapX) / (cellWidth + gapX)))
   const rowWidth = columns * cellWidth + (columns - 1) * gapX
   const offsetX = Math.max(padX, Math.floor((viewportWidth - rowWidth) / 2))
   const rows = Math.ceil(count / columns)
   const contentHeight = padY * 2 + rows * cellHeight + Math.max(0, rows - 1) * gapY + 40
-  return { columns, cellWidth, cellHeight, gapX, gapY, padX, padY, offsetX, rows, contentHeight }
+  return {
+    boxWidth,
+    boxHeight,
+    columns,
+    cellWidth,
+    cellHeight,
+    gapX,
+    gapY,
+    padX,
+    padY,
+    offsetX,
+    rows,
+    contentHeight
+  }
 }
 
 export function cellPosition(m: GridMetrics, index: number): { left: number; top: number } {
@@ -157,15 +217,26 @@ export function cellPosition(m: GridMetrics, index: number): { left: number; top
   return { left: m.offsetX + col * (m.cellWidth + m.gapX), top: m.padY + row * (m.cellHeight + m.gapY) }
 }
 
+/**
+ * Where an insertion gap is drawn. In a grid it is a vertical line before a cell (`left`, `top`);
+ * with one column (`horizontal`) it is a line across the space between two rows, at `top`.
+ */
+export interface GapSpot {
+  gap: number
+  left: number
+  top: number
+  horizontal?: boolean
+}
+
 /** Nearest insertion gap (0..count) for a point in content coordinates, with where to draw it. */
-export function gapAt(
-  m: GridMetrics,
-  count: number,
-  x: number,
-  y: number
-): { gap: number; left: number; top: number } {
+export function gapAt(m: GridMetrics, count: number, x: number, y: number): GapSpot {
   if (count === 0) return { gap: 0, left: m.offsetX, top: m.padY }
   const rowH = m.cellHeight + m.gapY
+  if (m.columns === 1) {
+    // One page per row: the nearest space between two pages, going by the height only.
+    const gap = Math.max(0, Math.min(count, Math.round((y - m.padY + m.gapY / 2) / rowH)))
+    return { gap, left: m.offsetX, top: rowGapTop(m, gap), horizontal: true }
+  }
   const row = Math.max(0, Math.min(m.rows - 1, Math.floor((y - m.padY + m.gapY / 2) / rowH)))
   // Gap c of a row sits between cells c-1 and c; pick the nearest one.
   const inRow = Math.min(m.columns, count - row * m.columns)
@@ -175,6 +246,11 @@ export function gapAt(
     left: m.offsetX + col * (m.cellWidth + m.gapX) - m.gapX / 2,
     top: m.padY + row * rowH
   }
+}
+
+/** Middle of the space above row `row` (one-column layout), in content coordinates. */
+export function rowGapTop(m: GridMetrics, row: number): number {
+  return m.padY + row * (m.cellHeight + m.gapY) - m.gapY / 2
 }
 
 /** Index of the cell under a point in content coordinates, or -1. */

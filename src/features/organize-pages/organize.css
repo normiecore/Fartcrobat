@@ -71,6 +71,8 @@
   overflow: auto;
   outline: none;
   overscroll-behavior: contain;
+  /* The width must not change when the scrollbar comes and goes: fit presets follow the width. */
+  scrollbar-gutter: stable;
 }
 .fc-organize-pages-content {
   position: relative;
@@ -644,4 +646,99 @@
   to {
     transform: rotate(360deg);
   }
+}
+
+/* ---- zoom: fit presets, one page per row ---- */
+.fc-organize-pages-status {
+  container: fc-organize-pages-status / inline-size;
+}
+.fc-organize-pages-fits {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.fc-organize-pages-fits .ui-btn-sm {
+  padding-left: 6px;
+  padding-right: 7px;
+  font-weight: 500;
+}
+.fc-organize-pages-fits .ui-btn.is-active {
+  background: var(--bg-active);
+  color: var(--accent-text);
+}
+.fc-organize-pages-zoom .shell-sep {
+  height: 16px;
+  margin: 0 4px;
+}
+/* Narrow windows: the presets show icons only (names stay in tooltips and aria-labels). */
+@container fc-organize-pages-status (max-width: 820px) {
+  .fc-organize-pages-fit-text {
+    display: none;
+  }
+  .fc-organize-pages-fits .ui-btn > span:has(> .fc-organize-pages-fit-text:only-child) {
+    display: none;
+  }
+  .fc-organize-pages-hint {
+    display: none;
+  }
+}
+.fc-organize-pages-gap.is-horizontal .fc-organize-pages-gap-line {
+  top: 50%;
+  bottom: auto;
+  left: 4px;
+  right: 4px;
+  width: auto;
+  height: 2px;
+  margin: -1px 0 0;
+}
+.fc-organize-pages-indicator.is-horizontal {
+  width: auto;
+  height: 4px;
+}
+
+/* ---- quick look (large page preview) ---- */
+.fc-organize-pages-preview {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 22, 26, 0.82);
+  outline: none;
+}
+.fc-organize-pages-preview-bar {
+  height: 48px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 12px 0 18px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.fc-organize-pages-preview-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-organize-pages-preview-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.fc-organize-pages-preview-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.fc-organize-pages-preview-page {
+  position: relative;
+  flex-shrink: 0;
+  background: #fff;
+  box-shadow: var(--shadow-lg);
 }

@@ -455,8 +455,11 @@ test('organize pages: keyboard moves, copy by dragging, clipboard and Delete Pag
     })
     await expect(page.locator('.fc-organize-pages-indicator')).toHaveCount(0)
 
-    // Double-click opens the page in the normal view.
+    // Double-click shows the page large; "Open in document" opens it in the normal view.
     await cell(page, 3).dblclick()
+    const preview = page.getByRole('dialog', { name: 'Page 4 of 5' })
+    await expect(preview).toBeVisible()
+    await preview.getByRole('button', { name: 'Open in document' }).click()
     await expect(page.locator('.fc-organize-pages-view')).toHaveCount(0)
     await expect
       .poll(() => page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view?.visiblePages().includes(3)))
@@ -601,6 +604,228 @@ test('organize pages: narrow window, copy pages to another document, 640 pages',
     await expect(cell(page, 639)).toBeInViewport()
     await page.waitForTimeout(500)
     await page.screenshot({ path: 'test-results/organize-pages-640.png' })
+    // One page per row: still only a few cells in the page, and the last one is reachable.
+    await page.getByRole('button', { name: 'Fit width', exact: true }).click()
+    await expect(cell(page, 639)).toBeInViewport()
+    expect(await page.locator('.fc-organize-pages-cell').count()).toBeLessThan(6)
+    await page.keyboard.press('Home')
+    await expect(cell(page, 0)).toBeInViewport()
+    await expect(page.locator('.fc-organize-pages-canvas').first()).toHaveCSS('opacity', '1')
+  } finally {
+    await app.close()
+  }
+})
+
+/** Layout facts of the grid: columns (distinct lefts of mounted cells), the first page's size, the view. */
+async function gridFacts(page: Page) {
+  return page.evaluate(() => {
+    const scroll = document.querySelector<HTMLElement>('.fc-organize-pages-scroll')!
+    const cells = [...document.querySelectorAll<HTMLElement>('.fc-organize-pages-cell')]
+    const lefts = new Set(cells.map((c) => c.style.left))
+    const first = cells[0]?.querySelector<HTMLElement>('.fc-organize-pages-page')
+    return {
+      columns: lefts.size,
+      viewWidth: scroll.clientWidth,
+      viewHeight: scroll.clientHeight,
+      pageWidth: first ? first.getBoundingClientRect().width : 0,
+      pageHeight: first ? first.getBoundingClientRect().height : 0
+    }
+  })
+}
+
+/** Index of the page cell at a point of the window, or -1. */
+async function cellIndexAt(page: Page, x: number, y: number): Promise<number> {
+  return page.evaluate(
+    ({ x, y }) => {
+      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-org-index]')
+      return el ? parseInt(el.dataset.orgIndex!, 10) : -1
+    },
+    { x, y }
+  )
+}
+
+/** Visible thumbnails are drawn, with at least as many pixels as they take on screen. */
+async function waitForSharpThumbs(page: Page) {
+  await page.waitForFunction(
+    () => {
+      const scroll = document.querySelector<HTMLElement>('.fc-organize-pages-scroll')!
+      const r = scroll.getBoundingClientRect()
+      const visible = [...document.querySelectorAll<HTMLElement>('.fc-organize-pages-page')].filter((p) => {
+        const b = p.getBoundingClientRect()
+        return b.bottom > r.top && b.top < r.bottom
+      })
+      return (
+        visible.length > 0 &&
+        visible.every((p) => {
+          const c = p.querySelector('canvas')!
+          const w = p.getBoundingClientRect().width * window.devicePixelRatio
+          return c.style.opacity === '1' && c.width >= Math.floor(w) - 1
+        })
+      )
+    },
+    undefined,
+    { timeout: 30000 }
+  )
+}
+
+test('organize pages: fit presets, zoom keeps the place, quick look, reorder when large', async () => {
+  const { app, page } = await launch()
+  try {
+    await page.setViewportSize({ width: 1400, height: 900 })
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    // 15 pages: C1-C5 three times.
+    await page.evaluate(async () => {
+      const d = (window as any).__inkmoor.getActiveDoc()
+      await d.ops('pages').duplicate([0, 1, 2, 3, 4], 5)
+      await d.ops('pages').duplicate([0, 1, 2, 3, 4], 10)
+    })
+    await expect.poll(async () => (await activeDocState(page))?.pageCount).toBe(15)
+    await page.locator('.shell-alltools-item', { hasText: 'Organize pages' }).click()
+    const status = page.locator('.fc-organize-pages-status')
+    await expect(status).toContainText('15 pages')
+    const fitWidth = status.getByRole('button', { name: 'Fit width', exact: true })
+    const twoPerRow = status.getByRole('button', { name: '2 per row', exact: true })
+    const fitPage = status.getByRole('button', { name: 'Fit page', exact: true })
+    await expect(fitWidth).toHaveAttribute('title', /one page per row/)
+    expect((await gridFacts(page)).columns).toBeGreaterThan(3)
+
+    // The focused page stays in view while the size changes.
+    await cell(page, 6).click()
+    await fitWidth.click()
+    await expect(fitWidth).toHaveAttribute('aria-pressed', 'true')
+    await expect.poll(async () => (await gridFacts(page)).columns).toBe(1)
+    await expect(cell(page, 6)).toBeInViewport()
+    // One page fills the width and is drawn sharp enough to read.
+    const wide = await gridFacts(page)
+    expect(wide.pageWidth).toBeGreaterThan(wide.viewWidth - 90)
+    expect(wide.pageWidth).toBeGreaterThan(800)
+    await waitForSharpThumbs(page)
+    await page.screenshot({ path: 'test-results/organize-pages-fit-width.png' })
+
+    // One page per row: files dragged between two pages show a line across, and '+' sits there.
+    const c6 = await cell(page, 6).boundingBox()
+    await page.evaluate(
+      ({ x, y }) => {
+        const dt = new DataTransfer()
+        dt.items.add(new File(['%PDF-1.4'], 'dropped.pdf', { type: 'application/pdf' }))
+        document
+          .querySelector('.fc-organize-pages-scroll')!
+          .dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt }))
+      },
+      { x: c6!.x + c6!.width / 2, y: Math.max(c6!.y, 200) + 40 }
+    )
+    await expect(page.locator('.fc-organize-pages-indicator.is-file.is-horizontal')).toBeVisible()
+    await page.evaluate(() => {
+      document
+        .querySelector('.fc-organize-pages-scroll')!
+        .dispatchEvent(new DragEvent('dragleave', { bubbles: true, cancelable: true, relatedTarget: document.body }))
+    })
+    await expect(page.locator('.fc-organize-pages-indicator')).toHaveCount(0)
+    await expect(page.locator('.fc-organize-pages-gap.is-horizontal').first()).toBeAttached()
+
+    await twoPerRow.click()
+    await expect(twoPerRow).toHaveAttribute('aria-pressed', 'true')
+    await expect(fitWidth).toHaveAttribute('aria-pressed', 'false')
+    await expect.poll(async () => (await gridFacts(page)).columns).toBe(2)
+    await expect(cell(page, 6)).toBeInViewport()
+
+    await fitPage.click()
+    await expect
+      .poll(async () => {
+        const f = await gridFacts(page)
+        return f.pageHeight < f.viewHeight
+      })
+      .toBe(true)
+    await expect(cell(page, 6)).toBeInViewport({ ratio: 1 })
+    // Ctrl+- leaves the preset; Ctrl+0 comes back to Fit page.
+    await page.keyboard.press('Control+-')
+    await expect(fitPage).toHaveAttribute('aria-pressed', 'false')
+    await expect(cell(page, 6)).toBeInViewport()
+    await page.keyboard.press('Control+0')
+    await expect(fitPage).toHaveAttribute('aria-pressed', 'true')
+
+    // Ctrl+wheel keeps the page under the pointer under it.
+    await fitWidth.click()
+    await expect.poll(async () => (await gridFacts(page)).columns).toBe(1)
+    const sc = await page.locator('.fc-organize-pages-scroll').boundingBox()
+    const px = sc!.x + sc!.width / 2
+    const py = sc!.y + sc!.height / 2
+    const under = await cellIndexAt(page, px, py)
+    expect(under).toBeGreaterThanOrEqual(0)
+    await page.mouse.move(px, py)
+    await page.keyboard.down('Control')
+    await page.mouse.wheel(0, 120)
+    await page.keyboard.up('Control')
+    await expect(fitWidth).toHaveAttribute('aria-pressed', 'false')
+    await expect.poll(async () => (await gridFacts(page)).pageWidth).toBeLessThan(wide.pageWidth - 50)
+    expect(await cellIndexAt(page, px, py)).toBe(under)
+
+    // The slider reaches one page per row at its right end, and small sizes at its left.
+    const slider = page.getByRole('slider', { name: 'Thumbnail size' })
+    await slider.fill('1000')
+    await expect.poll(async () => (await gridFacts(page)).columns).toBe(1)
+    await slider.fill('0')
+    await expect.poll(async () => (await gridFacts(page)).columns).toBeGreaterThan(6)
+    // A narrower window keeps the chosen size within one column; it comes back when wider.
+    await slider.fill('1000')
+    await expect.poll(async () => (await gridFacts(page)).columns).toBe(1)
+    const big = (await gridFacts(page)).pageWidth
+    await page.setViewportSize({ width: 1000, height: 900 })
+    await expect.poll(async () => (await gridFacts(page)).pageWidth).toBeLessThan(big - 200)
+    expect((await gridFacts(page)).columns).toBe(1)
+    await page.setViewportSize({ width: 1400, height: 900 })
+    await expect.poll(async () => Math.round((await gridFacts(page)).pageWidth)).toBe(Math.round(big))
+
+    // Quick look: Space shows the focused page large, arrows move, Escape closes it.
+    await twoPerRow.click()
+    await page.keyboard.press('Home')
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('ArrowRight')
+    await expect(status).toContainText('1 selected (3)')
+    await page.keyboard.press('Space')
+    let preview = page.getByRole('dialog', { name: 'Page 3 of 15' })
+    await expect(preview).toBeVisible()
+    const big3 = await preview.locator('.fc-organize-pages-preview-page').boundingBox()
+    expect(big3!.height).toBeGreaterThan(700)
+    await expect(preview.locator('.fc-organize-pages-preview-page.is-ready')).toBeVisible()
+    await page.screenshot({ path: 'test-results/organize-pages-quick-look.png' })
+    await page.keyboard.press('ArrowRight')
+    await expect(page.getByRole('dialog', { name: 'Page 4 of 15' })).toBeVisible()
+    await page.getByRole('dialog').getByRole('button', { name: 'Next page' }).click()
+    await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
+    await page.keyboard.press('ArrowLeft')
+    preview = page.getByRole('dialog', { name: 'Page 4 of 15' })
+    await expect(preview).toBeVisible()
+    // Shortcuts do not reach the grid underneath.
+    await page.keyboard.press('Delete')
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    expect((await activeDocState(page))?.pageCount).toBe(15)
+    // The grid has the focus again, at the page shown last; the selection is unchanged.
+    await expect(page.locator('.fc-organize-pages-scroll')).toBeFocused()
+    await expect(status).toContainText('1 selected (3)')
+    await expect(cell(page, 3)).toBeInViewport()
+    await page.keyboard.press('ArrowRight')
+    await expect(status).toContainText('1 selected (5)')
+    // Space closes it too.
+    await page.keyboard.press('Space')
+    await expect(page.getByRole('dialog', { name: 'Page 5 of 15' })).toBeVisible()
+    await page.keyboard.press('Space')
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    // Reordering by dragging still works with large pages: page 1 after page 2.
+    await page.keyboard.press('Home')
+    await expect(cell(page, 0)).toBeInViewport()
+    const a = await cell(page, 0).locator('.fc-organize-pages-page').boundingBox()
+    const b = await cell(page, 1).locator('.fc-organize-pages-page').boundingBox()
+    await page.mouse.move(a!.x + 60, a!.y + 60)
+    await page.mouse.down()
+    await page.mouse.move(a!.x + 90, a!.y + 80, { steps: 3 })
+    await page.mouse.move(b!.x + b!.width - 30, b!.y + 100, { steps: 10 })
+    await expect(page.locator('.fc-organize-pages-ghost')).toHaveText('Move 1 page before page 3')
+    await page.mouse.up()
+    await expect.poll(async () => (await pageOrder(page)).slice(0, 3)).toEqual(['C2', 'C1', 'C3'])
   } finally {
     await app.close()
   }

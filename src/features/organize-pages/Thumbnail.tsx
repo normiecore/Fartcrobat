@@ -2,6 +2,7 @@ import { memo, useEffect, useRef } from 'react'
 import { FilePlus2, RotateCcw, RotateCw, Trash2 } from 'lucide-react'
 import { drawResult, renderQueueFor, useDocState, usePageVersion, type DocumentModel } from '@renderer/sdk'
 import type { PageInfo } from '@shared/types'
+import { renderLongSide } from './zoom'
 
 export interface ThumbProps {
   doc: DocumentModel
@@ -10,7 +11,9 @@ export interface ThumbProps {
   left: number
   top: number
   cellWidth: number
-  thumb: number
+  /** Box the page image is fitted into (CSS pixels). */
+  boxWidth: number
+  boxHeight: number
   selected: boolean
   focused: boolean
   dragging: boolean
@@ -22,13 +25,12 @@ export interface ThumbProps {
   ) => void
 }
 
-/** Size of the page image inside a thumb x thumb box. */
-export function fitPage(page: { width: number; height: number }, thumb: number) {
+/** Size of the page image inside a boxWidth x boxHeight box. */
+export function fitPage(page: { width: number; height: number }, boxWidth: number, boxHeight = boxWidth) {
   const w = Math.max(1, page.width)
   const h = Math.max(1, page.height)
-  return w >= h
-    ? { width: thumb, height: Math.max(8, Math.round((thumb * h) / w)) }
-    : { width: Math.max(8, Math.round((thumb * w) / h)), height: thumb }
+  const s = Math.min(boxWidth / w, boxHeight / h)
+  return { width: Math.max(8, Math.round(w * s)), height: Math.max(8, Math.round(h * s)) }
 }
 
 export const Thumbnail = memo(function Thumbnail({
@@ -38,7 +40,8 @@ export const Thumbnail = memo(function Thumbnail({
   left,
   top,
   cellWidth,
-  thumb,
+  boxWidth,
+  boxHeight,
   selected,
   focused,
   dragging,
@@ -49,11 +52,11 @@ export const Thumbnail = memo(function Thumbnail({
   const drawnSize = useRef('')
   const version = usePageVersion(doc, index)
   const annots = useDocState(doc, (s) => s.showAnnotations)
-  const box = fitPage(page, thumb)
+  const box = fitPage(page, boxWidth, boxHeight)
   const dpr = window.devicePixelRatio || 1
-  // Render at the displayed size, rounded to steps so small slider moves reuse bitmaps.
-  const step = Math.max(40, Math.ceil(Math.max(box.width, box.height) / 40) * 40)
-  const scale = (step * dpr) / Math.max(page.width, page.height)
+  // Render at the displayed size times the screen density, rounded to steps so small zoom
+  // changes reuse bitmaps, and capped for very large thumbnails.
+  const scale = renderLongSide(Math.max(box.width, box.height), dpr) / Math.max(page.width, page.height)
   const sizeKey = `${Math.round(page.width)}x${Math.round(page.height)}`
 
   useEffect(() => {
@@ -111,7 +114,7 @@ export const Thumbnail = memo(function Thumbnail({
       aria-label={`Page ${index + 1}${label ? ` (${label})` : ''}${page.rotation ? `, rotated ${page.rotation}°` : ''}`}
       title={`Page ${index + 1}${label ? ` — labelled “${label}”` : ''} · ${Math.round((page.width / 72) * 100) / 100} × ${Math.round((page.height / 72) * 100) / 100} in`}
     >
-      <div className="fc-organize-pages-box" style={{ height: thumb + 12 }}>
+      <div className="fc-organize-pages-box" style={{ height: boxHeight + 12 }}>
         <div className="fc-organize-pages-page" style={{ width: box.width, height: box.height }}>
           <canvas ref={canvasRef} className="fc-organize-pages-canvas" />
         </div>
