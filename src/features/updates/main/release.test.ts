@@ -28,13 +28,13 @@ describe('release tags', () => {
   it('reads the version from an absolute or relative Location', () => {
     expect(parseReleaseLocation(`${RELEASES_BASE}/releases/tag/v0.2.0`, LATEST, RELEASES_BASE)).toEqual({
       version: '0.2.0',
-      releaseUrl: 'https://github.com/normiecore/Fartcrobat/releases/tag/v0.2.0'
+      releaseUrl: 'https://github.com/normiecore/Inkmoor/releases/tag/v0.2.0'
     })
     expect(
-      parseReleaseLocation('/normiecore/Fartcrobat/releases/tag/v1.10.3', LATEST, RELEASES_BASE)
+      parseReleaseLocation('/normiecore/Inkmoor/releases/tag/v1.10.3', LATEST, RELEASES_BASE)
     ).toEqual({
       version: '1.10.3',
-      releaseUrl: 'https://github.com/normiecore/Fartcrobat/releases/tag/v1.10.3'
+      releaseUrl: 'https://github.com/normiecore/Inkmoor/releases/tag/v1.10.3'
     })
     // Relative to the request (…/releases/latest).
     expect(parseReleaseLocation('tag/v0.3.0', LATEST, RELEASES_BASE)?.releaseUrl).toBe(
@@ -43,20 +43,20 @@ describe('release tags', () => {
     // GitHub's names are case-insensitive; query and fragment are dropped.
     expect(
       parseReleaseLocation(
-        'https://github.com/NormieCore/fartcrobat/releases/tag/v0.2.0?x=1#y',
+        'https://github.com/NormieCore/inkmoor/releases/tag/v0.2.0?x=1#y',
         LATEST,
         RELEASES_BASE
       )
     ).toEqual({
       version: '0.2.0',
-      releaseUrl: 'https://github.com/NormieCore/fartcrobat/releases/tag/v0.2.0'
+      releaseUrl: 'https://github.com/NormieCore/inkmoor/releases/tag/v0.2.0'
     })
     // A test server.
-    const base = 'http://127.0.0.1:4567/normiecore/Fartcrobat'
+    const base = 'http://127.0.0.1:4567/normiecore/Inkmoor'
     expect(
-      parseReleaseLocation('/normiecore/Fartcrobat/releases/tag/v9.0.0', `${base}/releases/latest`, base)
+      parseReleaseLocation('/normiecore/Inkmoor/releases/tag/v9.0.0', `${base}/releases/latest`, base)
         ?.releaseUrl
-    ).toBe('http://127.0.0.1:4567/normiecore/Fartcrobat/releases/tag/v9.0.0')
+    ).toBe('http://127.0.0.1:4567/normiecore/Inkmoor/releases/tag/v9.0.0')
   })
 
   it('refuses anything that is not a release of this repository', () => {
@@ -69,9 +69,15 @@ describe('release tags', () => {
     expect(parse(`${RELEASES_BASE}/releases/tag/v0.2.0/extra`)).toBeNull()
     expect(parse(`${RELEASES_BASE}/releases/tag/v%E0%A4%A`)).toBeNull()
     expect(parse('https://github.com/someone/else/releases/tag/v9.9.9')).toBeNull()
-    expect(parse('https://github.com/normiecore/Fartcrobat-fork/releases/tag/v9.9.9')).toBeNull()
-    expect(parse('https://evil.example/normiecore/Fartcrobat/releases/tag/v9.9.9')).toBeNull()
-    expect(parse('http://github.com/normiecore/Fartcrobat/releases/tag/v9.9.9')).toBeNull()
+    expect(parse('https://github.com/normiecore/Inkmoor-fork/releases/tag/v9.9.9')).toBeNull()
+    expect(parse('https://evil.example/normiecore/Inkmoor/releases/tag/v9.9.9')).toBeNull()
+    expect(parse('http://github.com/normiecore/Inkmoor/releases/tag/v9.9.9')).toBeNull()
+    // The repository's name up to 0.4.0, which GitHub now redirects to this one.
+    expect(parse('https://github.com/normiecore/Fartcrobat/releases/tag/v9.9.9')).toBeNull()
+  })
+
+  it('asks the repository under its current name', () => {
+    expect(RELEASES_BASE).toBe('https://github.com/normiecore/Inkmoor')
   })
 
   it('keeps pre-release tags readable but never offers them', () => {
@@ -114,7 +120,7 @@ describe('latestRelease', () => {
     await expect(
       latestRelease(
         `${RELEASES_BASE}/`,
-        probe({ status: 301, location: '/normiecore/Fartcrobat/releases/tag/v0.2.1' })
+        probe({ status: 301, location: '/normiecore/Inkmoor/releases/tag/v0.2.1' })
       )
     ).resolves.toMatchObject({
       version: '0.2.1'
@@ -145,15 +151,15 @@ describe('release pages', () => {
   it('opens only pages of the Inkmoor repository on github.com, or the test base', () => {
     expect(releasePageAllowed(`${RELEASES_BASE}/releases/tag/v0.2.0`)).toBe(true)
     expect(releasePageAllowed(`${RELEASES_BASE}/releases`)).toBe(true)
-    expect(releasePageAllowed('https://github.com/normiecore/fartcrobat/releases')).toBe(true)
+    expect(releasePageAllowed('https://github.com/normiecore/inkmoor/releases')).toBe(true)
     expect(releasePageAllowed(RELEASES_BASE)).toBe(false)
-    expect(releasePageAllowed('http://github.com/normiecore/Fartcrobat/releases')).toBe(false)
-    expect(releasePageAllowed('https://github.com/normiecore/Fartcrobat-evil/releases')).toBe(false)
-    expect(releasePageAllowed('https://github.com.evil.example/normiecore/Fartcrobat/releases')).toBe(false)
-    expect(releasePageAllowed('https://user@github.com/normiecore/Fartcrobat/releases')).toBe(false)
+    expect(releasePageAllowed('http://github.com/normiecore/Inkmoor/releases')).toBe(false)
+    expect(releasePageAllowed('https://github.com/normiecore/Inkmoor-evil/releases')).toBe(false)
+    expect(releasePageAllowed('https://github.com.evil.example/normiecore/Inkmoor/releases')).toBe(false)
+    expect(releasePageAllowed('https://user@github.com/normiecore/Inkmoor/releases')).toBe(false)
     expect(releasePageAllowed('file:///etc/passwd')).toBe(false)
     expect(releasePageAllowed('not a url')).toBe(false)
-    const test = 'http://127.0.0.1:4567/normiecore/Fartcrobat'
+    const test = 'http://127.0.0.1:4567/normiecore/Inkmoor'
     expect(releasePageAllowed(`${test}/releases/tag/v0.2.0`)).toBe(false)
     expect(releasePageAllowed(`${test}/releases/tag/v0.2.0`, test)).toBe(true)
     expect(releasePageAllowed('http://127.0.0.1:4567/other/releases', test)).toBe(false)

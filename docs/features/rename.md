@@ -9,13 +9,31 @@ means Inkmoor.
 
 ## Rules for later changes
 
-- Never change anything in `LEGACY`, never rename the GitHub repository, and keep writing the PDF
+- Never change anything in `LEGACY`, never rename the GitHub repository again (see "The repository
+  rename" below), never create a new repository called `Fartcrobat` under `normiecore` (it would end
+  GitHub's redirect from the old name), and keep writing the PDF
   keys (`/FartcrobatData` and its `fartcrobat` entry, `/FartcrobatMark`, `/FartcrobatOCR`, ...),
   the XFDF `<fartcrobat-data>` element, the `fartcrobat-form-data` format, the settings file name
   `fartcrobat-settings.json` and the saved-password key domain as they are.
 - Test fixtures were generated under the old name (text such as "Hello Fartcrobat page 1",
   "Fartcrobat Tests", certificate names "Fartcrobat Test CA"); tests that read them keep those
   strings.
+
+## The repository rename (0.4.1)
+
+The analysis below says the repository could not be renamed without stranding installed copies,
+and that held: copies up to 0.4.0 ask `github.com/normiecore/Fartcrobat/releases/latest`, GitHub
+answers with a 301 to `/normiecore/Inkmoor/releases/latest`, and `parseReleaseLocation` rejects
+that (it is not a release page under the old name), so they show "GitHub sent an answer Inkmoor
+doesn't understand" and never find another update. On 9 Nov 2026 the owner renamed it to
+`normiecore/Inkmoor` anyway: the testers had 0.1.0, which has no updater, and install 0.4.1 by hand.
+
+- From 0.4.1 the app asks `normiecore/Inkmoor` (`RELEASES_REPO` in `src/shared/identity.ts`, the
+  `publish` block of `electron-builder.yml`). People on 0.2.0 to 0.4.0 install the next version by
+  hand once (`docs/releases/v0.4.1.md`, README).
+- The update rehearsal cannot update a version up to 0.4.0 to 0.4.1 or later. It notes that and
+  skips (`same-repo` in `tests/update-rehearsal/names.mjs`); from 0.4.1 to 0.4.2 it runs again.
+- Releases, tags, issues and git remotes keep working under the old URL through GitHub's redirect.
 
 ## Status
 
@@ -49,7 +67,8 @@ The analysis this plan came from (14 Oct to 3 Nov 2026 sessions) follows.
 
 ## Verification of the key claims
 
-**Confirmed: the GitHub repo cannot be renamed.**
+**Confirmed: the GitHub repo cannot be renamed** (without stranding installed copies; it was renamed
+for 0.4.1 anyway, see "The repository rename").
 - `latestRelease` requests `<base>/releases/latest` without following redirects. It accepts only a 3xx whose Location stays under the same origin and the `/normiecore/Fartcrobat/` prefix (case-insensitive) and ends in `/releases/tag/v<semver>`. See `src/features/updates/main/release.ts:8`, `:37-66` and `:84-99`. The base is `src/shared/updates.ts:11`.
 - After a rename, a 301 to `/normiecore/NEWNAME/...` fails the prefix check, so 0.2 and 0.3 installs would show `CHECK_UNEXPECTED` forever.
 - `releasePageAllowed` (`release.ts:105-129`) is tied to the same base.
@@ -87,7 +106,7 @@ The analysis this plan came from (14 Oct to 3 Nov 2026 sessions) follows.
 
 | Id | Where |
 |---|---|
-| GitHub repo `normiecore/Fartcrobat`; never rename or delete the `normiecore` account | `electron-builder.yml:32-35`, `src/shared/updates.ts:11` |
+| GitHub repo `normiecore/Fartcrobat` (renamed to `normiecore/Inkmoor` for 0.4.1 after all); never rename or delete the `normiecore` account | `electron-builder.yml:32-35`, `src/shared/updates.ts:11` |
 | appId `org.fartcrobat.app` and AUMID | `electron-builder.yml:2`, `src/main/index.ts:39` |
 | New: `nsis.guid: bd977413-7ee9-5f76-80a8-7e980aa59bd1` | `electron-builder.yml`, so a later appId change cannot break silent upgrades |
 | Windows ProgId `Fartcrobat.Document` | `electron-builder.yml:43`, `src/main/util/systemDefaults.ts:33` |

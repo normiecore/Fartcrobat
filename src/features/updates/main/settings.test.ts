@@ -74,7 +74,7 @@ describe('update capability', () => {
 
 describe('update settings', () => {
   const test = {
-    INKMOOR_UPDATE_URL: 'http://127.0.0.1:4567/normiecore/Fartcrobat/',
+    INKMOOR_UPDATE_URL: 'http://127.0.0.1:4567/normiecore/Inkmoor/',
     INKMOOR_UPDATE_CHECKS: '1',
     INKMOOR_UPDATE_FIRST_CHECK_MS: '200',
     INKMOOR_FAKE_UPDATER: '/tmp/fake.json'
@@ -109,8 +109,8 @@ describe('update settings', () => {
       fakeUpdaterFile: null
     })
     expect(updateSettings(false, test)).toEqual({
-      base: 'http://127.0.0.1:4567/normiecore/Fartcrobat',
-      testBase: 'http://127.0.0.1:4567/normiecore/Fartcrobat',
+      base: 'http://127.0.0.1:4567/normiecore/Inkmoor',
+      testBase: 'http://127.0.0.1:4567/normiecore/Inkmoor',
       autoChecks: true,
       firstCheckDelayMs: 200,
       fakeUpdaterFile: '/tmp/fake.json'

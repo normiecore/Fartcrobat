@@ -80,7 +80,7 @@ the app makes by itself is a check for a new release on GitHub (see Updates belo
 
 ## Install
 
-Each [release](https://github.com/normiecore/Fartcrobat/releases/latest) has one file per kind of
+Each [release](https://github.com/normiecore/Inkmoor/releases/latest) has one file per kind of
 computer. Download the one for yours and open it:
 
 | Your computer | File |
@@ -106,6 +106,9 @@ computer. Download the one for yours and open it:
 - AppImage: make it executable first (right-click > Properties > Executable as Program, or
   `chmod +x Inkmoor-x86_64.AppImage`), then open it. It updates itself, and it needs FUSE 2:
   `sudo apt install libfuse2t64` on Ubuntu 24.04 and later, `libfuse2` on 22.04.
+- Have Fartcrobat or Inkmoor 0.4.0? Install the latest release by hand once: those versions look for
+  updates at the project's old address and don't find newer ones. On Windows and Ubuntu it installs
+  over the old copy and keeps your settings; on a Mac, move Fartcrobat to the Bin afterwards.
 - 0.2.0, the release before this table (still called Fartcrobat), names its Intel Mac file
   `Fartcrobat-0.2.0.dmg` and also has `Fartcrobat-Setup-0.2.0.exe`, one Windows installer for both
   processors.

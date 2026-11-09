@@ -27,7 +27,7 @@ while [ $# -gt 0 ]; do
 done
 [ "$(id -u)" = 0 ] || { echo "Run as root on a throwaway machine (see README.md)." >&2; exit 2; }
 if [ -z "$OLD" ]; then
-  OLD=$(curl -fsSI https://github.com/normiecore/Fartcrobat/releases/latest |
+  OLD=$(curl -fsSI https://github.com/normiecore/Inkmoor/releases/latest |
     sed -n 's|^[Ll]ocation: .*/releases/tag/v\([0-9][0-9.]*\).*|\1|p' | tr -d '\r')
   [ -n "$OLD" ] || { echo "Could not find the latest release; pass --old." >&2; exit 2; }
 fi
@@ -36,6 +36,8 @@ NAMES="$ROOT/tests/update-rehearsal/names.mjs"
 if [ -z "$NEW" ]; then
   NEW=$(node "$NAMES" default-new "$OLD")
 fi
+# OLD must ask the repository NEW is published in (normiecore/Inkmoor from 0.4.1; names.mjs).
+node "$NAMES" same-repo "$OLD" "$NEW" || exit 2
 # Each side's file names come from its version: Fartcrobat up to 0.3, Inkmoor from 0.4.0.
 OLD_APPIMAGE=$(node "$NAMES" "$OLD" appImage)
 NEW_APPIMAGE=$(node "$NAMES" "$NEW" appImage)
@@ -48,7 +50,7 @@ echo "Rehearsal $OLD -> $NEW in $WORK, as user $TEST_USER"
 # 1. The released AppImage of OLD and its update metadata, as GitHub serves them.
 for f in "$OLD_APPIMAGE" latest-linux.yml; do
   [ -f "$RELEASES/v$OLD/$f" ] ||
-    curl -fsSL -o "$RELEASES/v$OLD/$f" "https://github.com/normiecore/Fartcrobat/releases/download/v$OLD/$f"
+    curl -fsSL -o "$RELEASES/v$OLD/$f" "https://github.com/normiecore/Inkmoor/releases/download/v$OLD/$f"
 done
 
 # 2. NEW: given, or built from this checkout with only the version changed.

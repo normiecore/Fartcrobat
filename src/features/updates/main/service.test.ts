@@ -580,7 +580,7 @@ describe('UpdateService: release page', () => {
     service.openReleasePage()
     expect(opened).toEqual([`${RELEASES_BASE}/releases`, tagUrl('0.2.0')])
 
-    const base = 'http://127.0.0.1:4567/normiecore/Fartcrobat'
+    const base = 'http://127.0.0.1:4567/normiecore/Inkmoor'
     const withTest = setup({ base, testBase: base })
     withTest.service.openReleasePage()
     expect(withTest.opened).toEqual([`${base}/releases`])

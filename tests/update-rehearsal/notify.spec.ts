@@ -37,8 +37,8 @@ const EXE = process.env.REHEARSAL_EXE || (KIND === 'mac' ? OLD_NAMES.macExe : OL
 const POLICY = KIND === 'mac' ? OLD_NAMES.macPolicy : OLD_NAMES.linuxPolicy
 const RELEASES = join(WORK, 'releases')
 const OUT = join(WORK, 'out')
-/** The repository keeps its name whatever the app is called (src/shared/identity.ts). */
-const RELEASE_PAGE = `https://github.com/normiecore/Fartcrobat/releases/tag/v${NEW}`
+/** The repository the old version asks; the rehearsal only runs when NEW is published there (names.mjs, same-repo). */
+const RELEASE_PAGE = `https://github.com/${OLD_NAMES.repo}/releases/tag/v${NEW}`
 
 test.describe.configure({ mode: 'serial' })
 test.setTimeout(5 * 60_000)
@@ -103,7 +103,7 @@ test(`${KIND}: ${OLD} finds ${NEW}, and Download opens its release page`, async 
   expect(others.filter((h) => /github/.test(h))).toEqual([])
   if (contactsOnlyGitHub(OLD)) expect(others).toEqual([])
   // Found through github.com's latest-release redirect; nothing was downloaded.
-  expect(reqs.some((r) => r.host === 'github.com' && r.path === '/normiecore/Fartcrobat/releases/latest')).toBe(true)
+  expect(reqs.some((r) => r.host === 'github.com' && r.path === `/${OLD_NAMES.repo}/releases/latest`)).toBe(true)
   expect(reqs.filter((r) => r.host === 'release-assets.githubusercontent.com' || /\/releases\/download\//.test(r.path ?? ''))).toEqual([])
 })
 

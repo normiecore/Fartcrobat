@@ -10,8 +10,7 @@
 export const PRODUCT_NAME = 'Inkmoor'
 
 /**
- * Ids that keep their first value for good. Nothing a person reads uses them, apart from the
- * GitHub repository name in links. The same goes for the keys the app writes into PDFs
+ * Ids that keep their first value for good. Nothing a person reads uses them. The same goes for the keys the app writes into PDFs
  * (/FartcrobatData and its `fartcrobat` entry, /FartcrobatMark, /FartcrobatOCR, ...), the XFDF
  * and form-data formats, the settings file name and the saved-password key domain: they are file
  * formats, so they are written unchanged rather than listed here.
@@ -33,9 +32,6 @@ export const LEGACY = {
   debPackage: 'fartcrobat',
   /** The desktop entry file name (package.json desktopName): xdg-mime defaults point at it. */
   desktopFile: 'fartcrobat.desktop',
-  /** The GitHub repository releases come from: installed copies only follow redirects within it. */
-  githubOwner: 'normiecore',
-  githubRepo: 'Fartcrobat',
   /**
    * The MCP server's id: the Claude Desktop extension's manifest name (an installed extension is
    * replaced only by one with the same name) and the ChatGPT Desktop config table key.
@@ -44,6 +40,14 @@ export const LEGACY = {
   /** Environment variable that points the app (and the MCP helper) at another userData folder. */
   userDataEnv: 'FARTCROBAT_USER_DATA'
 } as const
+
+/**
+ * The GitHub repository releases come from. It was normiecore/Fartcrobat up to 0.4.0 and was renamed
+ * on 9 Nov 2026 (owner's choice). Copies up to 0.4.0 ask the old name, which GitHub now redirects
+ * here, and they only accept a redirect to a release page, so they no longer find updates: people
+ * on them install 0.4.1 or later by hand once (docs/features/rename.md).
+ */
+export const RELEASES_REPO = { owner: 'normiecore', repo: 'Inkmoor' } as const
 
 /** Names a function works with; tests pass a renamed product to try the fallbacks before the rename. */
 export interface Names {

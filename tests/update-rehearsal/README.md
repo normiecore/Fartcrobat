@@ -28,7 +28,7 @@ version: `names.mjs` (`productFor(version)`; the workflow and `linux.sh` run it 
 - **Kept from the old version** (checked after the update): one Programs and Features entry (the
   same NSIS GUID key, now named Inkmoor) at the same install location; the userData folder
   (`%APPDATA%\Fartcrobat`, `~/.config/Fartcrobat`); one `.deb` package, still called `fartcrobat`;
-  the GitHub repository `normiecore/Fartcrobat`, which the fake GitHub serves. A machine policy
+  the GitHub repository, which the fake GitHub serves. A machine policy
   written for the old version (`HKLM\SOFTWARE\Policies\Fartcrobat`, `/etc/fartcrobat/policy.json`)
   still applies to the new one.
 
@@ -38,6 +38,17 @@ still be a Fartcrobat version (from 0.3.0, it rehearses 0.3.0 -> 0.4.0), and the
 `linux.sh` stop at once when given a version whose name the build would not have
 (`node names.mjs check-build <new>`). The names the old version had before the rename stay in
 `names.mjs` for as long as installs of 0.3 may be updated.
+
+## The repository rename
+
+The repository was `normiecore/Fartcrobat` up to 0.4.0 and is `normiecore/Inkmoor` from 0.4.1
+(`docs/features/rename.md`). Versions up to 0.4.0 ask the old name; GitHub redirects it to the new
+one, which those versions refuse, so they cannot find 0.4.1 or later. `names.mjs` knows which
+repository each version asks (`releaseRepo`), the fake GitHub answers the old name with that
+redirect, and a rehearsal whose old version asks another repository than the new one is published
+in stops before installing anything (`node names.mjs same-repo <old> <new>`; the workflow writes a
+note in its summary and skips its jobs, `linux.sh` exits 2). The first rehearsal that runs again
+is 0.4.1 to 0.4.2.
 
 ## How it works
 

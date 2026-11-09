@@ -1,16 +1,16 @@
 {
   "name": "inkmoor",
   "productName": "Inkmoor",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Free, open-source PDF reader, editor and signer for people coming from Acrobat Pro.",
   "license": "AGPL-3.0-or-later",
   "author": {
     "name": "Inkmoor contributors"
   },
-  "homepage": "https://github.com/normiecore/fartcrobat",
+  "homepage": "https://github.com/normiecore/Inkmoor",
   "repository": {
     "type": "git",
-    "url": "https://github.com/normiecore/fartcrobat.git"
+    "url": "https://github.com/normiecore/Inkmoor.git"
   },
   "main": "./out/main/index.js",
   "type": "module",

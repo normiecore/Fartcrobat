@@ -1,6 +1,8 @@
 // Types for names.mjs (plain JavaScript so that the workflow and linux.sh can run it with node).
 export declare const FIRST_INKMOOR: string
+export declare const FIRST_INKMOOR_REPO: string
 export declare const DEB_PACKAGE: string
+export declare function releaseRepo(version: string): string
 export declare const ALL_NAMES: string[]
 export declare function versionBefore(a: string, b: string): boolean
 export declare function productName(version: string): 'Fartcrobat' | 'Inkmoor'
@@ -26,6 +28,7 @@ export interface ProductNames {
   debAppArmor: string
   linuxPolicy: string
   appImage: string
+  repo: string
 }
 export declare function productFor(version: string): ProductNames
 export declare function checkoutName(): string

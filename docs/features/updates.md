@@ -18,7 +18,8 @@ the flow, `index.tsx` shows it).
   `latest.yml` / `latest-linux.yml` / `latest-mac.yml`, with sha512 checks and blockmap
   differential downloads. It is bundled into the main process like every other dependency.
 - **Finding out** that a release exists does not use electron-updater: one request to
-  `https://github.com/normiecore/Fartcrobat/releases/latest`, which redirects to
+  `https://github.com/normiecore/Inkmoor/releases/latest` (`normiecore/Fartcrobat` up to 0.4.0,
+  see `docs/features/rename.md`), which redirects to
   `.../releases/tag/v<version>`. That works on every platform and install type (electron-updater
   is inactive for `.tar.gz` installs and unpackaged runs), needs no API token, and is not subject to
   the api.github.com limit of 60 requests an hour per IP address, which an office behind one
@@ -103,7 +104,7 @@ AppImages, in detail:
 
 ### U5. Releases
 
-- `electron-builder.yml` gets `publish: { provider: github, owner: normiecore, repo: Fartcrobat }` so
+- `electron-builder.yml` gets `publish: { provider: github, owner: normiecore, repo: Inkmoor }` (`Fartcrobat` up to 0.4.0) so
   builds write `resources/app-update.yml` and `release/latest*.yml`. The release workflow still
   builds with `--publish never`; its publish job uploads `latest.yml`, `latest-mac.yml`,
   `latest-linux.yml` and the `.blockmap` files with the installers, and fails if one is missing.

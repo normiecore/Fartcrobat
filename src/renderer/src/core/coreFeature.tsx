@@ -415,7 +415,7 @@ const commands: CommandDefinition[] = [
     label: 'Inkmoor on GitHub',
     icon: FileText,
     requiresDocument: false,
-    run: () => void invoke('shell:openExternal', 'https://github.com/normiecore/fartcrobat')
+    run: () => void invoke('shell:openExternal', 'https://github.com/normiecore/Inkmoor')
   },
   {
     id: 'app.commandPalette',

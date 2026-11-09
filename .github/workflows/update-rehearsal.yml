@@ -9,6 +9,11 @@ name: Update rehearsal
 # The app was called Fartcrobat up to 0.3 and Inkmoor from 0.4.0 on: each side's file names,
 # executables and policy locations come from its version (tests/update-rehearsal/names.mjs), so a
 # Fartcrobat release can be rehearsed updating to an Inkmoor build.
+#
+# The repository was renamed from normiecore/Fartcrobat to normiecore/Inkmoor for 0.4.1. Releases
+# up to 0.4.0 ask the old name and cannot find 0.4.1 or later (names.mjs, releaseRepo), so a
+# rehearsal from one of them to a later version stops after the versions job, with a note in the
+# summary, and the jobs below are skipped. From 0.4.1 on it runs as before.
 on:
   workflow_dispatch:
     inputs:
@@ -50,6 +55,7 @@ jobs:
     outputs:
       old: ${{ steps.v.outputs.old }}
       new: ${{ steps.v.outputs.new }}
+      run: ${{ steps.v.outputs.run }}
     steps:
       # package.json (the name this checkout builds) and the naming helper only.
       - uses: actions/checkout@v4
@@ -74,9 +80,18 @@ jobs:
           echo "Rehearsal: $(node "$names" "$OLD" name) $OLD -> $(node "$names" "$NEW" name) $NEW"
           echo "old=$OLD" >> "$GITHUB_OUTPUT"
           echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          if node "$names" same-repo "$OLD" "$NEW"; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            msg="Nothing to rehearse: $OLD asks $(node "$names" "$OLD" repo) for updates, and $NEW is published in $(node "$names" "$NEW" repo). Installs of $OLD do not find $NEW; people install it by hand."
+            echo "::notice::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   linux:
     needs: versions
+    if: needs.versions.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -100,6 +115,7 @@ jobs:
 
   windows-build:
     needs: versions
+    if: needs.versions.outputs.run == 'true'
     runs-on: windows-latest
     timeout-minutes: 40
     env:
@@ -139,6 +155,7 @@ jobs:
 
   windows:
     needs: [versions, windows-build]
+    if: needs.versions.outputs.run == 'true'
     runs-on: windows-latest
     timeout-minutes: 40
     strategy:
@@ -202,6 +219,7 @@ jobs:
   # (it installs updates only once releases are Developer ID signed).
   mac:
     needs: versions
+    if: needs.versions.outputs.run == 'true'
     runs-on: macos-latest
     timeout-minutes: 30
     env:
@@ -253,6 +271,7 @@ jobs:
   # name `fartcrobat` across the rename) and starts.
   deb:
     needs: versions
+    if: needs.versions.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:

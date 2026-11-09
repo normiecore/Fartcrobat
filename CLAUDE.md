@@ -11,9 +11,8 @@ Office conversion when installed, with a built-in fallback.
 
 - **Renamed: Fartcrobat is now Inkmoor from 0.4.0** (PR #26, owner's choice 3 Nov 2026). Releases up
   to 0.3.0 are Fartcrobat. Installed copies update into Inkmoor, which only works because some ids
-  keep the old name for good: everything in `LEGACY` in `src/shared/identity.ts`, the GitHub repo
-  `normiecore/Fartcrobat`, the PDF keys (`/FartcrobatData`, `/FartcrobatMark`, ...), the XFDF and
-  form-data formats, `fartcrobat-settings.json` and the saved-password key domain. Never rename
+  keep the old name for good: everything in `LEGACY` in `src/shared/identity.ts`, the PDF keys
+  (`/FartcrobatData`, `/FartcrobatMark`, ...), the XFDF and form-data formats, `fartcrobat-settings.json` and the saved-password key domain. Never rename
   these. Fixtures still contain the old name ("Hello Fartcrobat page 1"). See
   `docs/features/rename.md`.
 - 0.4.0 (published 9 Nov 2026, tag on 1e8dcc3) is the first Inkmoor release. It carries the
@@ -23,10 +22,18 @@ Office conversion when installed, with a built-in fallback.
   detachable tabs and multiple windows (`docs/features/windows-tabs.md`), Organize Pages zoom with
   Fit width / 2 per row / Fit page and quick look, and the new "Moor" icon. Release notes:
   `docs/releases/v0.4.0.md`. Still to do: publish a GitHub security advisory for the fixes.
+- **The GitHub repo is `normiecore/Inkmoor`** (renamed from `normiecore/Fartcrobat` on 9 Nov 2026,
+  owner's choice; GitHub redirects the old name). 0.4.1 is the first version that looks for updates
+  there (`RELEASES_REPO` in `src/shared/identity.ts`). Copies up to 0.4.0 refuse the redirect and
+  never find another update: people on them install 0.4.1 by hand (the testers had 0.1.0, which has
+  no updater anyway). Never rename the repo again, and never create a new `normiecore/Fartcrobat`
+  (it would end the redirect). The update rehearsal skips when the old version asks the old name
+  (`same-repo` in `tests/update-rehearsal/names.mjs`); it runs again from 0.4.1 to 0.4.2. See
+  "The repository rename" in `docs/features/rename.md`. A Claude session needs the repo added as
+  `normiecore/Inkmoor` (the session proxy checks the name).
 - Repo page: README shows the icon and screenshots from `docs/images/`; `docs/images/social-preview.png`
-  (1280x640) is for Settings > Social preview, which only the owner can upload. The repo keeps the
-  name `Fartcrobat`: electron-updater only follows release redirects inside it.
-- v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
+  (1280x640) is for Settings > Social preview, which only the owner can upload.
+- v0.1.0 is released: https://github.com/normiecore/Inkmoor/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`). It has no updater.
 - v0.2.0 (17 Oct 2026) is the first release with the in-app updater and its `latest*.yml` files,
@@ -56,8 +63,8 @@ Office conversion when installed, with a built-in fallback.
 ### Work in progress (handoff, 14 Oct 2026)
 
 - **In-app updates** (`docs/features/updates.md`, merged in #12): checks
-  `github.com/normiecore/Fartcrobat/releases/latest` 30 s after start and every 6 hours, shows a
-  card in the bottom right (Download with a progress bar, then Restart now or Later), and installs
+  `github.com/normiecore/Inkmoor/releases/latest` (Fartcrobat up to 0.4.0) 30 s after start and
+  every 6 hours, shows a card in the bottom right (Download with a progress bar, then Restart now or Later), and installs
   silently through electron-updater 6.8.10 after the normal quit flow has asked about unsaved
   documents. Install works for the Windows NSIS installer and the Linux AppImage; macOS (until
   Developer ID signing), .deb and .tar.gz only notify and open the release page. Help > Check for
