@@ -664,6 +664,20 @@ function forgeEnvelope(certPems: string[], content: Uint8Array): Uint8Array {
 }
 
 /**
+ * Damages a forgeEnvelope of SEED so that decrypting it always fails. The envelope ends with the
+ * AES-CBC ciphertext: 24 bytes of SEED padded to two blocks with eight 0x08 bytes. Flipping bits in
+ * the last byte of the first block flips the same bits of the padding byte, so with `bits` of 0x18
+ * or more set it is above 16 and never valid padding. (Flipping the last ciphertext byte instead
+ * leaves valid padding about once in 200 envelopes, which made the attempts test fail now and then.)
+ */
+function damageContent(envelope: Uint8Array, bits: number): Uint8Array {
+  expect(SEED.length).toBe(24)
+  expect((0x08 ^ bits) > 16).toBe(true)
+  envelope[envelope.length - 17] ^= bits
+  return envelope
+}
+
+/**
  * Same, but each RecipientInfo carries the certificate's issuer Name exactly as encoded in the
  * certificate: node-forge rebuilds it and double-encodes non-ASCII UTF8String values.
  */
@@ -1059,13 +1073,10 @@ describe.skipIf(!STORE_TESTS)('with PowerShell and a test certificate store', ()
   it('tries a certificate once per envelope, and a few times in all (each try is a private key operation)', async () => {
     // A crafted envelope naming the person's certificate 300 times, with damaged content: every
     // try unwraps the key and then fails. 1000 such tries took 107 s.
-    const many = forgeEnvelope(Array.from({ length: 300 }, () => pem('me-enc')), SEED)
-    many[many.length - 1] ^= 0x5a
-    const others = Array.from({ length: 6 }, (_, i) => {
-      const b = forgeEnvelope([pem('me-enc')], SEED)
-      b[b.length - 1] ^= 0x11 + i
-      return b
-    })
+    const many = damageContent(forgeEnvelope(Array.from({ length: 300 }, () => pem('me-enc')), SEED), 0x5a)
+    const others = Array.from({ length: 6 }, (_, i) =>
+      damageContent(forgeEnvelope([pem('me-enc')], SEED), 0x41 + i)
+    )
     const t0 = performance.now()
     const err = await decryptRecipients(helper, [many, ...others], { thumbprint: thumbOf('me-enc') }).catch((e: unknown) => e)
     expect(performance.now() - t0).toBeLessThan(30_000)

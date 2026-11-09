@@ -153,7 +153,9 @@ export function boxAspect(pages: PageShape[]): BoxAspect {
 export const GRID = {
   gapX: 28,
   gapY: 20,
-  padX: 24,
+  /** At least gapX / 2 + 12: the '+' after a full row's last page (24 px wide, centred in the gap
+   *  after it) must stay inside the view, or a horizontal scrollbar appears. */
+  padX: 26,
   padY: 20,
   /** A cell is this much wider than its page box (selection border and padding). */
   cellExtraW: 24,
