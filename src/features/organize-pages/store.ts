@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useApp, type DocumentModel } from '@renderer/sdk'
+import { DEFAULT_THUMB, type FitMode } from './zoom'
 
 /** Organize Pages state for one document. Pages are tracked by id so selections survive reordering. */
 export interface OrgDocState {
@@ -13,17 +14,18 @@ export interface OrgDocState {
 
 interface OrgState {
   docs: Record<string, OrgDocState>
-  /** Thumbnail size in CSS pixels (the long side of a page). */
+  /**
+   * Chosen thumbnail size in CSS pixels (the long side of a page box). The grid shows it limited
+   * to what the window allows (`effectiveThumb`), so a narrower window does not lose it.
+   */
   thumbSize: number
+  /** A fit preset that follows the window ("Fit width", "2 per row", "Fit page"), or null. */
+  fit: FitMode | null
   /** Columns of the mounted grid (for keyboard navigation). */
   columns: number
 }
 
-export const MIN_THUMB = 80
-export const MAX_THUMB = 360
-export const DEFAULT_THUMB = 170
-
-export const useOrganize = create<OrgState>(() => ({ docs: {}, thumbSize: DEFAULT_THUMB, columns: 4 }))
+export const useOrganize = create<OrgState>(() => ({ docs: {}, thumbSize: DEFAULT_THUMB, fit: null, columns: 4 }))
 
 const EMPTY: OrgDocState = { selected: [], anchor: null, focus: null }
 

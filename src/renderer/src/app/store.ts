@@ -7,6 +7,11 @@ export interface DialogEntry {
   id: number
   render: (close: (result?: unknown) => void) => ReactNode
   resolve: (result: unknown) => void
+  /**
+   * Only a preview (Organize Pages quick look): nothing is being asked, so an agent confirmation
+   * closes it instead of being refused as busy (claimPerson).
+   */
+  preview?: boolean
 }
 
 export interface ToastEntry {

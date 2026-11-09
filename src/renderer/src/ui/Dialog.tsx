@@ -26,8 +26,11 @@ function isTopmost(el: HTMLElement): boolean {
   return all[all.length - 1] === el
 }
 
-/** Keeps Tab inside `el`; returns true when it moved the focus itself. */
-function trapTab(el: HTMLElement, backwards: boolean): boolean {
+/**
+ * Keeps Tab inside `el`; returns true when it moved the focus itself. Exported for modal overlays
+ * that are not a Dialog frame (Organize Pages quick look).
+ */
+export function trapTab(el: HTMLElement, backwards: boolean): boolean {
   const items = tabbable(el)
   const active = document.activeElement
   if (!items.length) {

@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
+  Columns2,
   Copy,
   FileOutput,
   FilePlus2,
   Hash,
+  MoveHorizontal,
+  MoveVertical,
   Plus,
   Redo2,
   Replace,
@@ -39,13 +42,23 @@ import { openLabelsDialog } from './dialogs/LabelsDialog'
 import { openReplaceFlow } from './dialogs/ReplaceDialog'
 import { openSplitDialog } from './dialogs/SplitDialog'
 import { backgroundMenu, insertItems, pageMenu, selectBy, selectItems } from './menus'
-import { cellPosition, cellsInRect, gapAt, gridMetrics, navigate, nudgeTarget, spanIndices } from './order'
+import {
+  boxAspect,
+  cellPosition,
+  cellsInRect,
+  gapAt,
+  gridMetrics,
+  navigate,
+  nudgeTarget,
+  rowGapTop,
+  spanIndices,
+  type GapSpot,
+  type GridMetrics
+} from './order'
 import { countLabel, formatPageRange } from './ranges'
 import {
   anchorIndex,
   focusedIndex,
-  MAX_THUMB,
-  MIN_THUMB,
   patchOrg,
   selectIndices,
   selectedIndices,
@@ -54,10 +67,29 @@ import {
   useOrganize,
   useOrgState
 } from './store'
+import { openQuickLook } from './QuickLook'
 import { Thumbnail } from './Thumbnail'
+import {
+  ABS_MAX_THUMB,
+  anchorAtPoint,
+  anchorForPage,
+  effectiveThumb,
+  isFitMode,
+  maxThumb,
+  MIN_THUMB,
+  scrollForAnchor,
+  SLIDER_STEPS,
+  sizeToSlider,
+  sliderKeyStep,
+  sliderToSize,
+  zoomStep,
+  type FitMode,
+  type ZoomAnchor
+} from './zoom'
 
-const OVERSCAN_ROWS = 2
 const EDGE = 56
+/** A Ctrl+wheel this recent decides which point stays under the pointer while zooming. */
+const WHEEL_ANCHOR_MS = 400
 
 interface TabTarget {
   docId: string
@@ -71,7 +103,7 @@ interface TabTarget {
 interface DragState {
   /** Page ids being dragged. */
   ids: number[]
-  gap: { gap: number; left: number; top: number } | null
+  gap: GapSpot | null
   /** Another document's tab under the pointer: the pages are copied to that document. */
   tab: TabTarget | null
   x: number
@@ -139,38 +171,88 @@ function revealInViewer(doc: DocumentModel, page: number) {
   window.setTimeout(attempt, 0)
 }
 
+/** Chooses a thumbnail size (slider, Ctrl+wheel, Ctrl+= and Ctrl+-); it ends a fit preset. */
 function setThumbSize(size: number) {
-  const v = Math.max(MIN_THUMB, Math.min(MAX_THUMB, Math.round(size)))
-  useOrganize.setState({ thumbSize: v })
+  const v = Math.max(MIN_THUMB, Math.min(ABS_MAX_THUMB, Math.round(size)))
+  useOrganize.setState({ thumbSize: v, fit: null })
   void invoke('store:set', 'organize-pages:thumbSize', v).catch(() => {})
+  void invoke('store:set', 'organize-pages:fit', null).catch(() => {})
 }
 
-function ThumbSizeControl() {
-  const thumb = useOrganize((s) => s.thumbSize)
+/** Chooses a fit preset; it keeps following the window until another size is chosen. */
+function setFit(fit: FitMode) {
+  useOrganize.setState({ fit })
+  void invoke('store:set', 'organize-pages:fit', fit).catch(() => {})
+}
+
+const FIT_PRESETS: { fit: FitMode; label: string; title: string; icon: typeof ZoomIn }[] = [
+  { fit: 'width', label: 'Fit width', title: 'Fit width: one page per row, as wide as the view', icon: MoveHorizontal },
+  { fit: 'two', label: '2 per row', title: 'Two pages per row, side by side', icon: Columns2 },
+  {
+    fit: 'page',
+    label: 'Fit page',
+    title: `Fit page: a whole page in the view's height (${displayShortcut('Mod+0')})`,
+    icon: MoveVertical
+  }
+]
+
+function ThumbSizeControl({ thumb, max }: { thumb: number; max: number }) {
+  const fit = useOrganize((s) => s.fit)
   return (
-    <div className="fc-organize-pages-zoom" title="Thumbnail size (Ctrl + mouse wheel)">
+    <div className="fc-organize-pages-zoom">
+      <div className="fc-organize-pages-fits" role="group" aria-label="Fit pages">
+        {FIT_PRESETS.map((p) => (
+          <Button
+            key={p.fit}
+            size="sm"
+            variant="quiet"
+            icon={p.icon}
+            aria-label={p.label}
+            aria-pressed={fit === p.fit}
+            className={fit === p.fit ? 'is-active' : ''}
+            title={p.title}
+            onClick={() => setFit(p.fit)}
+          >
+            <span className="fc-organize-pages-fit-text">{p.label}</span>
+          </Button>
+        ))}
+      </div>
+      <span className="shell-sep" />
       <IconButton
         icon={ZoomOut}
         size={15}
         label="Smaller thumbnails"
-        onClick={() => setThumbSize(thumb - 30)}
+        shortcut={displayShortcut('Mod+-')}
+        onClick={() => setThumbSize(zoomStep(thumb, -1))}
         disabled={thumb <= MIN_THUMB}
       />
       <input
         type="range"
         aria-label="Thumbnail size"
-        min={MIN_THUMB}
-        max={MAX_THUMB}
-        step={10}
-        value={thumb}
-        onChange={(e) => setThumbSize(parseFloat(e.target.value))}
+        title="Thumbnail size (Ctrl + mouse wheel)"
+        min={0}
+        max={SLIDER_STEPS}
+        step={1}
+        value={sizeToSlider(thumb, MIN_THUMB, max)}
+        aria-valuetext={`${thumb} pixels`}
+        onChange={(e) => setThumbSize(sliderToSize(parseFloat(e.target.value), MIN_THUMB, max))}
+        onKeyDown={(e) => {
+          // Arrow keys step the size itself: one slider position can round to the same pixel size.
+          const dir =
+            e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0
+          if (!dir || e.ctrlKey || e.metaKey || e.altKey) return
+          e.preventDefault()
+          const next = sliderKeyStep(thumb, dir, MIN_THUMB, max)
+          if (next !== thumb) setThumbSize(next)
+        }}
       />
       <IconButton
         icon={ZoomIn}
         size={15}
         label="Larger thumbnails"
-        onClick={() => setThumbSize(thumb + 30)}
-        disabled={thumb >= MAX_THUMB}
+        shortcut={displayShortcut('Mod+=')}
+        onClick={() => setThumbSize(Math.min(max, zoomStep(thumb, 1)))}
+        disabled={thumb >= max}
       />
     </div>
   )
@@ -324,22 +406,43 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
   const info = useDocState(doc, (s) => s.info)
   const pages = info.pages
   const count = pages.length
-  const thumb = useOrganize((s) => s.thumbSize)
+  const requested = useOrganize((s) => s.thumbSize)
+  const fit = useOrganize((s) => s.fit)
   const org = useOrgState(doc)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [viewport, setViewport] = useState({ width: 900, height: 600 })
   const [scrollTop, setScrollTop] = useState(0)
   const [drag, setDrag] = useState<DragState | null>(null)
   const [marquee, setMarquee] = useState<Marquee | null>(null)
-  const [fileDrop, setFileDrop] = useState<{ gap: number; left: number; top: number } | null>(null)
+  const [fileDrop, setFileDrop] = useState<GapSpot | null>(null)
   /** Shows the keyboard focus ring only while the keyboard is used. */
   const [keyboard, setKeyboard] = useState(false)
   /** Animates thumbnails to their new places after pages were reordered. */
   const [animating, setAnimating] = useState(false)
   const prevOrder = useRef<number[]>([])
-  const m = useMemo(() => gridMetrics(count, viewport.width, thumb), [count, viewport.width, thumb])
+  const aspect = useMemo(() => boxAspect(pages), [pages])
+  const thumb = effectiveThumb(requested, fit, viewport, aspect)
+  const thumbMax = maxThumb(viewport.width, aspect)
+  const thumbRef = useRef(thumb)
+  thumbRef.current = thumb
+  const maxRef = useRef(thumbMax)
+  maxRef.current = thumbMax
+  const m = useMemo(() => gridMetrics(count, viewport.width, thumb, aspect), [count, viewport.width, thumb, aspect])
   const mRef = useRef(m)
   mRef.current = m
+  /**
+   * Scroll position as last seen (before a layout change can clamp it). Kept up to date wherever the
+   * grid scrolls itself, not only in onScroll: the zoom anchor reads it in the same frame, before
+   * any scroll event (opening Organize at a page far down, then the first real measurement).
+   */
+  const scrollTopRef = useRef(0)
+  const scrollTo = useCallback((el: HTMLElement, top: number) => {
+    el.scrollTop = top
+    scrollTopRef.current = el.scrollTop
+  }, [])
+  /** The pointer of the last Ctrl+wheel, in view coordinates. */
+  const wheelRef = useRef<{ x: number; y: number; at: number } | null>(null)
+  const prevLayout = useRef<{ m: GridMetrics; count: number; height: number } | null>(null)
   const dragRef = useRef<DragState | null>(null)
   dragRef.current = drag
 
@@ -370,14 +473,38 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
     return () => window.clearTimeout(t)
   }, [pages])
 
-  // Restore the remembered thumbnail size once.
+  // Restore the remembered thumbnail size and fit preset once.
   useEffect(() => {
-    void invoke('store:get', 'organize-pages:thumbSize')
-      .then((v) => {
-        if (typeof v === 'number' && v >= MIN_THUMB && v <= MAX_THUMB) useOrganize.setState({ thumbSize: v })
+    void Promise.all([invoke('store:get', 'organize-pages:thumbSize'), invoke('store:get', 'organize-pages:fit')])
+      .then(([v, f]) => {
+        const patch: { thumbSize?: number; fit?: FitMode | null } = {}
+        if (typeof v === 'number' && v >= MIN_THUMB && v <= ABS_MAX_THUMB) patch.thumbSize = v
+        if (isFitMode(f) || f === null) patch.fit = f
+        useOrganize.setState(patch)
       })
       .catch(() => {})
   }, [])
+
+  // Zoom keeps your place: after the thumbnail size or the window changes, the page under a
+  // Ctrl+wheel pointer, else the focused page when it was in view, else the page in the middle
+  // stays where it was on screen.
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    const prev = prevLayout.current
+    prevLayout.current = { m, count, height: viewport.height }
+    if (!el || !prev || prev.count !== count || !count) return
+    if (prev.m.cellHeight === m.cellHeight && prev.m.columns === m.columns && prev.m.offsetX === m.offsetX) return
+    const oldTop = scrollTopRef.current
+    const wheel = wheelRef.current
+    let anchor: ZoomAnchor | null = null
+    if (wheel && performance.now() - wheel.at < WHEEL_ANCHOR_MS)
+      anchor = anchorAtPoint(prev.m, count, oldTop, wheel.y, wheel.x)
+    if (!anchor) anchor = anchorForPage(prev.m, focusedIndex(doc), oldTop, prev.height)
+    if (!anchor) anchor = anchorAtPoint(prev.m, count, oldTop, prev.height / 2, viewport.width / 2)
+    if (!anchor) return
+    scrollTo(el, scrollForAnchor(m, el.clientHeight, anchor))
+    setScrollTop(el.scrollTop)
+  }, [m, count, viewport.height, viewport.width, doc, scrollTo])
 
   useLayoutEffect(() => {
     const el = scrollRef.current
@@ -402,10 +529,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
     const f = focusedIndex(doc)
     if (el && f >= 0) {
       const p = cellPosition(mRef.current, f)
-      if (p.top + mRef.current.cellHeight > el.clientHeight) el.scrollTop = p.top - el.clientHeight / 3
+      if (p.top + mRef.current.cellHeight > el.clientHeight) scrollTo(el, p.top - el.clientHeight / 3)
     }
     return () => revealInViewer(doc, doc.state.currentPage)
-  }, [doc])
+  }, [doc, scrollTo])
 
   // Keep the focused page visible (keyboard navigation, inserted pages).
   useEffect(() => {
@@ -413,9 +540,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
     if (!el || focusIndex < 0 || dragRef.current) return
     const p = cellPosition(mRef.current, focusIndex)
     const h = mRef.current.cellHeight
-    if (p.top < el.scrollTop) el.scrollTop = p.top - 12
-    else if (p.top + h > el.scrollTop + el.clientHeight) el.scrollTop = p.top + h - el.clientHeight + 12
-  }, [focusIndex, org.focus, thumb])
+    if (p.top < el.scrollTop) scrollTo(el, p.top - 12)
+    else if (p.top + h > el.scrollTop + el.clientHeight) scrollTo(el, p.top + h - el.clientHeight + 12)
+    // a new thumbnail size is handled by the zoom anchor above
+  }, [focusIndex, org.focus, scrollTo])
 
   const toContent = useCallback((clientX: number, clientY: number) => {
     const el = scrollRef.current!
@@ -626,7 +754,7 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
   const onDoubleClick = (e: React.MouseEvent) => {
     const cell = (e.target as HTMLElement).closest<HTMLElement>('[data-org-index]')
     if (!cell || (e.target as HTMLElement).closest('[data-quick]')) return
-    openPageInViewer(doc, parseInt(cell.dataset.orgIndex!, 10))
+    openQuickLook(doc, parseInt(cell.dataset.orgIndex!, 10), (i) => openPageInViewer(doc, i))
   }
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -751,12 +879,16 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         handled()
         if (f < 0) return
         const sel = selectedIndices(doc)
-        if (mod)
+        if (mod) {
           selectIndices(doc, sel.includes(f) ? sel.filter((i) => i !== f) : [...sel, f], {
             focus: f,
             anchor: f
           })
-        else if (!sel.includes(f)) selectIndices(doc, [f], { focus: f, anchor: f })
+          return
+        }
+        if (!sel.includes(f)) selectIndices(doc, [f], { focus: f, anchor: f })
+        // Space also shows the page large (quick look); Space or Escape closes it again.
+        if (!e.repeat && !e.shiftKey) openQuickLook(doc, f, (i) => openPageInViewer(doc, i))
         return
       }
       if (e.key === 'Enter' && !mod && !e.altKey) {
@@ -779,12 +911,17 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
       }
       if (mod && !e.altKey && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
         handled()
-        setThumbSize(useOrganize.getState().thumbSize + 30)
+        setThumbSize(Math.min(maxRef.current, zoomStep(thumbRef.current, 1)))
         return
       }
       if (mod && !e.altKey && (e.code === 'Minus' || e.code === 'NumpadSubtract')) {
         handled()
-        setThumbSize(useOrganize.getState().thumbSize - 30)
+        setThumbSize(zoomStep(thumbRef.current, -1))
+        return
+      }
+      if (mod && !e.altKey && !e.shiftKey && (e.code === 'Digit0' || e.code === 'Numpad0')) {
+        handled()
+        setFit('page')
         return
       }
     }
@@ -799,7 +936,9 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
     const onWheel = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
-      setThumbSize(useOrganize.getState().thumbSize * Math.exp(-e.deltaY * 0.002))
+      const r = el.getBoundingClientRect()
+      wheelRef.current = { x: e.clientX - r.left + el.scrollLeft, y: e.clientY - r.top, at: performance.now() }
+      setThumbSize(Math.min(maxRef.current, thumbRef.current * Math.exp(-e.deltaY * 0.002)))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
@@ -822,11 +961,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
 
   // ---- rendering ----------------------------------------------------------------------------
   const rowH = m.cellHeight + m.gapY
-  const firstRow = Math.max(0, Math.floor((scrollTop - m.padY) / rowH) - OVERSCAN_ROWS)
-  const lastRow = Math.min(
-    m.rows - 1,
-    Math.ceil((scrollTop + viewport.height - m.padY) / rowH) + OVERSCAN_ROWS
-  )
+  // Rows mounted beyond the view: two of small thumbnails, one of large pages (each costs a render).
+  const overscan = rowH * 2 > viewport.height ? 1 : 2
+  const firstRow = Math.max(0, Math.floor((scrollTop - m.padY) / rowH) - overscan)
+  const lastRow = Math.min(m.rows - 1, Math.ceil((scrollTop + viewport.height - m.padY) / rowH) + overscan)
   const firstIndex = firstRow * m.columns
   const lastIndex = Math.min(count - 1, (lastRow + 1) * m.columns - 1)
   const center = scrollTop + viewport.height / 2
@@ -846,36 +984,45 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         left={pos.left}
         top={pos.top}
         cellWidth={m.cellWidth}
-        thumb={thumb}
+        boxWidth={m.boxWidth}
+        boxHeight={m.boxHeight}
         selected={selectedSet.has(p.id)}
         focused={focusIndex === i}
         dragging={!!draggingIds?.has(p.id) && !drag?.copy && !drag?.tab}
-        priority={Math.abs(pos.top + m.cellHeight / 2 - center) / 10000}
+        priority={renderPriority(pos.top, m.cellHeight, scrollTop, viewport.height, center)}
         onQuick={onQuick}
       />
     )
     if (!drag && !marquee) {
-      gaps.push(
-        <GapButton
-          key={`g${i}`}
-          doc={doc}
-          gap={i}
-          left={pos.left - m.gapX / 2}
-          top={pos.top}
-          height={thumb + 12}
-        />
-      )
-      if (i === count - 1)
+      if (m.columns === 1) {
+        // One page per row: the '+' sits in the space above each page (and below the last).
+        const mid = m.offsetX + m.cellWidth / 2
+        gaps.push(<GapButton key={`g${i}`} doc={doc} gap={i} left={mid} top={rowGapTop(m, i)} horizontal />)
+        if (i === count - 1)
+          gaps.push(<GapButton key="g-end" doc={doc} gap={count} left={mid} top={rowGapTop(m, count)} horizontal />)
+      } else {
         gaps.push(
           <GapButton
-            key="g-end"
+            key={`g${i}`}
             doc={doc}
-            gap={count}
-            left={pos.left + m.cellWidth + m.gapX / 2}
+            gap={i}
+            left={pos.left - m.gapX / 2}
             top={pos.top}
-            height={thumb + 12}
+            height={m.boxHeight + 12}
           />
         )
+        if (i === count - 1)
+          gaps.push(
+            <GapButton
+              key="g-end"
+              doc={doc}
+              gap={count}
+              left={pos.left + m.cellWidth + m.gapX / 2}
+              top={pos.top}
+              height={m.boxHeight + 12}
+            />
+          )
+      }
     }
   }
 
@@ -892,7 +1039,10 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
         aria-multiselectable
         aria-label={`Pages of ${doc.state.title}`}
         aria-activedescendant={activeId}
-        onScroll={(e) => setScrollTop((e.target as HTMLElement).scrollTop)}
+        onScroll={(e) => {
+          scrollTopRef.current = (e.target as HTMLElement).scrollTop
+          setScrollTop(scrollTopRef.current)
+        }}
         onPointerDown={onPointerDown}
         onDoubleClick={onDoubleClick}
         onContextMenu={onContextMenu}
@@ -908,8 +1058,12 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
           {gaps}
           {indicator && (
             <div
-              className={`fc-organize-pages-indicator ${fileDrop ? 'is-file' : ''}`}
-              style={{ left: indicator.left - 2, top: indicator.top, height: thumb + 34 }}
+              className={`fc-organize-pages-indicator ${fileDrop ? 'is-file' : ''} ${indicator.horizontal ? 'is-horizontal' : ''}`}
+              style={
+                indicator.horizontal
+                  ? { left: indicator.left, top: indicator.top - 2, width: m.cellWidth }
+                  : { left: indicator.left - 2, top: indicator.top, height: m.boxHeight + 34 }
+              }
             />
           )}
           {marquee && (
@@ -935,7 +1089,7 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
             ? `Drag to move · ${isMac ? '⌥' : 'Ctrl'}+drag to copy · Alt+arrows to move`
             : 'Click a page to select it · drop files here to insert them'}
         </span>
-        <ThumbSizeControl />
+        <ThumbSizeControl thumb={thumb} max={thumbMax} />
       </div>
       {drag?.tab && (
         <>
@@ -962,21 +1116,38 @@ export function OrganizeView({ doc }: { doc: DocumentModel }) {
   )
 }
 
+/**
+ * Render order: pages in view first, the nearest to the middle soonest, then the rows mounted
+ * above and below it.
+ */
+function renderPriority(top: number, height: number, scrollTop: number, viewHeight: number, center: number) {
+  const visible = top + height > scrollTop && top < scrollTop + viewHeight
+  return (visible ? 0 : 1) + Math.abs(top + height / 2 - center) / 100000
+}
+
+/** Width of the '+' strip between two rows (one page per row). */
+const ROW_GAP_WIDTH = 160
+
 function GapButton({
   doc,
   gap,
   left,
   top,
-  height
+  height = 24,
+  horizontal = false
 }: {
   doc: DocumentModel
   gap: number
   left: number
   top: number
-  height: number
+  height?: number
+  horizontal?: boolean
 }) {
+  const style = horizontal
+    ? { left: left - ROW_GAP_WIDTH / 2, top: top - 12, width: ROW_GAP_WIDTH, height: 24 }
+    : { left: left - 12, top, height }
   return (
-    <div className="fc-organize-pages-gap" data-gap style={{ left: left - 12, top, height }}>
+    <div className={`fc-organize-pages-gap ${horizontal ? 'is-horizontal' : ''}`} data-gap style={style}>
       <span className="fc-organize-pages-gap-line" />
       <button
         type="button"
