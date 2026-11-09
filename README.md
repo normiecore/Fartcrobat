@@ -1,3 +1,5 @@
+<p align="center"><img src="build/icons/128x128.png" width="96" height="96" alt="Inkmoor icon"></p>
+
 # Inkmoor
 
 Formerly Fartcrobat: versions up to 0.3 had that name. Installed copies update to Inkmoor by
@@ -8,10 +10,16 @@ current Adobe Acrobat Pro (All tools on the left, panels on the right rail), so 
 over can find things where they expect them. Everything works offline: the only network request
 the app makes by itself is a check for a new release on GitHub (see Updates below).
 
+![Inkmoor showing a contract with the All tools pane on the left](docs/images/inkmoor-viewer.png)
+
+[Download the latest release](#install)
+
 ## What it does
 
 **Read and navigate**
-- Tabs, single page / two-page / scrolling layouts, zoom, rotate view, Read Mode, Full Screen
+- Tabs, several windows at once, and tabs you can drag out into their own window or into another
+  window
+- Single page / two-page / scrolling layouts, zoom, rotate view, Read Mode, Full Screen
 - Find (Ctrl+F) and Advanced Search with results grouped by page
 - Page thumbnails, bookmarks (add, rename, nest by drag), attachments, layers
 - Read Out Loud using the system voices
@@ -37,6 +45,11 @@ the app makes by itself is a check for a new release on GitHub (see Updates belo
 **Organize and edit**
 - Organize Pages: reorder, rotate, delete, insert (from file, blank, clipboard), extract,
   split, replace; drag pages between tabs
+- Organize Pages zooms from small thumbnails up to one page across (Fit width, 2 per row, Fit
+  page, Ctrl+mouse wheel); double-click a page or press Space for a quick look at full size
+
+![Organize Pages at two pages per row](docs/images/inkmoor-organize.png)
+
 - Combine files (PDFs, images and Office files) into one PDF
 - Edit text and images on the page, add links
 - Headers and footers, watermarks, backgrounds, Bates numbering, crop and page boxes

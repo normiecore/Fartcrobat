@@ -51,10 +51,10 @@ describe('organize zoom: fit presets', () => {
       const m = gridMetrics(50, width, t, aspect)
       expect(m.columns).toBe(1)
       // the page box fills the width up to the gutters (within rounding)
-      expect(m.cellWidth).toBeLessThanOrEqual(width - 48)
-      expect(m.cellWidth).toBeGreaterThan(width - 48 - 3)
+      expect(m.cellWidth).toBeLessThanOrEqual(width - 52)
+      expect(m.cellWidth).toBeGreaterThan(width - 52 - 3)
       // one more pixel would not fit
-      expect(gridMetrics(50, width, t + 2, aspect).cellWidth).toBeGreaterThan(width - 48)
+      expect(gridMetrics(50, width, t + 2, aspect).cellWidth).toBeGreaterThan(width - 52)
     }
   })
   it('two per row gives exactly two columns', () => {
@@ -194,4 +194,24 @@ describe('organize zoom: one page per row', () => {
     expect(gapAt(m, 5, 0, c2.top).top).toBe(rowGapTop(m, 2))
     expect(rowGapTop(m, 2)).toBe(c2.top - m.gapY / 2)
   })
+})
+
+describe('organize zoom: the insertion point after a full row stays in view', () => {
+  // GapButton draws the '+' 24 px wide, centred on gapAt's left.
+  const HALF = 12
+  for (const [name, shape] of [['Letter', LETTER], ['A4', { width: 595, height: 842 }], ['square', { width: 500, height: 500 }]] as const) {
+    it(`for ${name} pages at 1 to 4 per row and any width`, () => {
+      const aspect = boxAspect([shape])
+      for (let width = 500; width <= 2600; width++) {
+        for (const columns of [1, 2, 3, 4]) {
+          const t = thumbForColumns(columns, width, aspect)
+          const m = gridMetrics(40, width, t, aspect)
+          if (m.columns < 2) continue
+          const after = gapAt(m, 40, m.offsetX + m.columns * (m.cellWidth + m.gapX), m.padY + 5)
+          expect(after.gap % m.columns === 0 || after.gap === m.columns).toBe(true)
+          expect(after.left + HALF, `${name} ${columns}/row at ${width}px`).toBeLessThanOrEqual(width)
+        }
+      }
+    })
+  }
 })

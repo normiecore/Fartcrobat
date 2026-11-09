@@ -68,7 +68,10 @@
   position: relative;
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  /* The grid always fits the width; the '+' insertion point after the last page in a full row
+     reaches a few pixels past it, which must not add a horizontal scrollbar. */
+  overflow-x: hidden;
+  overflow-y: auto;
   outline: none;
   overscroll-behavior: contain;
   /* The width must not change when the scrollbar comes and goes: fit presets follow the width. */

@@ -16,11 +16,16 @@ Office conversion when installed, with a built-in fallback.
   form-data formats, `fartcrobat-settings.json` and the saved-password key domain. Never rename
   these. Fixtures still contain the old name ("Hello Fartcrobat page 1"). See
   `docs/features/rename.md`.
-- 0.4.0 (3 Nov 2026) is the first Inkmoor release and carries the fixes from a security review of
-  0.3.0 (HTML conversion, signature validation, sign after sanitize, links and attachments, form
-  scripts, Office conversion). They were prepared privately in `normiecore/inkmoor-security`
-  (PRs #1 and #2 there, with the findings and review notes); publish a GitHub security advisory
-  for them after the release.
+- 0.4.0 (published 9 Nov 2026, tag on 1e8dcc3) is the first Inkmoor release. It carries the
+  fixes from a security review of 0.3.0 (HTML conversion, signature validation, sign after
+  sanitize, links and attachments, form scripts, Office conversion), prepared privately in
+  `normiecore/inkmoor-security` (PRs #1 and #2 there, with the findings and review notes), plus
+  detachable tabs and multiple windows (`docs/features/windows-tabs.md`), Organize Pages zoom with
+  Fit width / 2 per row / Fit page and quick look, and the new "Moor" icon. Release notes:
+  `docs/releases/v0.4.0.md`. Still to do: publish a GitHub security advisory for the fixes.
+- Repo page: README shows the icon and screenshots from `docs/images/`; `docs/images/social-preview.png`
+  (1280x640) is for Settings > Social preview, which only the owner can upload. The repo keeps the
+  name `Fartcrobat`: electron-updater only follows release redirects inside it.
 - v0.1.0 is released: https://github.com/normiecore/Fartcrobat/releases/tag/v0.1.0 (Windows
   x64/arm64 `.exe`, macOS `.dmg`/`.zip` for Intel and Apple silicon, Linux `.AppImage`, `.deb`,
   `.tar.gz`). It has no updater.
@@ -36,8 +41,9 @@ Office conversion when installed, with a built-in fallback.
   encryption), #15 (native MCP editing and the AI companion), #16 (release 0.2.0), #18 (one installer
   per computer, update rehearsal for every download), #19 (no request to Google for spell-check
   dictionaries), #17 (release 0.2.1: companion joining and on-document review), #21 (release
-  0.2.2), #23 (live edit review, see below). #11 merged main into the old session branch. Open:
-  the 0.3.0 release PR from `claude/laughing-tesla-83pgov`; merging it publishes 0.3.0.
+  0.2.2), #23 (live edit review, see below), the 0.3.0 release, #26 (rename to Inkmoor and the
+  security fixes), #27 (release 0.4.0), #29 (windows and tabs, Organize zoom, icon; republished as
+  0.4.0). #11 merged main into the old session branch.
 - 0.2.0 on Linux asks Google (`redirector.gvt1.com`) for a spell-check dictionary at every start:
   turning Chromium's spell checker off does not stop it, an empty language list does. Fixed for
   0.2.1 in `src/main/util/spellcheck.ts`. Windows and macOS use the system checker and asked
@@ -45,7 +51,7 @@ Office conversion when installed, with a built-in fallback.
 - GitHub's default branch is still `claude/open-source-pdf-app-3x8yp0`, so GitHub suggests PRs
   into it and the branch cannot be deleted. The owner should set the default branch to `main`
   (Settings > General). Everything on that branch is already in `main`.
-- About 1640 unit tests (vitest) and 179 end-to-end tests (Playwright on Electron).
+- About 1760 unit tests (vitest) and 194 end-to-end tests (Playwright on Electron).
 
 ### Work in progress (handoff, 14 Oct 2026)
 
