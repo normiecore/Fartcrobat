@@ -347,6 +347,30 @@ export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
 }
 
 /**
+ * The bytes a Save would write now, for a tab moved to another window (doc.handOff), without
+ * changing this session: the move can still be refused or fail, and the tab then stays here with
+ * its undo history. An incremental save is not rebased (saveIncrementally reopens the document,
+ * which clears the journal and replaces sourceBytes), and a certificate save does not leave
+ * itself behind as the next file to adopt (adoptSavedCertificateFile).
+ */
+function handOffBytes(s: Session): Uint8Array {
+  if (!s.pubsec) {
+    const opts = withRequiredSaveOptions(s, {})
+    const mode = opts.mode ?? 'auto'
+    if (mode === 'incremental' || (mode === 'auto' && prefersIncremental(s))) {
+      return takeBuffer(s.pdf.saveToBuffer('incremental'))
+    }
+  }
+  const pending = s.state.get(CERTIFICATE_SAVE)
+  try {
+    return saveDocument(s, {})
+  } finally {
+    if (pending === undefined) s.state.delete(CERTIFICATE_SAVE)
+    else s.state.set(CERTIFICATE_SAVE, pending)
+  }
+}
+
+/**
  * SaveOptions.encryptCertificate: new certificate security (Protect > Encrypt with Certificate) for
  * any document, plain, password-protected or certificate-encrypted. A new 20-byte seed, one
  * envelope per group (buildEnvelopedData: AES-256-CBC content, RSA PKCS#1 v1.5 key transport,
@@ -813,7 +837,7 @@ export default defineOps('doc', {
     const journal = s.journal()
     const untouched = !s.isDirty() && !journal.canUndo && !journal.canRedo && !!s.sourceBytes && !s.converted
     const version = s.editVersion()
-    const bytes = untouched ? s.sourceBytes!.slice() : saveDocument(s, {})
+    const bytes = untouched ? s.sourceBytes!.slice() : handOffBytes(s)
     const k = s.doc ? s.pubsec?.key : null
     const certificateKey = k ? { envelope: k.envelope.slice(), seed: k.seed.slice(), permissions: k.permissions } : null
     return withTransfer({ bytes, version, password: s.password, certificateKey }, [bytes.buffer as ArrayBuffer])

@@ -33,7 +33,10 @@ What the person gets (ships in 0.4.0):
   before) or "A new window". Either way a file that is already open is shown in the window that has
   it instead of being opened again.
 - **New Window** now has a shortcut: **Ctrl+Alt+N** (Cmd+Option+N on a Mac). Acrobat has none, and
-  Ctrl+Shift+N is Go to Page; Ctrl+Alt+N was free.
+  Ctrl+Shift+N is Go to Page; Ctrl+Alt+N was free. Windows reports AltGr as Ctrl+Alt, so a key
+  pressed with AltGr is never a shortcut (Polish AltGr+N types "ń" and opens nothing), and in a
+  text field a Ctrl+Alt key that types a non-Latin letter is typed too (`typesCharacter` in
+  `src/renderer/src/app/commands.ts`).
 - **AI apps** (agent access) keep reaching a document after it moved: the handle they had still
   works, and list_documents shows its new one.
 
@@ -60,7 +63,11 @@ all pure and unit-tested in `tests/engine/windows-tabs.test.ts`), channels `wind
    guards: `moveGuard` in a feature definition, used by agent-access for an open review), then,
    with the tab marked busy, asks the engine for `doc.handOff()`: the bytes a Save would write, or
    the exact bytes the file was opened from while the document has no edits and no undo steps (so
-   signatures validate exactly as before), the open password, and the certificate key.
+   signatures validate exactly as before), the open password, and the certificate key. Building
+   the bytes leaves the document as it was (`handOffBytes` in `src/engine/ops/doc.ts`): a signed
+   document's incremental save is not rebased the way a real Save is (that would clear the undo
+   history and replace the file bytes), and a certificate save is not kept as the file to adopt.
+   So a move that is refused or fails later leaves the tab with its undo history.
 2. **The main process** (`src/main/tabMoves.ts`) picks the target: an existing app window, or a
    new one (`createWindow({ bounds })`, sized like the source and placed with its tab strip under
    the pointer). It keeps the hand-off in memory only, sends it to the target once the target's

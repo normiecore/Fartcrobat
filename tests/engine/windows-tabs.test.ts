@@ -185,6 +185,35 @@ describe('what the engine hands over', () => {
     expect(res.ok).toBe(true)
   })
 
+  it('an edited signed document keeps its undo history and its file when the move is only being prepared', async () => {
+    // Signed documents save incrementally, and a real Save reopens the document from the bytes it
+    // wrote. A hand-off must not: the move can still be refused, and the tab then stays here.
+    const e = await openFixture('digital-signatures/signed-timestamp.pdf')
+    await e.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [100, 100, 120, 120], contents: 'signed note' })
+    expect((await e.doc.journal()).canUndo).toBe(true)
+    const out = await e.doc.handOff()
+    expect((await e.doc.journal()).canUndo).toBe(true)
+    expect(await e.doc.isDirty()).toBe(true)
+    await e.doc.undo()
+    expect((await e.ops<typeof annotOps>('annots').list(0)).some((n) => n.contents === 'signed note')).toBe(false)
+    // The bytes are still an incremental update of the signed file, with the note in it.
+    const original = fixture('digital-signatures/signed-timestamp.pdf')
+    expect(Buffer.from(out.bytes.subarray(0, original.length)).equals(Buffer.from(original))).toBe(true)
+    const other = await createLocalEngine()
+    const res = await other.ops<typeof docOps>('doc').open(out.bytes, { fileName: 'signed-timestamp.pdf', dirty: true })
+    expect(res.ok).toBe(true)
+    expect((await other.ops<typeof annotOps>('annots').list(0)).some((n) => n.contents === 'signed note')).toBe(true)
+  })
+
+  it('an edited certificate-encrypted document keeps its undo history after a hand-off', async () => {
+    const e = await openFixtureAs('v5-classic.pdf', 'alice')
+    await e.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [100, 100, 120, 120], contents: 'kept' })
+    await e.doc.handOff()
+    expect((await e.doc.journal()).canUndo).toBe(true)
+    await e.doc.undo()
+    expect((await e.ops<typeof annotOps>('annots').list(0)).some((n) => n.contents === 'kept')).toBe(false)
+  })
+
   it('a certificate-encrypted document stays encrypted and opens with the key it hands over', async () => {
     const e = await openFixtureAs('v5-classic.pdf', 'alice')
     await e.ops<typeof annotOps>('annots').create(0, { type: 'Text', rect: [100, 100, 120, 120], contents: 'Moved secret note' })

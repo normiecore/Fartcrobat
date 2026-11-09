@@ -159,6 +159,28 @@ test('a document already open in the other window does not move there twice', as
   }
 })
 
+test('an edited signed document whose move is refused keeps its undo history', async () => {
+  // Signed documents save incrementally; preparing the move must not rebase the live document.
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('digital-signatures/signed-timestamp.pdf'))
+    const win2 = await nextWindow(app, () => runCommand(page, 'file.newWindow'))
+    await openFile(win2, fixturePath('digital-signatures/signed-timestamp.pdf'))
+    await addNote(page, 'Stays undoable')
+    await expect.poll(async () => (await activeDocState(page))?.journal.canUndo).toBe(true)
+    await page.getByRole('tab', { name: /signed-timestamp\.pdf/ }).click({ button: 'right' })
+    await page.getByRole('menuitem', { name: /^Move to “signed-timestamp\.pdf” window/ }).click()
+    await expect(page.locator('.ui-dialog, .toast', { hasText: 'already open in that window' })).toBeVisible()
+    expect(await titles(page)).toEqual(['signed-timestamp.pdf'])
+    expect((await activeDocState(page))?.journal.canUndo).toBe(true)
+    expect(await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().engine.call('doc.journal', []).then((j: any) => j.canUndo))).toBe(true)
+    await runCommand(page, 'edit.undo')
+    await expect.poll(async () => (await activeDocState(page))?.dirty).toBe(false)
+  } finally {
+    await app.close()
+  }
+})
+
 /** A Digital ID from the fixture PKI as Preferences > Digital IDs stores it (see certificate-encryption.spec.ts). */
 function digitalId(name: string, label: string) {
   const pki = fixturePath('passwordless/pki')
