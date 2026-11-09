@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- The Inkmoor icon simplified for 16 to 32 px (no sun or folded corner, a larger page). -->
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="#4B3A5E"/>
+  <path d="M120 120a28 28 0 0 1 28-28H364a28 28 0 0 1 28 28V392a28 28 0 0 1-28 28H148a28 28 0 0 1-28-28Z" fill="#F5F1E8"/>
+  <path d="M120 284C180 246 232 262 272 282C312 302 352 270 392 258V392a28 28 0 0 1-28 28H148a28 28 0 0 1-28-28Z" fill="#7A9A5B"/>
+  <path d="M120 340C196 304 276 344 392 312V392a28 28 0 0 1-28 28H148a28 28 0 0 1-28-28Z" fill="#4E6E3A"/>
+</svg>

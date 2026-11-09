@@ -143,6 +143,9 @@ Office conversion when installed, with a built-in fallback.
   PowerShell helper in `src/main/certkeys/`, the open flow in `src/renderer/src/app/unlock.ts` and
   `certificates.ts`, Encrypt with Certificate in `src/features/protect-optimize/`.
 - `tests/engine/*.test.ts` (vitest), `tests/e2e/*.spec.ts` (Playwright), `tests/fixtures/`.
+- App icon: `build/icon.svg` (and `build/icon-small.svg` for 16 to 32 px) is the source; `node scripts/make-icons.mjs`
+  (set `CHROMIUM_PATH=/opt/pw-browsers/chromium` in a Claude session) writes `build/icons/*.png`, `build/icon.png`,
+  `build/icon.ico` and `resources/icon.png`, which are committed.
 
 Stack: Electron 44, electron-vite 5, React 19, zustand, TypeScript 6, mupdf 1.28 (WASM),
 tesseract.js 7, electron-builder 26. `.npmrc` sets `legacy-peer-deps=true`.

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Inkmoor app icon (chosen 9 Nov 2026): hills under a low sun on a page. scripts/make-icons.mjs renders it. -->
+  <rect x="32" y="32" width="448" height="448" rx="100" fill="#4B3A5E"/>
+  <path d="M150 132a22 22 0 0 1 22-22H300l62 62V380a22 22 0 0 1-22 22H172a22 22 0 0 1-22-22Z" fill="#F5F1E8"/>
+  <path d="M300 110V160a12 12 0 0 0 12 12H362Z" fill="#D9D2C3"/>
+  <circle cx="296" cy="236" r="26" fill="#B98BB9"/>
+  <path d="M150 300C196 272 236 284 268 300C300 316 330 292 362 282V380a22 22 0 0 1-22 22H172a22 22 0 0 1-22-22Z" fill="#7A9A5B"/>
+  <path d="M150 344C208 316 270 348 362 322V380a22 22 0 0 1-22 22H172a22 22 0 0 1-22-22Z" fill="#4E6E3A"/>
+</svg>
