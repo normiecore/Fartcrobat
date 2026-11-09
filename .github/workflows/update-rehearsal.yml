@@ -21,7 +21,7 @@ on:
         description: 'Released version to update from (default: the latest release)'
         required: false
       new:
-        description: 'Version the rehearsal build gets (default: the next patch version, at least 0.4.0)'
+        description: 'Version the rehearsal build gets (default: the next patch version, at least 0.4.1)'
         required: false
   # The release workflow runs it before publishing (release.yml, rehearsal).
   workflow_call:
@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           names=tests/update-rehearsal/names.mjs
           [ -n "$OLD" ] || OLD=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName | sed 's/^v//')
-          # The next patch version, or 0.4.0 when that would still be a Fartcrobat version.
+          # The next patch version, and at least 0.4.1 (the first version that asks normiecore/Inkmoor).
           [ -n "$NEW" ] || NEW=$(node "$names" default-new "$OLD")
           # Every job builds NEW from this checkout: it must be a version of the name the checkout builds.
           node "$names" check-build "$NEW"

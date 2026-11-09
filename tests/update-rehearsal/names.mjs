@@ -7,8 +7,8 @@
 //
 //   node names.mjs <version> <field>      prints one field of productFor(<version>), e.g. winSetupX64
 //   node names.mjs default-new <old>      the version to rehearse when none is given: the next patch
-//                                         version, or the first version under the checkout's name
-//                                         when the next patch version would still have the old one
+//                                         version, and at least FIRST_INKMOOR_REPO (the first version
+//                                         that asks the repository a build of this checkout asks)
 //   node names.mjs check-build <new>      exits 1 when a build of this checkout, versioned <new>,
 //                                         would not have the names <new> stands for
 //   node names.mjs same-repo <old> <new>  exits 1 when <old> asks another repository than <new>
@@ -104,11 +104,15 @@ export function checkoutName() {
   return JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).productName
 }
 
-/** The version to rehearse to from `old` when none is given (see the top of this file). */
+/**
+ * The version to rehearse to from `old` when none is given (see the top of this file). A build of
+ * this checkout asks normiecore/Inkmoor, so it is at least FIRST_INKMOOR_REPO.
+ */
 export function defaultNew(old, name = checkoutName()) {
   const [a, b, c] = parse(old)
   const next = `${a}.${b}.${c + 1}`
-  return productName(next) !== name && name === 'Inkmoor' ? FIRST_INKMOOR : next
+  if (name !== 'Inkmoor') return next
+  return versionBefore(next, FIRST_INKMOOR_REPO) ? FIRST_INKMOOR_REPO : next
 }
 
 function main(argv) {
@@ -116,6 +120,13 @@ function main(argv) {
   if (first === 'default-new' && second) return console.log(defaultNew(second))
   if (first === 'check-build' && second) {
     const built = checkoutName()
+    if (built === 'Inkmoor' && versionBefore(second, FIRST_INKMOOR_REPO)) {
+      console.error(
+        `A build of this checkout asks normiecore/Inkmoor for updates, which ${second} did not ` +
+          `(names.mjs, FIRST_INKMOOR_REPO): rehearse with ${FIRST_INKMOOR_REPO} or later.`
+      )
+      process.exit(1)
+    }
     if (built === productName(second)) return
     console.error(
       `This checkout builds ${built}, but ${second} is a ${productName(second)} version (Inkmoor from ${FIRST_INKMOOR} on): ` +

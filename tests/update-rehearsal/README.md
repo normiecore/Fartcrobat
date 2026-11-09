@@ -32,12 +32,12 @@ version: `names.mjs` (`productFor(version)`; the workflow and `linux.sh` run it 
   written for the old version (`HKLM\SOFTWARE\Policies\Fartcrobat`, `/etc/fartcrobat/policy.json`)
   still applies to the new one.
 
-A build of this checkout is always called Inkmoor, so the version it gets must be 0.4.0 or later:
-without `--new` / `new`, the rehearsal goes to the next patch version, or to 0.4.0 when that would
-still be a Fartcrobat version (from 0.3.0, it rehearses 0.3.0 -> 0.4.0), and the workflow and
-`linux.sh` stop at once when given a version whose name the build would not have
-(`node names.mjs check-build <new>`). The names the old version had before the rename stay in
-`names.mjs` for as long as installs of 0.3 may be updated.
+A build of this checkout is called Inkmoor and asks `normiecore/Inkmoor` for updates, so the
+version it gets must be 0.4.1 or later: without `--new` / `new`, the rehearsal goes to the next
+patch version, and at least 0.4.1, and the workflow and `linux.sh` stop at once when given an
+earlier one (`node names.mjs check-build <new>`). Versions up to 0.4.0 cannot update to such a
+build (below), so the names Fartcrobat releases had only matter again if a rehearsal is ever run
+from an old commit.
 
 ## The repository rename
 

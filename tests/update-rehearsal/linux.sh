@@ -6,8 +6,8 @@
 #
 #   tests/update-rehearsal/linux.sh [--old 0.2.0] [--new 0.2.1] [--new-dir <dir>]
 #
-# --old defaults to the latest release, --new to the next patch version (0.4.0 when that would
-# still be a Fartcrobat version: this checkout builds Inkmoor; names.mjs).
+# --old defaults to the latest release, --new to the next patch version (at least 0.4.1, the first
+# version that asks normiecore/Inkmoor, as a build of this checkout does; names.mjs).
 # --new-dir: a folder with the NEW AppImage (Fartcrobat-x86_64.AppImage up to 0.3,
 # Inkmoor-x86_64.AppImage from 0.4.0) and latest-linux.yml (for example a release's files).
 # Without it, NEW is built from this checkout with only the version changed.
