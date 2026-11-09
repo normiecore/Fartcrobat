@@ -1,5 +1,6 @@
 import type { CertificateKey, CertificateLock, CertKeyActor } from '@shared/certkeys'
 import { normalizePath, pathKey as platformPathKey } from '@shared/paths'
+import type { MovedView } from '@shared/tabMoves'
 import type { DocInfo, OpenResult, Preferences, SaveOptions } from '@shared/types'
 import { DocumentModel } from '../document/DocumentModel'
 import { EngineClient } from '../engine/EngineClient'
@@ -135,6 +136,8 @@ export async function openBytes(
     derivedFrom?: DocUnlock | null
     actor?: CertKeyActor
     onError?: (err: unknown) => void
+    /** A tab moved from another window: how it was unlocked there (kept as is), its view and place. */
+    moved?: { unlock: DocUnlock | null; view: MovedView; index?: number }
   } = {}
 ): Promise<DocumentModel | null> {
   const engine = new EngineClient()
@@ -144,11 +147,15 @@ export async function openBytes(
     const res: OpenResult = await doc.open(bytes, { fileName: name, dirty: opts.dirty, password: opts.password })
     if (res.ok) {
       const from = opts.derivedFrom
-      const unlock: DocUnlock | null = res.access
-        ? { method: 'source', access: res.access, ...(from?.savedRef ? { savedRef: from.savedRef, lock: from.lock } : {}) }
-        : null
+      const unlock: DocUnlock | null = opts.moved
+        ? opts.moved.unlock
+        : res.access
+          ? { method: 'source', access: res.access, ...(from?.savedRef ? { savedRef: from.savedRef, lock: from.lock } : {}) }
+          : null
       return addDocument(engine, res.info, name, { ...opts, unlock })
     }
+    const movedKey = opts.moved?.unlock?.certificateKey
+    const known = movedKey ? { key: movedKey, unlock: opts.moved!.unlock! } : derivedCertificateUnlock(opts.derivedFrom)
     const opened = res.needsCertificate
       ? await unlockCertificateOpen(
           res.certificate,
@@ -159,7 +166,7 @@ export async function openBytes(
             return r.ok ? r.info : null
           },
           // An agent learns why when none of the person's keys opens it.
-          { known: derivedCertificateUnlock(opts.derivedFrom), actor: opts.actor, failWithoutKey: !!opts.onError }
+          { known, actor: opts.actor, failWithoutKey: !!opts.onError }
         )
       : await unlockOpen(res, name, opts.filePath ?? null, (pw) => doc.authenticate(pw, { dirty: opts.dirty }))
     if (!opened) {
@@ -179,7 +186,14 @@ function addDocument(
   engine: EngineClient,
   info: DocInfo,
   name: string,
-  opts: { filePath?: string | null; sourcePath?: string | null; dirty?: boolean; activate?: boolean; unlock?: DocUnlock | null }
+  opts: {
+    filePath?: string | null
+    sourcePath?: string | null
+    dirty?: boolean
+    activate?: boolean
+    unlock?: DocUnlock | null
+    moved?: { view: MovedView; index?: number }
+  }
 ): DocumentModel {
   const prefs = useApp.getState().prefs
   const converted = info.converted
@@ -196,7 +210,17 @@ function addDocument(
     unlock: opts.unlock ?? null
   })
   if (typeof prefs.defaultZoom === 'number') doc.set({ zoom: prefs.defaultZoom, zoomMode: 'custom' })
-  if (filePath && prefs.restoreLastView) {
+  const moved = opts.moved
+  if (moved) {
+    // As it was showing in the window it came from.
+    const v = moved.view
+    doc.set({
+      zoom: v.zoom,
+      zoomMode: v.zoomMode as DocumentModel['state']['zoomMode'],
+      layout: v.layout as DocumentModel['state']['layout'],
+      currentPage: Math.max(0, Math.min(v.page, info.pageCount - 1))
+    })
+  } else if (filePath && prefs.restoreLastView) {
     void invoke('store:get', `view:${filePath}`).then((v) => {
       const mem = v as ViewMemory | undefined
       if (mem && mem.page < info.pageCount) {
@@ -205,10 +229,13 @@ function addDocument(
       }
     })
   }
-  useApp.setState((s) => ({
-    docs: [...s.docs, doc],
-    activeDocId: opts.activate === false ? s.activeDocId : doc.id
-  }))
+  useApp.setState((s) => {
+    const at = moved?.index !== undefined ? Math.max(0, Math.min(moved.index, s.docs.length)) : s.docs.length
+    return {
+      docs: [...s.docs.slice(0, at), doc, ...s.docs.slice(at)],
+      activeDocId: opts.activate === false ? s.activeDocId : doc.id
+    }
+  })
   for (const hook of registry.documentOpenHooks) {
     try {
       hook(doc)
@@ -547,8 +574,8 @@ export async function closeDocument(doc: DocumentModel, opts: { discardChanges?:
   return true
 }
 
-/** Closes a tab without asking. */
-async function removeDocument(doc: DocumentModel) {
+/** Closes a tab without asking (its document moved to another window, or the person agreed). */
+export async function removeDocument(doc: DocumentModel) {
   if (!useApp.getState().docs.includes(doc)) return
   await rememberView(doc)
   useApp.setState((s) => {

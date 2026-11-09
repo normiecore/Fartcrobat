@@ -86,6 +86,16 @@ function GeneralSettings() {
           ]}
         />
       </Field>
+      <Field label="Open files from other apps in">
+        <Select<Preferences['openFilesFromOtherApps']>
+          value={prefs.openFilesFromOtherApps}
+          onChange={(v) => set({ openFilesFromOtherApps: v })}
+          options={[
+            { value: 'current-window', label: 'The current window' },
+            { value: 'new-window', label: 'A new window' }
+          ]}
+        />
+      </Field>
       <Field label="Recent files to remember">
         <NumberInput value={prefs.recentFilesLimit} min={1} max={100} onChange={(v) => set({ recentFilesLimit: Math.round(v) })} />
       </Field>

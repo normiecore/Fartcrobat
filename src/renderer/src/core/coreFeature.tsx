@@ -45,11 +45,42 @@ import { invoke, isMac } from '../platform'
 import { nextZoomStep, spreadIndexOf, spreads } from '../viewer/layout'
 import { copySelection } from '../viewer/layers/TextSelectionLayer'
 import { getLoadedText, loadText } from '../viewer/layers/textSync'
-import { confirm, prompt } from '../ui/dialogs'
+import { ask, confirm, prompt } from '../ui/dialogs'
+import { moveDocument, otherWindows } from '../app/tabMoves'
+import { windowChoiceLabels } from '@shared/tabMoves'
+import type { DocumentModel } from '../document/DocumentModel'
 import { coreTools } from './tools'
 import { openAbout, openPreferences, openShortcuts, PasswordSettings } from './dialogs'
 
 const doc = (ctx: CommandContext) => ctx.doc!
+
+/** Window > Move to Another Window…: asks which window (there may be several), then moves the tab. */
+async function moveToChosenWindow(d: DocumentModel) {
+  const choices = windowChoiceLabels(await otherWindows())
+  if (!choices.length) {
+    const answer = await ask({
+      title: 'Move to Another Window',
+      message: 'No other Inkmoor window is open. Move “' + d.state.title + '” to a new window?',
+      buttons: [
+        { id: 'cancel', label: 'Cancel' },
+        { id: 'new', label: 'Move to New Window', variant: 'primary' }
+      ]
+    })
+    if (answer === 'new') await moveDocument(d, { kind: 'new' })
+    return
+  }
+  const answer = await ask({
+    title: 'Move to Another Window',
+    message: `Where should “${d.state.title}” go?`,
+    buttons: [
+      { id: 'cancel', label: 'Cancel' },
+      { id: 'new', label: 'New Window' },
+      ...choices.map((c) => ({ id: `w${c.id}`, label: c.label.replace(/^Move to /, '') }))
+    ]
+  })
+  if (answer === 'new') await moveDocument(d, { kind: 'new' })
+  else if (answer?.startsWith('w')) await moveDocument(d, { kind: 'window', windowId: Number(answer.slice(1)) })
+}
 
 function setLayout(ctx: CommandContext, layout: PageLayoutMode) {
   doc(ctx).set({ layout })
@@ -112,8 +143,21 @@ const commands: CommandDefinition[] = [
     enabled: (ctx) => !!ctx.doc?.state.filePath,
     run: (ctx) => void invoke('shell:showItemInFolder', doc(ctx).state.filePath!)
   },
-  // Acrobat has no shortcut for New Window; Shift+Ctrl/Cmd+N is Go to Page.
-  { id: 'file.newWindow', label: 'New Window', requiresDocument: false, run: () => void invoke('window:new') },
+  // Acrobat has no shortcut for New Window, and Shift+Ctrl/Cmd+N is Go to Page: Ctrl+Alt+N
+  // (Cmd+Option+N) is free in Inkmoor.
+  { id: 'file.newWindow', label: 'New Window', shortcut: 'Mod+Alt+N', requiresDocument: false, run: () => void invoke('window:new') },
+  {
+    id: 'window.moveToNewWindow',
+    label: 'Move to New Window',
+    keywords: ['detach', 'tab', 'window', 'separate'],
+    run: (ctx) => void moveDocument(doc(ctx), { kind: 'new' })
+  },
+  {
+    id: 'window.moveToWindow',
+    label: 'Move to Another Window…',
+    keywords: ['tab', 'window', 'move'],
+    run: (ctx) => moveToChosenWindow(doc(ctx))
+  },
   { id: 'app.quit', label: isMac ? 'Quit Inkmoor' : 'Exit', shortcut: 'Mod+Q', requiresDocument: false, run: () => quitApp() },
   { id: 'app.preferences', label: 'Preferences…', icon: Settings, shortcut: 'Mod+K', requiresDocument: false, run: () => openPreferences(), keywords: ['settings', 'options'] },
 
@@ -403,6 +447,7 @@ const menus: MenuContribution[] = [
   ...m('view', 'layout', ['view.layout.single', 'view.layout.continuous', 'view.layout.twoPage', 'view.layout.twoPageContinuous', 'view.coverPage'], 300, 'Page Display'),
   ...m('view', 'modes', ['view.readMode', 'view.fullScreen', 'view.toggleToolsPane', 'view.toggleRightPane'], 400),
   ...m('window', 'tabs', ['window.home', 'window.nextTab', 'window.prevTab'], 0),
+  ...m('window', 'move', ['window.moveToNewWindow', 'window.moveToWindow'], 100),
   ...m('help', 'help', ['help.shortcuts', 'help.defaultApp', 'help.website', 'help.about'], 0)
 ]
 

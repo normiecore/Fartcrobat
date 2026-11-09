@@ -85,6 +85,16 @@
   position: relative;
   top: 1px;
 }
+.shell-tab.is-drop-before {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.shell-tab-drop-end {
+  align-self: center;
+  width: 2px;
+  height: 28px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
 .shell-tab-icon {
   color: var(--danger);
   flex-shrink: 0;

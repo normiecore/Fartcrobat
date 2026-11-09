@@ -95,6 +95,11 @@ export class AgentRouter {
   private opened: string | null = null
   private readonly readyTimeoutMs: number
   private readonly cancelWaitMs: number
+  /**
+   * Handles of documents that moved to another window (a tab dragged out, Move to New Window), to
+   * the handle they have there: an agent's calls keep reaching the document by its old handle.
+   */
+  private readonly moved = new Map<string, string>()
 
   constructor(
     private readonly host: WindowHost,
@@ -106,6 +111,26 @@ export class AgentRouter {
     this.cancelWaitMs = opts.cancelWaitMs ?? 20_000
   }
 
+  /** The document `from` names moved to another window, where `to` names it. */
+  documentMoved(from: string, to: string) {
+    if (!HANDLE.test(from) || !HANDLE.test(to) || from === to) return
+    this.moved.delete(from)
+    this.moved.set(from, to)
+    // Old entries go first; a few hundred moves in one session is already far more than people make.
+    while (this.moved.size > 500) this.moved.delete(this.moved.keys().next().value as string)
+  }
+
+  /** The handle a document has now, following its moves between windows. */
+  currentHandle(handle: string): string {
+    let h = handle
+    for (let i = 0; i < 50; i++) {
+      const next = this.moved.get(h)
+      if (!next) break
+      h = next
+    }
+    return h
+  }
+
   /** Calls running for a connection. */
   running(connectionId: number): number {
     let n = 0
@@ -114,6 +139,11 @@ export class AgentRouter {
   }
 
   call(call: RouterCall) {
+    const handle = call.args?.handle
+    if (typeof handle === 'string' && this.moved.size) {
+      const now = this.currentHandle(handle)
+      if (now !== handle) call = { ...call, args: { ...call.args, handle: now } }
+    }
     const key = `${call.connectionId}:${call.id}`
     if (this.pending.has(key)) {
       this.sink.result(

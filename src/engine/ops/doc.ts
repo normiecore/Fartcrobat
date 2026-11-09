@@ -347,6 +347,30 @@ export function saveDocument(s: Session, opts: SaveOptions = {}): Uint8Array {
 }
 
 /**
+ * The bytes a Save would write now, for a tab moved to another window (doc.handOff), without
+ * changing this session: the move can still be refused or fail, and the tab then stays here with
+ * its undo history. An incremental save is not rebased (saveIncrementally reopens the document,
+ * which clears the journal and replaces sourceBytes), and a certificate save does not leave
+ * itself behind as the next file to adopt (adoptSavedCertificateFile).
+ */
+function handOffBytes(s: Session): Uint8Array {
+  if (!s.pubsec) {
+    const opts = withRequiredSaveOptions(s, {})
+    const mode = opts.mode ?? 'auto'
+    if (mode === 'incremental' || (mode === 'auto' && prefersIncremental(s))) {
+      return takeBuffer(s.pdf.saveToBuffer('incremental'))
+    }
+  }
+  const pending = s.state.get(CERTIFICATE_SAVE)
+  try {
+    return saveDocument(s, {})
+  } finally {
+    if (pending === undefined) s.state.delete(CERTIFICATE_SAVE)
+    else s.state.set(CERTIFICATE_SAVE, pending)
+  }
+}
+
+/**
  * SaveOptions.encryptCertificate: new certificate security (Protect > Encrypt with Certificate) for
  * any document, plain, password-protected or certificate-encrypted. A new 20-byte seed, one
  * envelope per group (buildEnvelopedData: AES-256-CBC content, RSA PKCS#1 v1.5 key transport,
@@ -800,6 +824,28 @@ export default defineOps('doc', {
 
   journal(s) {
     return s.journal()
+  },
+
+  /**
+   * What another window needs to open this document as it is now (a tab moved between windows, see
+   * docs/features/windows-tabs.md): the bytes a Save would write, or the exact bytes it was opened
+   * from (or last saved incrementally to) while it has no edits and no undo steps, so signatures
+   * validate the same there; the password it was opened with; its certificate key. Secrets: the
+   * password and the key only go to the app window that takes the document.
+   */
+  handOff(s): Transfer<{ bytes: Uint8Array; version: number; password: string | null; certificateKey: CertificateKey | null }> {
+    const journal = s.journal()
+    const untouched = !s.isDirty() && !journal.canUndo && !journal.canRedo && !!s.sourceBytes && !s.converted
+    const version = s.editVersion()
+    const bytes = untouched ? s.sourceBytes!.slice() : handOffBytes(s)
+    const k = s.doc ? s.pubsec?.key : null
+    const certificateKey = k ? { envelope: k.envelope.slice(), seed: k.seed.slice(), permissions: k.permissions } : null
+    return withTransfer({ bytes, version, password: s.password, certificateKey }, [bytes.buffer as ArrayBuffer])
+  },
+
+  /** The edit version now (see saveWithVersion), to tell whether the document changed since. */
+  editVersion(s): number {
+    return s.editVersion()
   },
 
   /**

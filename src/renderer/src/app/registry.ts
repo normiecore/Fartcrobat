@@ -197,6 +197,11 @@ export interface FeatureDefinition {
   globals?: ComponentType[]
   /** Called once for each document after it opens. */
   onDocumentOpen?: (doc: DocumentModel) => void
+  /**
+   * Why a document cannot move to another window right now (a sentence for the person), or null.
+   * Asked before a tab is dragged out or moved with Move to New Window (docs/features/windows-tabs.md).
+   */
+  moveGuard?: (doc: DocumentModel) => string | null
   /** Status-bar or panel badge content etc. can be added here later. */
   extra?: Record<string, ReactNode>
 }
@@ -221,6 +226,7 @@ class Registry {
   fileConverters: FileConverter[] = []
   globals: ComponentType[] = []
   documentOpenHooks: ((doc: DocumentModel) => void)[] = []
+  moveGuards: ((doc: DocumentModel) => string | null)[] = []
 
   register(def: FeatureDefinition) {
     if (this.features.some((f) => f.id === def.id)) {
@@ -248,6 +254,7 @@ class Registry {
     this.fileConverters.push(...(def.fileConverters ?? []))
     this.globals.push(...(def.globals ?? []))
     if (def.onDocumentOpen) this.documentOpenHooks.push(def.onDocumentOpen)
+    if (def.moveGuard) this.moveGuards.push(def.moveGuard)
     const byOrder = (a: { order: number }, b: { order: number }) => a.order - b.order
     this.toolGroups.sort(byOrder)
     this.rightPanels.sort(byOrder)
