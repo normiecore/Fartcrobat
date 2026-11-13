@@ -9,6 +9,18 @@ export const STORE_PREFS = 'digital-signatures:prefs'
 /** Saved handwritten signature from Fill & Sign (data URL or PNG bytes). */
 export const STORE_FILLSIGN_SIGNATURE = 'fill-sign:signature'
 
+/**
+ * The problem reported for a signature whose dictionary lies beyond the end of the bytes it signed:
+ * it was most likely signed in another file and copied into this one (combining signed PDFs into a
+ * bundle does this). A signed file that was altered and rewritten can look the same, so the text
+ * never says the document is unchanged. The status texts look for it.
+ */
+export const COPIED_SIGNATURE =
+  'What this signature signed is not in this document, so it cannot be verified here. This usually ' +
+  'happens when signed documents are combined into one bundle, which copies their signatures without ' +
+  'what they signed, but a signed document that was changed and saved again can look the same. To rely ' +
+  'on the signature, check the original signed document.'
+
 /** A Digital ID the user added (the private key stays in the .p12/.pfx file). */
 export interface DigitalIdRecord {
   /** SHA-256 fingerprint of the certificate. */

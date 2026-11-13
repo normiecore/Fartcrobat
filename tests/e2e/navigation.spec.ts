@@ -739,3 +739,101 @@ test('read out loud and the View menu entries', async () => {
     await app.close()
   }
 })
+
+test('bookmarks keep the reading zoom, and an outsized page does not shrink the fit zooms', async () => {
+  const { app, page } = await launch()
+  try {
+    // A4 pages with a phone-photo-sized page and a /Fit bookmark per page, like a combined brief
+    await openFile(page, fixturePath('navigation/outsized-page.pdf'))
+    await waitForRender(page)
+    const viewport = page.locator('.viewer-scroll')
+    // the page is entirely in the viewport horizontally
+    const inView = async (index: number) => {
+      const v = (await viewport.boundingBox())!
+      const p = (await page.locator(`.viewer-page[data-page-index="${index}"]`).boundingBox())!
+      return p.x >= v.x - 1 && p.x + p.width <= v.x + v.width + 1
+    }
+    // opens at Fit Width, sized to the A4 pages and not to the 8160 pt photo
+    await expect.poll(async () => (await activeDocState(page))?.zoomMode).toBe('fit-width')
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeGreaterThan(0.3)
+    // the photo makes the content far wider than the viewport, and page 1 is still in view
+    expect(await viewport.evaluate((el) => el.scrollWidth > el.clientWidth * 2)).toBe(true)
+    await expect.poll(() => inView(0)).toBe(true)
+    await runCommand(page, 'view.fitPage')
+    await expect.poll(async () => (await activeDocState(page))?.zoomMode).toBe('fit-page')
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeGreaterThan(0.2)
+
+    // a /Fit bookmark goes to its page at the zoom the person is reading at
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.25))
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.25, 3)
+    await page.getByRole('treeitem', { name: /Page 4: Report/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(3)
+    let s = await activeDocState(page)
+    expect(s?.zoom).toBeCloseTo(1.25, 3)
+    expect(s?.zoomMode).toBe('custom')
+    await page.getByRole('treeitem', { name: /Page 3: Photo/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
+    await page.getByRole('treeitem', { name: /Page 6: Invoice/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(5)
+    s = await activeDocState(page)
+    expect(s?.zoom).toBeCloseTo(1.25, 3)
+    expect(s?.zoomMode).toBe('custom')
+    // the photo makes the content far wider than the viewport: the page gone to is in view, not
+    // off to the side of where the photo was
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(0.5))
+    await page.getByRole('treeitem', { name: /Page 3: Photo/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
+    await viewport.evaluate((el) => (el.scrollLeft = el.scrollWidth))
+    await page.getByRole('treeitem', { name: /Page 6: Invoice/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(5)
+    await expect.poll(() => inView(5)).toBe(true)
+    // an /XYZ bookmark with a left position: the page, which fits the viewport, is entirely in view
+    await page.getByRole('treeitem', { name: /Page 3: Photo/ }).click()
+    await viewport.evaluate((el) => (el.scrollLeft = el.scrollWidth))
+    await page.getByRole('treeitem', { name: /Report, left column/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(3)
+    await expect.poll(() => inView(3)).toBe(true)
+    // scrolling down from the photo, scrolled to its far right, brings the next page into view
+    await page.getByRole('treeitem', { name: /Page 3: Photo/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
+    await viewport.evaluate((el) => (el.scrollLeft = el.scrollWidth))
+    await page.locator('.viewer-page[data-page-index="2"]').evaluate((p) => {
+      const el = p.closest('.viewer-scroll') as HTMLElement
+      const photo = p as HTMLElement
+      el.scrollTop = photo.offsetTop + photo.offsetHeight + 4
+    })
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(3)
+    await expect.poll(() => inView(3)).toBe(true)
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.25))
+    // the zoom box still shows the reader's percentage
+    await expect(page.getByLabel('Zoom', { exact: true })).toHaveValue('1.25')
+  } finally {
+    await app.close()
+  }
+})
+
+test('Next Page in a zoomed two-page layout keeps the horizontal position', async () => {
+  const { app, page } = await launch()
+  try {
+    await openFile(page, fixturePath('text.pdf'))
+    await waitForRender(page)
+    await runCommand(page, 'view.layout.twoPageContinuous')
+    // each page fits the viewport, a spread does not
+    await page.evaluate(() => {
+      const d = (window as any).__inkmoor.getActiveDoc()
+      const w = d.view.getViewportElement().clientWidth
+      d.view.setZoom((w * 0.75) / (612 * (96 / 72)))
+    })
+    const viewport = page.locator('.viewer-scroll')
+    await expect.poll(() => viewport.evaluate((el) => el.scrollWidth > el.clientWidth * 1.3)).toBe(true)
+    // read the right-hand page
+    await viewport.evaluate((el) => (el.scrollLeft = el.scrollWidth))
+    const before = await viewport.evaluate((el) => el.scrollLeft)
+    expect(before).toBeGreaterThan(0)
+    await runCommand(page, 'nav.next')
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
+    expect(await viewport.evaluate((el) => el.scrollLeft)).toBe(before)
+  } finally {
+    await app.close()
+  }
+})

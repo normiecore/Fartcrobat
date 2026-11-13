@@ -19,8 +19,8 @@ import { derLength } from '@features/digital-signatures/lib/cms'
 import { certificateToPem } from '@features/digital-signatures/lib/digitalId'
 import { readRevisions } from '@features/digital-signatures/lib/pdfbytes'
 import { parseCertificate } from '@features/digital-signatures/lib/x509'
-import { signatureStatus } from '@features/digital-signatures/status'
-import type { AppearanceContent, SignRequest, ValidationReport } from '@features/digital-signatures/types'
+import { overallStatus, signatureStatus } from '@features/digital-signatures/status'
+import { COPIED_SIGNATURE, type AppearanceContent, type SignRequest, type ValidationReport } from '@features/digital-signatures/types'
 import { fixture, openFixture } from './helpers'
 
 const TMP = mkdtempSync(join(tmpdir(), 'fc-digsig-'))
@@ -607,6 +607,120 @@ describe.skipIf(!hasTool('openssl', ['version']))('Digital ID files made by othe
       expect(r.signerName).toBe(name)
     })
   }
+})
+
+describe('signatures copied from another file', () => {
+  // Combining signed PDFs into one bundle (a court brief) copies each signature field, but its
+  // byte range still points into the original, smaller file. As in a real brief, larger documents
+  // come first, so the copied signature dictionary lies beyond the end of what it signed.
+  async function combinedBundle(extra: Partial<SignRequest> = {}): Promise<Uint8Array> {
+    const e = await openBytes(fixture('text.pdf'), 'text.pdf')
+    const { bytes: signed } = await e.sig.sign(request(rsaId, extra))
+    const out = new mupdf.PDFDocument()
+    const filler = new mupdf.PDFDocument(fixture('protect-optimize/mixed-images.pdf'))
+    const fillerMap = out.newGraftMap()
+    for (let i = 0; i < filler.countPages(); i++) fillerMap.graftPage(-1, filler, i)
+    const src = new mupdf.PDFDocument(signed)
+    const srcMap = out.newGraftMap()
+    srcMap.graftPage(-1, src, 0)
+    // grafting a page leaves its annotations behind: copy the signature widget with it
+    const page = out.findPage(filler.countPages())
+    const annots = srcMap.graftObject(src.findPage(0).get('Annots'))
+    page.put('Annots', annots)
+    const fields = out.newArray()
+    annots.forEach((a: mupdf.PDFObject) => {
+      a.put('P', page)
+      if (a.get('FT').asName() === 'Sig') fields.push(a)
+    })
+    out.getTrailer().get('Root').put('AcroForm', out.newDictionary())
+    out.getTrailer().get('Root').get('AcroForm').put('Fields', fields)
+    out.getTrailer().get('Root').get('AcroForm').put('SigFlags', 3)
+    const buf = out.saveToBuffer('')
+    const bytes = buf.asUint8Array().slice()
+    buf.destroy()
+    for (const d of [out, filler, src]) d.destroy()
+    return bytes
+  }
+
+  it('says the signature was copied in, names the signer and gives no revision', async () => {
+    const report = await validateBytes(await combinedBundle())
+    expect(report.signatures).toHaveLength(1)
+    const r = report.signatures[0]
+    expect(r.integrity).toBe(false)
+    expect(r.problems[0]).toBe(COPIED_SIGNATURE)
+    expect(r.signerName).toBe('Jane Doe')
+    expect(r.signedVersion).toBe(0)
+    const st = signatureStatus(r, new Set())
+    expect(st.level).toBe('invalid')
+    expect(st.title).toBe('Signature is invalid: what was signed is not in this document.')
+    expect(overallStatus(report, new Set())?.message).toBe(
+      'At least one signature is invalid: what was signed is not in this document, usually because the signature was copied from another document.'
+    )
+    // the explanation never says the document is unchanged
+    expect(COPIED_SIGNATURE).toMatch(/changed and saved again/)
+  })
+
+  it('does not treat a copied certification as certifying or locking the bundle', async () => {
+    const report = await validateBytes(await combinedBundle({ mode: 'certify', permission: 1, target: { kind: 'invisible' } }))
+    expect(report.signatures).toHaveLength(1)
+    const r = report.signatures[0]
+    expect(r.kind).toBe('certification')
+    expect(r.problems[0]).toBe(COPIED_SIGNATURE)
+    expect(report.certified).toBeNull()
+    expect(report.certifiedBy).toBeNull()
+    expect(report.locked).toBe(false)
+    const st = signatureStatus(r, new Set())
+    expect(st.details.some((d) => /certified|locked/.test(d))).toBe(false)
+    expect(st.title).toBe('Signature is invalid: what was signed is not in this document.')
+    expect(overallStatus(report, new Set())?.message).not.toMatch(/Certified by/)
+  })
+
+  it('applies no rules of a copied certification to signatures made on the bundle', async () => {
+    // a copied certification that allows no changes, then two genuine signatures on the bundle
+    let e = await openBytes(await combinedBundle({ mode: 'certify', permission: 1, target: { kind: 'invisible' } }))
+    const s1 = (await e.sig.sign(request(rsaId, { target: { kind: 'new', page: 0, rect: [72, 100, 300, 180] } }))).bytes
+    e = await openBytes(s1)
+    const s2 = (await e.sig.sign(request(rsaId, { target: { kind: 'new', page: 1, rect: [72, 100, 300, 180] } }))).bytes
+    const report = await validateBytes(s2)
+    expect(report.signatures).toHaveLength(3)
+    const copied = report.signatures.filter((r) => r.problems.includes(COPIED_SIGNATURE))
+    const genuine = report.signatures.filter((r) => !r.problems.includes(COPIED_SIGNATURE))
+    expect(copied).toHaveLength(1)
+    expect(genuine).toHaveLength(2)
+    for (const r of genuine) {
+      expect(r.integrity).toBe(true)
+      expect(r.permissionInForce ?? null).toBeNull()
+      expect(signatureStatus(r, new Set()).level).toBe('unknown-identity')
+    }
+    expect(report.certified).toBeNull()
+    expect(report.locked).toBe(false)
+  })
+
+  it('never calls a signature followed by a later update that rewrites its dictionary copied', async () => {
+    const e = await openBytes(fixture('protect-optimize/mixed-images.pdf'), 'big.pdf')
+    const { bytes: signed } = await e.sig.sign(request(rsaId))
+    // an incremental update that writes the signature dictionary again, with a changed /Reason
+    const doc = new mupdf.PDFDocument(signed)
+    const field = doc.getTrailer().get('Root').get('AcroForm').get('Fields').get(0)
+    const br = field.get('V').get('ByteRange')
+    const gap = br.get(1).asNumber()
+    field.get('V').put('Reason', doc.newString('Changed after signing'))
+    const buf = doc.saveToBuffer('incremental')
+    const updated = buf.asUint8Array().slice()
+    buf.destroy()
+    doc.destroy()
+    const r = (await validateBytes(updated)).signatures[0]
+    expect(r.problems).not.toContain(COPIED_SIGNATURE)
+    expect(signatureStatus(r, new Set()).level).toBe('invalid')
+    // and with the signed bytes damaged too, so the byte range fails: the rewritten dictionary now
+    // lies beyond the end of the byte range, but was written twice, so it is no copy
+    const damaged = updated.slice()
+    damaged[gap] = 0x28 // "(" where the signature value starts
+    const d = (await validateBytes(damaged)).signatures[0]
+    expect(d.integrity).toBe(false)
+    expect(d.problems).not.toContain(COPIED_SIGNATURE)
+    expect(d.problems[0]).toBe('The document has been altered or corrupted since the signature was applied.')
+  })
 })
 
 describe('names in other scripts', () => {

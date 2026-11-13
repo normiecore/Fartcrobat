@@ -2,7 +2,7 @@
 import type { PDFDocument, PDFObject, Session } from '@engine/session'
 import { isNull, parsePdfDate, readName, readNumber, readString } from '@engine/util/pdf'
 import { Asn1Error, bytesEqual, contentOf, parseAsn1 } from '../lib/asn1'
-import { verifySignedData, parseTstInfo, type CmsVerification } from '../lib/cms'
+import { claimedSigner, verifySignedData, parseTstInfo, type CmsVerification } from '../lib/cms'
 import { OID } from '../lib/oids'
 import { CryptoUnsupportedError, digest, parsePublicKey, rsaPkcs1Verify } from '../lib/crypto'
 import {
@@ -18,7 +18,8 @@ import {
   type XrefEntryType
 } from '../lib/pdfbytes'
 import { buildChain, describeCertificate, displayName, isTimestampAuthority, parseCertificate, type Certificate } from '../lib/x509'
-import type { MdpPermission, SignatureReport, ValidationReport } from '../types'
+import { COPIED_SIGNATURE, type MdpPermission, type SignatureReport, type ValidationReport } from '../types'
+import { signedBytesFound } from '../status'
 import { describeChanges } from './changes'
 import { certification, listSignatureFields, lockInfo, readReferences, safe, signedFieldIn, type SigField } from './fields'
 import { laterUpdatesOtherThanSigning } from './later'
@@ -367,12 +368,51 @@ async function checkSignatureData(ctx: Context, r: SignatureReport, v: PDFObject
   return result
 }
 
+/** File offset of an object as the file's newest cross-reference section that has it says, or null. */
+function objectOffset(ctx: Context, num: number): number | null {
+  for (const sec of ctx.revs?.chain ?? []) {
+    const container = sec.containers?.get(num)
+    const target = container ?? num
+    const hit = sec.offsets?.find(([n]) => n === target)
+    if (hit) return hit[1]
+  }
+  return null
+}
+
+/**
+ * True when the signature dictionary itself lies beyond the end of the bytes it says it signed.
+ * A signature dictionary is always written inside the revision it signs, so this one was most
+ * likely signed in another file and copied into this one (combining signed PDFs into a bundle does
+ * this). A signed file altered and rewritten as a whole looks the same, which COPIED_SIGNATURE says.
+ */
+function copiedFromAnotherFile(ctx: Context, br: number[], vNum: number): boolean {
+  if (br.length !== 4 || br[0] !== 0 || br[2] <= br[1]) return false
+  // Only when the file's own cross-reference information can be relied on, and the signature
+  // dictionary was written once: a later update that rewrote it is a change, not a copy.
+  if (!ctx.revs || ctx.revs.problem || ctx.repaired) return false
+  if (ctx.revs.sections.filter((sec) => sec.entries?.get(vNum) === 'n' || sec.entries?.get(vNum) === 'c').length > 1) return false
+  const at = objectOffset(ctx, vNum)
+  return at !== null && at >= br[2] + br[3]
+}
+
+/** The name in the signer certificate a signature carries, unverified, for display only. */
+function claimedSignerName(r: SignatureReport, v: PDFObject): string {
+  if (r.subFilter === 'adbe.x509.rsa_sha1') return 'Unknown signer'
+  const contents = safe<Uint8Array | null>(() => v.get('Contents').resolve().asByteString(), null)
+  const cert = contents ? claimedSigner(contents) : null
+  return cert ? displayName(cert.subject) : 'Unknown signer'
+}
+
 async function checkSignatureDataUncached(ctx: Context, r: SignatureReport, v: PDFObject, vNum: number): Promise<DataResult> {
   const src = ctx.src!
   const chk = checkByteRange(src, r.byteRange)
   if (!chk.ok || !chk.contents) {
     r.integrity = false
+    if (copiedFromAnotherFile(ctx, r.byteRange, vNum)) r.problems.push(COPIED_SIGNATURE)
+    else if (r.byteRange.length === 4 && r.byteRange[0] === 0 && r.byteRange[2] > r.byteRange[1])
+      r.problems.push('The document has been altered or corrupted since the signature was applied.')
     r.problems.push(chk.problem ?? 'The signature byte range is invalid.')
+    if (!r.signerName) r.signerName = claimedSignerName(r, v)
     return null
   }
   r.revisionEnd = chk.end
@@ -483,6 +523,9 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
     const ref = readReferences(vRef).find((x) => x.method === 'DocMDP')
     const br = readByteRange(vRef.resolve())
     const at = br.length === 4 ? br[2] + br[3] : Infinity
+    // A certification whose signed bytes are not in this file (copied in from another file, or
+    // damaged) sets no rules for the other signatures: nothing verified its DocMDP reference.
+    if (ref && src && !checkByteRange(src, br).ok) continue
     if (ref && (!certified || at < certAt)) {
       certified = { permission: ref.permission ?? 2, sigNum: vRef.isIndirect() ? vRef.asIndirect() : f.fieldNum }
       certAt = at
@@ -524,6 +567,7 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
       const v = f.field.resolve().get('V').resolve()
       const r = emptyReport(f, v)
       r.problems.push(`The signature could not be checked: ${(err as Error).message}`)
+      if (!r.signerName) r.signerName = 'Unknown signer'
       signatures.push(r)
     }
   }
@@ -547,18 +591,24 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
   }
   if (src) judgeLaterUpdates(ctx, signatures)
   signatures.sort((a, b) => (a.revisionEnd || Infinity) - (b.revisionEnd || Infinity))
-  signatures.forEach((r, i) => (r.signedVersion = i + 1))
+  // Acrobat's "Rev. N" numbers the signatures that sign a revision of this file; one whose signed
+  // bytes could not be found in it (copied from another file, or damaged) gets none.
+  let rev = 0
+  for (const r of signatures) r.signedVersion = r.revisionEnd ? ++rev : 0
   const certSig = signatures.find((x) => x.kind === 'certification')
-  const locked = signatures.some((x) => x.lock?.permission === 1)
+  // A signature whose signed bytes are not in this file (copied in, or damaged) certifies and locks
+  // nothing: its DocMDP reference, lock and name come from a dictionary nothing verified.
+  const certVoid = !!certSig && !signedBytesFound(certSig)
+  const locked = signatures.some((x) => x.lock?.permission === 1 && signedBytesFound(x))
   return {
     signatures,
     unsigned: fields.filter((x) => !x.signed).map(({ field: _f, widget: _w, fieldNum: _n, ...rest }) => rest),
     checkedFile: !!src,
     revisionCount: revs?.sections.length ?? 0,
-    certified: certified?.permission ?? null,
-    certifiedBy: certSig?.signerName ?? null,
+    certified: certVoid ? null : (certified?.permission ?? null),
+    certifiedBy: certVoid ? null : (certSig?.signerName ?? null),
     // A DocMDP reference or /Perms entry that certifies nothing (a timestamp's) locks nothing either.
-    locked: locked || certified?.permission === 1,
+    locked: locked || (!certVoid && certified?.permission === 1),
     validatedAt: Date.now()
   }
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { CircleCheck, CircleX, Download, FileStack, ShieldCheck, ShieldOff, ShieldQuestion } from 'lucide-react'
 import { Button, Dialog, openDialog, showError, toast, type DocumentModel } from '@renderer/sdk'
 import type { CertDetails } from '../lib/x509'
-import { displayedSigningTime, permissionText, signatureStatus, signingTimeNote, timestampAuthorityInvalid } from '../status'
+import { certifies, displayedSigningTime, permissionText, signatureStatus, signedBytesFound, signingTimeNote, timestampAuthorityInvalid } from '../status'
 import type { SignatureReport } from '../types'
 import { exportCertificate, trustCertificate, untrustCertificate } from './ids'
 import { StatusIcon } from './StatusIcon'
@@ -176,7 +176,7 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
         <div>
           <div className="fc-digital-signatures-verdict-title">{st.title}</div>
           <div className="shell-muted">
-            {r.kind === 'timestamp' ? 'Document timestamp' : r.kind === 'certification' ? 'Certified by' : 'Signed by'} <b>{r.signerName}</b>
+            {r.kind === 'timestamp' ? 'Document timestamp' : certifies(r) ? 'Certified by' : 'Signed by'} <b>{r.signerName}</b>
             {r.signingTime ? <> on {formatDateTime(displayedSigningTime(r, trusted))}{timeNote ? ` ${timeNote}` : ''}</> : null}
           </div>
         </div>
@@ -262,8 +262,8 @@ function SignatureProperties({ doc, fieldName, onClose }: { doc: DocumentModel; 
       <Row label="Signed version">
         {r.signedVersion ? `Rev. ${r.signedVersion}${r.revision ? ` (file revision ${r.revision} of ${r.revisionCount})` : ''}` : null}
       </Row>
-      {r.kind === 'certification' && <Row label="Allowed changes">{permissionText(r.permission)}</Row>}
-      {r.lock && <Row label="Lock">{r.lock.permission === 1 ? 'Document locked after signing' : `Locks ${r.lock.action === 'All' ? 'all fields' : r.lock.fields.join(', ')}`}</Row>}
+      {certifies(r) && <Row label="Allowed changes">{permissionText(r.permission)}</Row>}
+      {r.lock && signedBytesFound(r) && <Row label="Lock">{r.lock.permission === 1 ? 'Document locked after signing' : `Locks ${r.lock.action === 'All' ? 'all fields' : r.lock.fields.join(', ')}`}</Row>}
       <Row label="Signature format">{r.subFilter}</Row>
       <Row label="Hash algorithm">{r.digestAlgorithm}</Row>
       <Row label="Signature algorithm">{r.signatureAlgorithm}</Row>

@@ -11,8 +11,6 @@ export const annotOps = (doc: DocumentModel) => doc.ops<typeof import('@engine/o
 
 export const NAV_PANELS = ['thumbnails', 'bookmarks', 'attachments', 'layers', 'search'] as const
 
-const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
-
 /**
  * Shows a page. Without a page viewer (a tool such as Organize Pages replaces it) the page becomes
  * the current one, and the viewer opens there when it comes back.
@@ -23,7 +21,13 @@ export function showPage(doc: DocumentModel, index: number) {
   else doc.set({ currentPage: page })
 }
 
-/** Navigates to a bookmark destination, applying its magnification like Acrobat does. */
+/**
+ * Navigates to a bookmark destination. An explicit zoom (an XYZ destination with a magnification,
+ * such as a bookmark saved at 150%) is applied. Fit destinations (Fit, FitB, FitH, FitBH, FitV, FitR)
+ * keep the zoom the person is reading at and only go to the page: combined court briefs make every
+ * bookmark /Fit, and switching to Fit Page on each click threw away the reader's zoom (in-page
+ * links already ignore the magnification, see LinkLayer).
+ */
 export async function goToDest(doc: DocumentModel, dest: BookmarkDest) {
   const view = doc.view
   const page = Math.max(0, Math.min(doc.pageCount - 1, dest.page))
@@ -31,15 +35,7 @@ export async function goToDest(doc: DocumentModel, dest: BookmarkDest) {
     showPage(doc, page)
     return
   }
-  let mode: 'fit-page' | 'fit-width' | null = null
-  if (dest.type === 'Fit' || dest.type === 'FitB') mode = 'fit-page'
-  else if (dest.type === 'FitH' || dest.type === 'FitBH') mode = 'fit-width'
-  if (mode && doc.state.zoomMode !== mode) {
-    view.setZoom(mode)
-    // let the viewer settle on the new zoom before scrolling
-    await nextFrame()
-    await nextFrame()
-  } else if (dest.type === 'XYZ' && dest.zoom && Math.abs(dest.zoom - doc.state.zoom) > 0.001) {
+  if (dest.type === 'XYZ' && dest.zoom && Math.abs(dest.zoom - doc.state.zoom) > 0.001) {
     doc.set({ zoom: Math.max(0.08, Math.min(64, dest.zoom)), zoomMode: 'custom' })
   }
   const y = dest.type === 'FitV' || dest.type === 'Fit' || dest.type === 'FitB' ? null : dest.y

@@ -62,6 +62,61 @@ function scrollRectIntoView(el: HTMLElement, slot: PageSlot, g: PageGeometry, re
   if (!hVisible) el.scrollLeft = left - el.clientWidth / 3
 }
 
+/** The viewport's inner height as if it had no horizontal scrollbar (borders excluded). */
+function heightWithoutHScrollbar(el: HTMLElement): number {
+  const cs = getComputedStyle(el)
+  const borders = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+  return Math.max(el.clientHeight, el.offsetHeight - borders)
+}
+
+/** Horizontal extent of a row (a page, or a two-page spread) in content coordinates. */
+function rowExtentOf(layout: ViewLayout, row: number[]): { x: number; width: number } | null {
+  const slots = row.map((i) => layout.slots[i]).filter(Boolean)
+  if (!slots.length) return null
+  const x = Math.min(...slots.map((sl) => sl.x))
+  return { x, width: Math.max(...slots.map((sl) => sl.x + sl.width)) - x }
+}
+
+/**
+ * Horizontal scroll that shows a row (a page or spread). With mixed page sizes the content can be
+ * far wider than the viewport (a photo page of 8160 pt), with the rows centred in it, so keeping the
+ * scroll position could leave the row off to one side. A row that is fully in view, or wider than
+ * the viewport and partly in view, keeps the position; one that fits is centred; a wider one that
+ * is out of view shows its left edge.
+ */
+function revealRowLeft(el: HTMLElement, row: { x: number; width: number }): number {
+  const left = el.scrollLeft
+  const right = left + el.clientWidth
+  if (row.x >= left && row.x + row.width <= right) return left
+  if (row.width <= el.clientWidth) return Math.max(0, row.x - (el.clientWidth - row.width) / 2)
+  if (row.x + row.width > left && row.x < right) return left
+  return Math.max(0, row.x - 16)
+}
+
+/** True when no part of the row is in the viewport horizontally. */
+function rowOutOfView(el: HTMLElement, row: { x: number; width: number }): boolean {
+  return row.x + row.width <= el.scrollLeft || row.x >= el.scrollLeft + el.clientWidth
+}
+
+/**
+ * The row of `page` when it should be brought into view horizontally: the content scrolls sideways
+ * and no row that is in view vertically has any part in view horizontally (the view shows only the
+ * empty space beside an outsized page's narrower neighbours). Panning across a wide page that is in
+ * view is never undone. Null when nothing should move.
+ */
+function rowToReveal(el: HTMLElement, layout: ViewLayout, rows: number[][], page: number): { x: number; width: number } | null {
+  if (el.scrollWidth <= el.clientWidth) return null
+  const top = el.scrollTop
+  const bottom = top + el.clientHeight
+  for (const row of rows) {
+    const slots = row.map((i) => layout.slots[i]).filter(Boolean)
+    if (!slots.some((sl) => sl.y < bottom && sl.y + sl.height > top)) continue
+    const extent = rowExtentOf(layout, row)
+    if (extent && !rowOutOfView(el, extent)) return null
+  }
+  return rowExtentOf(layout, rows[spreadIndexOf(rows, page)] ?? [page])
+}
+
 export function Viewer({ doc }: { doc: DocumentModel }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const info = useDocState(doc, (s) => s.info)
@@ -72,7 +127,7 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
   const rotation = useDocState(doc, (s) => s.viewRotation)
   const currentPage = useDocState(doc, (s) => s.currentPage)
   const toolId = useApp((s) => (s.spaceHand ? 'hand' : s.toolId))
-  const [size, setSize] = useState({ width: 800, height: 600 })
+  const [size, setSize] = useState({ width: 800, height: 600, fitHeight: 600 })
   const [scroll, setScroll] = useState({ top: 0, left: 0 })
   const anchorRef = useRef<Anchor | null>(null)
   const pendingScrollRef = useRef<PendingScroll | null>(null)
@@ -84,9 +139,10 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }))
+    const measure = () => setSize({ width: el.clientWidth, height: el.clientHeight, fitHeight: heightWithoutHScrollbar(el) })
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
-    setSize({ width: el.clientWidth, height: el.clientHeight })
+    measure()
     return () => ro.disconnect()
   }, [])
 
@@ -104,9 +160,11 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
         layout: layoutMode,
         cover,
         width: size.width,
-        height: size.height
+        // without the horizontal scrollbar: fitZoom leaves room for it itself when a page will
+        // scroll sideways, so the scrollbar appearing cannot change the fit zoom
+        height: size.fitHeight
       }),
-    [zoomMode, info.pages, shownRowPage, rotation, layoutMode, cover, size.width, size.height]
+    [zoomMode, info.pages, shownRowPage, rotation, layoutMode, cover, size.width, size.fitHeight]
   )
   const viewZoom = fitTarget ?? zoom
   const zoomRef = useRef(viewZoom)
@@ -145,6 +203,7 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
     const t = topAnchorRef.current
     if (p && p.page >= info.pages.length) pendingScrollRef.current = null
     const pSlot = p ? layout.slots[p.page] : undefined
+    let anchored = false
     if (p && pSlot) {
       pendingScrollRef.current = null
       anchorRef.current = null
@@ -154,18 +213,21 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
         scrollRectIntoView(el, pSlot, g, p.rect, p.center)
       } else {
         let top = pSlot.y - 8
-        let left = el.scrollLeft
+        const extent = rowExtentOf(layout, rows[spreadIndexOf(rows, p.page)] ?? [p.page])
+        let left = extent ? revealRowLeft(el, extent) : el.scrollLeft
         if (p.y !== null && p.y !== undefined) {
           const c = g.toCss([p.x ?? 0, p.y])
           top = pSlot.y + c[1] - 8
-          if (p.x !== null && p.x !== undefined && (c[0] < el.scrollLeft || c[0] > el.scrollLeft + el.clientWidth))
-            left = Math.max(0, pSlot.x + c[0] - 16)
+          // c is relative to the page; compare in content coordinates with the view chosen above
+          const px = pSlot.x + c[0]
+          if (p.x !== null && p.x !== undefined && (px < left || px > left + el.clientWidth)) left = Math.max(0, px - 16)
         }
         el.scrollTop = top
         el.scrollLeft = left
       }
     } else if (a) {
       anchorRef.current = null
+      anchored = true
       const slot = layout.slots[a.page]
       if (slot) {
         el.scrollLeft = slot.x + a.fx * slot.width - (a.clientX - b.left)
@@ -178,9 +240,16 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
         if (el.scrollWidth > el.clientWidth) el.scrollLeft = slot.x + t.fx * slot.width
       }
     }
+    // On open, and after a zoom or resize, rows narrower than an outsized page are centred far
+    // from scrollLeft 0: show the current page's row when nothing in view is. Not after a zoom at
+    // the cursor, which keeps the point under the cursor.
+    if (!(p && pSlot) && !anchored) {
+      const extent = rowToReveal(el, layout, rows, doc.state.currentPage)
+      if (extent) el.scrollLeft = revealRowLeft(el, extent)
+    }
     topAnchorRef.current = topAnchorOf(el, layout) ?? topAnchorRef.current
     setScroll({ top: el.scrollTop, left: el.scrollLeft })
-    // info/zoom/rotation are captured through layout
+    // info/zoom/rotation/rows are captured through layout
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, navTick])
 
@@ -212,8 +281,12 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
     if (!el) return
     // A zoom anchor only applies to the layout change it was made for.
     anchorRef.current = null
-    setScroll({ top: el.scrollTop, left: el.scrollLeft })
     updateCurrentPage()
+    // Scrolling from an outsized page to narrower ones: bring the current row into view when
+    // nothing in view vertically is in view horizontally.
+    const extent = rowToReveal(el, layoutRef.current, rows, doc.state.currentPage)
+    if (extent) el.scrollLeft = revealRowLeft(el, extent)
+    setScroll({ top: el.scrollTop, left: el.scrollLeft })
     topAnchorRef.current = topAnchorOf(el, layoutRef.current) ?? topAnchorRef.current
   }
 

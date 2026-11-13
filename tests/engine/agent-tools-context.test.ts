@@ -475,6 +475,12 @@ describe('list_signatures output', () => {
     const later = (extra: Partial<SignatureReport>) => signaturesOut({ ...report, signatures: [{ ...r, coversWholeFile: false, revisionEnd: 500, ...extra }] }, new Set(['AB'])).signatures[0]
     expect(later({ laterUpdates: 'other' })).toMatchObject({ status: 'warning', summary: 'The document was changed after it was signed.', changedAfterSigning: true })
     expect(later({ laterUpdates: 'signing' })).toMatchObject({ status: 'valid', changedAfterSigning: false, signedAgainLater: true })
+
+    // A signature that signs no revision of this file (copied in from another file) has no revision.
+    expect(trusted.signatures[0].revision).toBe(1)
+    const copied = signaturesOut({ ...report, signatures: [{ ...r, signedVersion: 0, revisionEnd: 0, integrity: false }] }, new Set()).signatures[0]
+    expect(copied).not.toHaveProperty('revision')
+    expect(copied.status).toBe('invalid')
   })
 })
 

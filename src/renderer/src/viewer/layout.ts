@@ -115,15 +115,51 @@ export function computeLayout(
 }
 
 /**
+ * A row needing less than this share of the typical (median) row's fit zoom is an outsized page,
+ * and does not set the zoom for the rest of the document. Landscape A4 or A3 among A4 pages (0.71)
+ * and landscape Legal among Letter pages (0.61) still count.
+ */
+export const OUTSIZED_ROW_RATIO = 0.6
+
+const medianOf = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
+
+/** Height of the horizontal scrollbar (theme.css), which an outsized page brings with it. */
+export const H_SCROLLBAR = 12
+
+/**
+ * The fit zoom for a scrolling layout, leaving out outsized rows (a phone photo of 8160 x 6120 pt
+ * merged into an A4 brief would otherwise fit every page to 8%). Outsized pages are wider or taller
+ * than the viewport and scroll, as in Acrobat.
+ *
+ * Rows outsized in width are decided from zw (which does not depend on the height); every other row
+ * also caps the zoom at its own width, so only outsized rows can be wider than the viewport. When
+ * there are any, the height fit leaves room for the horizontal scrollbar they may bring (`zpBar`),
+ * and the caller passes the height without that scrollbar: the scrollbar appearing or going away
+ * then changes nothing here, so the zoom cannot flip back and forth. Rows outsized only in height
+ * (Fit Page) are left out of the height fit and scroll down.
+ */
+function documentFit(mode: ZoomMode, zw: number[], zp: number[], zpBar: number[]): number {
+  const wideLimit = medianOf(zw) * OUTSIZED_ROW_RATIO
+  const kept = zw.map((_, i) => i).filter((i) => zw[i] >= wideLimit)
+  const width = Math.min(...kept.map((i) => zw[i]))
+  if (mode === 'fit-width' || mode === 'fit-visible') return width
+  const heightFit = kept.length < zw.length ? zpBar : zp
+  const tallLimit = medianOf(heightFit) * OUTSIZED_ROW_RATIO
+  const heights = kept.filter((i) => heightFit[i] >= tallLimit).map((i) => heightFit[i])
+  return Math.min(width, ...heights)
+}
+
+/**
  * Zoom factor for a fit mode, given the viewport size. Single Page and Two Page View fit the shown
  * page or spread. Scrolling layouts fit the whole document (the widest row for Fit Width, every row
- * for Fit Page), so the zoom never depends on the scroll position: with mixed page sizes, a zoom
- * that followed the current page would move another page into view, which would change the zoom
- * again.
+ * for Fit Page, except outsized pages, see documentFit), so the zoom never depends on the scroll
+ * position: with mixed page sizes, a zoom that followed the current page would move another page
+ * into view, which would change the zoom again.
  */
 export function fitZoom(
   mode: ZoomMode,
   pages: PageInfo[],
+  /** `height`: the viewport's inner height without a horizontal scrollbar. */
   opts: { currentPage: number; rotation: number; layout: PageLayoutMode; cover: boolean; width: number; height: number }
 ): number | null {
   if (mode === 'custom') return null
@@ -135,15 +171,17 @@ export function fitZoom(
   for (const row of fitRows) for (const i of row) sizes[i] = pageCssSize(pages[i], 1, opts.rotation)
   const availW = Math.max(100, opts.width - VIEW_PADDING * 2 - 16)
   const availH = Math.max(100, opts.height - VIEW_PADDING * 2)
-  let zw = Infinity
-  let zp = Infinity
+  const availHBar = Math.max(100, availH - H_SCROLLBAR)
+  const zw: number[] = []
+  const zp: number[] = []
+  const zpBar: number[] = []
   for (const row of fitRows) {
     const { w, h } = rowExtent(row, sizes, pages.length, opts.layout)
-    zw = Math.min(zw, availW / w)
-    zp = Math.min(zp, availW / w, availH / h)
+    zw.push(availW / w)
+    zp.push(Math.min(availW / w, availH / h))
+    zpBar.push(Math.min(availW / w, availHBar / h))
   }
-  if (mode === 'fit-width' || mode === 'fit-visible') return clampZoom(zw)
-  return clampZoom(zp)
+  return clampZoom(documentFit(mode, zw, zp, zpBar))
 }
 
 export const MIN_ZOOM = 0.08
