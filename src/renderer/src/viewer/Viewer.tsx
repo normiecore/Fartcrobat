@@ -62,6 +62,21 @@ function scrollRectIntoView(el: HTMLElement, slot: PageSlot, g: PageGeometry, re
   if (!hVisible) el.scrollLeft = left - el.clientWidth / 3
 }
 
+/**
+ * Horizontal scroll that shows a page navigated to. With mixed page sizes the content can be far
+ * wider than the viewport (a photo page of 8160 pt at 100%), and the pages are centred in it, so
+ * keeping the scroll position could leave the page off to one side. A page that is already fully in
+ * view keeps the position; one that fits is centred; a wider one shows its left edge.
+ */
+function revealSlotLeft(el: HTMLElement, slot: PageSlot): number {
+  const left = el.scrollLeft
+  const right = left + el.clientWidth
+  if (slot.x >= left && slot.x + slot.width <= right) return left
+  if (slot.width <= el.clientWidth) return Math.max(0, slot.x - (el.clientWidth - slot.width) / 2)
+  if (slot.x + slot.width > left && slot.x < right) return left
+  return Math.max(0, slot.x - 16)
+}
+
 export function Viewer({ doc }: { doc: DocumentModel }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const info = useDocState(doc, (s) => s.info)
@@ -154,7 +169,7 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
         scrollRectIntoView(el, pSlot, g, p.rect, p.center)
       } else {
         let top = pSlot.y - 8
-        let left = el.scrollLeft
+        let left = revealSlotLeft(el, pSlot)
         if (p.y !== null && p.y !== undefined) {
           const c = g.toCss([p.x ?? 0, p.y])
           top = pSlot.y + c[1] - 8

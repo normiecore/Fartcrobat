@@ -40,6 +40,31 @@ describe('viewer layout', () => {
     for (const s of lp.slots) expect(s.height).toBeLessThanOrEqual(800 - VIEW_PADDING * 2 + 0.01)
   })
 
+  it('does not let an outsized page set the fit zoom for the rest of the document', () => {
+    // a brief of A4 pages with phone photos merged in (8160 x 6120 pt with /Rotate 90)
+    const a4 = page(0, 595, 842)
+    const photo = { ...page(0, 6120, 8160), rotation: 90 }
+    const brief = [a4, a4, photo, photo, a4, page(0, 842, 595), a4].map((p, index) => ({ ...p, index, id: index + 1 }))
+    const a4Only = [page(0, 595, 842), page(1, 842, 595)]
+    for (const mode of ['fit-width', 'fit-page'] as ZoomMode[]) {
+      // the same zoom as without the photos, whatever the current page
+      const zooms = [0, 2, 6].map((p) => fit(mode, brief, 'continuous', p))
+      expect(new Set(zooms).size).toBe(1)
+      expect(zooms[0]).toBeCloseTo(fit(mode, a4Only, 'continuous', 0), 6)
+      expect(zooms[0]).toBeGreaterThan(0.5)
+    }
+    // the photo is wider than the viewport and scrolls; the A4 pages stay inside it
+    const z = fit('fit-width', brief, 'continuous', 0)
+    const l = layoutAt(brief, 'continuous', z, 0)
+    expect(l.slots[2].width).toBeGreaterThan(1056)
+    expect(l.slots[0].width).toBeLessThan(1056)
+    // Single Page View on the photo still fits the photo
+    expect(fit('fit-page', brief, 'single', 2)).toBeLessThan(0.1)
+    // a document of mostly large pages fits those, and its small pages are simply smaller
+    const big = [photo, photo, photo, a4].map((p, index) => ({ ...p, index, id: index + 1 }))
+    expect(fit('fit-width', big, 'continuous', 3)).toBeCloseTo(fit('fit-width', [photo], 'continuous', 0), 6)
+  })
+
   it('still fits the shown page in Single Page View', () => {
     expect(fit('fit-page', mixed, 'single', 1)).not.toBeCloseTo(fit('fit-page', mixed, 'single', 0), 2)
   })

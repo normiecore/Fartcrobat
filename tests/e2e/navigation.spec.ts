@@ -739,3 +739,55 @@ test('read out loud and the View menu entries', async () => {
     await app.close()
   }
 })
+
+test('bookmarks keep the reading zoom, and an outsized page does not shrink the fit zooms', async () => {
+  const { app, page } = await launch()
+  try {
+    // A4 pages with a phone-photo-sized page and a /Fit bookmark per page, like a combined brief
+    await openFile(page, fixturePath('navigation/outsized-page.pdf'))
+    await waitForRender(page)
+    // opens at Fit Width, sized to the A4 pages and not to the 8160 pt photo
+    await expect.poll(async () => (await activeDocState(page))?.zoomMode).toBe('fit-width')
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeGreaterThan(0.3)
+    await runCommand(page, 'view.fitPage')
+    await expect.poll(async () => (await activeDocState(page))?.zoomMode).toBe('fit-page')
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeGreaterThan(0.2)
+
+    // a /Fit bookmark goes to its page at the zoom the person is reading at
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.25))
+    await expect.poll(async () => (await activeDocState(page))?.zoom).toBeCloseTo(1.25, 3)
+    await page.getByRole('treeitem', { name: /Page 4: Report/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(3)
+    let s = await activeDocState(page)
+    expect(s?.zoom).toBeCloseTo(1.25, 3)
+    expect(s?.zoomMode).toBe('custom')
+    await page.getByRole('treeitem', { name: /Page 3: Photo/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
+    await page.getByRole('treeitem', { name: /Page 6: Invoice/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(5)
+    s = await activeDocState(page)
+    expect(s?.zoom).toBeCloseTo(1.25, 3)
+    expect(s?.zoomMode).toBe('custom')
+    // the photo makes the content far wider than the viewport: the page gone to is in view, not
+    // off to the side of where the photo was
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(0.5))
+    await page.getByRole('treeitem', { name: /Page 3: Photo/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(2)
+    const viewport = page.locator('.viewer-scroll')
+    await viewport.evaluate((el) => (el.scrollLeft = el.scrollWidth))
+    await page.getByRole('treeitem', { name: /Page 6: Invoice/ }).click()
+    await expect.poll(async () => (await activeDocState(page))?.currentPage).toBe(5)
+    await expect
+      .poll(async () => {
+        const v = (await viewport.boundingBox())!
+        const p = (await page.locator('.viewer-page[data-page-index="5"]').boundingBox())!
+        return p.x >= v.x - 1 && p.x + p.width <= v.x + v.width + 1
+      })
+      .toBe(true)
+    await page.evaluate(() => (window as any).__inkmoor.getActiveDoc().view.setZoom(1.25))
+    // the zoom box still shows the reader's percentage
+    await expect(page.getByLabel('Zoom', { exact: true })).toHaveValue('1.25')
+  } finally {
+    await app.close()
+  }
+})

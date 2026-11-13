@@ -9,6 +9,8 @@ Run: python3 tests/fixtures/navigation/make_fixtures.py   (outputs are committed
                     opens on page 3 at 150%)
 - fonts.pdf         an embedded subset TrueType font, a non-embedded base font and a font used
                     only inside a form XObject
+- outsized-page.pdf A4 pages with a phone-photo-sized page (8160 x 6120 pt, /Rotate 90) and an A4
+                    landscape page, and a /Fit bookmark per page, like a combined court brief
 """
 import io
 import os
@@ -204,10 +206,51 @@ def fonts_doc():
     c.save()
 
 
+def outsized_page_doc():
+    # (width, height, rotate, label) per page
+    pages = [
+        (595, 842, 0, 'Index'),
+        (595, 842, 0, 'Statement'),
+        (8160, 6120, 90, 'Photo'),
+        (595, 842, 0, 'Report'),
+        (842, 595, 0, 'Table'),
+        (595, 842, 0, 'Invoice'),
+    ]
+    n = len(pages)
+    # objects: 1 catalog, 2 pages, 3 font, 4 outlines, then per page: page, content, outline item
+    first = 5
+    objs = [None] * (4 + 3 * n)
+    kids = ' '.join(f'{first + 3 * i} 0 R' for i in range(n))
+    objs[0] = b'<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R /PageMode /UseOutlines >>'
+    objs[1] = f'<< /Type /Pages /Kids [{kids}] /Count {n} >>'.encode()
+    objs[2] = b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
+    objs[3] = f'<< /Type /Outlines /First {first + 2} 0 R /Last {first + 3 * (n - 1) + 2} 0 R /Count {n} >>'.encode()
+    for i, (w, h, rot, label) in enumerate(pages):
+        page_no, content_no, item_no = first + 3 * i, first + 3 * i + 1, first + 3 * i + 2
+        size = max(24, int(min(w, h) / 12))
+        content = (
+            f'0.9 g 20 20 {w - 40} {h - 40} re f 0 g '
+            f'BT /F1 {size} Tf 40 {h - 40 - size} Td (Page {i + 1}: {label}) Tj ET'
+        ).encode()
+        objs[page_no - 1] = (
+            f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {w} {h}] /Rotate {rot} '
+            f'/Resources << /Font << /F1 3 0 R >> >> /Contents {content_no} 0 R >>'
+        ).encode()
+        objs[content_no - 1] = stream(content)
+        links = f'/Parent 4 0 R /Dest [{page_no} 0 R /Fit]'
+        if i > 0:
+            links += f' /Prev {item_no - 3} 0 R'
+        if i < n - 1:
+            links += f' /Next {item_no + 3} 0 R'
+        objs[item_no - 1] = f'<< /Title (Page {i + 1}: {label}) {links} >>'.encode()
+    write_raw_pdf(os.path.join(OUT, 'outsized-page.pdf'), objs)
+
+
 if __name__ == '__main__':
     layers_doc()
     broken_outline_doc()
     attachments_doc()
     initial_view_doc()
     fonts_doc()
+    outsized_page_doc()
     print('navigation fixtures written to', OUT)

@@ -1,6 +1,6 @@
 /** Turns validation reports into Acrobat-style status levels and plain-language messages. */
 import type { CertDetails } from './lib/x509'
-import type { MdpPermission, SignatureReport, ValidationReport } from './types'
+import { COPIED_SIGNATURE, type MdpPermission, type SignatureReport, type ValidationReport } from './types'
 
 export type StatusLevel = 'valid' | 'unknown-identity' | 'warning' | 'unknown' | 'invalid'
 
@@ -118,6 +118,11 @@ export function signingTimeNote(r: SignatureReport, trusted: Set<string>): strin
   return '(the time-stamping authority is not trusted)'
 }
 
+/** The signature was signed in another file and copied into this one (see COPIED_SIGNATURE). */
+export function isCopied(r: SignatureReport): boolean {
+  return r.problems.includes(COPIED_SIGNATURE)
+}
+
 export function signatureStatus(r: SignatureReport, trusted: Set<string>): SignatureStatus {
   const details: string[] = []
   const changedLater = changedAfterSigning(r)
@@ -167,9 +172,11 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
   details.push(...r.problems)
   if (r.unknownReason) details.push(r.unknownReason)
 
-  // Certification
-  if (r.kind === 'certification') details.push(`The document is certified. ${permissionText(r.permission)}`)
-  if (r.lock) details.push(r.lock.permission === 1 ? 'The signer locked the document: no further changes are allowed.' : 'The signer locked some form fields.')
+  // Certification. A signature whose signed bytes are not in this file (copied from another file, or
+  // damaged) certifies and locks nothing that can be relied on, so neither is described.
+  const signedBytesFound = r.revisionEnd > 0 || r.integrity !== false
+  if (r.kind === 'certification' && signedBytesFound) details.push(`The document is certified. ${permissionText(r.permission)}`)
+  if (r.lock && signedBytesFound) details.push(r.lock.permission === 1 ? 'The signer locked the document: no further changes are allowed.' : 'The signer locked some form fields.')
 
   // Identity
   if (r.certificates.length) {
@@ -243,7 +250,9 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
             : `${noun} is valid, but there are problems.`
           : level === 'unknown'
             ? `${noun} validity is unknown.`
-            : `${noun} is invalid.`
+            : isCopied(r)
+              ? `${noun} is invalid: it was copied from another document.`
+              : `${noun} is invalid.`
   return { level, title, details, identityKnown, trustedIndex: ti, timestampTrusted: tsTrusted }
 }
 
@@ -257,7 +266,15 @@ export function overallStatus(report: ValidationReport | null, trusted: Set<stri
   if (!report || !report.signatures.length) return null
   const levels = report.signatures.map((s) => signatureStatus(s, trusted).level)
   const certPrefix = report.certified ? `Certified by ${report.certifiedBy ?? 'the author'}. ${permissionText(report.certified)} ` : ''
-  if (levels.includes('invalid')) return { level: 'invalid', message: `${certPrefix}At least one signature is invalid.` }
+  if (levels.includes('invalid')) {
+    const invalid = report.signatures.filter((_, i) => levels[i] === 'invalid')
+    return {
+      level: 'invalid',
+      message: invalid.every(isCopied)
+        ? `${certPrefix}${invalid.length === 1 ? 'A signature in this document was' : 'The signatures in this document were'} copied from other documents and cannot be verified here.`
+        : `${certPrefix}At least one signature is invalid.`
+    }
+  }
   if (levels.includes('warning') || levels.includes('unknown')) return { level: 'warning', message: `${certPrefix}At least one signature has problems.` }
   if (levels.includes('unknown-identity')) {
     const n = levels.filter((l) => l === 'unknown-identity').length

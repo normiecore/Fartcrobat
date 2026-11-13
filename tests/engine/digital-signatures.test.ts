@@ -19,8 +19,8 @@ import { derLength } from '@features/digital-signatures/lib/cms'
 import { certificateToPem } from '@features/digital-signatures/lib/digitalId'
 import { readRevisions } from '@features/digital-signatures/lib/pdfbytes'
 import { parseCertificate } from '@features/digital-signatures/lib/x509'
-import { signatureStatus } from '@features/digital-signatures/status'
-import type { AppearanceContent, SignRequest, ValidationReport } from '@features/digital-signatures/types'
+import { overallStatus, signatureStatus } from '@features/digital-signatures/status'
+import { COPIED_SIGNATURE, type AppearanceContent, type SignRequest, type ValidationReport } from '@features/digital-signatures/types'
 import { fixture, openFixture } from './helpers'
 
 const TMP = mkdtempSync(join(tmpdir(), 'fc-digsig-'))
@@ -607,6 +607,68 @@ describe.skipIf(!hasTool('openssl', ['version']))('Digital ID files made by othe
       expect(r.signerName).toBe(name)
     })
   }
+})
+
+describe('signatures copied from another file', () => {
+  // Combining signed PDFs into one bundle (a court brief) copies each signature field, but its
+  // byte range still points into the original, smaller file. As in a real brief, larger documents
+  // come first, so the copied signature dictionary lies beyond the end of what it signed.
+  async function combinedBundle(): Promise<Uint8Array> {
+    const e = await openBytes(fixture('text.pdf'), 'text.pdf')
+    const { bytes: signed } = await e.sig.sign(request(rsaId))
+    const out = new mupdf.PDFDocument()
+    const filler = new mupdf.PDFDocument(fixture('protect-optimize/mixed-images.pdf'))
+    const fillerMap = out.newGraftMap()
+    for (let i = 0; i < filler.countPages(); i++) fillerMap.graftPage(-1, filler, i)
+    const src = new mupdf.PDFDocument(signed)
+    const srcMap = out.newGraftMap()
+    srcMap.graftPage(-1, src, 0)
+    // grafting a page leaves its annotations behind: copy the signature widget with it
+    const page = out.findPage(filler.countPages())
+    const annots = srcMap.graftObject(src.findPage(0).get('Annots'))
+    page.put('Annots', annots)
+    const fields = out.newArray()
+    annots.forEach((a: mupdf.PDFObject) => {
+      a.put('P', page)
+      if (a.get('FT').asName() === 'Sig') fields.push(a)
+    })
+    out.getTrailer().get('Root').put('AcroForm', out.newDictionary())
+    out.getTrailer().get('Root').get('AcroForm').put('Fields', fields)
+    out.getTrailer().get('Root').get('AcroForm').put('SigFlags', 3)
+    const buf = out.saveToBuffer('')
+    const bytes = buf.asUint8Array().slice()
+    buf.destroy()
+    for (const d of [out, filler, src]) d.destroy()
+    return bytes
+  }
+
+  it('says the signature was copied in, names the signer and gives no revision', async () => {
+    const report = await validateBytes(await combinedBundle())
+    expect(report.signatures).toHaveLength(1)
+    const r = report.signatures[0]
+    expect(r.integrity).toBe(false)
+    expect(r.problems[0]).toBe(COPIED_SIGNATURE)
+    expect(r.signerName).toBe('Jane Doe')
+    expect(r.signedVersion).toBe(0)
+    const st = signatureStatus(r, new Set())
+    expect(st.level).toBe('invalid')
+    expect(st.title).toBe('Signature is invalid: it was copied from another document.')
+    expect(overallStatus(report, new Set())?.message).toBe('A signature in this document was copied from other documents and cannot be verified here.')
+  })
+
+  it('still reports a damaged signature as altered, not copied', async () => {
+    const e = await openBytes(fixture('text.pdf'), 'text.pdf')
+    const { bytes } = await e.sig.sign(request(rsaId))
+    const damaged = bytes.slice()
+    const at = Buffer.from(damaged).indexOf('/Contents <') + '/Contents <'.length
+    damaged[at - 1] = 0x28 // "(" where the hex string starts
+    const r = (await validateBytes(damaged)).signatures[0]
+    expect(r.integrity).toBe(false)
+    expect(r.problems).not.toContain(COPIED_SIGNATURE)
+    expect(r.problems[0]).toBe('The document has been altered or corrupted since the signature was applied.')
+    expect(r.signerName).not.toBe('')
+    expect(signatureStatus(r, new Set()).title).toBe('Signature is invalid.')
+  })
 })
 
 describe('names in other scripts', () => {

@@ -9,6 +9,15 @@ export const STORE_PREFS = 'digital-signatures:prefs'
 /** Saved handwritten signature from Fill & Sign (data URL or PNG bytes). */
 export const STORE_FILLSIGN_SIGNATURE = 'fill-sign:signature'
 
+/**
+ * The problem reported for a signature that was signed in another file and copied into this one
+ * (combining signed PDFs into a bundle does this). The status texts look for it.
+ */
+export const COPIED_SIGNATURE =
+  'This signature was made on a different, smaller PDF and was copied into this one, for example when ' +
+  'documents were combined into a bundle. What was signed is not part of this document, so the ' +
+  'signature cannot be verified here. To check it, open the original signed document.'
+
 /** A Digital ID the user added (the private key stays in the .p12/.pfx file). */
 export interface DigitalIdRecord {
   /** SHA-256 fingerprint of the certificate. */

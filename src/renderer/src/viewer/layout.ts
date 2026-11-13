@@ -115,11 +115,29 @@ export function computeLayout(
 }
 
 /**
+ * A row needing less than this share of the typical (median) row's fit zoom is an outsized page,
+ * and does not set the zoom for the rest of the document. Landscape A4 or A3 among A4 pages (0.71)
+ * and landscape Legal among Letter pages (0.61) still count.
+ */
+export const OUTSIZED_ROW_RATIO = 0.6
+
+/**
+ * The fit zoom for a scrolling layout: the smallest of the rows' zooms, leaving out outsized rows
+ * (a phone photo of 8160 x 6120 pt merged into an A4 brief would otherwise fit every page to 8%).
+ * Outsized pages are wider or taller than the viewport and scroll, as in Acrobat.
+ */
+function documentFit(rowZooms: number[]): number {
+  const sorted = [...rowZooms].sort((a, b) => a - b)
+  const median = sorted[Math.floor(sorted.length / 2)]
+  return Math.min(...rowZooms.filter((z) => z >= median * OUTSIZED_ROW_RATIO))
+}
+
+/**
  * Zoom factor for a fit mode, given the viewport size. Single Page and Two Page View fit the shown
  * page or spread. Scrolling layouts fit the whole document (the widest row for Fit Width, every row
- * for Fit Page), so the zoom never depends on the scroll position: with mixed page sizes, a zoom
- * that followed the current page would move another page into view, which would change the zoom
- * again.
+ * for Fit Page, except outsized pages, see documentFit), so the zoom never depends on the scroll
+ * position: with mixed page sizes, a zoom that followed the current page would move another page
+ * into view, which would change the zoom again.
  */
 export function fitZoom(
   mode: ZoomMode,
@@ -135,15 +153,14 @@ export function fitZoom(
   for (const row of fitRows) for (const i of row) sizes[i] = pageCssSize(pages[i], 1, opts.rotation)
   const availW = Math.max(100, opts.width - VIEW_PADDING * 2 - 16)
   const availH = Math.max(100, opts.height - VIEW_PADDING * 2)
-  let zw = Infinity
-  let zp = Infinity
+  const zw: number[] = []
+  const zp: number[] = []
   for (const row of fitRows) {
     const { w, h } = rowExtent(row, sizes, pages.length, opts.layout)
-    zw = Math.min(zw, availW / w)
-    zp = Math.min(zp, availW / w, availH / h)
+    zw.push(availW / w)
+    zp.push(Math.min(availW / w, availH / h))
   }
-  if (mode === 'fit-width' || mode === 'fit-visible') return clampZoom(zw)
-  return clampZoom(zp)
+  return clampZoom(documentFit(mode === 'fit-width' || mode === 'fit-visible' ? zw : zp))
 }
 
 export const MIN_ZOOM = 0.08

@@ -11,3 +11,23 @@ Navigation panels, document properties, advanced search, Read Out Loud.
 - Read Out Loud (View menu submenu 'Read Out Loud'): Activate/Deactivate, Read This Page Only (Mod+Shift+V), Read To End Of Document (Mod+Shift+B), Pause/Resume (Mod+Shift+C), Stop (Mod+Shift+E) using window.speechSynthesis with doc.core.text.plain(page); highlight nothing, but advance pages when reading to end; voice/rate settings section 'Reading' in Preferences. Gracefully tell the user if no voices are available.
 - View menu 'Show/Hide' submenu entries for the panels (open the right panel), and Navigation Panes.
 e2e: open text.pdf, open thumbnails panel, click page 3 thumbnail -> current page 3; bookmarks panel shows 5 chapters, click 'Chapter 4' navigates; add a bookmark via Mod+B and rename it; properties dialog shows title and edits author (undo works); advanced search finds 'quick brown fox' 5 times.
+
+## Bookmark zoom and outsized pages (Nov 2026, after feedback on 0.4.1)
+
+Combined court briefs make every bookmark a `/Fit` destination and often hold phone photos merged
+in at their pixel size (8160 x 6120 pt). In 0.4.1 a bookmark click switched the document to Fit Page,
+and Fit Page / Fit Width in the scrolling layouts fitted the largest page, so an A4 brief dropped to
+the 8% floor on open and on every bookmark click.
+
+- **Bookmarks keep the reader's zoom (owner decision):** `goToDest` (`actions.ts`) applies only an
+  explicit XYZ zoom (a bookmark saved at 150% still opens at 150%). Fit, FitB, FitH, FitBH, FitV and
+  FitR destinations go to the page at the current zoom and zoom mode, like in-page links (LinkLayer).
+- **Fit zooms ignore outsized pages:** in Single Page Continuous and Two Page Scrolling, `fitZoom`
+  (`viewer/layout.ts`) fits every row except rows that need less than `OUTSIZED_ROW_RATIO` (0.6) of
+  the median row's zoom. Landscape A4 among A4 pages still counts. Outsized pages are wider or
+  taller than the viewport and scroll. The zoom still does not depend on the scroll position.
+- **Going to a page reveals it horizontally:** the content is as wide as the widest page, with the
+  pages centred, so `revealSlotLeft` (`viewer/Viewer.tsx`) centres a page navigated to that is not
+  fully in view (or shows the left edge of one wider than the viewport).
+- Fixture `tests/fixtures/navigation/outsized-page.pdf` (A4 pages, one 8160 x 6120 pt page, /Fit
+  bookmarks); e2e in `tests/e2e/navigation.spec.ts`, unit tests in `core-viewer-layout.test.ts`.

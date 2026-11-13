@@ -187,6 +187,19 @@ function findSigner(si: Asn1Node, certs: Certificate[]): Certificate | null {
   return null
 }
 
+/**
+ * The signer certificate a CMS signature names, read without verifying anything, or null. Used only
+ * to say who a signature claims to be from when the signed data cannot be checked at all.
+ */
+export function claimedSigner(cms: Uint8Array): Certificate | null {
+  try {
+    const parsed = parseSignedData(cms)
+    return findSigner(parsed.signerInfo, parsed.certificates)
+  } catch {
+    return null
+  }
+}
+
 function attributeValues(attrs: Asn1Node | undefined, oid: string): Asn1Node[] {
   if (!attrs) return []
   for (const a of attrs.children) {

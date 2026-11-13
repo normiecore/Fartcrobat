@@ -67,3 +67,25 @@ Its status is decided like this (`status.ts`, `worker/validate.ts`, `worker/late
   dictionary, points at some other object, or names a signature without a DocMDP reference leaves
   `certified` null and adds a warning ("The document claims to be certified, but no signature in
   it certifies it", or on the signature it names).
+
+## Signatures copied from another file (Nov 2026, after feedback on 0.4.1)
+
+Combining signed PDFs into one bundle (a court brief of DocuSign documents, for example) copies
+each signature dictionary into the new file, but its byte range still describes the small original
+file. Such a signature cannot be verified and stays **invalid**, as pdfsig and pyHanko (and, we expect, Acrobat)
+report it (owner decision: no separate state), but it is explained:
+
+- `copiedFromAnotherFile` (`worker/validate.ts`): the signature dictionary itself lies at or beyond
+  the end of its byte range in this file (a dictionary is always inside the revision it signs). The
+  problem is then `COPIED_SIGNATURE` (`types.ts`); the title is "Signature is invalid: it was copied
+  from another document." and the message bar says the signatures were copied from other documents
+  and cannot be verified here when every invalid signature is a copy (`status.ts`). A copy whose
+  dictionary happens to land inside the old byte range is not recognised and reads as altered.
+- Any other byte range failure now starts with Acrobat's "The document has been altered or
+  corrupted since the signature was applied." before the technical reason.
+- The signer name is read, unverified, from the certificate in the signature (`claimedSigner` in
+  `lib/cms.ts`) when the signed bytes cannot be found; before, "Signed by" was empty. A report built
+  after an exception says "Unknown signer".
+- "Rev. N" numbers only signatures whose signed revision is in this file (`signedVersion` is 0 when
+  `revisionEnd` is 0), and the lock and certification lines are left out for them: they come from a
+  dictionary nothing verified.
