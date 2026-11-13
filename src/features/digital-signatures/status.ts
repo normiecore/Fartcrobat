@@ -118,6 +118,19 @@ export function signingTimeNote(r: SignatureReport, trusted: Set<string>): strin
   return '(the time-stamping authority is not trusted)'
 }
 
+/**
+ * False when the bytes a signature signed are not in this file (copied in from another file, or
+ * damaged): its certification, lock and the rest of its dictionary are then unverified claims.
+ */
+export function signedBytesFound(r: SignatureReport): boolean {
+  return r.revisionEnd > 0 || r.integrity !== false
+}
+
+/** Whether the signature counts as a certification: one whose signed bytes are in this file. */
+export function certifies(r: SignatureReport): boolean {
+  return r.kind === 'certification' && signedBytesFound(r)
+}
+
 /** What the signature signed is not in this document, most likely copied in (see COPIED_SIGNATURE). */
 export function isCopied(r: SignatureReport): boolean {
   return r.problems.includes(COPIED_SIGNATURE)
@@ -174,9 +187,8 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
 
   // Certification. A signature whose signed bytes are not in this file (copied from another file, or
   // damaged) certifies and locks nothing that can be relied on, so neither is described.
-  const signedBytesFound = r.revisionEnd > 0 || r.integrity !== false
-  if (r.kind === 'certification' && signedBytesFound) details.push(`The document is certified. ${permissionText(r.permission)}`)
-  if (r.lock && signedBytesFound) details.push(r.lock.permission === 1 ? 'The signer locked the document: no further changes are allowed.' : 'The signer locked some form fields.')
+  if (certifies(r)) details.push(`The document is certified. ${permissionText(r.permission)}`)
+  if (r.lock && signedBytesFound(r)) details.push(r.lock.permission === 1 ? 'The signer locked the document: no further changes are allowed.' : 'The signer locked some form fields.')
 
   // Identity
   if (r.certificates.length) {
@@ -236,7 +248,7 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
     level = 'warning'
   else level = identityKnown ? 'valid' : 'unknown-identity'
 
-  const noun = isTimestamp ? 'Document timestamp' : r.kind === 'certification' ? 'Certification' : 'Signature'
+  const noun = isTimestamp ? 'Document timestamp' : certifies(r) ? 'Certification' : 'Signature'
   const title =
     level === 'valid'
       ? `${noun} is valid.`

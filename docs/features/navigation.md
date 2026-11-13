@@ -25,16 +25,20 @@ the 8% floor on open and on every bookmark click.
 - **Fit zooms ignore outsized pages:** in Single Page Continuous and Two Page Scrolling, `fitZoom`
   (`viewer/layout.ts`, `documentFit`) leaves out rows that need less than `OUTSIZED_ROW_RATIO` (0.6)
   of the median row's zoom. Landscape A4 among A4 pages still counts. Only rows outsized in width
-  may end up wider than the viewport (every other row caps the zoom at its own width), so whether
-  the content scrolls sideways does not depend on the viewport height, and the horizontal scrollbar
-  cannot flip the zoom back and forth. Rows outsized only in height are left out of Fit Page's
-  height fit and scroll down. The zoom still does not depend on the scroll position.
+  may end up wider than the viewport (every other row caps the zoom at its own width). When there
+  are any, Fit Page leaves room for the horizontal scrollbar (`H_SCROLLBAR`), and the viewer passes
+  the viewport height without that scrollbar (`heightWithoutHScrollbar`), so the scrollbar
+  appearing cannot change the fit zoom and make it flip back and forth. Rows outsized only in
+  height are left out of Fit Page's height fit and scroll down. The zoom still does not depend on
+  the scroll position.
 - **The reading row stays in view horizontally:** the content is as wide as the widest page, with
   rows centred in it. Going to a page reveals its row (`revealRowLeft` in `viewer/Viewer.tsx`: a row
   fully in view, or wider than the viewport and partly in view, keeps the position; one that fits is
-  centred). After open, a zoom or a resize, and while scrolling, the top or current page's row is
-  brought into view when none of it is in view, so a document does not open on empty space beside
-  an outsized page. An x position from a destination is compared in content coordinates.
+  centred). After open, a resize or a zoom (not a zoom at the cursor), and while scrolling, the
+  current page's row is brought into view when no row that is in view vertically has any part in
+  view horizontally (`rowToReveal`), so a document does not open on empty space beside an outsized
+  page, and panning across a wide page that is in view is never undone. An x position from a
+  destination is compared in content coordinates.
 - Fixture `tests/fixtures/navigation/outsized-page.pdf` (A4 pages, one 8160 x 6120 pt page, /Fit
   bookmarks and one /XYZ bookmark with a left position); e2e in `tests/e2e/navigation.spec.ts`
   (also Next Page in a zoomed two-page layout), unit tests in `core-viewer-layout.test.ts`.

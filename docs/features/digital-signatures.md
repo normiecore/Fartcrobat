@@ -91,7 +91,10 @@ expect, Acrobat) report it (owner decision: no separate state), but it is explai
 - The signer name is read, unverified, from the certificate in the signature (`claimedSigner` in
   `lib/cms.ts`) when the signed bytes cannot be found; before, "Signed by" was empty. A report built
   after an exception says "Unknown signer".
-- A signature whose signed bytes are not in this file certifies and locks nothing: "Rev. N" numbers
-  only signatures whose signed revision is in this file (`signedVersion` 0, and no `revision` for
-  agents), the lock and certification lines are left out, and the report's `certified`,
-  `certifiedBy` and `locked` ignore it (so the message bar does not say "Certified by").
+- A signature whose signed bytes are not in this file certifies and locks nothing
+  (`signedBytesFound`, `certifies` in `status.ts`): it sets no DocMDP rules for the other
+  signatures (`validateSignatures` skips a certification whose byte range does not check out),
+  "Rev. N" numbers only signatures whose signed revision is in this file (`signedVersion` 0, and no
+  `revision` for agents), the panel, Properties and the field tooltip say "Signed by" and show no
+  allowed changes or lock, agents get kind "approval", and the report's `certified`, `certifiedBy`
+  and `locked` ignore it (so the message bar does not say "Certified by").

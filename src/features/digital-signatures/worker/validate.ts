@@ -19,6 +19,7 @@ import {
 } from '../lib/pdfbytes'
 import { buildChain, describeCertificate, displayName, isTimestampAuthority, parseCertificate, type Certificate } from '../lib/x509'
 import { COPIED_SIGNATURE, type MdpPermission, type SignatureReport, type ValidationReport } from '../types'
+import { signedBytesFound } from '../status'
 import { describeChanges } from './changes'
 import { certification, listSignatureFields, lockInfo, readReferences, safe, signedFieldIn, type SigField } from './fields'
 import { laterUpdatesOtherThanSigning } from './later'
@@ -522,6 +523,9 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
     const ref = readReferences(vRef).find((x) => x.method === 'DocMDP')
     const br = readByteRange(vRef.resolve())
     const at = br.length === 4 ? br[2] + br[3] : Infinity
+    // A certification whose signed bytes are not in this file (copied in from another file, or
+    // damaged) sets no rules for the other signatures: nothing verified its DocMDP reference.
+    if (ref && src && !checkByteRange(src, br).ok) continue
     if (ref && (!certified || at < certAt)) {
       certified = { permission: ref.permission ?? 2, sigNum: vRef.isIndirect() ? vRef.asIndirect() : f.fieldNum }
       certAt = at
@@ -594,9 +598,8 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
   const certSig = signatures.find((x) => x.kind === 'certification')
   // A signature whose signed bytes are not in this file (copied in, or damaged) certifies and locks
   // nothing: its DocMDP reference, lock and name come from a dictionary nothing verified.
-  const bytesFound = (x: SignatureReport) => x.revisionEnd > 0 || x.integrity !== false
-  const certVoid = !!certSig && !bytesFound(certSig)
-  const locked = signatures.some((x) => x.lock?.permission === 1 && bytesFound(x))
+  const certVoid = !!certSig && !signedBytesFound(certSig)
+  const locked = signatures.some((x) => x.lock?.permission === 1 && signedBytesFound(x))
   return {
     signatures,
     unsigned: fields.filter((x) => !x.signed).map(({ field: _f, widget: _w, fieldNum: _n, ...rest }) => rest),

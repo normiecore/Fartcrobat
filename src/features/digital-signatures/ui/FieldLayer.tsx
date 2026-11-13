@@ -1,6 +1,6 @@
 import { FileSignature } from 'lucide-react'
 import { registry, showContextMenu, type PageLayerProps } from '@renderer/sdk'
-import { signatureStatus } from '../status'
+import { certifies, signatureStatus } from '../status'
 import { isCertificateEncrypted } from './encrypted'
 import { startSigning } from './flow'
 import { openSignatureProperties } from './Properties'
@@ -33,7 +33,7 @@ export function SignatureFieldLayer({ doc, pageIndex, geometry }: PageLayerProps
             key={s.fieldName}
             className={`fc-digital-signatures-field is-signed is-${st.level}`}
             style={{ left: c.left, top: c.top, width: c.width, height: c.height }}
-            title={`${s.kind === 'certification' ? 'Certified' : 'Signed'} by ${s.signerName}. ${st.title} Click for details.`}
+            title={`${certifies(s) ? 'Certified' : 'Signed'} by ${s.signerName}. ${st.title} Click for details.`}
             aria-label={`Signature ${s.fieldName}: ${st.title}`}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={() => openSignatureProperties(doc, s.fieldName)}

@@ -671,7 +671,29 @@ describe('signatures copied from another file', () => {
     expect(report.locked).toBe(false)
     const st = signatureStatus(r, new Set())
     expect(st.details.some((d) => /certified|locked/.test(d))).toBe(false)
+    expect(st.title).toBe('Signature is invalid: what was signed is not in this document.')
     expect(overallStatus(report, new Set())?.message).not.toMatch(/Certified by/)
+  })
+
+  it('applies no rules of a copied certification to signatures made on the bundle', async () => {
+    // a copied certification that allows no changes, then two genuine signatures on the bundle
+    let e = await openBytes(await combinedBundle({ mode: 'certify', permission: 1, target: { kind: 'invisible' } }))
+    const s1 = (await e.sig.sign(request(rsaId, { target: { kind: 'new', page: 0, rect: [72, 100, 300, 180] } }))).bytes
+    e = await openBytes(s1)
+    const s2 = (await e.sig.sign(request(rsaId, { target: { kind: 'new', page: 1, rect: [72, 100, 300, 180] } }))).bytes
+    const report = await validateBytes(s2)
+    expect(report.signatures).toHaveLength(3)
+    const copied = report.signatures.filter((r) => r.problems.includes(COPIED_SIGNATURE))
+    const genuine = report.signatures.filter((r) => !r.problems.includes(COPIED_SIGNATURE))
+    expect(copied).toHaveLength(1)
+    expect(genuine).toHaveLength(2)
+    for (const r of genuine) {
+      expect(r.integrity).toBe(true)
+      expect(r.permissionInForce ?? null).toBeNull()
+      expect(signatureStatus(r, new Set()).level).toBe('unknown-identity')
+    }
+    expect(report.certified).toBeNull()
+    expect(report.locked).toBe(false)
   })
 
   it('never calls a signature followed by a later update that rewrites its dictionary copied', async () => {
@@ -680,6 +702,8 @@ describe('signatures copied from another file', () => {
     // an incremental update that writes the signature dictionary again, with a changed /Reason
     const doc = new mupdf.PDFDocument(signed)
     const field = doc.getTrailer().get('Root').get('AcroForm').get('Fields').get(0)
+    const br = field.get('V').get('ByteRange')
+    const gap = br.get(1).asNumber()
     field.get('V').put('Reason', doc.newString('Changed after signing'))
     const buf = doc.saveToBuffer('incremental')
     const updated = buf.asUint8Array().slice()
@@ -688,20 +712,14 @@ describe('signatures copied from another file', () => {
     const r = (await validateBytes(updated)).signatures[0]
     expect(r.problems).not.toContain(COPIED_SIGNATURE)
     expect(signatureStatus(r, new Set()).level).toBe('invalid')
-  })
-
-  it('still reports a damaged signature as altered, not copied', async () => {
-    const e = await openBytes(fixture('text.pdf'), 'text.pdf')
-    const { bytes } = await e.sig.sign(request(rsaId))
-    const damaged = bytes.slice()
-    const at = Buffer.from(damaged).indexOf('/Contents <') + '/Contents <'.length
-    damaged[at - 1] = 0x28 // "(" where the hex string starts
-    const r = (await validateBytes(damaged)).signatures[0]
-    expect(r.integrity).toBe(false)
-    expect(r.problems).not.toContain(COPIED_SIGNATURE)
-    expect(r.problems[0]).toBe('The document has been altered or corrupted since the signature was applied.')
-    expect(r.signerName).not.toBe('')
-    expect(signatureStatus(r, new Set()).title).toBe('Signature is invalid.')
+    // and with the signed bytes damaged too, so the byte range fails: the rewritten dictionary now
+    // lies beyond the end of the byte range, but was written twice, so it is no copy
+    const damaged = updated.slice()
+    damaged[gap] = 0x28 // "(" where the signature value starts
+    const d = (await validateBytes(damaged)).signatures[0]
+    expect(d.integrity).toBe(false)
+    expect(d.problems).not.toContain(COPIED_SIGNATURE)
+    expect(d.problems[0]).toBe('The document has been altered or corrupted since the signature was applied.')
   })
 })
 

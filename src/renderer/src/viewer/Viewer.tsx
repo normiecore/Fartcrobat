@@ -62,6 +62,13 @@ function scrollRectIntoView(el: HTMLElement, slot: PageSlot, g: PageGeometry, re
   if (!hVisible) el.scrollLeft = left - el.clientWidth / 3
 }
 
+/** The viewport's inner height as if it had no horizontal scrollbar (borders excluded). */
+function heightWithoutHScrollbar(el: HTMLElement): number {
+  const cs = getComputedStyle(el)
+  const borders = (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0)
+  return Math.max(el.clientHeight, el.offsetHeight - borders)
+}
+
 /** Horizontal extent of a row (a page, or a two-page spread) in content coordinates. */
 function rowExtentOf(layout: ViewLayout, row: number[]): { x: number; width: number } | null {
   const slots = row.map((i) => layout.slots[i]).filter(Boolean)
@@ -91,6 +98,25 @@ function rowOutOfView(el: HTMLElement, row: { x: number; width: number }): boole
   return row.x + row.width <= el.scrollLeft || row.x >= el.scrollLeft + el.clientWidth
 }
 
+/**
+ * The row of `page` when it should be brought into view horizontally: the content scrolls sideways
+ * and no row that is in view vertically has any part in view horizontally (the view shows only the
+ * empty space beside an outsized page's narrower neighbours). Panning across a wide page that is in
+ * view is never undone. Null when nothing should move.
+ */
+function rowToReveal(el: HTMLElement, layout: ViewLayout, rows: number[][], page: number): { x: number; width: number } | null {
+  if (el.scrollWidth <= el.clientWidth) return null
+  const top = el.scrollTop
+  const bottom = top + el.clientHeight
+  for (const row of rows) {
+    const slots = row.map((i) => layout.slots[i]).filter(Boolean)
+    if (!slots.some((sl) => sl.y < bottom && sl.y + sl.height > top)) continue
+    const extent = rowExtentOf(layout, row)
+    if (extent && !rowOutOfView(el, extent)) return null
+  }
+  return rowExtentOf(layout, rows[spreadIndexOf(rows, page)] ?? [page])
+}
+
 export function Viewer({ doc }: { doc: DocumentModel }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const info = useDocState(doc, (s) => s.info)
@@ -101,7 +127,7 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
   const rotation = useDocState(doc, (s) => s.viewRotation)
   const currentPage = useDocState(doc, (s) => s.currentPage)
   const toolId = useApp((s) => (s.spaceHand ? 'hand' : s.toolId))
-  const [size, setSize] = useState({ width: 800, height: 600 })
+  const [size, setSize] = useState({ width: 800, height: 600, fitHeight: 600 })
   const [scroll, setScroll] = useState({ top: 0, left: 0 })
   const anchorRef = useRef<Anchor | null>(null)
   const pendingScrollRef = useRef<PendingScroll | null>(null)
@@ -113,9 +139,10 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setSize({ width: el.clientWidth, height: el.clientHeight }))
+    const measure = () => setSize({ width: el.clientWidth, height: el.clientHeight, fitHeight: heightWithoutHScrollbar(el) })
+    const ro = new ResizeObserver(measure)
     ro.observe(el)
-    setSize({ width: el.clientWidth, height: el.clientHeight })
+    measure()
     return () => ro.disconnect()
   }, [])
 
@@ -133,9 +160,11 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
         layout: layoutMode,
         cover,
         width: size.width,
-        height: size.height
+        // without the horizontal scrollbar: fitZoom leaves room for it itself when a page will
+        // scroll sideways, so the scrollbar appearing cannot change the fit zoom
+        height: size.fitHeight
       }),
-    [zoomMode, info.pages, shownRowPage, rotation, layoutMode, cover, size.width, size.height]
+    [zoomMode, info.pages, shownRowPage, rotation, layoutMode, cover, size.width, size.fitHeight]
   )
   const viewZoom = fitTarget ?? zoom
   const zoomRef = useRef(viewZoom)
@@ -174,6 +203,7 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
     const t = topAnchorRef.current
     if (p && p.page >= info.pages.length) pendingScrollRef.current = null
     const pSlot = p ? layout.slots[p.page] : undefined
+    let anchored = false
     if (p && pSlot) {
       pendingScrollRef.current = null
       anchorRef.current = null
@@ -197,6 +227,7 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
       }
     } else if (a) {
       anchorRef.current = null
+      anchored = true
       const slot = layout.slots[a.page]
       if (slot) {
         el.scrollLeft = slot.x + a.fx * slot.width - (a.clientX - b.left)
@@ -209,12 +240,12 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
         if (el.scrollWidth > el.clientWidth) el.scrollLeft = slot.x + t.fx * slot.width
       }
     }
-    // The top page's row must be in view horizontally: on open, and after a zoom or resize, rows
-    // narrower than an outsized page are centred far from scrollLeft 0.
-    if (!(p && pSlot) && el.scrollWidth > el.clientWidth) {
-      const top = topAnchorOf(el, layout)
-      const extent = top ? rowExtentOf(layout, rows[spreadIndexOf(rows, top.page)] ?? [top.page]) : null
-      if (extent && rowOutOfView(el, extent)) el.scrollLeft = revealRowLeft(el, extent)
+    // On open, and after a zoom or resize, rows narrower than an outsized page are centred far
+    // from scrollLeft 0: show the current page's row when nothing in view is. Not after a zoom at
+    // the cursor, which keeps the point under the cursor.
+    if (!(p && pSlot) && !anchored) {
+      const extent = rowToReveal(el, layout, rows, doc.state.currentPage)
+      if (extent) el.scrollLeft = revealRowLeft(el, extent)
     }
     topAnchorRef.current = topAnchorOf(el, layout) ?? topAnchorRef.current
     setScroll({ top: el.scrollTop, left: el.scrollLeft })
@@ -251,13 +282,10 @@ export function Viewer({ doc }: { doc: DocumentModel }) {
     // A zoom anchor only applies to the layout change it was made for.
     anchorRef.current = null
     updateCurrentPage()
-    // Scrolling from an outsized page to narrower ones: bring their row into view horizontally
-    // (only when none of it is in view, so reading across a wide page is never interrupted).
-    if (el.scrollWidth > el.clientWidth) {
-      const cur = doc.state.currentPage
-      const extent = rowExtentOf(layoutRef.current, rows[spreadIndexOf(rows, cur)] ?? [cur])
-      if (extent && rowOutOfView(el, extent)) el.scrollLeft = revealRowLeft(el, extent)
-    }
+    // Scrolling from an outsized page to narrower ones: bring the current row into view when
+    // nothing in view vertically is in view horizontally.
+    const extent = rowToReveal(el, layoutRef.current, rows, doc.state.currentPage)
+    if (extent) el.scrollLeft = revealRowLeft(el, extent)
     setScroll({ top: el.scrollTop, left: el.scrollLeft })
     topAnchorRef.current = topAnchorOf(el, layoutRef.current) ?? topAnchorRef.current
   }

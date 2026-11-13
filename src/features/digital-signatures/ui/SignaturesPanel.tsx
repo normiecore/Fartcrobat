@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, CircleCheck, CircleX, Eraser, FileSearch, FileSignature, Info, MoreHorizontal, RefreshCw, ScrollText } from 'lucide-react'
 import { Button, EmptyState, IconButton, openToolGroup, showContextMenu, useDocState, type ContextMenuItem, type DocumentModel } from '@renderer/sdk'
-import { displayedSigningTime, overallStatus, permissionText, signatureStatus, signingTimeNote } from '../status'
+import { certifies, displayedSigningTime, overallStatus, permissionText, signatureStatus, signingTimeNote } from '../status'
 import type { SignatureFieldInfo, SignatureReport } from '../types'
 import { clearSignature, goToSignature, validateAll, viewSignedVersion } from './actions'
 import { startSigning } from './flow'
@@ -26,7 +26,7 @@ function SignatureEntry({ doc, r, locked }: { doc: DocumentModel; r: SignatureRe
   const trusted = useTrustedSet()
   const [open, setOpen] = useState(false)
   const st = signatureStatus(r, trusted)
-  const verb = r.kind === 'timestamp' ? 'Timestamped by' : r.kind === 'certification' ? 'Certified by' : 'Signed by'
+  const verb = r.kind === 'timestamp' ? 'Timestamped by' : certifies(r) ? 'Certified by' : 'Signed by'
   const menu = (e: React.MouseEvent) => {
     e.preventDefault()
     showContextMenu(e.clientX, e.clientY, signatureMenuItems(doc, r, locked))
@@ -102,7 +102,7 @@ function SignatureEntry({ doc, r, locked }: { doc: DocumentModel; r: SignatureRe
               {r.fieldName}
               {r.invisible ? ' (invisible)' : ` on page ${r.page + 1}`}
             </dd>
-            {r.kind === 'certification' && (
+            {certifies(r) && (
               <>
                 <dt>Allowed</dt>
                 <dd>{permissionText(r.permission)}</dd>
