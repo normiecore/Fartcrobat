@@ -31,6 +31,14 @@ Office conversion when installed, with a built-in fallback.
   (`same-repo` in `tests/update-rehearsal/names.mjs`); it runs again from 0.4.1 to 0.4.2. See
   "The repository rename" in `docs/features/rename.md`. A Claude session needs the repo added as
   `normiecore/Inkmoor` (the session proxy checks the name).
+- **0.4.2** (#32, 13 Nov 2026) fixes the first feedback from the firm's testers on 0.4.1, with a
+  combined court brief: bookmarks keep the reader's zoom (owner decision), fit zooms ignore outsized
+  pages (phone photos of 8160 x 6120 pt) and the reading row stays in view horizontally (see
+  "Bookmark zoom and outsized pages" in `docs/features/navigation.md`); signatures copied in from
+  other files stay invalid but are explained, with the signer's name, no "Rev." and no
+  certification (see "Signatures copied from another file" in `docs/features/digital-signatures.md`).
+  Still open from that feedback: the robot (agent access) panel is a dead end for a first-time user
+  without Claude Desktop (no explanation, download link or Add button).
 - Repo page: README shows the icon and screenshots from `docs/images/`; `docs/images/social-preview.png`
   (1280x640) is for Settings > Social preview, which only the owner can upload.
 - v0.1.0 is released: https://github.com/normiecore/Inkmoor/releases/tag/v0.1.0 (Windows
