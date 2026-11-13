@@ -10,7 +10,8 @@ Run: python3 tests/fixtures/navigation/make_fixtures.py   (outputs are committed
 - fonts.pdf         an embedded subset TrueType font, a non-embedded base font and a font used
                     only inside a form XObject
 - outsized-page.pdf A4 pages with a phone-photo-sized page (8160 x 6120 pt, /Rotate 90) and an A4
-                    landscape page, and a /Fit bookmark per page, like a combined court brief
+                    landscape page, and a /Fit bookmark per page, like a combined court brief, plus
+                    an /XYZ bookmark with a left position (page 4, 72 700, no zoom)
 """
 import io
 import os
@@ -217,14 +218,16 @@ def outsized_page_doc():
         (595, 842, 0, 'Invoice'),
     ]
     n = len(pages)
-    # objects: 1 catalog, 2 pages, 3 font, 4 outlines, then per page: page, content, outline item
+    # objects: 1 catalog, 2 pages, 3 font, 4 outlines, then per page: page, content, outline item,
+    # then the XYZ outline item
     first = 5
-    objs = [None] * (4 + 3 * n)
+    xyz = first + 3 * n
+    objs = [None] * (4 + 3 * n + 1)
     kids = ' '.join(f'{first + 3 * i} 0 R' for i in range(n))
     objs[0] = b'<< /Type /Catalog /Pages 2 0 R /Outlines 4 0 R /PageMode /UseOutlines >>'
     objs[1] = f'<< /Type /Pages /Kids [{kids}] /Count {n} >>'.encode()
     objs[2] = b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'
-    objs[3] = f'<< /Type /Outlines /First {first + 2} 0 R /Last {first + 3 * (n - 1) + 2} 0 R /Count {n} >>'.encode()
+    objs[3] = f'<< /Type /Outlines /First {first + 2} 0 R /Last {xyz} 0 R /Count {n + 1} >>'.encode()
     for i, (w, h, rot, label) in enumerate(pages):
         page_no, content_no, item_no = first + 3 * i, first + 3 * i + 1, first + 3 * i + 2
         size = max(24, int(min(w, h) / 12))
@@ -240,9 +243,12 @@ def outsized_page_doc():
         links = f'/Parent 4 0 R /Dest [{page_no} 0 R /Fit]'
         if i > 0:
             links += f' /Prev {item_no - 3} 0 R'
-        if i < n - 1:
-            links += f' /Next {item_no + 3} 0 R'
+        links += f' /Next {item_no + 3 if i < n - 1 else xyz} 0 R'
         objs[item_no - 1] = f'<< /Title (Page {i + 1}: {label}) {links} >>'.encode()
+    objs[xyz - 1] = (
+        f'<< /Title (Report, left column) /Parent 4 0 R /Prev {first + 3 * (n - 1) + 2} 0 R '
+        f'/Dest [{first + 3 * 3} 0 R /XYZ 72 700 null] >>'
+    ).encode()
     write_raw_pdf(os.path.join(OUT, 'outsized-page.pdf'), objs)
 
 

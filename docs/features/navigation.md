@@ -23,11 +23,18 @@ the 8% floor on open and on every bookmark click.
   explicit XYZ zoom (a bookmark saved at 150% still opens at 150%). Fit, FitB, FitH, FitBH, FitV and
   FitR destinations go to the page at the current zoom and zoom mode, like in-page links (LinkLayer).
 - **Fit zooms ignore outsized pages:** in Single Page Continuous and Two Page Scrolling, `fitZoom`
-  (`viewer/layout.ts`) fits every row except rows that need less than `OUTSIZED_ROW_RATIO` (0.6) of
-  the median row's zoom. Landscape A4 among A4 pages still counts. Outsized pages are wider or
-  taller than the viewport and scroll. The zoom still does not depend on the scroll position.
-- **Going to a page reveals it horizontally:** the content is as wide as the widest page, with the
-  pages centred, so `revealSlotLeft` (`viewer/Viewer.tsx`) centres a page navigated to that is not
-  fully in view (or shows the left edge of one wider than the viewport).
+  (`viewer/layout.ts`, `documentFit`) leaves out rows that need less than `OUTSIZED_ROW_RATIO` (0.6)
+  of the median row's zoom. Landscape A4 among A4 pages still counts. Only rows outsized in width
+  may end up wider than the viewport (every other row caps the zoom at its own width), so whether
+  the content scrolls sideways does not depend on the viewport height, and the horizontal scrollbar
+  cannot flip the zoom back and forth. Rows outsized only in height are left out of Fit Page's
+  height fit and scroll down. The zoom still does not depend on the scroll position.
+- **The reading row stays in view horizontally:** the content is as wide as the widest page, with
+  rows centred in it. Going to a page reveals its row (`revealRowLeft` in `viewer/Viewer.tsx`: a row
+  fully in view, or wider than the viewport and partly in view, keeps the position; one that fits is
+  centred). After open, a zoom or a resize, and while scrolling, the top or current page's row is
+  brought into view when none of it is in view, so a document does not open on empty space beside
+  an outsized page. An x position from a destination is compared in content coordinates.
 - Fixture `tests/fixtures/navigation/outsized-page.pdf` (A4 pages, one 8160 x 6120 pt page, /Fit
-  bookmarks); e2e in `tests/e2e/navigation.spec.ts`, unit tests in `core-viewer-layout.test.ts`.
+  bookmarks and one /XYZ bookmark with a left position); e2e in `tests/e2e/navigation.spec.ts`
+  (also Next Page in a zoomed two-page layout), unit tests in `core-viewer-layout.test.ts`.

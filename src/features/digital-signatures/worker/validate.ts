@@ -380,11 +380,16 @@ function objectOffset(ctx: Context, num: number): number | null {
 
 /**
  * True when the signature dictionary itself lies beyond the end of the bytes it says it signed.
- * A signature dictionary is always written inside the revision it signs, so this one was signed in
- * another file and copied into this one (combining signed PDFs into a bundle does this).
+ * A signature dictionary is always written inside the revision it signs, so this one was most
+ * likely signed in another file and copied into this one (combining signed PDFs into a bundle does
+ * this). A signed file altered and rewritten as a whole looks the same, which COPIED_SIGNATURE says.
  */
 function copiedFromAnotherFile(ctx: Context, br: number[], vNum: number): boolean {
   if (br.length !== 4 || br[0] !== 0 || br[2] <= br[1]) return false
+  // Only when the file's own cross-reference information can be relied on, and the signature
+  // dictionary was written once: a later update that rewrote it is a change, not a copy.
+  if (!ctx.revs || ctx.revs.problem || ctx.repaired) return false
+  if (ctx.revs.sections.filter((sec) => sec.entries?.get(vNum) === 'n' || sec.entries?.get(vNum) === 'c').length > 1) return false
   const at = objectOffset(ctx, vNum)
   return at !== null && at >= br[2] + br[3]
 }
@@ -587,16 +592,20 @@ export async function validateSignatures(s: Session): Promise<ValidationReport> 
   let rev = 0
   for (const r of signatures) r.signedVersion = r.revisionEnd ? ++rev : 0
   const certSig = signatures.find((x) => x.kind === 'certification')
-  const locked = signatures.some((x) => x.lock?.permission === 1)
+  // A signature whose signed bytes are not in this file (copied in, or damaged) certifies and locks
+  // nothing: its DocMDP reference, lock and name come from a dictionary nothing verified.
+  const bytesFound = (x: SignatureReport) => x.revisionEnd > 0 || x.integrity !== false
+  const certVoid = !!certSig && !bytesFound(certSig)
+  const locked = signatures.some((x) => x.lock?.permission === 1 && bytesFound(x))
   return {
     signatures,
     unsigned: fields.filter((x) => !x.signed).map(({ field: _f, widget: _w, fieldNum: _n, ...rest }) => rest),
     checkedFile: !!src,
     revisionCount: revs?.sections.length ?? 0,
-    certified: certified?.permission ?? null,
-    certifiedBy: certSig?.signerName ?? null,
+    certified: certVoid ? null : (certified?.permission ?? null),
+    certifiedBy: certVoid ? null : (certSig?.signerName ?? null),
     // A DocMDP reference or /Perms entry that certifies nothing (a timestamp's) locks nothing either.
-    locked: locked || certified?.permission === 1,
+    locked: locked || (!certVoid && certified?.permission === 1),
     validatedAt: Date.now()
   }
 }

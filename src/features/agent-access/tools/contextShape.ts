@@ -469,7 +469,8 @@ export function signaturesOut(report: ValidationReport, trusted: Set<string>) {
             }
           }
         : {}),
-      revision: r.signedVersion
+      // 0: the signature signs no revision of this file (copied from another file, or damaged)
+      ...(r.signedVersion ? { revision: r.signedVersion } : {})
     }
   })
   return {

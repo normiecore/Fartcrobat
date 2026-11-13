@@ -72,20 +72,26 @@ Its status is decided like this (`status.ts`, `worker/validate.ts`, `worker/late
 
 Combining signed PDFs into one bundle (a court brief of DocuSign documents, for example) copies
 each signature dictionary into the new file, but its byte range still describes the small original
-file. Such a signature cannot be verified and stays **invalid**, as pdfsig and pyHanko (and, we expect, Acrobat)
-report it (owner decision: no separate state), but it is explained:
+file. Such a signature cannot be verified and stays **invalid**, as pdfsig and pyHanko (and, we
+expect, Acrobat) report it (owner decision: no separate state), but it is explained:
 
 - `copiedFromAnotherFile` (`worker/validate.ts`): the signature dictionary itself lies at or beyond
-  the end of its byte range in this file (a dictionary is always inside the revision it signs). The
-  problem is then `COPIED_SIGNATURE` (`types.ts`); the title is "Signature is invalid: it was copied
-  from another document." and the message bar says the signatures were copied from other documents
-  and cannot be verified here when every invalid signature is a copy (`status.ts`). A copy whose
-  dictionary happens to land inside the old byte range is not recognised and reads as altered.
-- Any other byte range failure now starts with Acrobat's "The document has been altered or
-  corrupted since the signature was applied." before the technical reason.
+  the end of its byte range in this file (a dictionary is always inside the revision it signs), the
+  file's cross-reference information is sound (no repair, no `revs.problem`) and the dictionary is
+  defined by only one cross-reference section. A signed file that was altered and rewritten as a
+  whole looks the same, so the problem text `COPIED_SIGNATURE` (`types.ts`) says what was signed is
+  not in this document, that this usually comes from combining documents, and that a changed and
+  re-saved document looks the same; it never says the document is unchanged. The title is
+  "Signature is invalid: what was signed is not in this document." and, when every invalid
+  signature is such a copy, the message bar says "At least one signature is invalid: what was
+  signed is not in this document, usually because the signature was copied from another document."
+  (`status.ts`). A copy whose dictionary lands inside the old byte range reads as altered.
+- Any other byte range failure now starts with "The document has been altered or corrupted since
+  the signature was applied." before the technical reason.
 - The signer name is read, unverified, from the certificate in the signature (`claimedSigner` in
   `lib/cms.ts`) when the signed bytes cannot be found; before, "Signed by" was empty. A report built
   after an exception says "Unknown signer".
-- "Rev. N" numbers only signatures whose signed revision is in this file (`signedVersion` is 0 when
-  `revisionEnd` is 0), and the lock and certification lines are left out for them: they come from a
-  dictionary nothing verified.
+- A signature whose signed bytes are not in this file certifies and locks nothing: "Rev. N" numbers
+  only signatures whose signed revision is in this file (`signedVersion` 0, and no `revision` for
+  agents), the lock and certification lines are left out, and the report's `certified`,
+  `certifiedBy` and `locked` ignore it (so the message bar does not say "Certified by").

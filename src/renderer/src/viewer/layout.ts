@@ -121,15 +121,27 @@ export function computeLayout(
  */
 export const OUTSIZED_ROW_RATIO = 0.6
 
+const medianOf = (values: number[]) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)]
+
 /**
- * The fit zoom for a scrolling layout: the smallest of the rows' zooms, leaving out outsized rows
- * (a phone photo of 8160 x 6120 pt merged into an A4 brief would otherwise fit every page to 8%).
- * Outsized pages are wider or taller than the viewport and scroll, as in Acrobat.
+ * The fit zoom for a scrolling layout, leaving out outsized rows (a phone photo of 8160 x 6120 pt
+ * merged into an A4 brief would otherwise fit every page to 8%). Outsized pages are wider or taller
+ * than the viewport and scroll, as in Acrobat.
+ *
+ * Only rows that are outsized in width (zw, which does not depend on the viewport height) may end
+ * up wider than the viewport. Every other row also caps the zoom at its own width. So whether the
+ * content scrolls sideways does not depend on the height, and the horizontal scrollbar it brings
+ * (which makes the viewport lower) cannot change which rows count and make the zoom flip back and
+ * forth. Rows outsized only in height (Fit Page) are left out of the height fit and scroll down.
  */
-function documentFit(rowZooms: number[]): number {
-  const sorted = [...rowZooms].sort((a, b) => a - b)
-  const median = sorted[Math.floor(sorted.length / 2)]
-  return Math.min(...rowZooms.filter((z) => z >= median * OUTSIZED_ROW_RATIO))
+function documentFit(mode: ZoomMode, zw: number[], zp: number[]): number {
+  const wideLimit = medianOf(zw) * OUTSIZED_ROW_RATIO
+  const tallLimit = medianOf(zp) * OUTSIZED_ROW_RATIO
+  const kept = zw.map((_, i) => i).filter((i) => zw[i] >= wideLimit)
+  const width = Math.min(...kept.map((i) => zw[i]))
+  if (mode === 'fit-width' || mode === 'fit-visible') return width
+  const heights = kept.filter((i) => zp[i] >= tallLimit).map((i) => zp[i])
+  return Math.min(width, ...heights)
 }
 
 /**
@@ -160,7 +172,7 @@ export function fitZoom(
     zw.push(availW / w)
     zp.push(Math.min(availW / w, availH / h))
   }
-  return clampZoom(documentFit(mode === 'fit-width' || mode === 'fit-visible' ? zw : zp))
+  return clampZoom(documentFit(mode, zw, zp))
 }
 
 export const MIN_ZOOM = 0.08

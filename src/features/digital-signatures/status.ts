@@ -118,7 +118,7 @@ export function signingTimeNote(r: SignatureReport, trusted: Set<string>): strin
   return '(the time-stamping authority is not trusted)'
 }
 
-/** The signature was signed in another file and copied into this one (see COPIED_SIGNATURE). */
+/** What the signature signed is not in this document, most likely copied in (see COPIED_SIGNATURE). */
 export function isCopied(r: SignatureReport): boolean {
   return r.problems.includes(COPIED_SIGNATURE)
 }
@@ -251,7 +251,7 @@ export function signatureStatus(r: SignatureReport, trusted: Set<string>): Signa
           : level === 'unknown'
             ? `${noun} validity is unknown.`
             : isCopied(r)
-              ? `${noun} is invalid: it was copied from another document.`
+              ? `${noun} is invalid: what was signed is not in this document.`
               : `${noun} is invalid.`
   return { level, title, details, identityKnown, trustedIndex: ti, timestampTrusted: tsTrusted }
 }
@@ -271,7 +271,7 @@ export function overallStatus(report: ValidationReport | null, trusted: Set<stri
     return {
       level: 'invalid',
       message: invalid.every(isCopied)
-        ? `${certPrefix}${invalid.length === 1 ? 'A signature in this document was' : 'The signatures in this document were'} copied from other documents and cannot be verified here.`
+        ? `${certPrefix}At least one signature is invalid: what was signed is not in this document, usually because the signature was copied from another document.`
         : `${certPrefix}At least one signature is invalid.`
     }
   }

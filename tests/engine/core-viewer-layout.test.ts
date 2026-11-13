@@ -65,6 +65,32 @@ describe('viewer layout', () => {
     expect(fit('fit-width', big, 'continuous', 3)).toBeCloseTo(fit('fit-width', [photo], 'continuous', 0), 6)
   })
 
+  it('decides sideways scrolling from the width alone, so a horizontal scrollbar cannot flip Fit Page', () => {
+    const a4 = (n: number) => Array.from({ length: n }, (_, i) => page(i, 595, 842))
+    const docs = [
+      [...a4(4), page(4, 2011, 600)], // wide page near the Fit Page threshold
+      [...a4(4), page(4, 6120, 8160)], // phone photo
+      [...a4(4), page(4, 946, 2048)], // tall screenshot
+      [...a4(3), page(3, 842, 595), page(4, 1086, 1528)]
+    ]
+    for (const pages of docs) {
+      for (const h of [500, 600, 700, 800, 900]) {
+        const overflows = (height: number) => {
+          const z = fit('fit-page', pages, 'continuous', 0, false, 1000, height)
+          return layoutAt(pages, 'continuous', z, 0, false, 1000).width > 1000
+        }
+        // with or without the 12 px horizontal scrollbar, the content scrolls sideways or not alike
+        expect(overflows(h - 12)).toBe(overflows(h))
+      }
+    }
+    // the wide page and the photo scroll; the A4 pages keep their own Fit Page zoom
+    const a4Fit = (h: number) => fit('fit-page', a4(4), 'continuous', 0, false, 1000, h)
+    expect(fit('fit-page', docs[0], 'continuous', 0, false, 1000, 700)).toBeCloseTo(a4Fit(700), 6)
+    expect(fit('fit-page', docs[1], 'continuous', 0, false, 1000, 688)).toBeCloseTo(a4Fit(688), 6)
+    // the tall screenshot is narrow: it is left out of the height fit and scrolls down
+    expect(fit('fit-page', docs[2], 'continuous', 0, false, 1000, 700)).toBeCloseTo(a4Fit(700), 6)
+  })
+
   it('still fits the shown page in Single Page View', () => {
     expect(fit('fit-page', mixed, 'single', 1)).not.toBeCloseTo(fit('fit-page', mixed, 'single', 0), 2)
   })
